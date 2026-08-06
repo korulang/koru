@@ -1,0 +1,6 @@
+node-a claims the cell
+  held msg-1 at pos 1 — response gated
+  ack  msg-1 — durable through 1
+  held msg-2 at pos 2 — response gated
+  fail msg-2 — durability unproven
+  release node-a

@@ -471,3 +471,97 @@ benchmarking, or a mirror cluster. **It requires being willing to break your own
 fix on purpose before you believe it was needed.** That is cheap, it is available
 at the exact moment the knowledge is freshest, and it converts "I widened both
 copies for symmetry" — an unfalsifiable good intention — into two pins.
+
+## The seventh tell is a HALF-RULE: two scopes each holding the part the other needs
+
+Same file, same afternoon, one gap further along. Closing the sixth tell's
+enumeration got the branch payload lowered; the position audit it forced then
+surfaced the reach gap this concept already knew about — `indexedFieldRefs`
+complete inside `stored`'s helper struct and invisible to `new`'s whole-program
+walk, recorded here in "the second tell is SCOPE". Moving the rewriter to file
+scope and calling it from both walks is the obvious fix and it is not the
+finding.
+
+The finding is what fell out of the five copies of `storeRefs` once they were
+put side by side. **Two of them excluded a following `[` from the one-column
+identity case. Three did not.** The two that did carried a comment saying why —
+"`[` is excluded so a row index still takes the indexed path below" — and those
+two were exactly the copies that HAD an indexed path below them. The other three
+omitted the exclusion, correctly, because in their scope no indexed rewriter
+existed for the base to be stolen from.
+
+So neither group was wrong. Each held **half of one rule**, and each half was
+correct precisely as long as it stayed in its own scope. That is a new failure
+mode for this belief, and a worse one than everything above it:
+
+- **Every earlier tell has a wrong side.** One lowering is slower, one arm is
+  ungated, one prong is missing, one term is uncorrected. You can read the two
+  sites, decide which is right, and copy it across.
+- **A half-rule has no wrong side to find.** Read either copy against its own
+  scope and it is correct and its comment is accurate. The defect exists only in
+  the *transition* — the moment the indexed rewriter arrives in the walk's scope,
+  the walk's `storeRefs` silently becomes wrong, and nothing in either half says
+  so. It is a latent conflict armed by a future fix, and it arms itself.
+
+**What makes it findable, and it is not diligence.** The half-rule surfaced
+because the convergence forced all five copies into one diff. Nothing else in
+this project's practice would have shown it: the copies are hundreds of lines
+apart, they had never been read together, and a grep for the function name
+returns five correct-looking implementations. **Convergence is not only the
+mitigation this belief keeps recommending — it is a DIAGNOSTIC, and the diff it
+produces is where the half-rules are.** That is an argument for converging
+duplicated code even when no bug is suspected, which is stronger than anything
+this concept has said about duplication so far.
+
+- **When merging N copies, do not diff them for equality — diff them for
+  PRECONDITIONS.** Equality tells you which body to keep. The interesting output
+  is a guard present in some copies and absent in others, because that guard is
+  a claim about the scope, and merging the scopes invalidates it.
+- **A comment explaining a guard is naming its precondition.** "so a row index
+  still takes the indexed path below" is not documentation of the guard; it is
+  the guard's dependency, written down, in the only place a reader would find
+  it. Copies without the guard are copies without the dependency, and moving
+  code between them without reading that sentence is how the transition breaks.
+- **Count the copies, then count the DIFFERENCES among them.** This belief has
+  been saying "count the copies" since its second section. The count here was
+  five, which is the sentence that would have been written; the useful sentence
+  is "five copies, three variants, and the variation is a precondition."
+
+### I did it to myself, in the same sitting, thirty minutes after writing the tell
+
+The convergence above merged two functions named `fieldOrder`, in two helper
+structs, with identical signatures and near-identical bodies — one read three
+sources, the other two, and the three-source version looked like the strictly
+better one. It is not. It answers a **different question**: the insert SURFACE's
+columns, which exclude a `[tree]`-synthesized `parent`, because a tree row's
+parent is set by reparenting and never at insert. The other answers "every
+column the cell holds".
+
+Merging them turned all five `695_STORE_TREE` tests red — the only cluster in
+the corpus where the two answers differ. The fix was to keep both, under names
+that say which question they answer (`storeFieldOrder` / `storeInsertOrder`),
+which is what the difference had been trying to say all along by existing.
+
+Three things this adds, and they are the reason it is written down rather than
+quietly fixed:
+
+- **The half-rule tell has a twin on the merge side.** Diffing copies for
+  preconditions catches a guard one copy lacks. It does NOT catch two functions
+  that share a name and differ *by intent*, because there the extra clause reads
+  as the more complete implementation. The question to ask before merging is not
+  "are these the same code?" but **"are these the same question?"** — and the
+  cheapest way to answer it is to look for a case where the two would disagree,
+  which here is one word: `parent`.
+- **Writing the belief down did not prevent the instance.** The half-rule
+  section above was written, in this file, before the merge that broke the tree
+  cluster. This concept has already observed that "the author of the report is
+  inside the failure"; that observation now has an instance where the author had
+  just finished authoring the warning. **A belief is not a wall**, and the gap
+  between the two is not closed by making the belief better written.
+- **What actually caught it was the full board, and nothing smaller would
+  have.** The 690 cluster stayed green through the break — 162 passing, both
+  target pins flipped, every control intact — because the divergence lives
+  entirely in 695. A convergence changes the blast radius of a fix from "the
+  thing I touched" to "everything that shared the code", and the verification
+  has to widen with it. Running the affected cluster is right for a fix and
+  wrong for a merge.

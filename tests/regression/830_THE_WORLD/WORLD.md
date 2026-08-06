@@ -165,6 +165,31 @@ slot (short, lowercase `<name>`, like `834_result_short_circuit`). The test
 dir is the runnable proof; the writeup is a **draft blog post** (next
 section).
 
+**`83N` IS FULL — `831`–`839` are all taken.** Read the filter before you
+mint a number, because the constraint is tighter than it looks. In
+`run_regression.sh:597-600` a two-digit argument expands to exactly one glob:
+
+```
+83   ->   83[0-9]_*
+```
+
+Three digits, then an underscore. So this cluster has **ten** filter-visible
+slots, not an open-ended `83N` series — and a doorway routinely spends more
+than one (`834`/`835` are a pair, `836`/`837` are a pair, and the celld entry
+spends four). Ten was never ten entries.
+
+Overflow past `839` therefore cannot stay visible to `83`. The celld entry
+takes `838`/`839` and overflows to `840`/`841`, which `84` finds
+(`84[0-9]_*`). Do not invent a four-digit form like `8380_` to squeeze in:
+`^[0-9]+_` accepts it, so it runs on the full board and looks fine, but
+`83[0-9]_*` cannot see it — a test that is present, passing, and invisible to
+the filter everyone uses. That was tried here first and reverted.
+
+The durable habit: **select a family by name, not by number.**
+`./run_regression.sh celld` gets all four regardless of where the numbers
+landed. Note also that `830` and `830_THE_WORLD` match *nothing* — the filter
+reads test-dir names, never the cluster dir.
+
 | File | Purpose |
 |---|---|
 | `input.k` | Your Koru program — **prefer `.k`** (pure Koru, no host `~`-forms). Use `.kz` only if the port genuinely needs a host escape hatch. Lead with the `// Doorway:` comment. |

@@ -55,3 +55,47 @@ strength of that confusion.
 
 Related: [[frag-a-failure-that-looks-like-success-is-unfalsifiable]] — the
 mirror case, where a green means nothing; here a red means nothing.
+
+## The trap when you go to FIX one: two faults can stack, and repairing the visible one restores the invisible one
+
+`335_046` was red for two independent reasons at once, and the outer one hid the
+inner one so completely that the obvious repair would have made things worse.
+
+- **Outer, visible:** its program declared `~tor make {} | ok *Handle<owned!>` — a
+  single continuation branch carrying a payload — which a later ruling refuses
+  outright (`PARSE003`, one-variant tag union: declare it as a bare return). So it
+  died at the frontend, never reaching the checker its `EXPECT` named. Classic
+  instance of this belief: red, counted, testing nothing.
+- **Inner, invisible:** its PREMISE was also false. It asserted that a borrowed
+  obligation followed by a pipeline continuation leaks and "MUST be rejected". It
+  is not rejected because it does not leak — auto-discharge inserts the disposal,
+  and the emitted program names it on the line the note called a leak.
+
+**The dangerous repair is the competent one.** Respelling to a bare return is a
+two-line, obviously-correct migration that any careful reader makes first. It
+clears the frontend wall — and then the test reaches its checker, the checker
+correctly does nothing, and the `MUST_ERROR` + `CONTAINS was not discharged`
+expectation fails. The tempting next move is to "fix the checker": file a compiler
+bug against a compiler that is behaving correctly. That is exactly the path that
+produced a false defect report and a commissioned bugfix elsewhere the same day.
+
+So the migration rule needs a second clause. Getting a rotted red past its first
+wall is not enough:
+
+- **Re-derive the premise before repairing the spelling.** The spelling rotted
+  because the language moved; the premise may have been wrong from the start, and
+  nothing about the spelling fix tests it. Ask what the program SHOULD do under
+  current semantics, not what its note expected.
+- **A stale red's note is the least trustworthy thing in the directory**, because
+  it was written when the shape was legal and has gone unexecuted ever since. Its
+  file:line citations and its controls may describe a compiler that no longer
+  exists.
+- **The tell that you are in a two-fault case:** the repair is small and certain,
+  and the test still fails afterwards. Treat that second failure as a question
+  about the premise, never as the next bug.
+
+`335_046` is now green, respelled and flipped `MUST_ERROR` -> `MUST_RUN`, pinning
+what actually happens: a borrowed obligation whose state has exactly one
+unattended disposer is auto-discharged, and a continuation after the borrow does
+not change that. Kept rather than deleted, and renamed from `..._drops_obligation`
+to `..._auto_discharges`, because a directory name is an assertion too.
