@@ -16,10 +16,17 @@
  *
  * Semantics are mirrored from the closer deliberately — same entry resolution,
  * same COMPILER_FLAGS and ARGS passthrough, same trailing-whitespace trim, same
- * timeout, same typed statuses — so a scan result predicts what the runner
- * would say if that test were promoted to a gate. A scan that measured
- * something subtly different would be a second instrument disagreeing with the
- * first for no reason anyone could find later.
+ * timeout, same typed statuses.
+ *
+ * ONE DELIBERATE DIVERGENCE, and it used to be an undeclared lie in this
+ * comment. The real closer runs the JS check only for a test whose ZIG baseline
+ * already passed (regression_lib.sh:277). This scan runs it regardless, because
+ * "does the emitter produce correct JavaScript" is a fair question even where
+ * the Zig target is red. But that means the headline is measured over a
+ * population the closer would partly skip — 53 of 222 at the time this was
+ * written — so the report SPLITS on the Zig marker. The zig-green figure is the
+ * one that predicts the runner; the zig-red figure is real information about the
+ * emitter and must never be quietly folded into the same number.
  *
  *   ./scripts/js-scan.mjs                     scan the emitter-testable buckets
  *   ./scripts/js-scan.mjs --sample 30         cheap validation run
@@ -77,6 +84,22 @@ if (SAMPLE > 0) {
   tests = tests.filter((_, i) => i % stride === 0).slice(0, SAMPLE)
 }
 
+// --tests <file>: newline-delimited test paths. The host-fixture wave slices 361
+// tests across several contestants, and a slice is not a failure family, so
+// --cluster cannot express it. Paths are matched against the map, so a slice
+// naming a test that has since changed bucket is reported rather than silently
+// dropped — a contestant measuring 40 tests must not be told it measured 38.
+const TESTS_FILE = flag('--tests', null)
+if (TESTS_FILE) {
+  const want = readFileSync(TESTS_FILE, 'utf8').split('\n').map((l) => l.trim()).filter(Boolean)
+  const byName = new Map(mapJson.tests.map((t) => [t.test, t]))
+  const missing = want.filter((w) => !byName.has(w))
+  if (missing.length) {
+    console.error(`  ${missing.length} listed test(s) not in the map — first: ${missing[0]}`)
+  }
+  tests = want.filter((w) => byName.has(w)).map((w) => byName.get(w))
+}
+
 // test_entry (regression_lib.sh:77): input.kz when present, else input.k.
 function entryOf(dir) {
   return existsSync(join(dir, 'input.kz')) ? join(dir, 'input.kz') : join(dir, 'input.k')
@@ -97,10 +120,23 @@ function firstError(raw) {
   return (named || lines[0] || 'failed').slice(0, 200)
 }
 
+// The Zig baseline, as the real closer reads it (regression_lib.sh:277):
+// SUCCESS present and FAILURE absent. These markers are RUN OUTPUT, not tracked
+// files — a worktree that has never run the suite has none of them, and the
+// first version of this check read that absence as "red" and cheerfully
+// reported 152 zig-red tests. Absence is UNKNOWN, and a report that cannot tell
+// unknown from red is worse than one that omits the split.
+function zigState(dir) {
+  if (existsSync(join(dir, 'FAILURE'))) return 'red'
+  if (existsSync(join(dir, 'SUCCESS'))) return 'green'
+  return 'unknown'
+}
+
 async function scanOne(row) {
   const dir = join(ROOT, 'tests/regression', row.test)
   const started = Date.now()
-  const res = (status, detail) => ({ test: row.test, bucket: row.bucket, status, detail, ms: Date.now() - started })
+  const zig = zigState(dir)
+  const res = (status, detail) => ({ test: row.test, bucket: row.bucket, zig, status, detail, ms: Date.now() - started })
 
   const jsOut = join(dir, 'output_emitted.js')
   // A stale artifact from a previous scan would let a compile failure read as a
@@ -231,11 +267,20 @@ writeFileSync(OUT, JSON.stringify({
   wallSeconds: Number(wall), byStatus, byCluster, results,
 }, null, 2))
 
-// Only a FULL emitter-bucket run may rewrite the families. A --cluster run sees
-// one family by construction and a --sample run sees a slice; letting either
-// rewrite the map would shrink it to whatever was last looked at.
+// Only a FULL emitter-bucket run may rewrite the families. Every narrowing flag
+// sees a slice by construction, and letting one rewrite the map shrinks it to
+// whatever was last looked at.
+//
+// This guard was written for --sample and --cluster, then --tests was added
+// without extending it — so every wave contestant's slice run silently rewrote
+// the oracle's own family map. That is precisely the failure the comment above
+// warns against, committed by the person who wrote the warning, and caught by
+// WaveW4Core rather than by me. A guard that enumerates the narrowings it knows
+// about will keep failing this way, so it now asks the inverse question: a
+// narrowing added later is excluded by default instead of included by omission.
+const isFullRun = BUCKET === 'emitter' && !SAMPLE && !CLUSTER && !TESTS_FILE
 let derived = null
-if (BUCKET === 'emitter' && !SAMPLE && !CLUSTER) {
+if (isFullRun) {
   derived = deriveClusters(results)
   writeFileSync(join(ROOT, 'docs/js-parity/clusters.json'), JSON.stringify(derived.clusters, null, 2))
   writeFileSync(join(ROOT, 'docs/js-parity/clusters-meta.json'), JSON.stringify({
@@ -255,8 +300,29 @@ if (derived) {
   console.log(`\n    ${covered} of ${failures} failures fall in a family of 3+; ${failures - covered} are singletons`)
 }
 
+// The zig-green figure is what the real gate would report; zig-red is emitter
+// progress on tests the gate never reaches. They answer different questions and
+// are never averaged. When the markers are absent the split is simply
+// unavailable, and the report says that rather than inventing a state.
 const ok = byStatus['js-ok'] || 0
-console.log(`\n  RESULT  ${ok}/${results.length} pass JS equivalence   (${((ok / results.length) * 100).toFixed(1)}%)   ${wall}s wall\n`)
+const pct = (a, b) => (b ? ((a / b) * 100).toFixed(1) + '%' : '—')
+const part = (s) => {
+  const rows = results.filter((r) => r.zig === s)
+  return { n: rows.length, ok: rows.filter((r) => r.status === 'js-ok').length }
+}
+const g = part('green'), rd = part('red'), unk = part('unknown')
+console.log(`\n  RESULT   ${ok}/${results.length} pass JS equivalence   (${pct(ok, results.length)})   ${wall}s wall`)
+if (unk.n === results.length) {
+  console.log('    zig baseline UNKNOWN for every test — SUCCESS/FAILURE markers are')
+  console.log('    run output, and this tree has not run the suite. Run it here to')
+  console.log('    split this number into "what the closer would report" vs "emitter')
+  console.log('    correct on tests the closer never reaches".\n')
+} else {
+  console.log(`    zig-green    ${String(g.ok).padStart(4)}/${String(g.n).padEnd(4)}  ${pct(g.ok, g.n).padStart(6)}   <- what the real closer would report`)
+  console.log(`    zig-red      ${String(rd.ok).padStart(4)}/${String(rd.n).padEnd(4)}  ${pct(rd.ok, rd.n).padStart(6)}   <- emitter correct where the closer never runs`)
+  if (unk.n) console.log(`    zig-unknown  ${String(unk.ok).padStart(4)}/${String(unk.n).padEnd(4)}  ${pct(unk.ok, unk.n).padStart(6)}   <- no marker; suite not run for these`)
+  console.log('')
+}
 console.log('  BY STATUS')
 for (const [k, v] of Object.entries(byStatus).sort((a, b) => b[1] - a[1])) {
   console.log(`    ${k.padEnd(14)} ${String(v).padStart(5)}   ${((v / results.length) * 100).toFixed(1).padStart(5)}%`)

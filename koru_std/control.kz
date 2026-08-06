@@ -407,6 +407,25 @@ const std = @import("std");
     //     projector's fields (no koruStructToZig text surgery). For existing-var
     //     captures (`~capture(myVar)`) the expr is not a struct literal, so emit
     //     it verbatim. `_ = &cell;` keeps it live even if the loop never writes. ---
+    //
+    // HOST LANGUAGE. Everything below is host DECLARATION syntax, which makes it
+    // the one part of this transform that cannot be target-neutral — the same
+    // split `cond`'s `{{ binds }}` makes at template_processor.zig:594
+    // (`lowerScrutinee`), for the same reason and with the same two answers. A
+    // capture cell is a struct literal plus a mutable binding; Zig needs a
+    // synthesized non-comptime struct type to get a runtime cell out of an
+    // anonymous literal, JS needs `let` and an object literal and nothing else.
+    // Read the build language ONCE, here, and let both spellings fall out of it:
+    // a second `preamble_js` field would be two lowerings of one construct, the
+    // shape `~for`/`scan` was converged to avoid (see `~for`, above).
+    //
+    // Before this, the Zig text was unconditional, so `--lang=js` got a
+    // `comptime blk:` type synthesis and `_ = &cell;` spliced into JavaScript.
+    // Every capture on the JS target refused at emission (20 of the 29
+    // UnsupportedConstruct failures, measured 2026-08-06) — correctly, since the
+    // alternative was emitting Zig and calling it JS.
+    const host_is_js = std.mem.eql(u8, CompilerEnv.lang, "js");
+
     // A block holding exactly one bare expression seeds from an existing
     // value: `~capture { entity }`. After the pun law, a bare punnable name
     // resolves to name==value (e.g. entity/entity); a singleton non-punnable
@@ -415,28 +434,35 @@ const std = @import("std");
     const is_existing_var = cell_fields.len == 1 and (cell_fields[0].name.len == 0 or
         std.mem.eql(u8, cell_fields[0].name, cell_fields[0].value));
     const is_struct_init = !is_existing_var;
-    const init_zig = if (is_struct_init) blk: {
+    const init_host = if (is_struct_init) blk: {
         var seed = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-        seed.appendSlice(allocator, ".{ ") catch unreachable;
+        seed.appendSlice(allocator, if (host_is_js) "{ " else ".{ ") catch unreachable;
         for (cell_fields, 0..) |cf, i| {
             if (i > 0) seed.appendSlice(allocator, ", ") catch unreachable;
             if (cf.name.len > 0) {
-                seed.append(allocator, '.') catch unreachable;
+                if (!host_is_js) seed.append(allocator, '.') catch unreachable;
                 seed.appendSlice(allocator, cf.name) catch unreachable;
-                seed.appendSlice(allocator, " = ") catch unreachable;
+                seed.appendSlice(allocator, if (host_is_js) ": " else " = ") catch unreachable;
             }
             // Koru-native typed seed: `floor: 0[i32]` pins the cell field's
             // type — the SAME annotation (and the same parser) as `const`'s
             // `count: 42[i32]`. Zig pins with @as; untyped values paste
             // verbatim (and a bare 0 stays comptime_int, which the runtime
             // cell rejects — the annotation is how you say "this is data").
+            //
+            // JS has ONE number type and no comptime, so there is nothing to pin
+            // and nothing to rescue: the annotation is PEELED and the value pasted
+            // bare. Dropping it is not a loss of information on that target — it is
+            // the absence of the problem the annotation solves.
             const peeled = struct_literal.peelBaseType(cf.value);
-            if (peeled.type.len > 0) {
+            if (peeled.type.len > 0 and !host_is_js) {
                 seed.appendSlice(allocator, "@as(") catch unreachable;
                 seed.appendSlice(allocator, peeled.type) catch unreachable;
                 seed.appendSlice(allocator, ", ") catch unreachable;
                 seed.appendSlice(allocator, peeled.value) catch unreachable;
                 seed.appendSlice(allocator, ")") catch unreachable;
+            } else if (peeled.type.len > 0) {
+                seed.appendSlice(allocator, peeled.value) catch unreachable;
             } else {
                 seed.appendSlice(allocator, cf.value) catch unreachable;
             }
@@ -444,18 +470,26 @@ const std = @import("std");
         seed.appendSlice(allocator, " }") catch unreachable;
         break :blk seed.toOwnedSlice(allocator) catch unreachable;
     } else cell_fields[0].value;
-    // An anonymous struct literal is comptime, so a bare `var cell = .{...}` is a
-    // comptime var and runtime field writes fail. Give the cell an explicit struct
-    // type built from the seed's fields (made non-comptime) so it is a runtime
-    // value. Existing-var captures already have a concrete type — seed verbatim.
-    const preamble = if (is_struct_init) blk2: {
+    // JS: `let <cell> = <init>;` and that is the whole declaration. An object
+    // literal is already mutable and structurally typed, so the Zig type
+    // synthesis below has no twin to write; an unused binding is legal there, so
+    // `_ = &cell;` has none either (and does not parse).
+    //
+    // An anonymous ZIG struct literal is comptime, so a bare `var cell = .{...}`
+    // is a comptime var and runtime field writes fail. Give the cell an explicit
+    // struct type built from the seed's fields (made non-comptime) so it is a
+    // runtime value. Existing-var captures already have a concrete type — seed
+    // verbatim.
+    const preamble = if (host_is_js)
+        std.fmt.allocPrint(allocator, "let {s} = {s};", .{ cell_name, init_host }) catch unreachable
+    else if (is_struct_init) blk2: {
         const type_name = std.fmt.allocPrint(allocator, "__KoruCaptureT_{s}", .{cell_name}) catch unreachable;
         var p = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
         p.appendSlice(allocator, "const ") catch unreachable;
         p.appendSlice(allocator, type_name) catch unreachable;
         p.appendSlice(allocator, " = comptime blk: {\n") catch unreachable;
         p.appendSlice(allocator, "    const __info = @typeInfo(@TypeOf(") catch unreachable;
-        p.appendSlice(allocator, init_zig) catch unreachable;
+        p.appendSlice(allocator, init_host) catch unreachable;
         p.appendSlice(allocator, "));\n") catch unreachable;
         p.appendSlice(allocator, "    var __fields: [__info.@\"struct\".fields.len]@import(\"std\").builtin.Type.StructField = undefined;\n") catch unreachable;
         p.appendSlice(allocator, "    for (__info.@\"struct\".fields, 0..) |__f, __i| {\n") catch unreachable;
@@ -468,12 +502,12 @@ const std = @import("std");
         p.appendSlice(allocator, ": ") catch unreachable;
         p.appendSlice(allocator, type_name) catch unreachable;
         p.appendSlice(allocator, " = ") catch unreachable;
-        p.appendSlice(allocator, init_zig) catch unreachable;
+        p.appendSlice(allocator, init_host) catch unreachable;
         p.appendSlice(allocator, ";\n_ = &") catch unreachable;
         p.appendSlice(allocator, cell_name) catch unreachable;
         p.appendSlice(allocator, ";") catch unreachable;
         break :blk2 p.toOwnedSlice(allocator) catch unreachable;
-    } else std.fmt.allocPrint(allocator, "var {s} = {s};\n_ = &{s};", .{ cell_name, init_zig, cell_name }) catch unreachable;
+    } else std.fmt.allocPrint(allocator, "var {s} = {s};\n_ = &{s};", .{ cell_name, init_host, cell_name }) catch unreachable;
 
     // --- @pass_ran (circuit breaker) + @shape_valid (conscious checker
     //     exemption, WITH reason). The dissolution CONSUMES the user's

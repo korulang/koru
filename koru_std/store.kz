@@ -194,6 +194,309 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
 }
 
 // ============================================================================
+// THE INDEXED STORE READ — one implementation, every position
+// ============================================================================
+//
+// `pool[h].hp` is a handle-addressed read, and it lowers to the SoA column
+// (`(&__koru_store_pool.hp)[__koru_store_pool.__koru_resolve(h)]`). For a long
+// time it lowered in ONE position — inside a `stored` write block — because the
+// rewriter that does it was a private helper inside the `stored` transform's
+// own `H` struct, and `new`'s whole-program walk carries a DIFFERENT helper
+// struct that never had it. The result read as a language limitation: a guard,
+// a call argument or a `{{ }}` interpolation naming an indexed read failed with
+// `use of undeclared identifier 'pool'`, a Zig error naming no Koru construct
+// (690_250, 690_254).
+//
+// A private helper struct inside a transform is a LOWERING BOUNDARY, however
+// much it reads as ordinary code organisation. So this lives at file scope,
+// where both transforms can reach it, and the copy that used to live in
+// `stored` now delegates here. See `concepts/frag-a-fix-lands-in-one-lowering-path.md`.
+
+/// The stores a rewrite may name, with the emitted-namespace prefix each one
+/// needs from the reader's position (`""` = same namespace).
+///
+/// Parallel slices rather than a map because both call sites already hold their
+/// names as a slice, and the recursive descent into an index expression has to
+/// carry the same answer down — an index may address a DIFFERENT store than the
+/// read it sits inside (`other[refs[i].h].v`).
+const StoreScope = struct {
+    names: []const []const u8,
+    prefixes: []const []const u8,
+
+    fn prefixFor(self: StoreScope, name: []const u8) []const u8 {
+        for (self.names, self.prefixes) |n, p| {
+            if (std.mem.eql(u8, n, name)) return p;
+        }
+        return "";
+    }
+};
+
+fn storeIdentChar(ch: u8) bool {
+    return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
+}
+
+fn storeStripQuotes(n: []const u8) []const u8 {
+    if (n.len >= 2 and n[0] == '"') return n[1 .. n.len - 1];
+    return n;
+}
+
+/// Every store name visible in the program — untransformed `new` sites plus the
+/// generated apply events — so a read can name a store whose own transform has
+/// already run, or has not run yet.
+fn storeAllNames(alloc: std.mem.Allocator, prog: *const ast_find.Program) []const []const u8 {
+    var names = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
+    for (flatItems(alloc, prog.items)) |pi| {
+        switch (pi.*) {
+            .flow => |*f| {
+                if (f.body.node) |*n| {
+                    if (n.* == .invocation) {
+                        const inv = &n.invocation;
+                        if (inv.path.module_qualifier) |mq| {
+                            if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "new")) {
+                                for (inv.args) |a| {
+                                    if (std.mem.eql(u8, a.name, "expr")) names.append(alloc, storeStripQuotes(a.value)) catch unreachable;
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            .event_decl => |*ed| {
+                if (ed.path.segments.len == 1 and std.mem.startsWith(u8, ed.path.segments[0], "__store_apply_")) {
+                    names.append(alloc, ed.path.segments[0]["__store_apply_".len..]) catch unreachable;
+                }
+            },
+            else => {},
+        }
+    }
+    return names.toOwnedSlice(alloc) catch unreachable;
+}
+
+/// A store's COLUMNS, in declaration order — every column the SoA cell holds,
+/// including a `[tree]`-synthesized `parent`. Answers under any transform
+/// order: the generated apply event's branches when the coordinator has run,
+/// else the untransformed create's seed block.
+///
+/// NOT the same question as `storeInsertOrder`, and the two were briefly merged
+/// here on the strength of matching names and shapes. They differ by exactly
+/// one column: the insert SURFACE excludes `parent`, because a tree row's
+/// parent is set by reparenting and never by the insert. Merging them broke all
+/// five 695_STORE_TREE tests, which is this concept's own half-rule tell caught
+/// in the act — two functions correct in their own scope, one name apart.
+fn storeFieldOrder(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const []const u8 {
+    const struct_literal = @import("struct_literal");
+    const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
+    if (findSynthDecl(prog.items, apply_name)) |ed| {
+        const names = alloc.alloc([]const u8, ed.branches.len) catch unreachable;
+        for (ed.branches, 0..) |b, i| names[i] = b.name;
+        return names;
+    }
+    for (flatItems(alloc, prog.items)) |pi| {
+        if (pi.* != .flow) continue;
+        const f = &pi.flow;
+        const inv = f.inv();
+        if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
+        const mq = inv.path.module_qualifier orelse continue;
+        if (!std.mem.eql(u8, mq, "std.store")) continue;
+        var name_matches = false;
+        var seed: ?[]const u8 = null;
+        for (inv.args) |a| {
+            if (std.mem.eql(u8, a.name, "expr")) {
+                name_matches = std.mem.eql(u8, storeStripQuotes(a.value), store);
+            } else if (std.mem.eql(u8, a.name, "source")) {
+                seed = a.value;
+            }
+        }
+        if (!name_matches or seed == null) continue;
+        const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed.?}) catch unreachable;
+        const cf = struct_literal.parseFields(alloc, braced) catch &[_]struct_literal.StructField{};
+        if (cf.len == 0) return null;
+        const names = alloc.alloc([]const u8, cf.len) catch unreachable;
+        for (cf, 0..) |c, i| names[i] = c.name;
+        return names;
+    }
+    return null;
+}
+
+/// The INSERT SURFACE's column order — the columns an `insert(s) { … }` site
+/// may name. Preferred source is the generated `__store_insert_<s>` event's
+/// input shape, whose fields ARE the insert contract (user columns + a trailing
+/// synthetic `__site_line`), and which EXCLUDES a `[tree]`-synthesized `parent`:
+/// a tree row's parent is set by reparenting, never at insert.
+///
+/// Falls back to `storeFieldOrder` — pre-tree stores where the insert surface
+/// and the column set coincide.
+fn storeInsertOrder(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const []const u8 {
+    const insert_ev_name = std.fmt.allocPrint(alloc, "__store_insert_{s}", .{store}) catch unreachable;
+    for (flatItems(alloc, prog.items)) |pi| {
+        if (pi.* != .event_decl) continue;
+        const ed = &pi.event_decl;
+        if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], insert_ev_name)) {
+            const flds = ed.input.fields;
+            if (flds.len == 0) return null;
+            // The trailing field is the synthetic __site_line arg.
+            const names = alloc.alloc([]const u8, flds.len - 1) catch unreachable;
+            for (flds[0 .. flds.len - 1], 0..) |f2, i| names[i] = f2.name;
+            return names;
+        }
+    }
+    return storeFieldOrder(alloc, prog, store);
+}
+
+/// `store[index].field` → the SoA column read, for ONE store, in arbitrary text.
+///
+/// The index is itself an expression and may hold another indexed read
+/// (`cells[cells[h].next].v`, one hop along an intrusive chain). The outer match
+/// consumes the whole span, so the inner one is lowered by an explicit recursive
+/// descent over the same scope (690_245).
+fn storeIndexedRefs(alloc: std.mem.Allocator, prog: *const ast_find.Program, text: []const u8, store: []const u8, scope: StoreScope) []const u8 {
+    const fields = storeFieldOrder(alloc, prog, store) orelse return text;
+    const prefix = scope.prefixFor(store);
+    var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
+    var i: usize = 0;
+    while (i < text.len) {
+        const at_boundary = ast_find.identBoundaryBefore(text, i);
+        if (at_boundary and i + store.len < text.len and
+            std.mem.startsWith(u8, text[i..], store) and text[i + store.len] == '[')
+        {
+            const idx_start = i + store.len + 1;
+            var depth: usize = 1;
+            var j = idx_start;
+            while (j < text.len and depth > 0) : (j += 1) {
+                if (text[j] == '[') depth += 1;
+                if (text[j] == ']') {
+                    depth -= 1;
+                    if (depth == 0) break;
+                }
+            }
+            if (depth == 0 and j + 1 < text.len and text[j + 1] == '.') {
+                const index = std.mem.trim(u8, text[idx_start..j], " ");
+                const fstart = j + 2;
+                var fend = fstart;
+                while (fend < text.len and storeIdentChar(text[fend])) fend += 1;
+                const fname = text[fstart..fend];
+                var known = false;
+                for (fields) |f| {
+                    if (std.mem.eql(u8, f, fname)) {
+                        known = true;
+                        break;
+                    }
+                }
+                if (known and index.len > 0) {
+                    const inner = storeIndexedRefsIn(alloc, prog, index, scope);
+                    // Pointer-named base (`&`) — see colRead: a by-value base
+                    // copies the whole column before the resolve.
+                    const piece = std.fmt.allocPrint(alloc, "(&{s}__koru_store_{s}.{s})[{s}__koru_store_{s}.__koru_resolve({s})]", .{ prefix, store, fname, prefix, store, inner }) catch unreachable;
+                    out.appendSlice(alloc, piece) catch unreachable;
+                    i = fend;
+                    continue;
+                }
+            }
+        }
+        out.append(alloc, text[i]) catch unreachable;
+        i += 1;
+    }
+    return out.toOwnedSlice(alloc) catch unreachable;
+}
+
+/// Every store in `scope`, one pass each.
+fn storeIndexedRefsIn(alloc: std.mem.Allocator, prog: *const ast_find.Program, text: []const u8, scope: StoreScope) []const u8 {
+    var t = text;
+    for (scope.names) |nm| t = storeIndexedRefs(alloc, prog, t, nm, scope);
+    return t;
+}
+
+/// The whole program's stores, all reachable from the reader's own namespace.
+/// This is the scope a site-local rewrite (a `stored` value pass) uses.
+fn storeScopeBare(alloc: std.mem.Allocator, prog: *const ast_find.Program) StoreScope {
+    const names = storeAllNames(alloc, prog);
+    const px = alloc.alloc([]const u8, names.len) catch unreachable;
+    for (px) |*p| p.* = "";
+    return .{ .names = names, .prefixes = px };
+}
+
+fn storeNameIn(xs: []const []const u8, n: []const u8) bool {
+    for (xs) |x| if (std.mem.eql(u8, x, n)) return true;
+    return false;
+}
+
+/// `<store>.<field>` → the cell path, boundary-aware, for ONE store.
+///
+/// `prefix` is the emitted-namespace qualifier the reader needs (`""` when the
+/// reader is in the declaring module's own namespace).
+///
+/// `is_identity` handles the one-column store, which has no field to name, so
+/// the store name IS the reference and resolves to the synthesized column.
+/// A following `[` is EXCLUDED from that case, and this exclusion is not
+/// cosmetic: `c[h]` is an index, never an identity read, and without the
+/// exclusion the identity rule eats the base before the indexed rewriter can
+/// see it. There were five copies of this function and only the two in scopes
+/// that ALSO had the indexed rewriter carried the exclusion — the two halves of
+/// one rule, split across scopes, each correct only beside the other.
+fn storeRefsText(alloc: std.mem.Allocator, text: []const u8, name: []const u8, prefix: []const u8, is_identity: bool) []const u8 {
+    const expr_ctx = ast_find.expressionMask(alloc, text);
+    var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
+    var i: usize = 0;
+    while (i < text.len) {
+        const at_boundary = ast_find.identBoundaryBefore(text, i);
+        const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
+        const after = i + name.len;
+        if (starts and after < text.len and text[after] == '.') {
+            out.appendSlice(alloc, prefix) catch unreachable;
+            out.appendSlice(alloc, "__koru_store_") catch unreachable;
+            out.appendSlice(alloc, name) catch unreachable;
+            i += name.len;
+        } else if (is_identity and expr_ctx[i] and starts and
+            (after >= text.len or (!storeIdentChar(text[after]) and text[after] != '[')))
+        {
+            out.appendSlice(alloc, prefix) catch unreachable;
+            out.appendSlice(alloc, "__koru_store_") catch unreachable;
+            out.appendSlice(alloc, name) catch unreachable;
+            out.append(alloc, '.') catch unreachable;
+            out.appendSlice(alloc, ast_find.STORE_IDENTITY_COLUMN) catch unreachable;
+            i += name.len;
+        } else {
+            out.append(alloc, text[i]) catch unreachable;
+            i += 1;
+        }
+    }
+    return out.toOwnedSlice(alloc) catch unreachable;
+}
+
+/// A text slot, FULLY lowered: cell paths first, then indexed reads — the order
+/// `stored`'s value pass has always used, so a cross-store index inside an
+/// indexed read is already a cell path by the time the indexed pass reads it.
+///
+/// `bound` are names an enclosing binding shadows (a row binding makes
+/// `<store>.<field>` mean THE ROW); they are skipped by BOTH passes, which is
+/// why the indexed pass takes a filtered scope rather than the whole program.
+///
+/// This is the one function a walk should call per text slot. Every position an
+/// expression may stand in — a guard, an arg, a captured expression, a frozen
+/// template body, an inline_code node, a produce arm, a branch payload — is the
+/// same lowering, and the store's reach gaps have all been a position that
+/// called some of it.
+fn storeLowerText(
+    alloc: std.mem.Allocator,
+    prog: *const ast_find.Program,
+    text: []const u8,
+    scope: StoreScope,
+    idents: []const []const u8,
+    bound: []const []const u8,
+) []const u8 {
+    var live_n = std.ArrayList([]const u8).initCapacity(alloc, scope.names.len) catch unreachable;
+    var live_p = std.ArrayList([]const u8).initCapacity(alloc, scope.names.len) catch unreachable;
+    var t = text;
+    for (scope.names, scope.prefixes) |nm, px| {
+        if (storeNameIn(bound, nm)) continue;
+        live_n.append(alloc, nm) catch unreachable;
+        live_p.append(alloc, px) catch unreachable;
+        t = storeRefsText(alloc, t, nm, px, storeNameIn(idents, nm));
+    }
+    return storeIndexedRefsIn(alloc, prog, t, .{ .names = live_n.items, .prefixes = live_p.items });
+}
+
+// ============================================================================
 // STORE.CREATE — declare + instantiate a store; the (f) coordinator
 // ============================================================================
 //
@@ -323,41 +626,22 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             segs[0] = alloc.dupe(u8, name) catch unreachable;
             return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
         }
-        // Boundary-aware `<store>.` → `__koru_store_<store>.` rewrite over a
+        // Boundary-aware `<store>.` → `__koru_store_<store>.` over a
         // continuation tree (transplanted bodies read other stores' cells).
+        // Delegates to the file-scope rewriter; a plural-walk reader is in the
+        // declaring module's own namespace, so no prefix.
         fn storeRefsH(alloc: std.mem.Allocator, text: []const u8, name: []const u8, is_identity: bool) []const u8 {
-            const expr_ctx = ast.expressionMask(alloc, text);
-            var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
-            var i: usize = 0;
-            while (i < text.len) {
-                const at_boundary = ast.identBoundaryBefore(text, i);
-                const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
-                const after = i + name.len;
-                if (starts and after < text.len and text[after] == '.') {
-                    out.appendSlice(alloc, "__koru_store_") catch unreachable;
-                    out.appendSlice(alloc, name) catch unreachable;
-                    i += name.len;
-                } else if (is_identity and expr_ctx[i] and starts and (after >= text.len or !isIdentChar(text[after]))) {
-                    // A ONE-column store has no field to name, so the reference is
-                    // the store itself. It still has to reach a column in the SoA
-                    // cell, so it resolves to the synthesized one.
-                    out.appendSlice(alloc, "__koru_store_") catch unreachable;
-                    out.appendSlice(alloc, name) catch unreachable;
-                    out.append(alloc, '.') catch unreachable;
-                    out.appendSlice(alloc, ast.STORE_IDENTITY_COLUMN) catch unreachable;
-                    i += name.len;
-                } else {
-                    out.append(alloc, text[i]) catch unreachable;
-                    i += 1;
-                }
-            }
-            return out.toOwnedSlice(alloc) catch unreachable;
+            return storeRefsText(alloc, text, name, "", is_identity);
         }
         fn isIn(names: []const []const u8, n: []const u8) bool {
             for (names) |x| if (std.mem.eql(u8, x, n)) return true;
             return false;
         }
-        fn storeRefsContH(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8, ident: []const []const u8, bound: []const []const u8) void {
+        // A whole-program walk over one flow, lowering every text slot an
+        // expression may stand in. `scope` carries the program's store names
+        // with the prefix each needs (empty here — the plural walk reads from
+        // the declaring module's own namespace).
+        fn storeRefsContH(alloc: std.mem.Allocator, prog: *const ast.Program, cont: *ast.Continuation, scope: StoreScope, ident: []const []const u8, bound: []const []const u8) void {
             const ast2 = @import("ast");
             // A continuation's OWN bindings shadow store names (690_090): a
             // row binding (`! query items`) or shape-destructure makes
@@ -384,19 +668,8 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 @memcpy(all[bound.len..], own);
                 break :blk all;
             };
-            const hit = struct {
-                fn inSet(xs: []const []const u8, n: []const u8) bool {
-                    for (xs) |x| if (std.mem.eql(u8, x, n)) return true;
-                    return false;
-                }
-            };
             if (cont.condition) |cond| {
-                var cnd = cond;
-                for (names) |nm| {
-                    if (hit.inSet(bound_all, nm)) continue;
-                    cnd = storeRefsH(alloc, cnd, nm, isIn(ident, nm));
-                }
-                @constCast(cont).condition = cnd;
+                @constCast(cont).condition = storeLowerText(alloc, prog, cond, scope, ident, bound_all);
             }
             if (cont.node) |*n| {
                 // No `|*inv|` on `switch (n.*)` — that captures a TEMPORARY
@@ -414,21 +687,11 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                         };
                         if (!skip) {
                             for (inv.args) |*a| {
-                                var v = a.value;
-                                for (names) |nm| {
-                                    if (hit.inSet(bound_all, nm)) continue;
-                                    v = storeRefsH(alloc, v, nm, isIn(ident, nm));
-                                }
-                                @constCast(a).value = v;
+                                @constCast(a).value = storeLowerText(alloc, prog, a.value, scope, ident, bound_all);
                                 if (a.expression_value) |ev| {
-                                    var t = ev.text;
-                                    for (names) |nm| {
-                                        if (hit.inSet(bound_all, nm)) continue;
-                                        t = storeRefsH(alloc, t, nm, isIn(ident, nm));
-                                    }
                                     const fresh = alloc.create(ast2.CapturedExpression) catch unreachable;
                                     fresh.* = ev.*;
-                                    fresh.text = t;
+                                    fresh.text = storeLowerText(alloc, prog, ev.text, scope, ident, bound_all);
                                     @constCast(a).expression_value = fresh;
                                 }
                             }
@@ -437,21 +700,11 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                         // Invocation.inline_body BEFORE store:create runs — rewriting
                         // args alone is too late; the freeze lives here (690_074).
                         if (inv.inline_body) |ib| {
-                            var t = ib;
-                            for (names) |nm| {
-                                if (hit.inSet(bound_all, nm)) continue;
-                                t = storeRefsH(alloc, t, nm, isIn(ident, nm));
-                            }
-                            inv.inline_body = t;
+                            inv.inline_body = storeLowerText(alloc, prog, ib, scope, ident, bound_all);
                         }
                     },
                     .inline_code => {
-                        var t = n.inline_code;
-                        for (names) |nm| {
-                            if (hit.inSet(bound_all, nm)) continue;
-                            t = storeRefsH(alloc, t, nm, isIn(ident, nm));
-                        }
-                        n.* = .{ .inline_code = t };
+                        n.* = .{ .inline_code = storeLowerText(alloc, prog, n.inline_code, scope, ident, bound_all) };
                     },
                     // A branch-resolution payload (`| then => got s.n`) is a
                     // THIRD text position, alongside the guard and the args, and
@@ -463,40 +716,26 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                     // form, so the rewrite must land in exactly those slots.
                     .branch_constructor => {
                         const bc = &n.branch_constructor;
-                        if (bc.plain_value) |pv| {
-                            var t = pv;
-                            for (names) |nm| {
-                                if (hit.inSet(bound_all, nm)) continue;
-                                t = storeRefsH(alloc, t, nm, isIn(ident, nm));
-                            }
-                            bc.plain_value = t;
-                        }
+                        if (bc.plain_value) |pv| bc.plain_value = storeLowerText(alloc, prog, pv, scope, ident, bound_all);
                         for (bc.fields) |*fld| {
                             const has_expr = fld.expression_str != null;
-                            const src = fld.expression_str orelse fld.type;
-                            var t = src;
-                            for (names) |nm| {
-                                if (hit.inSet(bound_all, nm)) continue;
-                                t = storeRefsH(alloc, t, nm, isIn(ident, nm));
-                            }
+                            const lowered = storeLowerText(alloc, prog, fld.expression_str orelse fld.type, scope, ident, bound_all);
                             if (has_expr) {
-                                @constCast(fld).expression_str = t;
+                                @constCast(fld).expression_str = lowered;
                             } else {
-                                @constCast(fld).type = t;
+                                @constCast(fld).type = lowered;
                             }
                         }
                     },
                     else => {},
                 }
             }
-            for (cont.continuations) |*c| storeRefsContH(alloc, @constCast(c), names, ident, bound_all);
+            for (cont.continuations) |*c| storeRefsContH(alloc, prog, @constCast(c), scope, ident, bound_all);
         }
-        fn storeRefsFlowH(alloc: std.mem.Allocator, f: *ast.Flow, names: []const []const u8, ident: []const []const u8) void {
-            storeRefsContH(alloc, &f.body, names, ident, &[_][]const u8{});
+        fn storeRefsFlowH(alloc: std.mem.Allocator, prog: *const ast.Program, f: *ast.Flow, scope: StoreScope, ident: []const []const u8) void {
+            storeRefsContH(alloc, prog, &f.body, scope, ident, &[_][]const u8{});
             if (f.inline_body) |ib| {
-                var t = ib;
-                for (names) |nm| t = storeRefsH(alloc, t, nm, isIn(ident, nm));
-                @constCast(f).inline_body = t;
+                @constCast(f).inline_body = storeLowerText(alloc, prog, ib, scope, ident, &[_][]const u8{});
             }
         }
     };
@@ -2212,7 +2451,19 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                 else => {},
             }
         }
-        for (pwatch_arms.items) |*wa| H.storeRefsContH(allocator, &wa.cont, pstore_names.items, pstore_identity.items, &[_][]const u8{});
+        // Transplanted arms are spliced into the declaring module's own units,
+        // so every store reaches them unprefixed.
+        {
+            const wscope = StoreScope{
+                .names = pstore_names.items,
+                .prefixes = blk_wpx: {
+                    const px = allocator.alloc([]const u8, pstore_names.items.len) catch unreachable;
+                    for (px) |*p| p.* = "";
+                    break :blk_wpx px;
+                },
+            };
+            for (pwatch_arms.items) |*wa| H.storeRefsContH(allocator, program, &wa.cont, wscope, pstore_identity.items, &[_][]const u8{});
+        }
 
         // Owned-column stores build insert/take/teardown (690_053), the READ
         // surface (query/preorder, 690_060: an owned column projects as a BARE
@@ -3818,6 +4069,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                     arm_types: []const []const u8,
                     arm_owned: []const ?OwnedCol,
                     arm_body: *const ast.Continuation,
+                    prog: *const ast.Program,
                     pnames: []const []const u8,
                     pident: []const []const u8,
                 ) void {
@@ -3852,7 +4104,12 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                         .module = alloc.dupe(u8, module) catch unreachable,
                     } }) catch unreachable;
                     var body_clone = ast_functional.cloneContinuation(alloc, arm_body) catch unreachable;
-                    H.storeRefsContH(alloc, &body_clone, pnames, pident, &[_][]const u8{});
+                    const pscope = StoreScope{ .names = pnames, .prefixes = blk_lcpx: {
+                        const px = alloc.alloc([]const u8, pnames.len) catch unreachable;
+                        for (px) |*p| p.* = "";
+                        break :blk_lcpx px;
+                    } };
+                    H.storeRefsContH(alloc, prog, &body_clone, pscope, pident, &[_][]const u8{});
                     const lbody_node = body_clone.node.?;
                     if (lbody_node == .inline_code) {
                         // A nested store-read site (query/rule/sweep) spliced
@@ -3941,17 +4198,17 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             }.call;
             for (inserted_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_inserted_{s}_{d}", .{ store_name, ai }) catch unreachable;
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items, pstore_identity.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, program, pstore_names.items, pstore_identity.items);
             }
             for (removed_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_removed_{s}_{d}", .{ store_name, ai }) catch unreachable;
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items, pstore_identity.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, program, pstore_names.items, pstore_identity.items);
             }
             for (updated_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_updated_{s}_{d}", .{ store_name, ai }) catch unreachable;
                 const utypes = allocator.alloc([]const u8, arm.fields.len) catch unreachable;
                 for (utypes) |*ut| ut.* = if (field_types.len > 0) field_types[0] else "i64";
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, utypes, colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, pstore_names.items, pstore_identity.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, utypes, colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, program, pstore_names.items, pstore_identity.items);
             }
         }
 
@@ -4197,27 +4454,37 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             } }) catch unreachable;
         }
 
-        // Whole-program cell-path rewrite: `ui.sel` → `__koru_store_ui.sel` in
-        // every non-store continuation (if exprs, key when-guards, sweep
-        // bodies, …). Watch/interceptor transplants already rewrite; the
-        // rest of the program was leaking raw `ui.sel` into Zig (todo_tui
-        // selection cursor). Idempotent under re-entry (already-prefixed
-        // paths sit past an ident char).
+        // Whole-program lowering: every text slot an expression may stand in,
+        // in every non-store continuation (if exprs, key when-guards, sweep
+        // bodies, branch payloads, …), gets BOTH the cell-path rewrite
+        // (`ui.sel` → `__koru_store_ui.sel`) and the indexed read
+        // (`pool[h].hp` → the SoA column). Watch/interceptor transplants
+        // already rewrite; the rest of the program was leaking raw text into
+        // Zig. Idempotent under re-entry (already-prefixed paths sit past an
+        // ident char).
         {
+            const pscope = StoreScope{
+                .names = pstore_names.items,
+                .prefixes = blk_px: {
+                    const px = allocator.alloc([]const u8, pstore_names.items.len) catch unreachable;
+                    for (px) |*p| p.* = "";
+                    break :blk_px px;
+                },
+            };
             const Walk = struct {
-                fn items(alloc: std.mem.Allocator, its: []ast.Item, names: []const []const u8, ident: []const []const u8) void {
+                fn items(alloc: std.mem.Allocator, prog: *const ast.Program, its: []ast.Item, scope: StoreScope, ident: []const []const u8) void {
                     for (its) |*pi| {
                         switch (pi.*) {
                             // Must use `&pi.flow` — `|*f|` on a switched copy
                             // mutates a temporary and the live AST stays raw.
-                            .flow => H.storeRefsFlowH(alloc, &pi.flow, names, ident),
-                            .module_decl => items(alloc, @constCast(pi.module_decl.items), names, ident),
+                            .flow => H.storeRefsFlowH(alloc, prog, &pi.flow, scope, ident),
+                            .module_decl => items(alloc, prog, @constCast(pi.module_decl.items), scope, ident),
                             else => {},
                         }
                     }
                 }
             };
-            Walk.items(allocator, @constCast(program.items), pstore_names.items, pstore_identity.items);
+            Walk.items(allocator, program, @constCast(program.items), pscope, pstore_identity.items);
         }
 
         const pconsumed = std.fmt.allocPrint(allocator, "// std/store: plural store '{s}' created (SoA cell + insert/query/write/take/stripe units)", .{store_name}) catch unreachable;
@@ -4560,7 +4827,14 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         // Invocation.inline_body is the FREEZE of an earlier template expand
         // (`if`/`for`) and MUST be rewritten even on std.store sites skipped
         // for args (690_074).
-        fn rewriteNode(alloc: std.mem.Allocator, n: *ast.Node, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8, bound: []const []const u8) void {
+        //
+        // Every arm below lowers ONE text slot through the same
+        // `storeLowerText`. The list of arms is the whole reach of the store's
+        // read surface, and every gap this walk has ever had was an arm that
+        // was not here (`.expression` at 110_022, `inline_body` at 690_074,
+        // `.branch_constructor` at 690_256) or a lowering this walk could not
+        // call (the indexed read, 690_250/690_254).
+        fn rewriteNode(alloc: std.mem.Allocator, prog: *const ast.Program, n: *ast.Node, scope: StoreScope, idents: []const []const u8, bound: []const []const u8) void {
             // Same temporary-capture rule as storeRefsContH: never `|*inv|`
             // on `switch (n.*)`; mutate `n.invocation` in place (690_074).
             switch (n.*) {
@@ -4574,91 +4848,51 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                     };
                     if (!skip_args) {
                         for (inv.args) |*a| {
-                            var v = a.value;
-                            for (names, prefixes) |nm, px| {
-                                if (isIn(bound, nm)) continue;
-                                v = storeRefs(alloc, v, nm, px, isIn(idents, nm));
-                            }
-                            @constCast(a).value = v;
+                            @constCast(a).value = storeLowerText(alloc, prog, a.value, scope, idents, bound);
                             // Expression args carry their text separately — the
                             // emitter reads THAT, not .value. cloneContinuation
                             // shares these pointers with the ORIGINAL tree (the
                             // documented clone footgun), so swap in a fresh copy
                             // rather than mutating shared state.
                             if (a.expression_value) |ev| {
-                                var t = ev.text;
-                                for (names, prefixes) |nm, px| {
-                                    if (isIn(bound, nm)) continue;
-                                    t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
-                                }
                                 const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
                                 fresh.* = ev.*;
-                                fresh.text = t;
+                                fresh.text = storeLowerText(alloc, prog, ev.text, scope, idents, bound);
                                 @constCast(a).expression_value = fresh;
                             }
                         }
                     }
                     if (inv.inline_body) |ib| {
-                        var t = ib;
-                        for (names, prefixes) |nm, px| {
-                            if (isIn(bound, nm)) continue;
-                            t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
-                        }
-                        inv.inline_body = t;
+                        inv.inline_body = storeLowerText(alloc, prog, ib, scope, idents, bound);
                     }
                 },
                 .inline_code => {
-                    var t = n.inline_code;
-                    for (names, prefixes) |nm, px| {
-                        if (isIn(bound, nm)) continue;
-                        t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
-                    }
-                    n.* = .{ .inline_code = t };
+                    n.* = .{ .inline_code = storeLowerText(alloc, prog, n.inline_code, scope, idents, bound) };
                 },
                 // A PRODUCE arm (`peek -> s.v`, `| c _ -> s.v`) is an expression
                 // node, and it reads cells exactly like an arg does. Left out,
                 // the reference reached the host verbatim as `s.v` — an
                 // undeclared identifier in Zig, from valid Koru (110_022).
                 .expression => {
-                    var t = n.expression;
-                    for (names, prefixes) |nm, px| {
-                        if (isIn(bound, nm)) continue;
-                        t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
-                    }
-                    n.* = .{ .expression = t };
+                    n.* = .{ .expression = storeLowerText(alloc, prog, n.expression, scope, idents, bound) };
                 },
                 // A branch-RESOLUTION payload (`| then => got s.n`) is the same
-                // read one position over from the guard, and it was the last
-                // expression slot the walk did not carry: `if(s.n > 0)` lowered
-                // to the cell while `=> got s.n` reached Zig as a bare `s`
-                // (690_256). `rewriteImmediateImpl` below already does this for
-                // the bare-return twin — the node form was simply missed. The
-                // emitter reads `plain_value`, else `expression_str orelse type`
-                // per field, so the rewrite lands in exactly those slots.
+                // read one position over from the guard (690_256). The emitter
+                // reads `plain_value`, else `expression_str orelse type` per
+                // field, so the rewrite lands in exactly those slots.
                 .branch_constructor => {
                     const bc = &n.branch_constructor;
-                    if (bc.plain_value) |pv| {
-                        var t = pv;
-                        for (names, prefixes) |nm, px| {
-                            if (isIn(bound, nm)) continue;
-                            t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
-                        }
-                        bc.plain_value = t;
-                    }
+                    if (bc.plain_value) |pv| bc.plain_value = storeLowerText(alloc, prog, pv, scope, idents, bound);
                     for (bc.fields) |*fld| {
                         const has_expr = fld.expression_str != null;
-                        var t = fld.expression_str orelse fld.type;
-                        for (names, prefixes) |nm, px| {
-                            if (isIn(bound, nm)) continue;
-                            t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
-                        }
-                        if (has_expr) @constCast(fld).expression_str = t else @constCast(fld).type = t;
+                        const lowered = storeLowerText(alloc, prog, fld.expression_str orelse fld.type, scope, idents, bound);
+                        if (has_expr) @constCast(fld).expression_str = lowered else @constCast(fld).type = lowered;
                     }
                 },
                 else => {},
             }
         }
-        fn rewriteCont(alloc: std.mem.Allocator, cont: *ast.Continuation, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8, bound: []const []const u8) void {
+        fn rewriteCont(alloc: std.mem.Allocator, prog: *const ast.Program, cont: *ast.Continuation, scope: StoreScope, idents: []const []const u8, bound: []const []const u8) void {
             // A continuation's OWN bindings shadow store names (690_090) — the
             // singleton twin of the plural walk's skip. A row binding or
             // shape-destructure makes `<store>.<field>` mean the row, so the
@@ -4685,22 +4919,15 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             // Guards ride as arm conditions at the write site - their
             // cross-store reads rewrite to the cells too (690_013).
             if (cont.condition) |cond| {
-                var cnd = cond;
-                for (names, prefixes) |nm, px| {
-                    if (isIn(bound_all, nm)) continue;
-                    cnd = storeRefs(alloc, cnd, nm, px, isIn(idents, nm));
-                }
-                @constCast(cont).condition = cnd;
+                @constCast(cont).condition = storeLowerText(alloc, prog, cond, scope, idents, bound_all);
             }
-            if (cont.node) |*n| rewriteNode(alloc, @constCast(n), names, prefixes, idents, bound_all);
-            for (cont.continuations) |*c| rewriteCont(alloc, @constCast(c), names, prefixes, idents, bound_all);
+            if (cont.node) |*n| rewriteNode(alloc, prog, @constCast(n), scope, idents, bound_all);
+            for (cont.continuations) |*c| rewriteCont(alloc, prog, @constCast(c), scope, idents, bound_all);
         }
-        fn rewriteFlow(alloc: std.mem.Allocator, f: *ast.Flow, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8) void {
-            rewriteCont(alloc, &f.body, names, prefixes, idents, &[_][]const u8{});
+        fn rewriteFlow(alloc: std.mem.Allocator, prog: *const ast.Program, f: *ast.Flow, scope: StoreScope, idents: []const []const u8) void {
+            rewriteCont(alloc, prog, &f.body, scope, idents, &[_][]const u8{});
             if (f.inline_body) |ib| {
-                var t = ib;
-                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
-                @constCast(f).inline_body = t;
+                @constCast(f).inline_body = storeLowerText(alloc, prog, ib, scope, idents, &[_][]const u8{});
             }
         }
         // A bare-return subflow (`peek -> s.v`) is not a Flow at all — it lands
@@ -4708,19 +4935,15 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         // expression. Reading a cell there is as ordinary as reading one in an
         // arg, but the walk used to visit only `.flow`, so the reference went
         // to the host verbatim and Zig reported an undeclared `s` (110_022).
-        fn rewriteImmediateImpl(alloc: std.mem.Allocator, ii: *ast.ImmediateImpl, names: []const []const u8, prefixes: []const []const u8, idents: []const []const u8) void {
+        fn rewriteImmediateImpl(alloc: std.mem.Allocator, prog: *const ast.Program, ii: *ast.ImmediateImpl, scope: StoreScope, idents: []const []const u8) void {
             if (ii.value.plain_value) |pv| {
-                var t = pv;
-                for (names, prefixes) |nm, px| t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
-                ii.value.plain_value = t;
+                ii.value.plain_value = storeLowerText(alloc, prog, pv, scope, idents, &[_][]const u8{});
             }
             // `=> branch { f: <expr> }` keeps each field's value in
             // `expression_str`; a cell read there is the same read.
             for (ii.value.fields) |*fld| {
                 if (fld.expression_str) |es| {
-                    var v = es;
-                    for (names, prefixes) |nm, px| v = storeRefs(alloc, v, nm, px, isIn(idents, nm));
-                    @constCast(fld).expression_str = v;
+                    @constCast(fld).expression_str = storeLowerText(alloc, prog, es, scope, idents, &[_][]const u8{});
                 }
             }
         }
@@ -4732,9 +4955,10 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         for (px) |*e| e.* = "";
         break :blk_lp px;
     };
-    for (watch_arms.items) |*wa| Rewrite.rewriteCont(allocator, &wa.cont, store_names.items, local_prefixes, store_idents.items, &[_][]const u8{});
-    for (field_iceptors.items) |*fi| Rewrite.rewriteCont(allocator, &fi.cont, store_names.items, local_prefixes, store_idents.items, &[_][]const u8{});
-    for (updated_iceptors.items) |*ui| Rewrite.rewriteCont(allocator, ui, store_names.items, local_prefixes, store_idents.items, &[_][]const u8{});
+    const local_scope = StoreScope{ .names = store_names.items, .prefixes = local_prefixes };
+    for (watch_arms.items) |*wa| Rewrite.rewriteCont(allocator, program, &wa.cont, local_scope, store_idents.items, &[_][]const u8{});
+    for (field_iceptors.items) |*fi| Rewrite.rewriteCont(allocator, program, &fi.cont, local_scope, store_idents.items, &[_][]const u8{});
+    for (updated_iceptors.items) |*ui| Rewrite.rewriteCont(allocator, program, ui, local_scope, store_idents.items, &[_][]const u8{});
 
     // ------------------------------------------------------------------
     // Unit 1: the module-scope typed cell (slice one, unchanged).
@@ -5325,8 +5549,8 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                     switch (pi.*) {
                         // Must use `&pi.flow` — `|*f|` on a switched copy
                         // mutates a temporary and the live AST stays raw.
-                        .flow => Rewrite.rewriteFlow(alloc, &pi.flow, names, prefixesFor(alloc, prog, names, pi.flow.module), idents),
-                        .immediate_impl => Rewrite.rewriteImmediateImpl(alloc, &pi.immediate_impl, names, prefixesFor(alloc, prog, names, pi.immediate_impl.module), idents),
+                        .flow => Rewrite.rewriteFlow(alloc, prog, &pi.flow, .{ .names = names, .prefixes = prefixesFor(alloc, prog, names, pi.flow.module) }, idents),
+                        .immediate_impl => Rewrite.rewriteImmediateImpl(alloc, prog, &pi.immediate_impl, .{ .names = names, .prefixes = prefixesFor(alloc, prog, names, pi.immediate_impl.module) }, idents),
                         .module_decl => items(alloc, prog, @constCast(pi.module_decl.items), names, idents),
                         else => {},
                     }
@@ -5442,32 +5666,7 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         // generated apply events — so a row index / RHS can rewrite a FOREIGN
         // singleton cell (`todos[ui.sel]` → `__koru_store_ui.sel`, 690_075).
         fn allStoreNames(alloc: std.mem.Allocator, prog: *const ast.Program) []const []const u8 {
-            var names = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
-            for (flatItems(alloc, prog.items)) |pi| {
-                switch (pi.*) {
-                    .flow => |*f| {
-                        if (f.body.node) |*n| {
-                            if (n.* == .invocation) {
-                                const inv = &n.invocation;
-                                if (inv.path.module_qualifier) |mq| {
-                                    if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "new")) {
-                                        for (inv.args) |a| {
-                                            if (std.mem.eql(u8, a.name, "expr")) names.append(alloc, stripQuotes(a.value)) catch unreachable;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    .event_decl => |*ed| {
-                        if (ed.path.segments.len == 1 and std.mem.startsWith(u8, ed.path.segments[0], "__store_apply_")) {
-                            names.append(alloc, ed.path.segments[0]["__store_apply_".len..]) catch unreachable;
-                        }
-                    },
-                    else => {},
-                }
-            }
-            return names.toOwnedSlice(alloc) catch unreachable;
+            return storeAllNames(alloc, prog);
         }
         fn storeRefsAll(alloc: std.mem.Allocator, prog: *const ast.Program, text: []const u8) []const u8 {
             var t = text;
@@ -5476,67 +5675,14 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         }
         // `store[index].field` → SoA column read (690_076). Runs AFTER
         // storeRefsAll so a cross-store index is already `__koru_store_ui.sel`.
-        fn indexedFieldRefs(alloc: std.mem.Allocator, prog: *const ast.Program, text: []const u8, store: []const u8) []const u8 {
-            const fields = fieldOrder(alloc, prog, store) orelse return text;
-            var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
-            var i: usize = 0;
-            while (i < text.len) {
-                const at_boundary = ast.identBoundaryBefore(text, i);
-                if (at_boundary and i + store.len < text.len and
-                    std.mem.startsWith(u8, text[i..], store) and text[i + store.len] == '[')
-                {
-                    const idx_start = i + store.len + 1;
-                    var depth: usize = 1;
-                    var j = idx_start;
-                    while (j < text.len and depth > 0) : (j += 1) {
-                        if (text[j] == '[') depth += 1;
-                        if (text[j] == ']') {
-                            depth -= 1;
-                            if (depth == 0) break;
-                        }
-                    }
-                    if (depth == 0 and j + 1 < text.len and text[j + 1] == '.') {
-                        const index = std.mem.trim(u8, text[idx_start..j], " ");
-                        const fstart = j + 2;
-                        var fend = fstart;
-                        while (fend < text.len and isIdent(text[fend])) fend += 1;
-                        const fname = text[fstart..fend];
-                        var known = false;
-                        for (fields) |f| {
-                            if (std.mem.eql(u8, f, fname)) {
-                                known = true;
-                                break;
-                            }
-                        }
-                        if (known and index.len > 0) {
-                            // The index is itself an expression and may hold
-                            // another indexed read — `cells[cells[h].next].v`,
-                            // one hop along an intrusive chain. The outer match
-                            // consumes the whole span, so without this the
-                            // inner one is never visited and reaches the host
-                            // verbatim (690_245).
-                            const inner = indexedFieldRefsAll(alloc, prog, index);
-                            // Pointer-named base (`&`) — see colRead: a by-value
-                            // base copies the whole column before the resolve.
-                            const piece = std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[__koru_store_{s}.__koru_resolve({s})]", .{ store, fname, store, inner }) catch unreachable;
-                            out.appendSlice(alloc, piece) catch unreachable;
-                            i = fend;
-                            continue;
-                        }
-                    }
-                }
-                out.append(alloc, text[i]) catch unreachable;
-                i += 1;
-            }
-            return out.toOwnedSlice(alloc) catch unreachable;
-        }
-        // Every store's indexed reads, one pass each. Named so the recursive
-        // descent into an index expression can reach it too — an index may
-        // address a DIFFERENT store than the read it sits inside.
+        //
+        // The rewriter itself is file scope (`storeIndexedRefs`), because a
+        // private helper struct inside a transform is a lowering boundary and
+        // `new`'s whole-program walk needs the same lowering (690_250/690_254).
+        // A `stored` site is emitted into the declaring module's own namespace,
+        // so every store reaches it unprefixed.
         fn indexedFieldRefsAll(alloc: std.mem.Allocator, prog: *const ast.Program, text: []const u8) []const u8 {
-            var t = text;
-            for (allStoreNames(alloc, prog)) |nm| t = indexedFieldRefs(alloc, prog, t, nm);
-            return t;
+            return storeIndexedRefsIn(alloc, prog, text, storeScopeBare(alloc, prog));
         }
         fn lowerStoreExprs(alloc: std.mem.Allocator, prog: *const ast.Program, text: []const u8) []const u8 {
             return indexedFieldRefsAll(alloc, prog, storeRefsAll(alloc, prog, text));
@@ -5594,41 +5740,12 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             if (Find.newIn(prog.items, store, null)) |m| return m;
             return null;
         }
-        // Field order for a store: from the generated apply event if the
-        // coordinator already ran, else from the untransformed create flow's
-        // seed block. Deterministic under any transform order.
+        // Field order for a store, deterministic under any transform order.
+        // File-scope `storeFieldOrder` is THE answer; this copy had only two of
+        // its three sources and so declined to lower for a plural store whose
+        // `new` had run but whose apply event it could not see.
         fn fieldOrder(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const []const u8 {
-            const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
-            if (findSynthDecl(prog.items, apply_name)) |ed| {
-                const names = alloc.alloc([]const u8, ed.branches.len) catch unreachable;
-                for (ed.branches, 0..) |b, i| names[i] = b.name;
-                return names;
-            }
-            for (flatItems(alloc, prog.items)) |pi| {
-                if (pi.* != .flow) continue;
-                const f = &pi.flow;
-                const inv = f.inv();
-                if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
-                const mq = inv.path.module_qualifier orelse continue;
-                if (!std.mem.eql(u8, mq, "std.store")) continue;
-                var name_matches = false;
-                var seed: ?[]const u8 = null;
-                for (inv.args) |a| {
-                    if (std.mem.eql(u8, a.name, "expr")) {
-                        name_matches = std.mem.eql(u8, stripQuotes(a.value), store);
-                    } else if (std.mem.eql(u8, a.name, "source")) {
-                        seed = a.value;
-                    }
-                }
-                if (!name_matches or seed == null) continue;
-                const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed.?}) catch unreachable;
-                const cf = struct_literal.parseFields(alloc, braced) catch &[_]struct_literal.StructField{};
-                if (cf.len == 0) return null;
-                const names = alloc.alloc([]const u8, cf.len) catch unreachable;
-                for (cf, 0..) |c, i| names[i] = c.name;
-                return names;
-            }
-            return null;
+            return storeFieldOrder(alloc, prog, store);
         }
         /// Does this store name ONE column and no field? Then the store itself
         /// is the lvalue and the synthesized column takes the value.
@@ -6695,57 +6812,11 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
             segs[0] = alloc.dupe(u8, name) catch unreachable;
             return ast.DottedPath{ .module_qualifier = alloc.dupe(u8, module) catch unreachable, .segments = segs };
         }
-        // The INSERT surface's column order. Preferred source: the generated
-        // `__store_insert_<s>` event's input shape (its fields ARE the insert
-        // contract — user columns + trailing __site_line), which excludes any
-        // [tree]-synthesized `parent` column. Fallbacks: the apply event's
-        // branches (pre-tree stores where insert == full column set), then
-        // the untransformed create's seed block.
+        // The INSERT surface's column order — `storeInsertOrder`, NOT
+        // `storeFieldOrder`. The two differ by the `[tree]`-synthesized
+        // `parent` column, which is not insertable.
         fn fieldOrder(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) ?[]const []const u8 {
-            const insert_ev_name = std.fmt.allocPrint(alloc, "__store_insert_{s}", .{store}) catch unreachable;
-            for (flatItems(alloc, prog.items)) |pi| {
-                if (pi.* != .event_decl) continue;
-                const ed = &pi.event_decl;
-                if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], insert_ev_name)) {
-                    const flds = ed.input.fields;
-                    if (flds.len == 0) return null;
-                    // The trailing field is the synthetic __site_line arg.
-                    const names = alloc.alloc([]const u8, flds.len - 1) catch unreachable;
-                    for (flds[0 .. flds.len - 1], 0..) |f2, i| names[i] = f2.name;
-                    return names;
-                }
-            }
-            const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
-            if (findSynthDecl(prog.items, apply_name)) |ed| {
-                const names = alloc.alloc([]const u8, ed.branches.len) catch unreachable;
-                for (ed.branches, 0..) |b, i| names[i] = b.name;
-                return names;
-            }
-            for (flatItems(alloc, prog.items)) |pi| {
-                if (pi.* != .flow) continue;
-                const f = &pi.flow;
-                const inv = f.inv();
-                if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
-                const mq = inv.path.module_qualifier orelse continue;
-                if (!std.mem.eql(u8, mq, "std.store")) continue;
-                var name_matches = false;
-                var seed: ?[]const u8 = null;
-                for (inv.args) |a| {
-                    if (std.mem.eql(u8, a.name, "expr")) {
-                        name_matches = std.mem.eql(u8, stripQuotes(a.value), store);
-                    } else if (std.mem.eql(u8, a.name, "source")) {
-                        seed = a.value;
-                    }
-                }
-                if (!name_matches or seed == null) continue;
-                const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed.?}) catch unreachable;
-                const cf = struct_literal.parseFields(alloc, braced) catch &[_]struct_literal.StructField{};
-                if (cf.len == 0) return null;
-                const names = alloc.alloc([]const u8, cf.len) catch unreachable;
-                for (cf, 0..) |c, i| names[i] = c.name;
-                return names;
-            }
-            return null;
+            return storeInsertOrder(alloc, prog, store);
         }
         // Is `col` a fixed-char column, and how many bytes does it hold?
         // (690_052 — the comptime-literal overflow check needs N at the
@@ -6912,35 +6983,9 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
         }
         // Every store name visible in the program — untransformed creates plus
         // generated apply events — so a seed value can reference a cell from
-        // any store, under any transform order (same two-source shape as
-        // fieldOrder above).
+        // any store, under any transform order.
         fn allStoreNames(alloc: std.mem.Allocator, prog: *const ast.Program) []const []const u8 {
-            var names = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
-            for (flatItems(alloc, prog.items)) |pi| {
-                switch (pi.*) {
-                    .flow => |*f| {
-                        if (f.body.node) |*n| {
-                            if (n.* == .invocation) {
-                                const inv = &n.invocation;
-                                if (inv.path.module_qualifier) |mq| {
-                                    if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "new")) {
-                                        for (inv.args) |a| {
-                                            if (std.mem.eql(u8, a.name, "expr")) names.append(alloc, stripQuotes(a.value)) catch unreachable;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    .event_decl => |*ed| {
-                        if (ed.path.segments.len == 1 and std.mem.startsWith(u8, ed.path.segments[0], "__store_apply_")) {
-                            names.append(alloc, ed.path.segments[0]["__store_apply_".len..]) catch unreachable;
-                        }
-                    },
-                    else => {},
-                }
-            }
-            return names.toOwnedSlice(alloc) catch unreachable;
+            return storeAllNames(alloc, prog);
         }
         fn isIdentityStore(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8) bool {
             const order = fieldOrder(alloc, prog, store) orelse return false;
