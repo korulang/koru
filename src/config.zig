@@ -228,6 +228,24 @@ pub const Config = struct {
             try paths.put(try allocator.dupe(u8, "koru"), koru_paths);
         }
 
+        // `unikraft` is a PLATFORM namespace, and it sits beside `std` rather
+        // than under `koru` on purpose. `koru/curl` is a wrapped library you
+        // chose; `unikraft/net` is the operating system the program is running
+        // inside. Nesting it as `koru/unikraft/net` would file an OS subsystem
+        // on the third-party shelf and read as one, which is exactly the DX the
+        // lifts exist to remove — the point of `unikraft/net` over `uknetdev` is
+        // that a caller never has to know there is a crusty C library under it.
+        //
+        // Same two-candidate probe as `koru`, for the same reason: one library
+        // set, two install layouts, and a loud "module not found" when neither
+        // is present rather than a quiet resolution to something else.
+        {
+            var uk_paths = try allocator.alloc([]const u8, 2);
+            uk_paths[0] = try allocator.dupe(u8, "{{ KORU_HOME }}/koru-libs/unikraft");
+            uk_paths[1] = try allocator.dupe(u8, "{{ KORU_HOME }}/../koru-libs/unikraft");
+            try paths.put(try allocator.dupe(u8, "unikraft"), uk_paths);
+        }
+
         return Config{
             .name = try allocator.dupe(u8, "unnamed"),
             .version = try allocator.dupe(u8, "0.0.0"),
