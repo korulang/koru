@@ -1,0 +1,6 @@
+// JavaScript implementation facet of test_lib/user. The events and the User
+// type are declared in user.kz (merged at import); this file holds the |js body.
+
+~proc create|js {
+    return { name: name, age: age };
+}

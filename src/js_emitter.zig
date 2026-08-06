@@ -1812,19 +1812,30 @@ const Emitter = struct {
         // than discovering its absence one frame deeper.
         //
         // The splice inlines the proc body INCLUDING its `return .{ .done = … }`,
-        // which returns from the ENCLOSING function — so any terminal
-        // continuation waiting on that outcome (`| done |> print.ln("done")`)
-        // would be dropped without a trace. A producer that ends a flow has
-        // nothing to drop and keeps the fast path; one whose terminal branch is
-        // actually handled falls through to the closure form, where the result
-        // is a value the dispatch below can read.
+        // and that `return` exits the ENCLOSING flow function — so terminal arms,
+        // emitted nowhere, simply vanish. `sink { ! ?pulse i64 | done | err }`
+        // printed its three pulses and then silently dropped `done`: correct
+        // output followed by a missing line, the hardest kind of divergence to
+        // read. The closure path below already handles the mixed shape —
+        // Handlers_<id> for the effect arms, a real handler call, then a `.tag`
+        // dispatch — so route there and keep the splice for what it was built
+        // for: pure void producers (140_011, the pipe_dN depth benchmarks).
+        //
+        // TWO PREDICATES, deliberately, and they were found independently: W3 and
+        // W2 gated on the event DECLARING no terminal branch, W4 on no terminal
+        // continuation having a BODY. The first implies the second, so the
+        // conjunction is the first — but both are written out because they are
+        // different questions (what the event promises vs what this call site
+        // does with it) and a later relaxation of one must not silently take the
+        // other with it. This guard's failure mode is a dropped line and exit 0;
+        // it earns the belt and the braces.
         var terminal_has_body = false;
         for (continuations) |*c| {
             if (c.kind != .terminal) continue;
             const n = c.node orelse continue;
             if (n != .terminal) terminal_has_body = true;
         }
-        if (event_has_effect and all_effects_void and !terminal_has_body and
+        if (event_has_effect and all_effects_void and terminal_branches == 0 and !terminal_has_body and
             self.findJsProcIn(self.items, &event.path) != null)
         {
             try self.emitInlineVoidProducer(event, inv, continuations, indent);

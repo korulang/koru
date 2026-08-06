@@ -1,0 +1,10 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+//
+// A Koru char literal reaches the JS target as a one-character string ('('),
+// not as the u8 code point the Zig facet's `{c}` formats — so printing it is
+// the identity, where Zig needs the `{c}` verb.
+
+~proc probe|js {
+    console.log(c);
+}
