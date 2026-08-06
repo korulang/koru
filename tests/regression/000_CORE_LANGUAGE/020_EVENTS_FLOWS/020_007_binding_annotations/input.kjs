@@ -1,5 +1,27 @@
 // JavaScript implementation facet. Events are declared in input.kz (merged at
 // import); this file holds the |js proc bodies.
+//
+// FRONTIER — no `|js` body can make this test pass, because the blocker is in
+// the FLOW, not in a proc. The call site is
+//
+//     ~get-data(): r[mutable] |> mutate-and-print(ptr: &r)
+//
+// and `&r` is Zig address-of syntax written as a Koru argument. Arg text is
+// carried through verbatim, so the emitted JavaScript contains `const ptr =
+// &r;` and dies at parse. Moving it would mean editing `input.kz`, which is
+// the Zig facet and the Zig baseline both.
+//
+// Deeper than the syntax: what this test pins is mutation THROUGH a pointer —
+// the event declares `ptr: *i32` and does `ptr.* += 1`, and the caller then
+// observes the mutated `r`. JavaScript has no address-of and no out-parameter
+// for a number. The body below prints the right line for the wrong reason
+// (it computes `ptr + 1` instead of mutating), and that is exactly why this
+// should NOT be counted as ported: a JS facet here could only ever imitate the
+// output while dropping the property under test.
+//
+// The `[mutable]` binding annotation itself — the parser-level thing the test
+// name refers to — is host-neutral and would port fine. It is the pointer that
+// does not.
 
 ~proc get-data|js {
     return 42;

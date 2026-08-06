@@ -212,3 +212,21 @@ Six agents were told to contort around a stale constraint in the same wave
 [[frag-a-kjs-facet-carries-host-lines-not-only-proc-bodies]]); the common
 root is that the young side of a port is assumed correct because it is the
 side nobody wants to be wrong.
+
+**And the sweep above is not sufficient, which is the part worth carrying.**
+It searches the new EMITTER, and the leak does not have to originate there.
+A comptime transform that rewrites the AST before emission is host-blind
+unless someone made it otherwise: `[expand]` splices a `~std/template:define`
+body into the call site, and the registry is keyed by template NAME with no
+host dimension at all. So a `.kz` template's Zig text lands inside an emitted
+`.js` program, and no amount of auditing the JS emitter finds it — by the
+time the emitter runs, the Zig is already AST and indistinguishable from
+anything else it was handed.
+
+The general form: **a stage that runs before target selection cannot be
+audited by reading the target's backend.** Ask of every pre-emission
+transform whether it carries host text, and if it does, whether its registry
+has a host key. A mechanism keyed by name alone is not neutral across
+targets; it is silently committed to whichever host wrote it first, and it
+will report that commitment as a syntax error in the other target's output,
+at a line number belonging to a file nobody edited.
