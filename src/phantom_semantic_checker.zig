@@ -1216,7 +1216,13 @@ pub const PhantomSemanticChecker = struct {
                     // rejected by directionality (validatePhantom is_input).
                     const canonical_phantom = try self.canonicalizePhantomState(phantom_str, impl_ev.module);
                     defer self.allocator.free(canonical_phantom);
-                    var parsed = try phantom_parser.PhantomState.parse(self.allocator, canonical_phantom);
+                    // Markers must be read off the RAW spelling: the concrete arm of
+                    // canonicalizePhantomStateWithBase re-renders `module:state` and
+                    // keeps only the issue suffix (`state!`) — a consume prefix
+                    // (`!state`) does not survive it (the union arm preserves it;
+                    // the concrete arm never did). Parsing the canonical string here
+                    // is what silently turned every transferred debt into a borrow.
+                    var parsed = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
                     defer parsed.deinit(self.allocator);
                     const concrete = switch (parsed) {
                         .concrete => |c| c,
@@ -1226,10 +1232,7 @@ pub const PhantomSemanticChecker = struct {
                     const canonical_base_type = try self.canonicalizeBaseType(field.type, field.module_path, impl_ev.module);
                     defer self.allocator.free(canonical_base_type);
                     if (concrete.consumes_obligation) {
-                        const held = if (concrete.module_path) |mp|
-                            try std.fmt.allocPrint(self.allocator, "{s}:{s}!", .{ mp, concrete.name })
-                        else
-                            try std.fmt.allocPrint(self.allocator, "{s}!", .{concrete.name});
+                        const held = try std.fmt.allocPrint(self.allocator, "{s}!", .{canonical_phantom});
                         defer self.allocator.free(held);
                         try root_context.setWithType(field.name, held, canonical_base_type);
                     } else {
@@ -3347,27 +3350,18 @@ pub const PhantomSemanticChecker = struct {
                     // how one object reaches two live names and is released
                     // twice with no lying proc body (335_054 / 335_055).
                     //
-                    // ⚠️ INCOMPLETE — DO NOT ENABLE WITHOUT READING THIS.
-                    // Ruled wanted by Lars 2026-08-06. Gated OFF because it
-                    // also refuses legitimate delegation:
-                    //
-                    //     ~tor pass-through { h: *Handle<!owned> }
-                    //     ~pass-through = sink(h)
-                    //
-                    // A `<!state>` PARAMETER means the caller handed the debt
-                    // in, so the body may settle it once. The impl-param block
-                    // builds `owned!` for exactly that and calls setWithType,
-                    // which does register the obligation — but by the time this
-                    // site reads it, `h` carries `input:owned`, bare. The `!`
-                    // never arrives. That is 330_076's subject verbatim, and
-                    // 330_076 is RED. Fix the seeding, flip this to `true`, and
-                    // 335_054 + 335_055 both close.
+                    // Ruled by Lars 2026-08-06. A `<!state>` PARAMETER means the
+                    // caller handed the debt in, so the body may settle it once —
+                    // the impl-param seeding threads the marker in as `state!`
+                    // (reading it off the RAW spelling; canonicalization drops a
+                    // consume prefix), which is what lets this predicate tell
+                    // "I was given this" from "I was only shown this".
                     //
                     // Both predicates were measured and both behave identically
                     // on the corpus: `context.owesObligation(arg.value)` (the
                     // cleanup set) and the parse of `canonical_provided` below.
                     // The latter is kept because it needs no side table.
-                    const enforce_debt_exists = false;
+                    const enforce_debt_exists = true;
                     if (enforce_debt_exists) {
                         var provided_parsed = try phantom_parser.PhantomState.parse(self.allocator, canonical_provided);
                         defer provided_parsed.deinit(self.allocator);
