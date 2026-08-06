@@ -1,0 +1,24 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc outer|js {
+    if (x > max) {
+        return { tag: "done-outer" };
+    }
+
+    console.log(`Outer: x=${x}`);
+    return { tag: "next-outer", "next-outer": { x: x, max: max } };
+}
+
+~proc inner|js {
+    if (y > max) {
+        return { tag: "done-inner", "done-inner": x };
+    }
+
+    console.log(`  Inner: x=${x}, y=${y}`);
+    return { tag: "next-inner", "next-inner": { x: x, y: y, max: max } };
+}
+
+~proc start|js {
+    console.log("Starting nested loops...");
+}

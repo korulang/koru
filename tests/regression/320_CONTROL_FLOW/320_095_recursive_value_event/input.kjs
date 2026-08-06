@@ -1,0 +1,18 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+//
+// FRONTIER — this facet cannot complete, and the reason is not in this file.
+// `leq-zero` is `[norun|expand]`: its body is a `~std/template:define` whose
+// text is Zig (a `blk:` expression over a `union(enum)`). The [expand]
+// transform runs before emission and is HOST-BLIND — it splices that Zig
+// verbatim into whatever target is being emitted, so `--lang=js` produces a
+// `sum_to_event` handler containing `break :blk Result{ .yes = {} }`. Supplying
+// a `~proc leq-zero|js` here does not help: the proc is emitted, and then
+// ignored, because the invocation was already replaced by the expansion.
+//
+// Fixing it needs host routing in the template registry — `define` is keyed by
+// name alone, so a second `define(name: "leq-zero")` in this file would collide
+// with the Zig one rather than sit beside it. That is a language-surface
+// decision, not a fixture port, so this test is left honestly red for JS.
+
+~proc print-result|js { console.log(`${value}`); }
