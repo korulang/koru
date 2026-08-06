@@ -1,8 +1,8 @@
 ---
 type: belief
 id: frag-produced-program-leak-check-is-allocator-opt-in
-provenance: measured 2026-07-24; reframed by Lars's ruling the same night — a proc may name its own allocator, the question is only whether a TOOLCHAIN bug can hide
-ts: 2026-07-24
+provenance: measured 2026-07-24; reframed by Lars's ruling the same night — a proc may name its own allocator. 2026-08-06: the predicted class landed, in koru_std itself.
+ts: 2026-08-06
 ---
 
 # The produced-program leak counter is opt-in, and that is correct — the real question is whether a toolchain-caused missing discharge is observable (belief)
@@ -68,3 +68,38 @@ classes deserve a mechanism. An earlier draft of this fragment inferred from
 "procs are unsafe" that a double-free is therefore acceptable, and attributed
 that inference to Lars. He did not rule it. `unsafe` names where the
 responsibility sits; it is not a decision to stop detecting anything.
+
+## 2026-08-06 — the predicted class landed, and it was OURS, not an author's
+
+The ruling above narrows the concern to one bug class: *an uninstrumented
+allocation hiding a bug in the TOOLCHAIN*. That class was hypothetical when it
+was written. It is not any more, and it was worse than the framing anticipated in
+one specific way — **the leaking code was `koru_std`, not a user's `proc`.**
+
+`HandlePool.deinit` freed its `ArrayList` and leaked all seven strings `acquire`
+dupes per handle. It had done so since it was written. Nobody saw it because
+every caller in the corpus constructed the pool on `std.heap.page_allocator` —
+the two `440` tests hand-roll `HandlePool.init(std.heap.page_allocator)` in raw
+Zig, and the interpreter's own local pool comes off a page-backed arena. The
+first pool ever built on `koru_allocator()` — a `std/bridge` session, whose
+allocator is the produced program's — failed the leak check on its first run, and
+the count named the size exactly (three for the session, eight more for one
+handle).
+
+So the mechanism works and the coverage is the whole story. What the earlier
+analysis got right: instrumentation is opt-in and a leak outside it is unseen.
+What it did not anticipate: **the stdlib opts out too, and when it does, the
+"author-owned memory is the author's problem" framing stops applying** — nobody
+authored that leak in a `proc`, and no output diff could show it, because a
+leaked string prints nothing.
+
+The sharpened rule: **an allocator choice is a decision about who can see your
+bugs, and in library code it is a decision made on behalf of every caller.** A
+`proc` author picking `page_allocator` is exercising the escape hatch as ruled.
+A stdlib type picking it — or accepting one and never being handed the tracked
+one — silently exempts an entire subsystem from the only detector that exists.
+
+What this leaves: the `HandlePool` case is fixed, but it was found by accident,
+by being the first caller to wire the tracked allocator through. Nothing counts
+which `koru_std` types are reachable only on uninstrumented allocators, and that
+census is the actual instrument this belief has been asking for since July.
