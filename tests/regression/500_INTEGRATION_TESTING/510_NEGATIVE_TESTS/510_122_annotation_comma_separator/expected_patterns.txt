@@ -1,0 +1,4 @@
+error\[PARSE007\]
+invalid annotation separator ',' in '\[comptime, norun\]'
+annotations separate on '\|'
+hint: write '\[comptime\|norun\]'

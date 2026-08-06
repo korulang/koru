@@ -160,3 +160,56 @@ when it was written. The mitigation is about *reference*:
 The code residue is the point of the whole exercise: the shape is now `697_013`,
 green, in all three positions the note called broken. A pin cannot drift, and a
 pin is what the five notes were each individually deciding not to write.
+
+## The third variant: a carried CLASSIFICATION, which transfers ownership
+
+Both sections above are about a claim's *content* — §1 a guess wearing its
+neighbours' credibility, §2 a true claim whose subject drifted. There is a third
+variant where every fact carried is true, correctly attributed, and about the
+right subject, and the thing that is wrong is the **classification**: *"the two
+sides disagree, so which one moves is a human's call."*
+
+That sentence is not a suspicion and cannot be labelled as one — it reads as the
+responsible act, the handoff declining to overstep. But it does something neither
+earlier variant does: **it transfers ownership, and ownership suppresses
+inspection.** A carried suspicion invites checking; a carried *escalation* forbids
+it, because re-examining its premise looks like second-guessing whose decision it
+is. So the premise rides through untouched, and it is the one thing nobody is
+positioned to test — the next reader either executes the escalation or defers it,
+and both preserve it.
+
+What dissolved this instance was counting the constituencies **with the
+enforcer's own predicate rather than the account of the rule**. The escalation
+named two sides. Going to what actually executes found three places already
+agreeing on one reading — including the escalated test's own verifier, which
+disagreed with that same test's other half, and a sibling call twelve lines from
+the defect already doing the thing under debate. Zero places argued for the other
+reading. There was no contract to choose between: a field had been left unset,
+and "unset" had been read as "contested".
+
+The general form, and the reason it is worth holding separately from §1 and §2:
+
+- **An escalation is a claim, and its premise is the least-inspected sentence in
+  any handoff.** Facts get retested; a conclusion about *who decides* does not,
+  because checking it feels like a jurisdictional overstep rather than diligence.
+- **Before accepting "the sides disagree", count the sides by what executes.**
+  Not by what the documents say they want — by the enforcer, the verifier, the
+  sibling call. A disagreement with one constituency is a bug; a disagreement
+  with a real constituency on each side is a design question. Only the second is
+  anyone's call.
+- **An unset default is not a chosen contract.** Nothing was decided, so there is
+  no decision to respect. The tell is that every deliberate site in the tree
+  already agrees and only the accidental one differs.
+- **Doing the counting is what makes deference honest rather than performative.**
+  Handing the question back unexamined is not restraint; it spends someone
+  else's attention on a question that had an answer. The respectful move is to
+  arrive with the premise tested — then defer if it survives.
+
+What this does NOT license: acting on the dissolution. The premise being false
+says the question is smaller, not that it is mine. Both readings were reported and
+the change waited for a word.
+
+Open: whether "count the constituencies" generalises past cases where the sides
+are *mechanical* (a verifier's cwd, a sibling call). Where the constituencies are
+taste rather than code, there is nothing to count and the escalation is probably
+exactly right.

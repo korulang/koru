@@ -1,0 +1,4 @@
+# The refusal must be a located koru-level diagnostic...
+CONTAINS error[KORU
+# ...and must NOT be the raw host panic the transform raises today.
+NOT_CONTAINS could not find invocation in AST
