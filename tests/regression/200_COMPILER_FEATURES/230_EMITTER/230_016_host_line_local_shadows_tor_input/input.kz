@@ -1,0 +1,36 @@
+// Pins that a tor input is a BINDING, not a token the emitter may rewrite by
+// text — and that a host-line local sharing its name cannot reach into the proc
+// body at all.
+//
+// `unrelatedHelper` is never called from `describe`'s chain and its `const
+// count` is function-local, so nothing about it is in scope where the proc body
+// runs. The only place the two names meet is the emitter.
+//
+// The string literals are the instrument. A substitution that lands on code
+// fails loudly in Zig; one that lands inside a literal produces a program that
+// compiles, runs, and prints a corrupted sentence — so the guarantee is only
+// observable on stdout, which is why this is a MUST_RUN and not a MUST_ERROR.
+//
+// Control: rename the helper's local and nothing else, and the sentence comes
+// back clean. That is the whole difference this test guards.
+
+const std = @import("std");
+
+fn unrelatedHelper() u32 {
+    const count = 7;
+    return count;
+}
+
+~import std/io
+
+~pub tor describe { count: u32 } -> string
+
+~proc describe|zig {
+    _ = unrelatedHelper();
+    if (count == 0) {
+        return "a count of zero";
+    }
+    return "a count above zero";
+}
+
+~describe(count: 3): text |> std/io:print.ln("{{ text:s }}")
