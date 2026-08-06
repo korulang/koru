@@ -119,6 +119,61 @@ pub const Bridge = struct {
 }
 
 // ============================================================================
+// RUN - Execute a turn against the session's resources
+// ============================================================================
+//
+// The verb the bridge existed without: `std/runtime:run` takes a `handle_pool`
+// and a `scope`, and a bridge is exactly a pairing of those two that outlives a
+// single turn. Without this, every caller reached into Zig for `&br.pool` — the
+// mechanism was real and the Koru surface over it did not exist.
+//
+// The branch set MIRRORS `std/runtime:run` rather than trimming it: forwarding a
+// vocabulary that already exists invents nothing, and a turn can fail every way
+// a run can fail.
+//
+// Two of that tor's parameters are deliberately not forwarded:
+//
+// - `budget` — metering is PARKED. It earns its keep on a public-facing API, not
+//   on an internal bridge, and exposing the knob here would quietly un-park it.
+// - `auto_discharge` — always false, and it must be. A bridge-managed pool
+//   outlives the run BY DESIGN; releasing at end-of-turn is precisely the
+//   retention this whole subsystem exists to provide. `close` is what releases.
+
+~pub tor run { br: *Bridge, source: string }
+| result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
+| exhausted { used: u64, last_event: string, handles: u32 }
+| parse-error { message: string, line: u32, column: u32 }
+| validation-error string
+| shape-error { branch: string, field: ?[]const u8, message: string }
+| event-denied string
+| dispatch-error { event_name: string, message: string }
+| scope-not-found string
+
+~proc run|zig {
+    const rt = @import("root").koru_std.koru_runtime;
+
+    br.touch();
+
+    const result = rt.run_event.handler(.{
+        .source = source,
+        .scope = br.scope,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+    });
+
+    return switch (result) {
+        .result => |r| .{ .result = .{ .value = r.value, .used = r.used, .handles = r.handles } },
+        .exhausted => |e| .{ .exhausted = .{ .used = e.used, .last_event = e.last_event, .handles = e.handles } },
+        .parse_error => |e| .{ .parse_error = .{ .message = e.message, .line = e.line, .column = e.column } },
+        .validation_error => |e| .{ .validation_error = e },
+        .shape_error => |e| .{ .shape_error = .{ .branch = e.branch, .field = e.field, .message = e.message } },
+        .event_denied => |e| .{ .event_denied = e },
+        .dispatch_error => |e| .{ .dispatch_error = .{ .event_name = e.event_name, .message = e.message } },
+        .scope_not_found => |e| .{ .scope_not_found = e },
+    };
+}
+
+// ============================================================================
 // CLOSE - Hang up: release everything the session still holds
 // ============================================================================
 //

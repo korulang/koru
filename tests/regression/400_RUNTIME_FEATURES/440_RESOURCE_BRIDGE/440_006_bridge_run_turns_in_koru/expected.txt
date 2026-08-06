@@ -1,0 +1,2 @@
+close-file() ran for 'file_1'
+turn 1: 1 held, turn 2: 0 held, hung up still: 0
