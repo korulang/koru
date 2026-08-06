@@ -99,6 +99,26 @@ not by tests.
   current state and was stale or misapplied — **grep density is not evidence of
   what a transform emits, and a design doc is a claim about the tree with a date
   on it.** Nobody caught it until the human asked "why is kernel on that list?".
+
+  **RULED (Lars, 2026-08-06): kernel gets a pure JS lowering path.** Not a port
+  of the GPU story — `|mlir[gpu]` is *"a little dubious on Zig too"* and whether
+  it ever wants a WebGPU analogue is explicitly deferred, no rush. What kernel
+  wants on JS is the ordinary lowering: shapes as typed arrays, pairwise and
+  step as flat loops. That is the whole target.
+
+  **Its emission surface is far smaller than the module.** `init` is 1391 lines
+  but only ~60 of them are emission calls (`allocPrint` / `appendSlice` /
+  writer); 109 sites are AST analysis and 18 are diagnostics. **The analysis is
+  host-agnostic and stays Zig regardless of target** — it runs inside the
+  compiler either way — so a second rendering touches the emission sites only.
+  The text it emits is largely type declarations (`"x: f64, y: f64"`) that
+  JavaScript does not need at all. Measure the emission surface, not the file:
+  the same lesson that produced the wrong answer above gives a much better one
+  here.
+
+  Expect the `fmt:ln` shape problem — kernel's transforms are result-producing,
+  so their JS renderings must emit STATEMENTS declaring a value, never a
+  `break :__KORU_INLINE__` expression.
 - **`interpreter` and `runtime` are a whole interpreter** — 4257 lines, 30 `|zig`
   procs, 340 uses of `std.`/allocators. 19 tests sit behind it. Genuinely out of
   scope until someone rules otherwise — and unlike kernel, that judgement is
