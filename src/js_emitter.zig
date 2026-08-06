@@ -1691,7 +1691,21 @@ const Emitter = struct {
         // implemented by a subflow has no proc body, and its firing sites are AST
         // nodes the closure path already lowers correctly. Gate on the proc rather
         // than discovering its absence one frame deeper.
-        if (event_has_effect and all_effects_void and self.findJsProcIn(self.items, &event.path) != null) {
+        //
+        // A producer that ALSO declares terminal branches is not this shape. It
+        // returns a value, its proc body says so with `return`, and this path
+        // splices that body into a plain block — where `return` exits the whole
+        // flow function and the terminal arms, emitted nowhere, simply vanish.
+        // `sink { ! ?pulse i64 | done | err }` printed its three pulses and then
+        // silently dropped `done`: correct output followed by a missing line, the
+        // hardest kind of divergence to read. The closure path below already
+        // handles the mixed shape — Handlers_<id> for the effect arms, a real
+        // handler call, then a `.tag` dispatch — so route there and keep the
+        // splice for what it was built for: pure void producers (140_011, the
+        // pipe_dN depth benchmarks), which declare no terminal branch at all.
+        if (event_has_effect and all_effects_void and terminal_branches == 0 and
+            self.findJsProcIn(self.items, &event.path) != null)
+        {
             try self.emitInlineVoidProducer(event, inv, continuations, indent);
             return;
         }
