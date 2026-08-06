@@ -1,0 +1,56 @@
+// std/fs — JavaScript implementation facet.
+//
+// Events are declared in the `fs.kz` companion (merged at import); this file
+// holds the `|js` proc bodies. `~import std/fs` merges all same-stem facets
+// into one module, so the contract in `fs.kz` is in scope here.
+//
+// Alignment with the Zig facet: node's readFileSync is the honest twin of the
+// Zig body's readToEndAlloc slurp — same `aspirational` gap (bounded by RAM,
+// not streaming), deliberately NOT fixed here. Node fuses open and read into
+// one throw, so err.code is demultiplexed back onto the two Zig switches:
+// open-class codes take the open strings, read-class the read strings, and
+// anything unmapped falls to "Failed to open file" — the open switch's
+// `else =>`, which is where an unrecognised failure of a fused call most
+// likely came from.
+//
+// HYGIENE: this body INLINES into the consumer's frame (effect lowering), so
+// locals carry the same __koru_rl_ prefix the Zig facet uses, for the same
+// reason — never collide with user bindings in the surrounding flow.
+
+~proc read-lines|js {
+    let __koru_rl_content;
+    try {
+        __koru_rl_content = require("fs").readFileSync(path, "utf8");
+    } catch (__koru_rl_err) {
+        const __koru_rl_code = __koru_rl_err && __koru_rl_err.code;
+        let __koru_rl_msg;
+        if (__koru_rl_code === "ENOENT") {
+            __koru_rl_msg = "File not found";
+        } else if (__koru_rl_code === "EACCES" || __koru_rl_code === "EPERM") {
+            __koru_rl_msg = "Access denied";
+        } else if (__koru_rl_code === "EISDIR") {
+            __koru_rl_msg = "Path is a directory";
+        } else if (__koru_rl_code === "ENOMEM" || __koru_rl_code === "ERR_FS_FILE_TOO_LARGE" || __koru_rl_code === "ERR_STRING_TOO_LONG") {
+            __koru_rl_msg = "Out of memory reading file";
+        } else if (__koru_rl_code === "EIO" || __koru_rl_code === "EBADF") {
+            __koru_rl_msg = "Failed to read file";
+        } else {
+            __koru_rl_msg = "Failed to open file";
+        }
+        return { tag: "failed", failed: __koru_rl_msg };
+    }
+
+    let __koru_rl_n = 0;
+    const __koru_rl_parts = __koru_rl_content.split("\n");
+    for (let __koru_rl_i = 0; __koru_rl_i < __koru_rl_parts.length; __koru_rl_i++) {
+        const __koru_rl_raw = __koru_rl_parts[__koru_rl_i];
+        // A trailing newline yields one final empty segment - not a line.
+        if (__koru_rl_raw.length === 0 && __koru_rl_i === __koru_rl_parts.length - 1) break;
+        const __koru_rl_l = __koru_rl_raw.length > 0 && __koru_rl_raw[__koru_rl_raw.length - 1] === "\r"
+            ? __koru_rl_raw.slice(0, -1)
+            : __koru_rl_raw;
+        line(__koru_rl_l);
+        __koru_rl_n += 1;
+    }
+    return { tag: "done", done: __koru_rl_n };
+}
