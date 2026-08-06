@@ -453,6 +453,39 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                         }
                         n.* = .{ .inline_code = t };
                     },
+                    // A branch-resolution payload (`| then => got s.n`) is a
+                    // THIRD text position, alongside the guard and the args, and
+                    // it was the only one the walk did not carry: the guard
+                    // lowered to `__koru_store_s.n` while the payload one line
+                    // below reached Zig as a bare `s` (690_256). The emitter
+                    // reads `plain_value` for the single-value form and
+                    // `expression_str orelse type` per field for the record
+                    // form, so the rewrite must land in exactly those slots.
+                    .branch_constructor => {
+                        const bc = &n.branch_constructor;
+                        if (bc.plain_value) |pv| {
+                            var t = pv;
+                            for (names) |nm| {
+                                if (hit.inSet(bound_all, nm)) continue;
+                                t = storeRefsH(alloc, t, nm, isIn(ident, nm));
+                            }
+                            bc.plain_value = t;
+                        }
+                        for (bc.fields) |*fld| {
+                            const has_expr = fld.expression_str != null;
+                            const src = fld.expression_str orelse fld.type;
+                            var t = src;
+                            for (names) |nm| {
+                                if (hit.inSet(bound_all, nm)) continue;
+                                t = storeRefsH(alloc, t, nm, isIn(ident, nm));
+                            }
+                            if (has_expr) {
+                                @constCast(fld).expression_str = t;
+                            } else {
+                                @constCast(fld).type = t;
+                            }
+                        }
+                    },
                     else => {},
                 }
             }
@@ -4593,6 +4626,34 @@ fn isStoreNewFor(f: *const ast_find.Flow, want: []const u8) bool {
                         t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
                     }
                     n.* = .{ .expression = t };
+                },
+                // A branch-RESOLUTION payload (`| then => got s.n`) is the same
+                // read one position over from the guard, and it was the last
+                // expression slot the walk did not carry: `if(s.n > 0)` lowered
+                // to the cell while `=> got s.n` reached Zig as a bare `s`
+                // (690_256). `rewriteImmediateImpl` below already does this for
+                // the bare-return twin — the node form was simply missed. The
+                // emitter reads `plain_value`, else `expression_str orelse type`
+                // per field, so the rewrite lands in exactly those slots.
+                .branch_constructor => {
+                    const bc = &n.branch_constructor;
+                    if (bc.plain_value) |pv| {
+                        var t = pv;
+                        for (names, prefixes) |nm, px| {
+                            if (isIn(bound, nm)) continue;
+                            t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
+                        }
+                        bc.plain_value = t;
+                    }
+                    for (bc.fields) |*fld| {
+                        const has_expr = fld.expression_str != null;
+                        var t = fld.expression_str orelse fld.type;
+                        for (names, prefixes) |nm, px| {
+                            if (isIn(bound, nm)) continue;
+                            t = storeRefs(alloc, t, nm, px, isIn(idents, nm));
+                        }
+                        if (has_expr) @constCast(fld).expression_str = t else @constCast(fld).type = t;
+                    }
                 },
                 else => {},
             }
