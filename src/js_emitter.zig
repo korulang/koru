@@ -2143,7 +2143,20 @@ const Emitter = struct {
 
             // Splice the handler body in-scope:
             //   { const <binding> = <arg>; <handler sub-flow> }
-            const cont = best_op_branch.?;
+            // `best_branch` is the effect BRANCH; the arms that handle it are
+            // CONTINUATIONS, and everything below reads `cont.branch` /
+            // `cont.binding`. Resolve one from the other rather than reading a
+            // variable of the wrong type.
+            //
+            // An OMITTED OPTIONAL arm has no continuation at all: Option B
+            // (ruled 2026-07-19, pinned by 400_170) makes that fire a
+            // producer-side no-op, so drop the call text and carry on. The
+            // guard above already refused the non-optional case loudly, so a
+            // null here can only be the optional shape.
+            const cont = continuationForBranch(continuations, best_branch.?.name) orelse {
+                pos = best_after;
+                continue;
+            };
             try self.write("\n");
             try self.writeFmt("{s}{{\n", .{indent});
             const block_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
