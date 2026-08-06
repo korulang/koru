@@ -2105,7 +2105,7 @@ const Emitter = struct {
             // leftmost match. Op names are assumed to appear only as the effect
             // call in these controlled procs (fine for the spike).
             var best_call_start: ?usize = null;
-            var best_branch: ?*const ast.Branch = null;
+            var best_op_branch: ?*const ast.Continuation = null;
             var best_arg: []const u8 = "";
             var best_after: usize = 0;
 
@@ -2121,14 +2121,15 @@ const Emitter = struct {
                     // producer-side no-op, so the inline rewriter DROPS the call.
                     // A required arm with no handler is a different animal and
                     // still refuses loudly.
-                    if (continuationForBranch(continuations, b.name) == null and !b.is_optional) {
+                    const cont = continuationForBranch(continuations, b.name);
+                    if (cont == null and !b.is_optional) {
                         log.err("[js_emitter] void effect op '{s}' has no matching continuation\n", .{b.name});
                         return JsEmitError.UnsupportedConstruct;
                     }
                     best_call_start = found.call_start;
                     best_after = found.after;
                     best_arg = found.arg;
-                    best_branch = b;
+                    best_op_branch = cont;
                 }
             }
 
@@ -2141,22 +2142,15 @@ const Emitter = struct {
             // Emit body text before the call verbatim (re-indented).
             try self.emitReindentedSlice(trimmed[pos..call_start], indent);
 
-            // Splice the handler body in-scope:
-            //   { const <binding> = <arg>; <handler sub-flow> }
-            // `best_branch` is the effect BRANCH; the arms that handle it are
-            // CONTINUATIONS, and everything below reads `cont.branch` /
-            // `cont.binding`. Resolve one from the other rather than reading a
-            // variable of the wrong type.
-            //
-            // An OMITTED OPTIONAL arm has no continuation at all: Option B
-            // (ruled 2026-07-19, pinned by 400_170) makes that fire a
-            // producer-side no-op, so drop the call text and carry on. The
-            // guard above already refused the non-optional case loudly, so a
-            // null here can only be the optional shape.
-            const cont = continuationForBranch(continuations, best_branch.?.name) orelse {
+            // Omitted optional arm: the call and its trailing `;` are simply gone.
+            const cont = best_op_branch orelse {
                 pos = best_after;
                 continue;
             };
+
+            // Splice the handler body in-scope:
+            //   { const <binding> = <arg>; <handler sub-flow> }
+
             try self.write("\n");
             try self.writeFmt("{s}{{\n", .{indent});
             const block_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
