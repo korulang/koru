@@ -515,6 +515,12 @@ pub const CompilerContext = struct {
     js_emitter_module.addImport("log", log_module);
     js_emitter_module.addImport("file_types", file_types_module);
     js_emitter_module.addImport("annotation_parser", annotation_parser_module);
+    // The ONE struct-literal projector. A `-> { a.x, b.y }` produce is a Koru
+    // struct literal under the pun law, and reading it with a second brace-splitter
+    // is how two hosts' answers drift — the `no koruStructToZig text surgery` rule
+    // in control.kz's capture seed and template_processor's lowerScrutinee both name
+    // that reason.
+    js_emitter_module.addImport("struct_literal", struct_literal_module);
 
     // Build.zig emission
     const emit_build_zig_module = b.createModule(.{

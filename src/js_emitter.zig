@@ -29,6 +29,10 @@ const ast = @import("ast");
 const log = @import("log");
 const file_types = @import("file_types");
 const annotation_parser = @import("annotation_parser");
+/// The ONE Koru struct-literal projector, shared with the parser, the Zig emitter
+/// and the template engine. Reading a `{ … }` literal with a second brace-splitter
+/// is how two hosts' answers drift.
+const struct_literal = @import("struct_literal");
 
 pub const JsEmitError = error{
     OutOfMemory,
@@ -432,7 +436,7 @@ const Emitter = struct {
         if (bc.is_bare_return) {
             try self.writeFmt("{s}return ", .{indent});
             if (bc.plain_value) |pv| {
-                try self.writeJsExpr(pv);
+                try self.writeProduceValue(pv);
             } else {
                 try self.write("undefined");
             }
@@ -443,7 +447,7 @@ const Emitter = struct {
         try self.writeFmt("{s}return {{ tag: \"{s}\"", .{ indent, bc.branch_name });
         if (bc.plain_value) |pv| {
             try self.writeFmt(", {s}: ", .{bc.branch_name});
-            try self.writeJsExpr(pv);
+            try self.writeProduceValue(pv);
         } else if (bc.fields.len > 0) {
             try self.writeFmt(", {s}: {{ ", .{bc.branch_name});
             for (bc.fields, 0..) |field, k| {
@@ -457,6 +461,41 @@ const Emitter = struct {
             try self.write(" }");
         }
         try self.write(" };\n");
+    }
+
+    /// A produce value is either an expression or a Koru STRUCT LITERAL written in
+    /// braces (`-> { final.sum, final.max }` satisfying `-> { sum: i32, max: i32 }`).
+    /// The braced form is read by the ONE projector, `struct_literal.parseFields`,
+    /// under the pun law — a bare path names the field by its last segment — and
+    /// re-emitted as a JS object literal.
+    ///
+    /// Without this the braces passed through verbatim, so a punned literal reached
+    /// `node` as `return { final.sum, final.max };` — not a diagnostic, not a wrong
+    /// answer, a SYNTAX error, from the one emitter whose stated contract is to
+    /// refuse rather than emit code it does not model. A literal that already spells
+    /// its names (`-> { a: 1 }`) parses to the same text it started as, which is why
+    /// this was invisible until a pun turned up.
+    ///
+    /// A value that is not a struct literal at all — an arithmetic expression, a
+    /// string, a call — fails the projector's own test and passes through as before.
+    fn writeProduceValue(self: *Emitter, value: []const u8) JsEmitError!void {
+        const trimmed = std.mem.trim(u8, value, " \t\r\n");
+        if (trimmed.len < 2 or trimmed[0] != '{' or trimmed[trimmed.len - 1] != '}') {
+            return self.writeJsExpr(value);
+        }
+        const fields = struct_literal.parseFields(self.allocator, trimmed) catch
+            return self.writeJsExpr(value);
+        // The singleton-expression carve-out yields one unnamed field; that is a
+        // bare value in braces, not an object, so leave it to the expression path.
+        if (fields.len == 0 or fields[0].name.len == 0) return self.writeJsExpr(value);
+        try self.write("{ ");
+        for (fields, 0..) |f, i| {
+            if (i > 0) try self.write(", ");
+            try self.writeIdent(f.name);
+            try self.write(": ");
+            try self.writeJsExpr(f.value);
+        }
+        try self.write(" }");
     }
 
     /// Emit the body of a SUBFLOW implementation — a flow whose `impl_of` names
