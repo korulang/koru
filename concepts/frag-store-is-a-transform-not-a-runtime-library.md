@@ -42,9 +42,25 @@ The belief this leaves us with: **module size is not a proxy for port cost
 on a code-generating stdlib.** Before sizing any module's port, read
 whether its procs are runtime or transform — the two carry different
 prerequisites, different skills, and different risk, and a line count says
-nothing about which one you are looking at. The corpus currently holds 152
-runtime procs against 23 transform procs; summing them into a single
-"stdlib coverage" number would hide exactly this distinction.
+nothing about which one you are looking at.
+
+**And reading the proc line does not tell you.** A proc inherits its
+transform-ness from the event it implements, and the annotation is
+frequently written on the event rather than on the proc:
+`koru_std/kernel.kz:80` declares
+`~[comptime|transform|claims_descendants]pub tor init`, then `:90` writes a
+bare `~proc init|zig`. Classifying on the proc line alone tagged
+`kernel:init` a portable runtime port worth 27 tests, when it is the
+Zig-only MLIR/GPU backend that must never be ported at all — the single
+worst place the plan could have spent effort, promoted to fourth on the
+priority list by a one-line resolution bug.
+
+Correcting it moved the corpus from 152 runtime / 23 transform to **118
+runtime / 57 transform**: 34 procs reclassified, and with them 34 procs'
+worth of contract-extraction prerequisite that was never owed. Summing the
+two into one "stdlib coverage" number would hide the distinction; deriving
+the distinction from the wrong line hides it just as effectively while
+looking precise.
 
 Open question: whether a transform's `|js` variant can share the Liquid
 template-parsing logic with its `|zig` sibling and diverge only at the
