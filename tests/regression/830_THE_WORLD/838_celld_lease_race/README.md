@@ -1,7 +1,10 @@
-# celld's ownership lease, as a Koru obligation
+# celld's lease and output gate, as Koru obligations
 
-Four entries, one claim: **celld enforces one-writer-per-cell with a runtime
-fence; Koru can make the unowned write path fail to compile.**
+Two slices of celld's decision core, eight entries, one claim: **celld enforces
+its two central invariants with runtime discipline; Koru can make violating
+them fail to compile.**
+
+**Slice one — ownership.** *One writer per cell.*
 
 | entry | marker | what it pins |
 |---|---|---|
@@ -9,6 +12,40 @@ fence; Koru can make the unowned write path fail to compile.**
 | `839_celld_write_after_release` | `MUST_ERROR` | `KORU030` Use-after-discharge — the fenced node's write |
 | `840_celld_forged_lease` | `MUST_ERROR` | `KORU030` no tracked phantom state — the losing node cannot conjure a lease |
 | `841_celld_lease_with_no_way_back` | `MUST_ERROR` | `KORU030` obligation was not discharged — a lease with no consumer anywhere |
+
+**Slice two — durability.** *Acknowledgement implies durability (RPO=0).*
+
+| entry | marker | what it pins |
+|---|---|---|
+| `842_celld_durability_gate` | `MUST_RUN` | one write acked against a real proof, one write **failed** because the proof could not cover it |
+| `843_celld_ack_without_proof` | `MUST_ERROR` | `KORU030` `'99'` holds no live `<durable!>` obligation — an ack cannot be invented |
+| `844_celld_unanswered_request` | `MUST_ERROR` | `KORU030` was not discharged, *"Call one of: gate.ack, gate.fail"* — a request cannot be dropped |
+| `845_celld_answered_twice` | `MUST_ERROR` | `KORU030` Use-after-discharge — one write, one outcome |
+
+A Frontier fell out of slice two and is pinned separately at
+`600_STDLIB/690_STORE/690_256_branch_payload_reads_a_store_column`: a store
+column read in a branch-resolution payload is dropped at emission and surfaces
+as a raw Zig `use of undeclared identifier`, while the identical read in the
+subflow's guard threads fine. The port did not need that shape — celld's
+`await_durable(cell, epoch, position)` takes the position as an argument, so
+passing it as a tor input is the faithful spelling and it works.
+
+## The arity of discharge is the whole design
+
+The two slices use one mechanism and get opposite, correct behaviour from it,
+decided by *how many ways there are to discharge*:
+
+- A lease has **one** consumer (`cas.release`). Auto-discharge inserts it at
+  scope exit, so a lease cannot be leaked even by forgetting. celld buys the
+  same property with a 10s TTL, a renewal timer at ttl/3, a fence timer at
+  ttl+1ms, and a process-halting self-fence (`logic/lib.rs:1838-1888`).
+- A response has **two** (`gate.ack`, `gate.fail`). Auto-discharge refuses to
+  choose, so every request's fate must be written down. celld reaches the same
+  place by hand: its fence walks every gated write and completes it as *failed*
+  (`logic/lib.rs:3838-3843`), because silently dropping and silently acking are
+  both lies.
+
+Neither behaviour was designed in. Both fall out of counting the dischargers.
 
 ## Where this came from
 
@@ -77,14 +114,26 @@ Being precise, because the difference is the whole boundary:
 - **The bucket here is a `std/store` row, not S3.** Deliberately — it keeps the
   test deterministic and needs no I/O, which is the same posture celld's own
   decision core takes. It is not a client.
-- **No durability gate.** celld's RPO=0 comes from refusing to release a
-  response until the replica proves `durable >= position`
-  (`logic/lib.rs:3711`). That is the obvious next slice and is not modelled here.
+- **The type system proves you HELD a proof, not that the proof was SUFFICIENT.**
+  This is the sharpest limit and it is worth stating exactly. celld's check is
+  `durable >= gate.position` — a numeric comparison between two positions. A
+  phantom cannot compare numbers, so `<durable>` says "a proof exists and you
+  have it," never "it covers position N." `842` still gets that right, but at
+  *runtime*, in `replica.sync`'s guard, exactly where celld does it. What moved
+  to compile time is the discipline of gating at all — that a response cannot
+  escape without going through the gate. What stays at runtime is whether the
+  gate should open.
+- **Same split, both slices.** The CAS decides who may hold a lease; the
+  comparison decides whether a proof suffices. Types enforce everything
+  downstream of those two decisions and nothing upstream of them. That is the
+  honest shape of the result, and it is the same shape in each slice — which is
+  mild evidence it is the general one rather than a lucky fit.
 
 ## Reproducing
 
 ```sh
-./run_regression.sh celld     # all four
+./run_regression.sh celld     # all eight
+./run_regression.sh 690_256   # the Frontier this turned up
 ```
 
 celld facts above are cited against commit `553ae73f` (2026-08-05). Its
