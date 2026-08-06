@@ -1,0 +1,1608 @@
+{
+  "generated": "2026-08-06T09:05:05.562Z",
+  "bucket": "emitter",
+  "sample": null,
+  "wallSeconds": 282.7,
+  "byStatus": {
+    "js-ok": 45,
+    "js-mismatch": 6,
+    "js-compile": 129,
+    "js-runtime": 40
+  },
+  "byCluster": {
+    "000_CORE_LANGUAGE": {
+      "total": 32,
+      "ok": 12
+    },
+    "100_MODULE_SYSTEM": {
+      "total": 30,
+      "ok": 6
+    },
+    "200_COMPILER_FEATURES": {
+      "total": 19,
+      "ok": 2
+    },
+    "100_PARSER": {
+      "total": 1,
+      "ok": 0
+    },
+    "300_ADVANCED_FEATURES": {
+      "total": 53,
+      "ok": 8
+    },
+    "200_SYNTAX": {
+      "total": 1,
+      "ok": 0
+    },
+    "320_CONTROL_FLOW": {
+      "total": 16,
+      "ok": 0
+    },
+    "400_RUNTIME_FEATURES": {
+      "total": 37,
+      "ok": 4
+    },
+    "500_INTEGRATION_TESTING": {
+      "total": 3,
+      "ok": 3
+    },
+    "600_STDLIB": {
+      "total": 8,
+      "ok": 3
+    },
+    "670_NESTING_SWEEP": {
+      "total": 14,
+      "ok": 6
+    },
+    "830_THE_WORLD": {
+      "total": 5,
+      "ok": 0
+    },
+    "900_EXAMPLES_SHOWCASE": {
+      "total": 1,
+      "ok": 1
+    }
+  },
+  "results": [
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_000_hello_world_koru",
+      "bucket": "no-stdlib-calls",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 906
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_001_hello_world",
+      "bucket": "no-stdlib-calls",
+      "status": "js-mismatch",
+      "detail": "line 1: expected \"Hello World\" got \"\"",
+      "ms": 11180
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_020_eol_comments",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11641
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_005_const_typed_values",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11706
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_007_string_escape_in_flow_arg",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11741
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_004_const_block_module_scope",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11751
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_052_slash_namespace",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11764
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_006_const_cross_target",
+      "bucket": "no-stdlib-calls",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11767
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_055_bare_import",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11000
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_023_subflow_arrow_return",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214641287 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 782
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_056_slash_resolves_qualified_event",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: msg is not defined",
+      "ms": 11369
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_062_const_array_index",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11493
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_008_wildcard_branch_payload",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11877
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_063_modulo_operator_signed_i64_gap",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214642317 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 12018
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_014_pure_subflow_impl",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214642319 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11984
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_021_event_arrow_return",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214642325 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11999
+    },
+    {
+      "test": "000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_064_for_range_loop_var_i64_mix_gap",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214642321 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 12100
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_024_event_arrow_record_return",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214642435 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11613
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_025_continuation_handler_bare_return",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214643323 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10972
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_026_slice_arrow_return",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214643334 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11061
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_028_loop_exit_arrow_return",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214643388 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10767
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_030_chained_subflow_bind_produce",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214643392 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10864
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_029_subflow_bind_produce",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214643390 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10900
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_033_if_bare_return_produce",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214643394 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11162
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_034_recursive_if_bind_produce",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214643398 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11142
+    },
+    {
+      "test": "000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_037_multiline_decl_bare_return",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214643466 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10984
+    },
+    {
+      "test": "000_CORE_LANGUAGE/030_LITERALS/030_018_string_escape_backslash_then_quote",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11199
+    },
+    {
+      "test": "100_MODULE_SYSTEM/110_IMPORTS/110_009_dir_import_dotted",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU010]: '_' is only legal as the sole body of a branch handler",
+      "ms": 22
+    },
+    {
+      "test": "100_MODULE_SYSTEM/110_IMPORTS/110_003_directory_import_public",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10514
+    },
+    {
+      "test": "000_CORE_LANGUAGE/035_TYPE_SYSTEM/030_143_signed_runtime_division",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214644652 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11345
+    },
+    {
+      "test": "000_CORE_LANGUAGE/040_CONTROL_FLOW/010_008_if_print_ln_branch",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11250
+    },
+    {
+      "test": "000_CORE_LANGUAGE/040_CONTROL_FLOW/241_record_produce_named_fields",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214644695 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11159
+    },
+    {
+      "test": "000_CORE_LANGUAGE/040_CONTROL_FLOW/240_subflow_defines_semantics",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214644716 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11370
+    },
+    {
+      "test": "100_MODULE_SYSTEM/110_IMPORTS/110_004_file_processor",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10738
+    },
+    {
+      "test": "000_CORE_LANGUAGE/040_CONTROL_FLOW/242_record_produce_string_fields",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214644721 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11119
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_001_io_print_ln_in_module",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 739
+    },
+    {
+      "test": "100_MODULE_SYSTEM/110_IMPORTS/110_010_dir_import_flow",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10667
+    },
+    {
+      "test": "100_MODULE_SYSTEM/110_IMPORTS/110_021_keyword_tor_as_subflow_head_in_module",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~cond` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10629
+    },
+    {
+      "test": "100_MODULE_SYSTEM/110_IMPORTS/110_020_cross_module_literal_arg",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10887
+    },
+    {
+      "test": "100_MODULE_SYSTEM/110_IMPORTS/110_026_pun_survives_without_expr_param",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10872
+    },
+    {
+      "test": "100_MODULE_SYSTEM/110_IMPORTS/110_028_paths_declared_in_pure_k",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10774
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_008_nested_loop_in_module",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10878
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_009_nested_loop_in_entry_tor",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214646009 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11003
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_010_nested_loop_under_branch_in_module",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10852
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_011_nested_loop_under_branch_in_entry_tor",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214647091 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11275
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_014_liquid_emit_in_module",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10450
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_024_capture_in_module",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10776
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_015_print_blk_in_module",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10857
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_012_parser_grammar_in_module",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 11298
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_035_io_print_in_module",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10795
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_041_parser_grammar_in_entry_tor",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214647501 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11502
+    },
+    {
+      "test": "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_044_id_request_across_module_boundary",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 13154
+    },
+    {
+      "test": "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_003_directory_mixed_extensions",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 11248
+    },
+    {
+      "test": "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_009_entry_merges_companions",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "ReferenceError: r is not defined",
+      "ms": 10681
+    },
+    {
+      "test": "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_004_index_kjs_directory_source",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 11275
+    },
+    {
+      "test": "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_010_cross_target_host_line_routing",
+      "bucket": "no-stdlib-calls",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10770
+    },
+    {
+      "test": "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_011_vaxis_pump_realistic",
+      "bucket": "no-stdlib-calls",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10745
+    },
+    {
+      "test": "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_012_js_dispatch_binding_shadow",
+      "bucket": "no-stdlib-calls",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10576
+    },
+    {
+      "test": "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_015_if_template_cross_target",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 633
+    },
+    {
+      "test": "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_013_js_continuation_branch_dispatch",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10674
+    },
+    {
+      "test": "200_COMPILER_FEATURES/210_PARSER/210_169_chain_after_multiline_source_block_on_definition_line",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "thread 214648878 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 755
+    },
+    {
+      "test": "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_014_for_template_cross_target",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10841
+    },
+    {
+      "test": "200_COMPILER_FEATURES/210_PARSER/210_060_proc_abstract_override",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "thread 214649720 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10555
+    },
+    {
+      "test": "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_016_private_event_in_k_allowed",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214649729 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11105
+    },
+    {
+      "test": "100_PARSER/100_052_braceless_branch_constructors",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214649735 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11160
+    },
+    {
+      "test": "200_COMPILER_FEATURES/210_PARSER/210_124_if_cond_and_dropped",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: x is not defined",
+      "ms": 11221
+    },
+    {
+      "test": "200_COMPILER_FEATURES/210_PARSER/210_087_phantom_literal_suffix",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214649738 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11292
+    },
+    {
+      "test": "200_COMPILER_FEATURES/210_PARSER/210_168_source_block_opens_subflow_definition_line",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "thread 214649801 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11188
+    },
+    {
+      "test": "200_COMPILER_FEATURES/210_PARSER/210_177_subflow_chain_runs_every_step",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214650089 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11222
+    },
+    {
+      "test": "200_COMPILER_FEATURES/220_COMPILATION/220_013_many_transforms_no_cap",
+      "bucket": "no-stdlib-calls",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10587
+    },
+    {
+      "test": "200_COMPILER_FEATURES/220_FLOW_CHECKER/220_020_flowhead_multiline_chain",
+      "bucket": "ready",
+      "status": "js-mismatch",
+      "detail": "line 2: expected \"b\" got \"\"",
+      "ms": 11116
+    },
+    {
+      "test": "200_COMPILER_FEATURES/250_TEMPLATE_ENGINE/250_001_substitute_arg",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~show` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10530
+    },
+    {
+      "test": "200_COMPILER_FEATURES/230_EMITTER/230_014_binding_param_name_collision",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214650918 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11295
+    },
+    {
+      "test": "200_COMPILER_FEATURES/240_STD_LIBRARY/240_022_args_cross_target",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10937
+    },
+    {
+      "test": "200_COMPILER_FEATURES/240_STD_LIBRARY/240_021_args_passthrough",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: n is not defined",
+      "ms": 11038
+    },
+    {
+      "test": "200_COMPILER_FEATURES/240_STD_LIBRARY/240_020_args_basic",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: n is not defined",
+      "ms": 11274
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_013_tap_chains",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU010]: stray continuation line without Koru construct",
+      "ms": 24
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_015_when_clauses",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU010]: stray continuation line without Koru construct",
+      "ms": 21
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_090_aspire_comptime_pure_koru_fold",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[PARSE003]: Koru constructs in host-embedded files (`.kz`, `.kjs`, etc.) must start with `~` — the host→Koru switch",
+      "ms": 19
+    },
+    {
+      "test": "200_COMPILER_FEATURES/250_TEMPLATE_ENGINE/250_002_if_truthy",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~maybe` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10627
+    },
+    {
+      "test": "200_COMPILER_FEATURES/250_TEMPLATE_ENGINE/250_003_if_else",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~pick` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10419
+    },
+    {
+      "test": "200_COMPILER_FEATURES/250_TEMPLATE_ENGINE/250_004_for_over_continuations",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~probe` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10082
+    },
+    {
+      "test": "200_COMPILER_FEATURES/250_TEMPLATE_ENGINE/250_006_template_continues_to_terminal",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~probe3` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10181
+    },
+    {
+      "test": "200_COMPILER_FEATURES/250_TEMPLATE_ENGINE/250_008_if_compares_to_literal",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~probe-cmp` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10211
+    },
+    {
+      "test": "200_COMPILER_FEATURES/250_TEMPLATE_ENGINE/250_007_if_returns_terminals",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: cond is not defined",
+      "ms": 10460
+    },
+    {
+      "test": "200_SYNTAX/210_STRUCT_CONSTRUCTORS/210_025_field_punning",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214652062 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10546
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_092_table_from_comptime_range",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10539
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_100_aspire_comptime_pgo_route_order",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214652397 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 750
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_093_table_keep_wheel",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10397
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_094_wheel_30030",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10223
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_099_aspire_koru_template_facet",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "backend_output_emitted.zig:160:17: error: expected statement, found '->'",
+      "ms": 3553
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_095_wheel_gaps",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10860
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_096_wheel_gaps_30030",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10615
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_097_wheel_runtime_walk",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214653311 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10819
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_098_comptime_fold_expression",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214653372 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10708
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/310_COMPTIME/310_101_aspire_comptime_data_to_liquid",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214653532 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10869
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_002_stdlib_if",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: value is not defined",
+      "ms": 10794
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_018_template_define",
+      "bucket": "ready",
+      "status": "js-mismatch",
+      "detail": "line 1: expected \"Templates defined successfully\" got \"\"",
+      "ms": 10300
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_019_template_lookup",
+      "bucket": "ready",
+      "status": "js-mismatch",
+      "detail": "line 1: expected \"Template lookup test passed\" got \"\"",
+      "ms": 10296
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_026_for_subflow",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214654538 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11543
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_027_capture_basic",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214654547 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11660
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_029_template_lookup_in_transform",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: value is not defined",
+      "ms": 11715
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_028_capture_multi",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214654622 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11905
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_030_println_basic",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: name is not defined",
+      "ms": 11266
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_031_println_types",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: count is not defined",
+      "ms": 11166
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_032_println_blk_basic",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "ReferenceError: name is not defined",
+      "ms": 11147
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_033_println_koru_scope",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214655029 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11282
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_042_capture_if_for_multi",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214655761 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11057
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_043_const_basic",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214655782 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11355
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_044_const_simple",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11034
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_049_println_conditionals",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: debug is not defined",
+      "ms": 11024
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_053_println_blk_conditionals",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "ReferenceError: name is not defined",
+      "ms": 10687
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_091_print_float_format",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: pi is not defined",
+      "ms": 10829
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_081_ecology_pass_ran_mechanism",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10914
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_092_print_blk_void_chain_multiline",
+      "bucket": "no-stdlib-calls",
+      "status": "js-mismatch",
+      "detail": "line 3: expected \"Second block line one.\" got \"\"",
+      "ms": 10798
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_093_print_blk_void_chain_inline_second",
+      "bucket": "no-stdlib-calls",
+      "status": "js-mismatch",
+      "detail": "line 2: expected \"Second block on one line.\" got \"\"",
+      "ms": 10735
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/330_PHANTOM_TYPES/330_065_phantom_compound_unit",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214657066 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10599
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/320_STDLIB/320_098_capture_nested_site",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214657068 panic: js_emitter.emit failed: UnsupportedConstruct",
+      "ms": 10948
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/330_PHANTOM_TYPES/330_063_phantom_state_on_primitive",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214657084 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11080
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/330_PHANTOM_TYPES/330_120_unbound_bare_return_obligation_auto_discharges",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 10385
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/350_SUBFLOWS/350_010_orisha_router_showcase",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[KORU002]: module not found: 'orisha'",
+      "ms": 21
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/350_SUBFLOWS/350_012_nested_router",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[KORU002]: module not found: 'orisha'",
+      "ms": 25
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/330_PHANTOM_TYPES/330_066_phantom_literal_suffix_callsite",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214657191 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11209
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/330_PHANTOM_TYPES/330_068_phantom_obligation_on_primitive_string",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214657208 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10993
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/335_OBLIGATION_STRESS/335_050_auto_discharge_lifo_order",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214657453 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11014
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/335_OBLIGATION_STRESS/335_051_explicit_then_auto_discharge",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214658217 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10889
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/340_TYPE_SYSTEM/340_003_struct_pub_keyword",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "ReferenceError: p is not defined",
+      "ms": 10958
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/350_SUBFLOWS/301_subflow_immediate",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214658430 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11179
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/355_OPTIONAL_BRANCHES/355_011_catchall_inside_event_body",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214658451 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10902
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/380_TEMPLATING/380_001_basic_interpolation",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "SyntaxError: Invalid or unexpected token",
+      "ms": 599
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/350_SUBFLOWS/322_subflow_with_taps_pure_koru",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214658481 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11408
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/360_TAPS_OBSERVERS/502_void_event_no_branches",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 11191
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/360_TAPS_OBSERVERS/509_tap_observer_print_on_subflow_terminal",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214658765 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11576
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/370_VARIANTS/8213_subflow_variant_parser_accepts",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214659018 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11303
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/370_VARIANTS/8214_subflow_variant_picks_no",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214659681 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11153
+    },
+    {
+      "test": "300_ADVANCED_FEATURES/380_TEMPLATING/380_002_conditionals",
+      "bucket": "no-stdlib-calls",
+      "status": "js-runtime",
+      "detail": "SyntaxError: Invalid or unexpected token",
+      "ms": 10470
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_056_expand_basic",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214659822 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10671
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_099_sequential_for_phases_under_capture",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[KORU028]: terminal branch 'done' has more than one unguarded handler — a `|` continuation runs at most once; distinguish them with `when` guards or remove the duplicate",
+      "ms": 10669
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_096_if_value_return_subflow",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214659914 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11220
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_101_loopvar_in_complex_capture_array_write",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214659936 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11119
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_102_captured_cross_field_snapshot",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214660037 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10962
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_121_tail_self_loop_parallel_assign",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214660179 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10987
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_122_tail_self_loop_parallel_assign_multiarg",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214660790 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11009
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_123_mutual_tail_loop_crossref_reargs",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214660792 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10771
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_124_multibind_produce_tree_recursion",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214660859 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10896
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_125_nested_if_arm_produce",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214660862 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10713
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_126_capture_as_discard_binding",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214660929 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11089
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_133_cond_guarded_dispatch",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~cond` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10346
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_132_else_arm_keyword_escape_selfloop",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214661029 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10877
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_134_cond_binder_in_produce",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~cond` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10192
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_135_cond_destructure_scrutinee",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~cond` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10345
+    },
+    {
+      "test": "320_CONTROL_FLOW/320_137_cond_constructs_named_branches",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~cond` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10439
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_090_template_variant_passthrough",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "thread 214661944 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10751
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_093_template_per_call_basic",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~ping` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10012
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_092_template_variant_conditional",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "thread 214661953 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10115
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_091_template_variant_interpolation",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "thread 214661949 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10780
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_094_template_per_call_arg_substitution",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~count-to` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 9968
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_095_template_per_call_range_expr",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~each-in` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10114
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_101_wip_for_as_template_effect",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~loop` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 10294
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_110_effect_branch_single_void_cross_target",
+      "bucket": "no-stdlib-calls",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10011
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_111_effect_branch_multikind_cross_target",
+      "bucket": "no-stdlib-calls",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 9847
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_112_effect_branch_arg_name_mismatch_cross_target",
+      "bucket": "no-stdlib-calls",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 9819
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_115_effect_event_via_subflow",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214663173 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10745
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_131_effect_subflow_generator_for_each",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214663177 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10691
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_130_effect_subflow_fires_void_arm",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214663175 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10798
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_145_effect_subflow_optional_arm_omitted_noop",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214663395 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 1004
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_132_effect_subflow_plain_resume_bind",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214663402 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10660
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_134_effect_subflow_payloadless_multi_arm",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214664284 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11284
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_133_effect_subflow_multi_arm_resume",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214664286 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11709
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_135_effect_subflow_record_payload_arm",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214664360 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11690
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_139_effect_subflow_record_payload_fire",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214664401 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11593
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_146_effect_subflow_optional_resume_if_presence",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214664424 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11235
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_144_effect_subflow_optional_arm_handled",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214664489 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11432
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_147_effect_subflow_optional_when_presence",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214664622 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11243
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_154_effect_void_arm_presence_omitted",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214664636 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11352
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_155_effect_inliner_self_module_scope",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214665283 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11112
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_156_effect_resume_record_anonymous",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214665312 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11335
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_187_optional_expression_slot_is_legal",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU121]: control-flow construct `~shout` has no `|template|js` variant for the `--lang=js` build",
+      "ms": 530
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_177_effect_proc_optional_void_arm_presence_spliced",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214665371 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10999
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/420_PERFORMANCE/915_when_at_callsite",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "error[KORU010]: stray continuation line without Koru construct",
+      "ms": 25
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_176_effect_payload_type_qualified_cross_module",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214665382 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11306
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_178_effect_proc_optional_void_arm_presence_spliced_omitted",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214665567 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11017
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_179_proc_splice_mod_after_range_op",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214665583 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11013
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_180_subflow_call_omits_optional_param",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214665687 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10740
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_182_arm_chain_calls_effectful_tor_without_arms",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214665746 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10781
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/430_COORDINATION/430_001_user_coordinator",
+      "bucket": "no-stdlib-calls",
+      "status": "js-compile",
+      "detail": "❌ Compiler coordination error: Testing!",
+      "ms": 7517
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_185_param_default_on_subflow_path",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214666480 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10799
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/400_188_array_sort_lowers",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "SyntaxError: Invalid or unexpected token",
+      "ms": 10573
+    },
+    {
+      "test": "500_INTEGRATION_TESTING/540_VALIDATION/401_import_io",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10107
+    },
+    {
+      "test": "400_RUNTIME_FEATURES/430_COORDINATION/430_010_ast_dump_stages",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10729
+    },
+    {
+      "test": "500_INTEGRATION_TESTING/540_VALIDATION/404_import_lib_root",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10367
+    },
+    {
+      "test": "600_STDLIB/641_PARSER/641_005_ordered_choice_same_head",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "SyntaxError: Missing initializer in const declaration",
+      "ms": 686
+    },
+    {
+      "test": "500_INTEGRATION_TESTING/540_VALIDATION/406_import_explicit_extension",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10550
+    },
+    {
+      "test": "600_STDLIB/620_FMT/620_005_width_spec_signed_no_plus",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214667007 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10497
+    },
+    {
+      "test": "600_STDLIB/630_IO/630_001_io_println_cross_target",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10826
+    },
+    {
+      "test": "600_STDLIB/630_IO/630_005_print_interpolation_cross_target",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10640
+    },
+    {
+      "test": "600_STDLIB/630_IO/630_006_print_literal_braces",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10778
+    },
+    {
+      "test": "600_STDLIB/641_PARSER/641_004_json_full_recognizer",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "SyntaxError: Missing initializer in const declaration",
+      "ms": 11946
+    },
+    {
+      "test": "600_STDLIB/641_PARSER/641_031_nested_tree",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "SyntaxError: Missing initializer in const declaration",
+      "ms": 11614
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_010_capture_under_flow_head",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214667989 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11423
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_011_capture_under_scalar",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214668093 panic: js_emitter.emit failed: UnsupportedConstruct",
+      "ms": 11098
+    },
+    {
+      "test": "600_STDLIB/690_STORE/690_088_global_store_export",
+      "bucket": "ready",
+      "status": "js-runtime",
+      "detail": "TypeError: Cannot read properties of undefined (reading 'handler')",
+      "ms": 12566
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_014_capture_under_for_each",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214668728 panic: js_emitter.emit failed: UnsupportedConstruct",
+      "ms": 10917
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_015_capture_under_capture",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214668814 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 11099
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_030_foreach_under_flow_head",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10856
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_031_foreach_under_scalar",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10414
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_034_foreach_under_for_each",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10559
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_035_foreach_under_capture",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214669201 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10482
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_040_ifcond_under_flow-head",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10673
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_041_ifcond_under_scalar",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10578
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_044_ifcond_under_for-each",
+      "bucket": "ready",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 10488
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_045_ifcond_under_capture",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214670017 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10836
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_060_pipeline_produce_under_effect_resume",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214670027 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10611
+    },
+    {
+      "test": "830_THE_WORLD/831_generator_squares",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214670082 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10291
+    },
+    {
+      "test": "670_NESTING_SWEEP/670_070_variant_destructure_when_under_foreach",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214670080 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10513
+    },
+    {
+      "test": "830_THE_WORLD/832_generator_fold_named",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214670160 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10771
+    },
+    {
+      "test": "830_THE_WORLD/833_generator_fold_optional_arm",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214670168 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10697
+    },
+    {
+      "test": "830_THE_WORLD/834_mutex_unlock",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214670190 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 10535
+    },
+    {
+      "test": "830_THE_WORLD/836_let_it_crash",
+      "bucket": "ready",
+      "status": "js-compile",
+      "detail": "thread 214670324 panic: js_emitter.emit failed: NoJsProcBody",
+      "ms": 9463
+    },
+    {
+      "test": "900_EXAMPLES_SHOWCASE/900_HELLO_WORLD",
+      "bucket": "no-stdlib-calls",
+      "status": "js-ok",
+      "detail": "",
+      "ms": 8970
+    }
+  ]
+}
