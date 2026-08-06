@@ -1,0 +1,28 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc count|js {
+    console.log(`${direction}: ${n}`);
+
+    if (direction === "up") {
+        if (n < 3) {
+            return { tag: "next", next: n + 1 };
+        } else {
+            return { tag: "done", done: n };
+        }
+    } else {
+        if (n > 2) {
+            return { tag: "next", next: n - 1 };
+        } else {
+            return { tag: "done", done: n };
+        }
+    }
+}
+
+~proc start-up|js {
+    console.log("Starting count-up flow...");
+}
+
+~proc start-down|js {
+    console.log("Starting count-down flow...");
+}

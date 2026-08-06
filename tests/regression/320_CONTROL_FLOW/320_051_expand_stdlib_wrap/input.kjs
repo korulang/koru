@@ -1,0 +1,34 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+//
+// FRONTIER — this facet cannot complete, for two independent reasons, and
+// neither is fixable from this file.
+//
+// 1. `sort` is `[norun|expand]`, implemented by a `~std/template:define` whose
+//    body is Zig (`std.mem.sort` with `@TypeOf` for free generics). The
+//    [expand] transform is host-blind and splices that text into any target;
+//    the registry is keyed by name alone, so a JS `define(name: "sort")` here
+//    would collide with the Zig one rather than sit beside it. Same wall as
+//    320_095.
+// 2. The call site is `~sort(arr: numbers[0..])`. The argument is Zig slice
+//    syntax written into a Koru invocation, so even with a routed template the
+//    arg text does not survive the crossing.
+//
+// The second reason is the more interesting one: this test pins wrapping the
+// ZIG STANDARD LIBRARY, which is a Zig-target capability by construction. The
+// JavaScript answer to it is not a port of this fixture but a different
+// fixture wrapping a JavaScript builtin. Left honestly red for JS.
+
+let numbers = [5, 2, 8, 1, 9, 3];
+
+~proc verify|js {
+    let prev = numbers[0];
+    for (const n of numbers.slice(1)) {
+        if (n < prev) {
+            console.log(`FAIL: ${n} < ${prev}`);
+            return;
+        }
+        prev = n;
+    }
+    console.log("PASS: array sorted correctly");
+}

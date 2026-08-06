@@ -1,0 +1,14 @@
+// JavaScript implementation facet of module `fsd`.
+// Events and types are declared in fsd.kz (merged at import); this file holds
+// the |js proc bodies. What the fixture pins is the obligation lifecycle, so
+// the Zig facet's page_allocator.create/destroy is modelled by a plain object
+// and a no-op release.
+
+~proc open|js {
+    console.log("Opening file");
+    return { handle: 42 };
+}
+
+~proc dispose.file|js {
+    console.log("Disposed file (auto-discharged)");
+}

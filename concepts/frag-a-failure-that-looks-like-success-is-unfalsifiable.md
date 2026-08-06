@@ -165,3 +165,68 @@ Both tests are now parked with `TODO` markers rather than fixed, because which
 spelling is wrong — the tests' or the parser's dialect inheritance — is an
 unmade ruling. The vacuous green is gone either way, which was the part that
 could not be allowed to stand while the question waits.
+
+## Porting a language target manufactures this shape wholesale
+
+Every instance above is a surface that could have been built to complain and
+wasn't. A second emitter for an existing language is worse than that: it has
+**no site at which to complain about a construct it does not know exists.**
+
+The JS emitter refuses loudly when it recognises something it cannot lower —
+`NoJsProcBody`, `UnsupportedConstruct`, a panic with a line number. Those
+gaps were found in minutes. Two others were found in an hour of blaming the
+fixtures, because they were not refusals at all:
+
+- Bind-position destructure (`~locate(): { pos: { x, y }, label } |> …`) was
+  a field the emitter never read. It emitted the temp the parser had bound,
+  then emitted a body referencing `x`, `y`, `label` — well-formed JavaScript
+  that throws ReferenceError at run time, pointing at the fixture.
+- An effect producer's terminal arm (`| done |> print.ln("done")`) was
+  dropped by an inlining fast path that spliced the producer's `return`
+  across a function boundary. That one did not even throw. The program ran,
+  exited 0, and was simply missing a line of its own output.
+
+The second is the sharper one, and it is not a bug in inlining. **A construct
+the new emitter has no case for is not a construct it can reject** — an
+unread AST field and an absent one are the same observation, and a `switch`
+with an `else` that quietly does nothing is indistinguishable from correct
+lowering right up until output goes missing. The refusals are the constructs
+someone already thought about. The dangerous set is its complement, and it is
+invisible by construction.
+
+**The check this implies, for any second implementation of an existing
+interface:** do not ask which constructs the new one rejects — that list is
+self-reporting and therefore already handled. Ask which fields of the shared
+IR the new one never reads. `grep` the new emitter for each field name the
+old one consumes; every field with no hit is a silent gap with a fixture
+waiting to be blamed for it. That is one cheap mechanical sweep, it is
+available on day one, and it would have found both of these before a single
+fixture was written.
+
+The corollary for the humans in the loop is the expensive part. When a port
+is in progress, a plausible-looking failure in NEW work is evidence about the
+PORT at least as often as about the work — and the incentive runs the wrong
+way, because rewriting your own fixture is the cheaper hypothesis to test.
+Six agents were told to contort around a stale constraint in the same wave
+(see
+[[frag-a-kjs-facet-carries-host-lines-not-only-proc-bodies]]); the common
+root is that the young side of a port is assumed correct because it is the
+side nobody wants to be wrong.
+
+**And the sweep above is not sufficient, which is the part worth carrying.**
+It searches the new EMITTER, and the leak does not have to originate there.
+A comptime transform that rewrites the AST before emission is host-blind
+unless someone made it otherwise: `[expand]` splices a `~std/template:define`
+body into the call site, and the registry is keyed by template NAME with no
+host dimension at all. So a `.kz` template's Zig text lands inside an emitted
+`.js` program, and no amount of auditing the JS emitter finds it — by the
+time the emitter runs, the Zig is already AST and indistinguishable from
+anything else it was handed.
+
+The general form: **a stage that runs before target selection cannot be
+audited by reading the target's backend.** Ask of every pre-emission
+transform whether it carries host text, and if it does, whether its registry
+has a host key. A mechanism keyed by name alone is not neutral across
+targets; it is silently committed to whichever host wrote it first, and it
+will report that commitment as a syntax error in the other target's output,
+at a line number belonging to a file nobody edited.

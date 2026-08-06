@@ -1,0 +1,15 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies plus the module-level slot its
+// Zig twin keeps in a `var`. The aliasing the fixture pins survives the port
+// verbatim: `h` and `g` are the same object here exactly as they are the same
+// pointer there.
+
+let slot = { n: 0 };
+
+~proc make-alias|js {
+    return { h: slot, g: slot };
+}
+
+~proc retire|js {
+    x.n += 1;
+}

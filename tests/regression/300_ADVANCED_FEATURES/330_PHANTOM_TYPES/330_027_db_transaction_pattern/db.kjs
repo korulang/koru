@@ -1,0 +1,27 @@
+// JavaScript implementation facet of module `db`.
+// Events and types are declared in db.kz (merged at import); this file holds
+// the |js proc bodies. What the fixture pins is the obligation lifecycle, so
+// the Zig facet's page_allocator.create/destroy is modelled by a plain object
+// and a no-op release.
+
+~proc connect|js {
+    console.log(`Connecting to: ${url}`);
+    return { id: 1 };
+}
+
+~proc query|js {
+    console.log(`Query: ${sql}`);
+    return { conn: conn };
+}
+
+~proc commit|js {
+    console.log("Committing transaction");
+}
+
+~proc rollback|js {
+    console.log("Rolling back transaction");
+}
+
+~proc disconnect|js {
+    console.log("Disconnecting");
+}

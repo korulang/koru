@@ -1,0 +1,16 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc counter|js {
+    console.log(`Count: ${n}`);
+
+    if (n < 5) {
+        return { tag: "next", next: n + 1 };
+    } else {
+        return { tag: "done", done: n };
+    }
+}
+
+~proc start|js {
+    console.log("Starting counter...");
+}
