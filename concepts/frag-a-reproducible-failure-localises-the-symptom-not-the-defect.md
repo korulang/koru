@@ -90,3 +90,58 @@ observations come from one reading.
   fact. That ratio is the actual finding about where a second pair of eyes pays,
   and it argues against running long unattended stretches on diagnosis-shaped
   work specifically.
+
+## The variant that survives having controls: they can all vary ONE axis
+
+Everything above is about claims made with NO control run. 2026-08-06 produced
+the harder case — a diagnosis with **four labelled controls**, each real, each
+correctly observed, and the conclusion still wrong.
+
+The claim was that Koru's phantom-obligation discharge wall "guards only a tor's
+FIRST declared branch", so a handle handed back on a later failure arm could be
+bound and dropped unreported. The observation behind it was genuine: in one
+compile of the shipped `unikraft/blk` lift, `KORU030` fired for a handle on arm 1
+and stayed silent for a handle on arm 2. Controls R1, R4 and R5 then ruled out
+struct-vs-bare payloads, mid-chain position, and the state wall — leaving "arm
+position" as the survivor.
+
+It was not arm position. Obligations are keyed by BINDING NAME, never by node
+identity, so arm position cannot matter at all. The discriminator was the
+**disposer set**: with exactly one unattended disposer for a state, auto-discharge
+silently inserts the disposal; with zero or several it reports. Arm 2's state had
+one candidate and was handled; arm 1's could not be elected and was reported. Two
+arms, two disposer shapes, one correct compiler and no defect.
+
+**Why the controls did not save it: all four varied the same axis.** R1, R4, R5
+moved payload shape, chain position and which wall was probed — and every one of
+them held the disposer set fixed, because the disposer set was not yet a
+candidate. Controls confirm or eliminate hypotheses you already have; they cannot
+nominate the variable you have not thought of. So a set of controls that all vary
+one dimension produces the *feeling* of triangulation while measuring a single
+line through the space.
+
+What follows, and it is sharper than "run a control":
+
+- **Count the AXES your controls span, not the controls.** Four probes along one
+  axis is one experiment repeated. The question to ask before concluding is
+  "which dimension have I held fixed in every single run?" — that is where the
+  discriminator hides, by construction.
+- **An asymmetry is not a mechanism.** "A fires and B does not" invites you to
+  name the most visible difference between A and B. Position is the most visible
+  difference between two branch arms, and it was the wrong one. Enumerate what
+  else differs *before* believing the salient answer.
+- **Read the OUTPUT, not the absence of a diagnostic.** The disproof cost one
+  command: compile the program that "leaks" and grep the emitted Zig for the
+  disposal. It was there, auto-inserted, in the exact arm the note said leaked. A
+  silent compiler was read as an absent check when it was a completed one, and
+  nobody looked at what it had produced.
+- **A confident diagnosis with controls attached propagates further than one
+  without.** This claim reached a module README, a second module's README, two
+  status reports to Lars, a test file titled `frontier_*`, and a commissioned
+  bugfix session — *because* it came with evidence. The rigour bought it
+  distribution, and the error rode along.
+
+Residue: `koru-libs/unikraft/alloc/tests/autodischarge_covers_later_arms.kz` is
+the former "frontier", kept and renamed — it now passes as a regression on the
+auto-discharge path and carries the correction, so the file that made the claim is
+the file that refutes it.
