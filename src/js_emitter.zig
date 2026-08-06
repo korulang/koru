@@ -126,6 +126,22 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
         try em.write("\n");
     }
 
+    // Phase 0.6: TOP-LEVEL `.inline_code` — host declarations a comptime
+    // transform appended beside the site it rewrote (`std/regex:match` appends
+    // its compiled matcher functions this way; the Zig emitter emits them from
+    // visitor_emitter.zig:1517).
+    //
+    // The JS emitter handled `.inline_code` only as a flow PREAMBLE, so a
+    // transform's appended declarations were dropped in silence and the dispatch
+    // it also emitted called functions that were never defined — a ReferenceError
+    // at run time, with nothing wrong at the call site to look at.
+    //
+    // Emitted here, at module scope above `main_module`, because these are
+    // DECLARATIONS shared by every flow that uses them, exactly like Phase 0.5's
+    // `const {}` decls. Written raw rather than through the host-text lowering:
+    // this text was produced by a `|js` transform and is already JavaScript.
+    try emitTopLevelInlineCode(&em, program.items);
+
     try em.write("const main_module = {\n");
 
     // Which module events the emitted program actually REACHES. Computed before
@@ -210,6 +226,24 @@ fn emitJsHostLines(em: *Emitter, items: []const ast.Item) JsEmitError!void {
                 try em.write("\n");
             },
             .module_decl => |*m| try emitJsHostLines(em, m.items),
+            else => {},
+        }
+    }
+}
+
+/// Every top-level `.inline_code` item, descending through `module_decl` so a
+/// transform that rewrote a site inside an imported module gets its appended
+/// declarations out too (`115_003_regex_scan_in_module` is exactly that shape).
+/// Flow bodies are NOT walked: an `.inline_code` inside one is a preamble and is
+/// emitted at its own site.
+fn emitTopLevelInlineCode(em: *Emitter, items: []const ast.Item) JsEmitError!void {
+    for (items) |*item| {
+        switch (item.*) {
+            .inline_code => |*ic| {
+                try em.write(ic.code);
+                try em.write("\n");
+            },
+            .module_decl => |*m| try emitTopLevelInlineCode(em, m.items),
             else => {},
         }
     }
@@ -333,7 +367,22 @@ const Emitter = struct {
             }
             if (!match) continue;
             const target = proc.target orelse continue;
-            if (std.mem.eql(u8, target, JS_TARGET)) return proc;
+            if (!std.mem.eql(u8, target, JS_TARGET)) continue;
+            // A `|js` TAG MEANS TWO DIFFERENT THINGS, and this is the seam where
+            // confusing them produces Zig source inside emitted JavaScript.
+            //
+            // On a runtime proc, `|js` says "this body IS JavaScript, splice it".
+            // On a [transform] proc it says "this variant EMITS JavaScript" — the
+            // body is Zig, it runs inside the compiler at Stage C, and it has no
+            // runtime existence at all. Splicing it emitted `const ast =
+            // @import("ast");` into the output and node refused the file.
+            //
+            // A transform therefore has no `|js` runtime body by construction, so
+            // this returns null and the caller keeps the ordinary
+            // no-JS-implementation refusal — which is the honest answer for a
+            // compile-time construct that is already gone by runtime.
+            if (annotation_parser.hasPart(proc.annotations, "transform")) continue;
+            return proc;
         }
         return null;
     }

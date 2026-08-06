@@ -258,6 +258,212 @@ const std = @import("std");
 }
 
 // ============================================================================
+// MATCH|JS - the JavaScript rendering of the dispatch above.
+// ============================================================================
+// What `|js` means on a [transform] proc is what `io.kz:1719-1726` states: the
+// BODY is Zig either way (it runs inside the compiler), and the tag selects
+// which OUTPUT LANGUAGE the transform writes. So this proc is its `|zig` twin
+// with the analysis and every refusal identical, diverging only where text is
+// produced. Kinship is deliberate — read the two side by side.
+//
+// THE INPUT IS A BYTE VIEW. The compiled matchers walk a 256-wide table indexed
+// by BYTE, exactly as the Zig ones do, so the site binds the subject twice: the
+// js string the branch payloads carry, and `Buffer.from(…, "utf8")` for the
+// walk. Indexing a js string instead would feed the table UTF-16 code units and
+// diverge from the Zig target on the first multi-byte character — the same view
+// `koru_std/parser.kz:1051` already uses for JS terminals.
+//
+// THE ARM CHAIN DIVERGES IN SHAPE, not just spelling. Zig's captured arm is
+// `if (fn(in)) |sp| …`, an if-with-payload that JavaScript has no spelling for,
+// so the span is hoisted to a `let` declared ahead of the chain and the arm
+// tests `(sp = fn(in)) !== null`. Same first-pattern-wins else-if ladder, same
+// `__koru_continue_<idx>` fallback.
+~[transform]proc match|js {
+    const ast = @import("ast");
+    const regex = @import("regex_engine");
+
+    if (item.* != .flow) @panic("regex match transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+    const conts = flow.body.continuations;
+
+    if (invocation.args.len == 0) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:match requires an input argument: match(<expression>)", .{}) } };
+    }
+    const input_expr: []const u8 = invocation.args[0].value;
+
+    var matchers = std.ArrayList(u8){};
+    var lets = std.ArrayList(u8){};
+    var chain = std.ArrayList(u8){};
+
+    // Site-unique names, for the reason the `|zig` twin documents: a nested
+    // match inside a branch body must not shadow the outer subject.
+    const in_name = std.fmt.allocPrint(allocator, "__koru_match_in_{d}_{d}", .{ flow.location.line, flow.location.column }) catch unreachable;
+    const buf_name = std.fmt.allocPrint(allocator, "__koru_match_buf_{d}_{d}", .{ flow.location.line, flow.location.column }) catch unreachable;
+    const int_fn = std.fmt.allocPrint(allocator, "__koru_re_int_{d}_{d}", .{ flow.location.line, flow.location.column }) catch unreachable;
+    var needs_int_fn = false;
+
+    var nomatch_idx: ?usize = null;
+    var arm_count: usize = 0;
+    for (conts, 0..) |c, i| {
+        const name = c.branch;
+        if (std.mem.eql(u8, name, "no-match")) {
+            nomatch_idx = i;
+        } else {
+            const pattern = name;
+            const fn_name = std.fmt.allocPrint(allocator, "__koru_re_{d}_{d}_{d}", .{ flow.location.line, flow.location.column, i }) catch unreachable;
+
+            const analysis = regex.analyze(allocator, pattern) catch |err| {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
+            };
+            const groups = analysis.group_names;
+            const binding = c.binding orelse "_";
+
+            if (groups.len == 0) {
+                if (c.destructure.len > 0) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex match: destructure field '{s}' has no named group in pattern `{s}`", .{ c.destructure[0].name, pattern }) } };
+                }
+                const matcher_src = regex.compileToJs(allocator, pattern, fn_name) catch |err| {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
+                };
+                matchers.appendSlice(allocator, matcher_src) catch unreachable;
+                matchers.appendSlice(allocator, "\n") catch unreachable;
+
+                if (arm_count > 0) chain.appendSlice(allocator, " else ") catch unreachable;
+                // FULL match, so the branch's text IS the whole subject: hand it
+                // the js string, never the byte view.
+                const arm = std.fmt.allocPrint(allocator, "if ({s}({s})) __koru_inline_{d}({s})", .{ fn_name, buf_name, i, in_name }) catch unreachable;
+                chain.appendSlice(allocator, arm) catch unreachable;
+                arm_count += 1;
+            } else {
+                if (c.destructure.len == 0 and std.mem.eql(u8, binding, "_")) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex match: pattern `{s}` declares named groups but the branch discards the payload — destructure them, bind the payload, or make the unwanted capture non-capturing: spell it (...)", .{pattern}) } };
+                }
+                if (c.destructure.len > 0) {
+                    for (c.destructure) |f| {
+                        if (f.sub.len > 0) {
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex match: nested destructure has no meaning for a text span (field '{s}')", .{f.name}) } };
+                        }
+                        var found = false;
+                        for (groups) |g| {
+                            if (std.mem.eql(u8, g, f.name)) found = true;
+                        }
+                        if (!found) {
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex match: destructure field '{s}' has no named group in pattern `{s}`", .{ f.name, pattern }) } };
+                        }
+                    }
+                    for (groups) |g| {
+                        var found = false;
+                        for (c.destructure) |f| {
+                            if (std.mem.eql(u8, f.name, g)) found = true;
+                        }
+                        if (!found) {
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex match: named group '{s}' has no destructure field — take delivery, or make it non-capturing: spell it (...)", .{g}) } };
+                        }
+                    }
+                }
+
+                const matcher_src = regex.compileCapturesToJs(allocator, pattern, fn_name) catch |err| {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
+                };
+                matchers.appendSlice(allocator, matcher_src) catch unreachable;
+                matchers.appendSlice(allocator, "\n") catch unreachable;
+
+                const sp_name = std.fmt.allocPrint(allocator, "__koru_sp_{d}_{d}_{d}", .{ flow.location.line, flow.location.column, i }) catch unreachable;
+                // JS has no if-with-payload: the span is declared ahead of the
+                // ladder and assigned inside the arm's own test.
+                const decl = std.fmt.allocPrint(allocator, "let {s}; ", .{sp_name}) catch unreachable;
+                lets.appendSlice(allocator, decl) catch unreachable;
+
+                var payload = std.ArrayList(u8){};
+                payload.appendSlice(allocator, "{ ") catch unreachable;
+                for (groups, 0..) |g, k| {
+                    if (k > 0) payload.appendSlice(allocator, ", ") catch unreachable;
+                    const slice_expr = std.fmt.allocPrint(allocator, "{s}.subarray({s}[{d}], {s}[{d}]).toString(\"utf8\")", .{ buf_name, sp_name, 2 * k, sp_name, 2 * k + 1 }) catch unreachable;
+                    var type_text: ?[]const u8 = null;
+                    for (c.destructure) |f| {
+                        if (std.mem.eql(u8, f.name, g)) type_text = f.type_text;
+                    }
+                    var is_int = false;
+                    if (type_text) |t0| {
+                        const t = std.mem.trim(u8, t0, " \t");
+                        is_int = std.mem.eql(u8, t, "isize") or std.mem.eql(u8, t, "usize");
+                        if (!is_int and t.len >= 2 and (t[0] == 'i' or t[0] == 'u')) {
+                            is_int = true;
+                            for (t[1..]) |ch| {
+                                if (ch < '0' or ch > '9') is_int = false;
+                            }
+                        }
+                    }
+                    if (is_int) {
+                        needs_int_fn = true;
+                        const t = std.mem.trim(u8, type_text.?, " \t");
+                        const field = std.fmt.allocPrint(allocator, "{s}: {s}({s}, \"{s}\", \"{s}\")", .{ g, int_fn, slice_expr, g, t }) catch unreachable;
+                        payload.appendSlice(allocator, field) catch unreachable;
+                    } else {
+                        const field = std.fmt.allocPrint(allocator, "{s}: {s}", .{ g, slice_expr }) catch unreachable;
+                        payload.appendSlice(allocator, field) catch unreachable;
+                    }
+                }
+                payload.appendSlice(allocator, " }") catch unreachable;
+
+                if (arm_count > 0) chain.appendSlice(allocator, " else ") catch unreachable;
+                const arm = std.fmt.allocPrint(allocator, "if (({s} = {s}({s})) !== null) __koru_inline_{d}({s})", .{ sp_name, fn_name, buf_name, i, payload.items }) catch unreachable;
+                chain.appendSlice(allocator, arm) catch unreachable;
+                arm_count += 1;
+            }
+        }
+    }
+
+    // A typed group is a CONVERSION at the splice, and a conversion that cannot
+    // be made is a loud failure on both targets: the Zig rendering panics, so
+    // this one throws rather than letting a NaN travel as if it were a number.
+    if (needs_int_fn) {
+        const helper = std.fmt.allocPrint(allocator, "function {s}(s, g, t) {{ const v = Number(s); if (!Number.isInteger(v)) throw new Error(\"regex match: group '\" + g + \"' does not fit \" + t); return v; }}\n", .{int_fn}) catch unreachable;
+        matchers.appendSlice(allocator, helper) catch unreachable;
+    }
+
+    var dispatch = std.ArrayList(u8){};
+    const head = std.fmt.allocPrint(allocator, "//@koru:inline_stmt\n{{ const {s} = ", .{in_name}) catch unreachable;
+    dispatch.appendSlice(allocator, head) catch unreachable;
+    dispatch.appendSlice(allocator, input_expr) catch unreachable;
+    const view = std.fmt.allocPrint(allocator, "; const {s} = Buffer.from({s}, \"utf8\"); ", .{ buf_name, in_name }) catch unreachable;
+    dispatch.appendSlice(allocator, view) catch unreachable;
+    dispatch.appendSlice(allocator, lets.items) catch unreachable;
+    dispatch.appendSlice(allocator, chain.items) catch unreachable;
+
+    if (nomatch_idx) |ni| {
+        const tail = std.fmt.allocPrint(allocator, " else __koru_continue_{d}", .{ni}) catch unreachable;
+        dispatch.appendSlice(allocator, tail) catch unreachable;
+    }
+    dispatch.appendSlice(allocator, " }") catch unreachable;
+
+    const new_anns = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    for (flow.inv().annotations, 0..) |an, k| new_anns[k] = an;
+    new_anns[flow.inv().annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_inv = ast.Invocation{
+        .path = flow.inv().path,
+        .args = flow.inv().args,
+        .annotations = new_anns,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
+    };
+
+    var new_flow = flow.*;
+    new_flow.body = ast.rootSite(new_inv, flow.body.continuations, flow.location);
+    new_flow.inline_body = dispatch.toOwnedSlice(allocator) catch unreachable;
+
+    const appended = allocator.alloc(ast.Item, 1) catch unreachable;
+    appended[0] = ast.Item{ .inline_code = ast.InlineCode{
+        .code = matchers.toOwnedSlice(allocator) catch unreachable,
+        .location = flow.location,
+        .module = flow.module,
+    } };
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow }, .appended = appended } };
+}
+
+// ============================================================================
 // SCAN - unanchored, streaming regex: `!` (each) where match uses `|` (once).
 // ============================================================================
 // `match` finds ONE whole-input match (anchored); `scan` finds EVERY

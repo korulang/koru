@@ -1540,7 +1540,7 @@ pub const VisitorEmitter = struct {
     /// Input/Output are the MACHINE interface (the transform-stub ABI), not the
     /// event's user-surface declaration — the user surface is contract data for
     /// the checkers, never a runtime shape.
-    fn emitTransformProcEventStruct(self: *VisitorEmitter, event: *const ast.EventDecl, tproc: *const ast.ProcDecl) !void {
+    fn emitTransformProcEventStruct(self: *VisitorEmitter, event: *const ast.EventDecl, tproc: *const ast.ProcDecl, all_items: []const ast.Item) !void {
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("pub const ");
         for (event.path.segments, 0..) |segment, idx| {
@@ -1588,8 +1588,51 @@ pub const VisitorEmitter = struct {
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("};\n");
 
+        try self.emitTransformProcHandler(tproc, "handler", wants_reporter);
+
+        // VARIANT SIBLINGS. A transform's body runs at Stage C, so `|zig` is its
+        // default (emitted above as the bare `handler`) and every other tag is an
+        // alternate — the same axis main.zig's dispatcher uses when it writes the
+        // `handler__<variant>` branches (`comptime_default_lang`, main.zig:2047).
+        //
+        // Emitting them HERE is the whole point: this function is an early-return
+        // override for events implemented by a `~[transform]proc`, so the general
+        // variant loop further down `emitEventDecl` never runs for them. Without
+        // this, the dispatcher emitted `handler.handler__js(input)` against a
+        // struct that had no such member and the backend failed to compile — and
+        // it did so for EVERY `[transform]proc`-shaped transform, which is most of
+        // the stdlib. `print.blk|js` worked only because its procs are plain
+        // `~proc`, so they miss this override and reach the general path.
+        const variant_procs = try emitter.findVariantProcsByPath(self.allocator, all_items, &event.path);
+        defer self.allocator.free(variant_procs);
+        for (variant_procs) |vproc| {
+            const target = vproc.target orelse continue;
+            if (std.mem.eql(u8, target, "zig")) continue; // the default, already emitted
+            const mangled = try emitter.mangleVariant(self.allocator, target);
+            defer self.allocator.free(mangled);
+            const handler_name = try std.fmt.allocPrint(self.allocator, "handler__{s}", .{mangled});
+            defer self.allocator.free(handler_name);
+            try self.emitTransformProcHandler(vproc, handler_name, wants_reporter);
+        }
+
+        self.code_emitter.indent_level -= 1;
         try self.code_emitter.writeIndent();
-        try self.code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
+        try self.code_emitter.write("};\n\n");
+    }
+
+    /// One handler function on a transform-proc event struct: the machine-ABI
+    /// bindings, the source marker, and the proc body. Shared by the default
+    /// `handler` and every `handler__<variant>` sibling so the two cannot drift.
+    fn emitTransformProcHandler(
+        self: *VisitorEmitter,
+        tproc: *const ast.ProcDecl,
+        handler_name: []const u8,
+        wants_reporter: bool,
+    ) !void {
+        try self.code_emitter.writeIndent();
+        try self.code_emitter.write("pub fn ");
+        try self.code_emitter.write(handler_name);
+        try self.code_emitter.write("(__koru_event_input: Input) Output {\n");
         self.code_emitter.indent_level += 1;
         const machine_params = [_][]const u8{ "invocation", "item", "program", "allocator" };
         for (machine_params) |param| {
@@ -1624,6 +1667,10 @@ pub const VisitorEmitter = struct {
             if (idx > 0) try self.code_emitter.write(".");
             try writeMangledSegment(self.code_emitter, seg);
         }
+        if (tproc.target) |t| {
+            try self.code_emitter.write("|");
+            try self.code_emitter.write(t);
+        }
         if (tproc.location.line > 0) {
             try self.code_emitter.write("  [");
             try self.code_emitter.write(tproc.location.file);
@@ -1644,10 +1691,6 @@ pub const VisitorEmitter = struct {
         self.code_emitter.indent_level -= 1;
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("}\n");
-
-        self.code_emitter.indent_level -= 1;
-        try self.code_emitter.writeIndent();
-        try self.code_emitter.write("};\n\n");
     }
 
     /// Emit the body of a handler for an event `entry` that belongs to a
@@ -1773,7 +1816,7 @@ pub const VisitorEmitter = struct {
         // instead: (invocation, item, program, allocator) → transformed:
         // SiteResult — the transform-stub ABI in run_pass()'s dispatch table.
         if (emitter.findTransformProc(items_to_search, event.path.segments)) |tproc| {
-            try self.emitTransformProcEventStruct(event, tproc);
+            try self.emitTransformProcEventStruct(event, tproc, items_to_search);
             return;
         }
 
@@ -3602,7 +3645,24 @@ pub const VisitorEmitter = struct {
                     // the default lang. The default-lang proc was already emitted as
                     // the main handler above, so skip it here.
                     if (proc.target) |target| {
-                        if (eql(u8, target, self.lang)) continue;
+                        // WHICH TARGET COUNTS AS "THE DEFAULT" DEPENDS ON THE KIND.
+                        // A transform's body executes at Stage C — inside koruc,
+                        // which is Zig whatever the user asked for — so `|zig` is
+                        // its default and every other tag is an alternate. That is
+                        // the axis main.zig's dispatcher already uses
+                        // (`comptime_default_lang`, main.zig:2047).
+                        //
+                        // Testing against `self.lang` here asked the wrong question
+                        // for transforms: under `--lang=js` it treated a `|js`
+                        // transform proc as the default and skipped emitting it,
+                        // while the dispatcher had already written a
+                        // `handler__js` branch — so the backend referenced a member
+                        // that was never generated and failed to compile. A runtime
+                        // proc still keys on self.lang, where the user's target IS
+                        // the right axis.
+                        const is_transform = annotation_parser.hasPart(event.annotations, "transform");
+                        const default_target = if (is_transform) "zig" else self.lang;
+                        if (eql(u8, target, default_target)) continue;
                         // Foreign-language targets are only safe to emit when explicitly
                         // selected via build:variants (their bodies aren't valid Zig).
                         // TODO(js-emitter): this list is correct only when self.lang == "zig".
@@ -3625,7 +3685,6 @@ pub const VisitorEmitter = struct {
                             // Stage C as Zig and is always valid in self.lang. Always emit
                             // these; the runtime registry check (for runtime |js / |gpu /
                             // etc. bodies that ARE foreign code) doesn't apply.
-                            const is_transform = annotation_parser.hasPart(event.annotations, "transform");
                             if (!is_transform) {
                                 const module_for_variant_lookup = self.current_module_name orelse self.main_module_name;
                                 const event_canonical = emitter.buildCanonicalEventName(&event.path, self.allocator, module_for_variant_lookup) catch continue;
