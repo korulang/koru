@@ -1,0 +1,10 @@
+// JavaScript implementation facet. The events are declared in alpha.k (merged
+// at import); this file holds the |js proc bodies.
+
+~proc origin|js {
+    return "threaded";
+}
+
+~proc label|js {
+    return word;
+}

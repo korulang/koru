@@ -1,0 +1,6 @@
+// JavaScript implementation facet. The events and the tap are declared in
+// logger.kz (merged at import); this file holds the |js proc bodies.
+
+~proc log|js {
+    console.log(`[TAP] ${msg}`);
+}

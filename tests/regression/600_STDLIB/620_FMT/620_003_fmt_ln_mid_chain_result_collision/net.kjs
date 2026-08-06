@@ -1,0 +1,21 @@
+// JavaScript implementation facet. The events are declared in net.kz (merged
+// at import); this file holds the |js proc bodies.
+
+~proc connect|js {
+    return { tag: "ok", ok: 7 };
+}
+
+~proc write|js {
+    console.log(`write: ${data}`);
+    return { tag: "ok", ok: conn };
+}
+
+~proc read|js {
+    console.log(`read from conn ${conn}`);
+    return { tag: "ok", ok: { conn: conn, n: 42 } };
+}
+
+~proc shutdown|js {
+    console.log(`shutdown conn ${conn}`);
+    return { tag: "ok", ok: {} };
+}
