@@ -347,10 +347,21 @@ const Emitter = struct {
         }
 
         // Bind input fields as locals: `const n = input.n;`. Every impl kind
-        // reads its inputs by bare name, so this precedes all three bodies —
+        // reads its inputs by bare name, so this precedes all four bodies —
         // the same reason the Zig emitter re-emits the bindings per arm.
+        //
+        // A field with a DEFAULT (`{ a: i32, b: i32 = 5 }`) applies it here, at the
+        // declaration, not at each call site: the default belongs to the event, and
+        // one place cannot disagree with itself. Zig gets this free from a struct
+        // field default; JS has no such thing, so the handler supplies it.
         for (event.input.fields) |field| {
-            try self.writeFmt("      const {s} = input.{s};\n", .{ field.name, field.name });
+            if (field.default) |dflt| {
+                try self.writeFmt("      const {s} = input.{s} ?? ", .{ field.name, field.name });
+                try self.writeJsExpr(dflt);
+                try self.write(";\n");
+            } else {
+                try self.writeFmt("      const {s} = input.{s};\n", .{ field.name, field.name });
+            }
         }
 
         switch (impl) {
@@ -984,6 +995,9 @@ const Emitter = struct {
             if (cont.binding != null and !std.mem.eql(u8, cont.binding.?, "_")) {
                 needs_result = true;
             }
+            // A destructure reads the payload just as a binding does, field by
+            // field (`| found { name, age }`).
+            if (cont.destructure.len > 0) needs_result = true;
         }
         // With 2+ terminal branches we must dispatch on the returned `.tag`,
         // which requires the result value even when no branch binds a payload.
@@ -1043,10 +1057,7 @@ const Emitter = struct {
         // Drive terminal continuations. With 2+ branches we dispatch on the
         // returned `.tag`; a lone branch always fires, so no guard is needed.
         const needs_dispatch = terminal_count >= 2 and !callee_bare_return;
-        for (continuations) |*cont| {
-            if (cont.kind != .terminal) continue;
-            try self.emitTerminalContinuation(cont, result_name, indent, needs_dispatch, callee_bare_return);
-        }
+        try self.emitTerminalContinuations(continuations, result_name, indent, needs_dispatch, callee_bare_return);
     }
 
     /// Emit a FIRE of one of the enclosing event's own effect arms. The Zig
@@ -1107,10 +1118,7 @@ const Emitter = struct {
         // resume sum (`! ask i64 | halved i64 | timeout`) carries a `.tag`.
         const plain_resume = arm.resume_type != null and arm.resume_arms == null;
         const needs_dispatch = terminal_count >= 2 and !plain_resume;
-        for (continuations) |*cont| {
-            if (cont.kind != .terminal) continue;
-            try self.emitTerminalContinuation(cont, result_name, indent, needs_dispatch, plain_resume);
-        }
+        try self.emitTerminalContinuations(continuations, result_name, indent, needs_dispatch, plain_resume);
     }
 
     /// The payload passed to an arm fire. Mirrors emitter_helpers.zig:6848
@@ -1420,12 +1428,64 @@ const Emitter = struct {
         }
     }
 
+    /// Drive the TERMINAL continuations of one dispatch.
+    ///
+    /// PLAIN shape (no `when` guard, no `|?` catchall): one independent
+    /// `if (r.tag === …)` per arm. The tags are mutually exclusive, so order
+    /// cannot matter and nothing needs to know an earlier arm already fired.
+    ///
+    /// GUARDED / CATCHALL shape: the arms stop being mutually exclusive. Two arms
+    /// may share a tag and differ only by their `when` guard, and a `|?` catchall
+    /// matches whatever no earlier arm did. FIRST MATCH WINS — and a guard reads
+    /// names the arm itself binds, so its test cannot be hoisted above the
+    /// binding. That is a matched-sentinel chain:
+    ///
+    ///     let __matched_0 = false;
+    ///     if (!__matched_0 && r.tag === "found") { const age = r.found.age;
+    ///         if (age > 40) { __matched_0 = true; … } }
+    ///     if (!__matched_0 && r.tag === "found") { const age = r.found.age;
+    ///         __matched_0 = true; … }
+    ///     if (!__matched_0) { __matched_0 = true; … }     // `|?` catchall
+    ///
+    /// The plain shape is kept as-is rather than folded into the sentinel form:
+    /// it is what every already-green dispatch emits, and it owes nothing to the
+    /// guarded case.
+    fn emitTerminalContinuations(
+        self: *Emitter,
+        continuations: []const ast.Continuation,
+        result_name: ?[]const u8,
+        indent: []const u8,
+        dispatch: bool,
+        bare_return: bool,
+    ) JsEmitError!void {
+        var needs_chain = false;
+        for (continuations) |*cont| {
+            if (cont.kind != .terminal) continue;
+            if (cont.condition != null or cont.is_catchall) needs_chain = true;
+        }
+
+        var matched: ?[]const u8 = null;
+        defer if (matched) |m| self.allocator.free(m);
+        if (needs_chain) {
+            matched = try std.fmt.allocPrint(self.allocator, "__matched_{d}", .{self.nextId()});
+            try self.writeFmt("{s}let {s} = false;\n", .{ indent, matched.? });
+        }
+
+        for (continuations) |*cont| {
+            if (cont.kind != .terminal) continue;
+            try self.emitTerminalContinuation(cont, result_name, indent, dispatch, bare_return, matched);
+        }
+    }
+
     /// Emit a terminal continuation: `| done r |> BODY`.
     /// `const r = <result>.done;` then emit BODY.
     ///
     /// `bare_return` says the producer hands back the value ITSELF — no `.tag`,
     /// no per-branch field — so any arm here binds the whole result whatever it
     /// calls itself (`| value v`, the implicit one-outcome name).
+    ///
+    /// `matched` names the sentinel of a guarded chain, or is null in the plain
+    /// shape. See `emitTerminalContinuations` for why the two shapes differ.
     fn emitTerminalContinuation(
         self: *Emitter,
         cont: *const ast.Continuation,
@@ -1433,21 +1493,50 @@ const Emitter = struct {
         indent: []const u8,
         dispatch: bool,
         bare_return: bool,
+        matched: ?[]const u8,
     ) JsEmitError!void {
-        // With 2+ sibling branches, guard the body on the returned tag so only
-        // the branch the event actually produced runs. A lone branch always
-        // fires and is emitted unguarded.
+        // Owned indent strings for the (at most two) nesting levels this arm opens.
+        var indents: [2][]u8 = undefined;
+        var indent_count: usize = 0;
+        defer for (indents[0..indent_count]) |s| self.allocator.free(s);
         var body_indent = indent;
-        var guard_indent: ?[]u8 = null;
-        defer if (guard_indent) |g| self.allocator.free(g);
-        if (dispatch) {
+        var open_braces: usize = 0;
+
+        const deeper = struct {
+            fn f(em: *Emitter, base: []const u8) JsEmitError![]u8 {
+                return std.fmt.allocPrint(em.allocator, "{s}  ", .{base});
+            }
+        }.f;
+
+        if (matched) |mv| {
+            // Chain gate: nothing matched yet, and — unless this is the catchall,
+            // which matches whatever is left — the tag is ours.
+            try self.writeFmt("{s}if (!{s}", .{ indent, mv });
+            if (dispatch and !cont.is_catchall and cont.branch.len > 0) {
+                const rn = result_name orelse {
+                    log.debug("[js_emitter] guarded terminal chain needs a result value but none was emitted\n", .{});
+                    return JsEmitError.UnsupportedConstruct;
+                };
+                try self.writeFmt(" && {s}.tag === \"{s}\"", .{ rn, cont.branch });
+            }
+            try self.write(") {\n");
+            indents[indent_count] = try deeper(self, indent);
+            body_indent = indents[indent_count];
+            indent_count += 1;
+            open_braces += 1;
+        } else if (dispatch) {
+            // With 2+ mutually-exclusive branches, guard the body on the returned
+            // tag so only the branch the event actually produced runs. A lone
+            // branch always fires and is emitted unguarded.
             const rn = result_name orelse {
                 log.debug("[js_emitter] terminal dispatch needs a result value but none was emitted\n", .{});
                 return JsEmitError.UnsupportedConstruct;
             };
             try self.writeFmt("{s}if ({s}.tag === \"{s}\") {{\n", .{ indent, rn, cont.branch });
-            guard_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
-            body_indent = guard_indent.?;
+            indents[indent_count] = try deeper(self, indent);
+            body_indent = indents[indent_count];
+            indent_count += 1;
+            open_braces += 1;
         }
 
         if (cont.binding) |binding| {
@@ -1467,6 +1556,35 @@ const Emitter = struct {
                 }
             }
         }
+
+        // A shape-destructure at the binding position (`| found { name, age }`)
+        // binds each payload field BY NAME. Mutually exclusive with `binding`.
+        if (cont.destructure.len > 0) {
+            const rn = result_name orelse {
+                log.debug("[js_emitter] terminal continuation destructures a payload but no result binding was emitted\n", .{});
+                return JsEmitError.UnsupportedConstruct;
+            };
+            const base = if (bare_return or cont.branch.len == 0)
+                try self.allocator.dupe(u8, rn)
+            else
+                try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ rn, cont.branch });
+            defer self.allocator.free(base);
+            try self.emitDestructureBindings(cont.destructure, base, body_indent);
+        }
+
+        // The `when` guard runs AFTER the bindings — it reads them.
+        if (cont.condition) |condition| {
+            try self.writeFmt("{s}if (", .{body_indent});
+            try self.writeJsExpr(condition);
+            try self.write(") {\n");
+            indents[indent_count] = try deeper(self, body_indent);
+            body_indent = indents[indent_count];
+            indent_count += 1;
+            open_braces += 1;
+        }
+
+        // Claim the match before the body: the body may `return`.
+        if (matched) |mv| try self.writeFmt("{s}{s} = true;\n", .{ body_indent, mv });
 
         if (cont.node) |node| {
             switch (node) {
@@ -1494,7 +1612,34 @@ const Emitter = struct {
             }
         }
 
-        if (dispatch) try self.writeFmt("{s}}}\n", .{indent});
+        // Close in reverse. Level 1's brace was opened at `indent`; level 2's at
+        // level 1's body indent, i.e. `indents[0]`.
+        var to_close = open_braces;
+        while (to_close > 0) : (to_close -= 1) {
+            const close_at = if (to_close == 1) indent else indents[to_close - 2];
+            try self.writeFmt("{s}}}\n", .{close_at});
+        }
+    }
+
+    /// Bind a shape-destructure's fields off `base`, recursing into nested
+    /// destructures (`| found { name, addr: { city } }`) by lengthening the access
+    /// path. A `_` slot is a discard and binds nothing.
+    fn emitDestructureBindings(
+        self: *Emitter,
+        fields: []const ast.DestructureField,
+        base: []const u8,
+        indent: []const u8,
+    ) JsEmitError!void {
+        for (fields) |field| {
+            if (std.mem.eql(u8, field.name, "_")) continue;
+            if (field.sub.len > 0) {
+                const path = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ base, field.name });
+                defer self.allocator.free(path);
+                try self.emitDestructureBindings(field.sub, path, indent);
+                continue;
+            }
+            try self.writeFmt("{s}const {s} = {s}.{s};\n", .{ indent, field.name, base, field.name });
+        }
     }
 
     /// Emit the args as a JS object literal: `{ name: value, ... }`. Arg values
