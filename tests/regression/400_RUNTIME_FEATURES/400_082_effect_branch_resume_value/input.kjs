@@ -1,0 +1,7 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc prompt-user|js {
+    const reply = ask(question);
+    return { tag: "done", done: reply };
+}

@@ -1691,7 +1691,20 @@ const Emitter = struct {
         // implemented by a subflow has no proc body, and its firing sites are AST
         // nodes the closure path already lowers correctly. Gate on the proc rather
         // than discovering its absence one frame deeper.
-        if (event_has_effect and all_effects_void and self.findJsProcIn(self.items, &event.path) != null) {
+        //
+        // TERMINAL BRANCHES DISQUALIFY THE SPLICE. A producer that also declares
+        // `| done …` ends its body with `return { tag: "done", … }`, and a splice
+        // puts that `return` in the FLOW function — so it abandons the flow and
+        // nothing ever dispatches on the tag. The terminal arm silently vanished
+        // (measured on 400_072: `each 0..2` printed, `done 3` did not, and any
+        // later flow statement would have been dropped too). The closure path
+        // returns the tagged value to the call site where
+        // `emitTerminalContinuations` switches on it, so a terminal-bearing
+        // producer takes that path — correctness outranks the V8 fast path, which
+        // was only ever designed for the pure pump shape.
+        if (event_has_effect and all_effects_void and terminal_branches == 0 and
+            self.findJsProcIn(self.items, &event.path) != null)
+        {
             try self.emitInlineVoidProducer(event, inv, continuations, indent);
             return;
         }
@@ -1764,6 +1777,24 @@ const Emitter = struct {
             for (continuations) |*cont| {
                 if (cont.kind != .effect) continue;
                 try self.emitEffectHandlerMethod(cont, inner_indent);
+            }
+            // OMITTED OPTIONAL ARM → a producer-side no-op (Option B, ruled
+            // 2026-07-19, pinned by 400_168/400_170). A yielding arm is invoked by
+            // DIRECT CALL from the proc body, so leaving it off the Handlers object
+            // makes the alias `const warn = H.warn;` undefined and the fire throws
+            // `warn is not a function` at runtime — a silent no-op turned into a
+            // crash. Install an empty method instead; V8 inlines it away.
+            //
+            // A RESUMING arm (`-> T`) is deliberately NOT filled in: 400_148 gives
+            // the proc the presence truth as a nullable callable and lets it choose
+            // its own fallback (`if (ask) …`), which an empty method returning
+            // undefined would silently defeat.
+            for (event.branches) |*b| {
+                if (b.kind != .effect) continue;
+                if (b.resume_type != null or b.resume_arms != null) continue;
+                if (continuationForBranch(continuations, b.name) != null) continue;
+                var noop_buf: [256]u8 = undefined;
+                try self.writeFmt("{s}{s}(_) {{}},\n", .{ inner_indent, lowerIdentBuf(&noop_buf, b.name) });
             }
             try self.writeFmt("{s}}};\n", .{indent});
         }
@@ -2024,10 +2055,16 @@ const Emitter = struct {
                 const op_ident = lowerIdentBuf(&op_ident_buf, b.name);
                 const found = findOpCall(trimmed, pos, op_ident) orelse continue;
                 if (best_call_start == null or found.call_start < best_call_start.?) {
-                    const cont = continuationForBranch(continuations, b.name) orelse {
+                    // An OMITTED OPTIONAL arm is not an error — Option B (ruled
+                    // 2026-07-19, pinned by 400_170) says the fire is a
+                    // producer-side no-op, so the inline rewriter DROPS the call.
+                    // A required arm with no handler is a different animal and
+                    // still refuses loudly.
+                    const cont = continuationForBranch(continuations, b.name);
+                    if (cont == null and !b.is_optional) {
                         log.err("[js_emitter] void effect op '{s}' has no matching continuation\n", .{b.name});
                         return JsEmitError.UnsupportedConstruct;
-                    };
+                    }
                     best_call_start = found.call_start;
                     best_after = found.after;
                     best_arg = found.arg;
@@ -2044,9 +2081,14 @@ const Emitter = struct {
             // Emit body text before the call verbatim (re-indented).
             try self.emitReindentedSlice(trimmed[pos..call_start], indent);
 
+            // Omitted optional arm: the call and its trailing `;` are simply gone.
+            const cont = best_op_branch orelse {
+                pos = best_after;
+                continue;
+            };
+
             // Splice the handler body in-scope:
             //   { const <binding> = <arg>; <handler sub-flow> }
-            const cont = best_op_branch.?;
             try self.write("\n");
             try self.writeFmt("{s}{{\n", .{indent});
             const block_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
