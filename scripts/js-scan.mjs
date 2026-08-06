@@ -243,6 +243,49 @@ function deriveClusters(results, minSize = 3) {
   return { clusters: out, meta }
 }
 
+
+// A KNOWN-GREEN CONTROL, run before anything is measured.
+//
+// The failure this exists for: js_emitter.zig is not in `zig build`'s
+// compilation unit — it is linked into the per-test backend build — so a type
+// error there kills every `--lang=js` compile while `zig build` exits 0. When
+// that happened, every test in every slice reported `js-compile`, and a slice
+// reading 0/35 all-js-compile is INDISTINGUISHABLE from a genuinely hard slice
+// whose constructs the emitter refuses. It would have been reported as an
+// honest Frontier by a contestant who did nothing wrong.
+//
+// A run with a nonzero js-ok count is self-certifying — a dead backend cannot
+// produce one. The dangerous case is a run with zero, so prove the backend
+// alive with a fixture that MUST pass before believing any number that follows.
+// Named rather than inferred: if this fixture ever legitimately changes, the
+// abort message says which one to update, which beats silently picking another.
+//
+// Proposed by WaveW5Modules, which observed that keeping this in the procedure
+// depends on eight agents remembering it, while keeping it in the harness does
+// not. It declined to edit the oracle itself, correctly.
+const CONTROL = '000_CORE_LANGUAGE/010_BASIC_SYNTAX/010_050_kebab_event_emits'
+if (!process.env.JS_SCAN_SKIP_CONTROL) {
+  const row = mapJson.tests.find((t) => t.test === CONTROL)
+  if (!row) {
+    console.error(`\n  control fixture missing from the map: ${CONTROL}`)
+    console.error('  Update CONTROL in scripts/js-scan.mjs to another known-green fixture.\n')
+    process.exit(3)
+  }
+  const probe = await scanOne(row)
+  if (probe.status !== 'js-ok') {
+    console.error(`\n  ✗ CONTROL FAILED — ${probe.status}: ${probe.detail}`)
+    console.error(`    ${CONTROL}`)
+    console.error('')
+    console.error('  The backend does not build, so EVERY test below would report js-compile')
+    console.error('  and the number would be meaningless. This is not your slice being hard.')
+    console.error('  Note that `zig build` can exit 0 while this is broken: js_emitter.zig is')
+    console.error('  linked into the per-test backend build, not into koruc.')
+    console.error('')
+    console.error('  Fix the emitter, or re-run with JS_SCAN_SKIP_CONTROL=1 if you are')
+    console.error('  deliberately measuring a known-broken tree.\n')
+    process.exit(4)
+  }
+}
 console.error(`\n  js-scan — ${tests.length} tests, ${JOBS} jobs, measure-only (SUCCESS/FAILURE untouched)\n`)
 const t0 = Date.now()
 const results = await run(tests, JOBS)
