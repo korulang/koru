@@ -1,0 +1,13 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+const fs = require("node:fs");
+
+~proc process-file|js {
+    try {
+        const data = fs.readFileSync(path, "utf8");
+        return { tag: "success", success: data };
+    } catch (err) {
+        return { tag: "error", error: err.code };
+    }
+}

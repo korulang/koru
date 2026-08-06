@@ -1,0 +1,12 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+~proc net.connect|js {
+    console.log(`Connecting to ${host}`);
+    return { tag: "connected", connected: 42 };
+}
+
+~proc net.send|js {
+    console.log(`Sending ${data.length} bytes on connection ${id}`);
+    return { tag: "sent", sent: data.length };
+}

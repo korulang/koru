@@ -1,0 +1,33 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies plus the module-level host state
+// its Zig twin keeps in `var` slots. The obligation lifecycle is what the
+// fixture pins, so allocation is modelled by plain objects.
+
+let bin_a = { items: [null, null, null, null], n: 0 };
+let bin_b = { items: [null, null, null, null], n: 0 };
+
+~proc seed|js {
+    bin_a.items[0] = { tag: 1 };
+    bin_a.items[1] = { tag: 2 };
+    bin_a.n = 2;
+    return bin_a.n;
+}
+
+~proc pop-a|js {
+    if (bin_a.n === 0) return { tag: "drained", drained: bin_b.n };
+    bin_a.n -= 1;
+    const h = bin_a.items[bin_a.n];
+    bin_a.items[bin_a.n] = null;
+    return { tag: "moved", moved: h };
+}
+
+~proc push-b|js {
+    bin_b.items[bin_b.n] = h;
+    bin_b.n += 1;
+}
+
+~proc free-b|js {
+    for (let i = 0; i < bin_b.n; i++) {
+        console.log(`b has tag=${bin_b.items[i].tag}`);
+    }
+}

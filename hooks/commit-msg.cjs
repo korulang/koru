@@ -31,6 +31,43 @@ const { execFileSync } = require("child_process");
 
 let msg = fs.readFileSync(process.argv[2], "utf8");
 
+// --- A MERGE COMMIT AUTHORS NO BELIEF, so neither gate applies to it.
+//
+// A merge stages every concept file that changed on either side. The Membrane
+// gate then demands one `Action:` covering all of them — but a merge routinely
+// brings in ADDED and MODIFIED concepts together, and no verb spans both. Worse,
+// the obvious-looking verb is already taken by an unrelated meaning: `merge`
+// here means merging two CONCEPTS into one belief, not merging two branches.
+// The six verbs describe AUTHORSHIP; a merge is TOPOLOGY.
+//
+// The lineage was already declared, with the right verb, in the commit that
+// authored each concept. Demanding it again at merge time records duplicate
+// provenance for a decision nobody made twice, and a merge cannot be split into
+// two commits to satisfy it. So the honest answer is that the question does not
+// apply — not that the author should pick a false verb or reach for --no-verify.
+//
+// Found 2026-08-06: six agents on parallel branches all hit this the moment main
+// gardened a concept. One correctly refused to invent a verb and escalated
+// rather than bypassing the gate, which is how the gap surfaced at all.
+//
+// Deliberately narrow. MERGE_HEAD exists only during an actual merge, so a
+// hand-authored commit can never claim this path. A merge in which you resolve a
+// concept conflict by editing the prose IS authorship — but it is also still a
+// merge, so record the resulting belief in a follow-up commit that carries its
+// own verb. That keeps the exemption about topology and never about content.
+function isMergeCommit() {
+  try {
+    execFileSync("git", ["rev-parse", "-q", "--verify", "MERGE_HEAD"], { stdio: "pipe" });
+    return true;
+  } catch {
+    return false; // no MERGE_HEAD — an ordinary authored commit
+  }
+}
+
+if (isMergeCommit()) {
+  process.exit(0);
+}
+
 // --- TRAILER WHITESPACE IS PART OF THE GRAMMAR, so normalise it before anything
 // reads it. Authors align these fields into a column for readability, which
 // produces two spellings of one field (`Concept: x` and `Concept:    x`) and

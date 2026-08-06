@@ -1,25 +1,37 @@
-// ASPIRATIONAL (see TODO): a HANDLE-ADDRESSED store read outside a write block.
+// A HANDLE-ADDRESSED store read lowers OUTSIDE a write block — in a `{{ }}`
+// interpolation and in an `if` guard, which are the two positions this file
+// was written red to name.
 //
-// `head.h` — a singleton cell path — lowers anywhere in the program, because
-// `std/store:new` owns a whole-program rewrite for it. `cells[head.h].v` does
-// not: the indexed form is lowered only by `stored`'s own value pass, so a
-// guard or an interpolation reaches the host as `cells[...]` and the Zig
-// backend reports an undeclared identifier naming no Koru construct.
+// `head.h` — a singleton cell path — always lowered anywhere in the program,
+// because `std/store:new` owns a whole-program rewrite for it. `cells[head.h].v`
+// did not: the indexed form was lowered only by `stored`'s own value pass, so a
+// guard or an interpolation reached the host as `cells[...]` and the Zig
+// backend reported an undeclared identifier naming no Koru construct.
 //
-// This is the exact gap std/grid closed for cells on 2026-08-03 (697_005), and
-// finding it there is what made it checkable here. The two are one shape: a
-// declaration that owns the read surface for its own addressing form, in every
-// position an expression may stand.
+// IT WAS NEVER A MISSING FEATURE, and the shape of the absence is the thing
+// worth remembering. `indexedFieldRefs` was complete — it recursed through
+// nested indices (690_245), it had its own pin — and it lived inside the helper
+// struct scoped to the `stored` transform. The whole-program walk that `new`
+// runs carried a DIFFERENT helper struct, holding only the singleton rewriter.
+// A private helper struct inside a transform is a LOWERING BOUNDARY, however
+// much it reads as ordinary code organisation, and store.kz had five separate
+// `storeRefs` copies in five scopes to prove it.
 //
-// It is NOT a missing feature. `indexedFieldRefs` already exists and already
-// recurses through nested indices (690_245); it lives in a helper struct scoped
-// to the `stored` transform, and the whole-program walk that `new` runs carries
-// a different helper struct with only the singleton rewriter in it. store.kz
-// has four separate copies of `storeRefs` in four scopes, which is how a
-// rewriter can be complete in one of them and absent from another.
+// WHAT CLOSED IT: the rewriter moved to file scope (`storeIndexedRefs`), the
+// `stored` copy now delegates there, and both whole-program walks — singleton
+// and plural — call ONE `storeLowerText` per text slot: cell paths, then
+// indexed reads, in the order `stored` always used.
 //
-// Flip this to passing by giving the declaration's walk the indexed lowering —
-// shared, not a fifth copy.
+// A HALF-RULE CAME OUT WITH IT. Two of the five `storeRefs` copies excluded a
+// following `[` from the one-column identity case, with a comment saying "so a
+// row index still takes the indexed path below" — and those were exactly the
+// two copies that HAD an indexed path below them. The other three did not
+// exclude it, because in their scope there was no indexed path for the base to
+// be stolen from. Half a rule each, correct only beside the other, and moving
+// the indexed lowering into the walks is what made the missing half load-bearing.
+//
+// The sibling gap in a CALL ARGUMENT is 690_254; both closed together, and
+// 690_253 is the write-side twin that composed years earlier.
 import std/io
 import std/store
 

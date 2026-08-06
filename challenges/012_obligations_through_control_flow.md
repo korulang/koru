@@ -120,7 +120,7 @@ diagnosis waiting to be read.
 **Borrow:**
 ```
 330_091_auto_discharge_disable_leaks_through_borrow
-335_046_continuation_after_borrow_drops_obligation
+335_046_continuation_after_borrow_auto_discharges
 ```
 
 **Error branches leak what the happy path frees:**

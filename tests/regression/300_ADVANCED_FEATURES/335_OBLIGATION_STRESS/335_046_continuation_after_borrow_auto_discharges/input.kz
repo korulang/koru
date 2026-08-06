@@ -1,0 +1,82 @@
+// PINS: a BORROWED obligation that the flow never discharges explicitly is
+// auto-discharged, and a pipeline continuation after the borrow does not change
+// that. Compiles, runs, prints `n=0`.
+//
+// `make` mints <owned!> on h0. `touch` BORROWS it (bare <owned>: no consume, no
+// re-issue — the obligation stays with the caller). `dispose` is the ONLY
+// consumer of <!owned>. The flow borrows h0, continues to `report`, and never
+// disposes anything.
+//
+// The emitted program disposes it anyway. From output_emitted.zig:
+//
+//     _ = main_module.dispose_event.handler(.{ .h = h0 });
+//
+// inserted by auto-discharge at the terminator. That is the designed behaviour:
+// a whole-value obligation whose state has EXACTLY ONE unattended disposer is
+// discharged for you, silently. Zero or several candidates is what raises
+// KORU030 (`... has multiple discharge options: a, b. Discharge explicitly.`).
+//
+// ---------------------------------------------------------------------------
+// WHAT THIS FILE USED TO CLAIM, AND WHY IT WAS WRONG — corrected 2026-08-06
+// ---------------------------------------------------------------------------
+// It was a MUST_ERROR pinning `CONTAINS was not discharged`, on the reasoning
+// that h0 "is NEVER disposed, so it leaks" and that the checker SHOULD reject
+// it. It does not reject it, and it is right not to: nothing leaks. The old note
+// also asserted that removing the trailing `|> report(n: 0)` makes KORU030 fire,
+// making the continuation the trigger. In the spelling below, both forms
+// auto-insert `dispose` — verified by compiling each and reading the artifact —
+// so the continuation is not a trigger either.
+//
+// Two separate things had gone wrong, and the second hid the first:
+//
+//   1. The PREMISE was a non-bug. A silent compiler was read as an absent check
+//      when it was a completed one. Nobody read the emitted program, which names
+//      the disposal on the line above.
+//   2. The SPELLING went illegal underneath it. The original declared
+//      `~tor make {} | ok *Handle<owned!>` — a single continuation branch
+//      carrying a payload — which a later ruling refuses outright:
+//      `error[PARSE003]: single continuation branch 'ok' carrying a payload is a
+//      one-variant tag union — declare the single output as a bare return
+//      instead`. So the test was RED as `frontend`, dying before it reached the
+//      checker its EXPECT named. It had not been testing its own subject for
+//      however long that ruling has been in force.
+//
+// Respelled to a bare return, flipped MUST_ERROR -> MUST_RUN, and kept rather
+// than deleted: the behaviour is worth a regression, and a pin that spent time
+// asserting a non-bug is worth the record. Sibling correction, same root cause
+// and same day: koru-libs `unikraft/alloc/tests/autodischarge_covers_later_arms.kz`,
+// where the identical "the compiler does not enforce this" claim was withdrawn.
+//
+// If auto-discharge is ever narrowed so this program must dispose explicitly,
+// this test goes red and that is the correct signal — the fix then is to add the
+// explicit `dispose`, not to restore the old expectation.
+//
+// Grounding:
+//   bare <owned> borrow as input      — 330_073_label_fold_borrow_outer_own
+//   <owned!> issue / <!owned> consume — koru_std/list.kz directionality
+//   auto-discharge with one candidate — 335_021_instance_no_explicit_free
+//   the multiple-candidates refusal   — the KORU030 text quoted above
+const std = @import("std");
+const Handle = struct { n: i32 };
+
+~tor make {} -> *Handle<owned!>
+~proc make|zig {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .n = 0 };
+    return h;
+}
+
+// BORROW: bare <owned>, no consume — the obligation stays with the caller.
+~tor touch { h: *Handle<owned> }
+~proc touch|zig { h.n += 1; }
+
+~tor report { n: i32 }
+~proc report|zig { std.debug.print("n={}\n", .{n}); }
+
+// Discharge — the ONLY consumer of <!owned>, which is what makes it electable.
+~tor dispose { h: *Handle<!owned> }
+~proc dispose|zig { std.heap.page_allocator.destroy(h); }
+
+// h0 is borrowed by `touch`, the pipeline CONTINUES to `report`, and nothing
+// disposes it explicitly. Auto-discharge inserts `dispose` at the terminator.
+~make(): h0 |> touch(h: h0) |> report(n: 0)

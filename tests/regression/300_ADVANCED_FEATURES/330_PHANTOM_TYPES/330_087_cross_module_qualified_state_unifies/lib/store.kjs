@@ -1,0 +1,11 @@
+// JavaScript implementation facet of module `store`. Events are declared in
+// store.kz (merged at import); this file holds the |js proc bodies. The phantom
+// `secret` tag is compile-time only, so both bodies are identity at runtime.
+
+~proc make-secret|js {
+    return payload;
+}
+
+~proc reveal|js {
+    return s;
+}

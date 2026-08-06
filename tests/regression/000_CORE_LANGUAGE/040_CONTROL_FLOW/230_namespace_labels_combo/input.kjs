@@ -1,0 +1,19 @@
+// JavaScript implementation facet. Events are declared in input.kz (merged at
+// import); this file holds the |js proc bodies.
+
+// The Zig facet keeps the accept counter in a function-local `static` struct;
+// JavaScript has no such form, so the same state is a module-level binding.
+let accept_count = 0;
+
+~proc server.accept|js {
+    console.log("Accept");
+    accept_count += 1;
+    if (accept_count <= 2) {
+        return { tag: "connection", connection: accept_count };
+    }
+    return { tag: "stopped" };
+}
+
+~proc server.handle|js {
+    console.log(`Handle ${id}`);
+}

@@ -267,11 +267,20 @@ writeFileSync(OUT, JSON.stringify({
   wallSeconds: Number(wall), byStatus, byCluster, results,
 }, null, 2))
 
-// Only a FULL emitter-bucket run may rewrite the families. A --cluster run sees
-// one family by construction and a --sample run sees a slice; letting either
-// rewrite the map would shrink it to whatever was last looked at.
+// Only a FULL emitter-bucket run may rewrite the families. Every narrowing flag
+// sees a slice by construction, and letting one rewrite the map shrinks it to
+// whatever was last looked at.
+//
+// This guard was written for --sample and --cluster, then --tests was added
+// without extending it — so every wave contestant's slice run silently rewrote
+// the oracle's own family map. That is precisely the failure the comment above
+// warns against, committed by the person who wrote the warning, and caught by
+// WaveW4Core rather than by me. A guard that enumerates the narrowings it knows
+// about will keep failing this way, so it now asks the inverse question: a
+// narrowing added later is excluded by default instead of included by omission.
+const isFullRun = BUCKET === 'emitter' && !SAMPLE && !CLUSTER && !TESTS_FILE
 let derived = null
-if (BUCKET === 'emitter' && !SAMPLE && !CLUSTER) {
+if (isFullRun) {
   derived = deriveClusters(results)
   writeFileSync(join(ROOT, 'docs/js-parity/clusters.json'), JSON.stringify(derived.clusters, null, 2))
   writeFileSync(join(ROOT, 'docs/js-parity/clusters-meta.json'), JSON.stringify({

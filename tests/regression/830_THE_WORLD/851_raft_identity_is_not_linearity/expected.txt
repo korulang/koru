@@ -1,0 +1,4 @@
+  counted ack from peer 1 at index 7
+  counted ack from peer 2 at index 7
+  counted ack from peer 2 at index 7
+commit -> 7 on 3 acks of 5
