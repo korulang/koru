@@ -13,7 +13,15 @@ those were **Koru operations** or **Zig builtins leaking through a hole**,
 because the question had no consequence: Zig accepts them, so passing them
 through is indistinguishable from understanding them. The Zig emitter passes
 essentially every expression through verbatim, and that is not laziness — it is
-the correct and complete implementation of "the host spelling is the spelling."
+the correct implementation of "the host spelling is the spelling" — but it is
+not COMPLETE, and the counterexample was measured on 2026-08-07: `==` on two
+strings. Koru's `==` on strings is value equality — the comptime fold
+(`comptime_eval.zig` folds it with `mem.eql`), the interpreter, and the JS
+target all already agreed — and Zig has NO verbatim spelling for that:
+`[]const u8 == []const u8` is a compile error. Pass-through was not
+"understanding by coincidence" there; it was a raw Stage-D leak ("cannot
+compare strings with ==") refusing a program three other organs of the same
+compiler considered meaningful.
 
 JavaScript cannot do that. `@sqrt` is a syntax error, `and` is a syntax error,
 `x << 32` is a no-op rather than an error. So the JS emitter had to enumerate the
@@ -60,9 +68,17 @@ the load-bearing part: the shape is cheap to change once there is *one home* for
 it, and expensive to argue about while there are two. Getting something in place
 that has a relationship to a vocabulary beats getting the vocabulary right.
 
-So the `.zig` arm is the identity. What that defers, stated plainly because the
-whole point of writing it down is that it not go invisible: **the vocabulary is
-enforced on JS and absent on Zig.** A `.k` naming an `@foo` nobody modelled is
+So the `.zig` arm is the identity **for the vocabulary** — with one semantic
+carve-out it now carries (2026-08-07): a literal-grounded string `==`/`!=`
+rewrites to `@import("std").mem.eql(u8, …)`, because that operator's Koru
+meaning has no verbatim Zig spelling at all (see above). That rewrite is not
+the wall this section defers — it refuses nothing; it makes programs run that
+every other organ already accepted. The distinction worth keeping: *identity
+is a sound default where the host shares the semantics, and a silent leak
+where it does not* — "comparison is shared" was true of every comparison
+except the one on strings. What the ruling still defers, stated plainly
+because the whole point of writing it down is that it not go invisible: **the
+vocabulary is enforced on JS and absent on Zig.** A `.k` naming an `@foo` nobody modelled is
 accepted by one target and refused by the other, so the table can drift into
 "whatever JS happened to need" rather than "what Koru means" — which is
 [[frag-a-wall-guards-one-direction-of-a-symmetry]] with the guarded direction

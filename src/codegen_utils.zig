@@ -608,7 +608,22 @@ pub fn lowerKoruExpr(
     mode: ExprMode,
     diag: ?*LowerDiag,
 ) LowerError![]const u8 {
-    if (target == .zig) return allocator.dupe(u8, text);
+    if (target == .zig) {
+        // The `.zig` arm is the identity for the OPERATION VOCABULARY (ruled
+        // 2026-08-07, above) — but "comparison is shared" has one hole: `==`
+        // on two strings. Koru's `==` is value equality (comptime_eval.zig
+        // folds it with `mem.eql`; the interpreter and the JS target agree),
+        // and Zig has no spelling for that on slices — pasted through, it is
+        // a raw Stage-D "cannot compare strings with ==". So the one rewrite
+        // this arm carries is semantic, not vocabulary: a literal-grounded
+        // string comparison becomes `@import("std").mem.eql(u8, …)`.
+        if (mode != .host_text) {
+            if (rewriteStringEqualityZig(allocator, text) catch null) |rewritten| {
+                return rewritten;
+            }
+        }
+        return allocator.dupe(u8, text);
+    }
 
     var out = try std.ArrayList(u8).initCapacity(allocator, text.len + 32);
     errdefer out.deinit(allocator);
@@ -1292,4 +1307,498 @@ pub fn collectZigCaptureNames(allocator: std.mem.Allocator, text: []const u8, ou
             i = k;
         }
     }
+}
+
+// ============================================================================
+// RUNTIME STRING EQUALITY — the Zig spelling of Koru's `==` on strings
+// ============================================================================
+//
+// Koru's `==` on two strings is VALUE equality. Every organ that already has
+// an opinion agrees: the comptime fold (`comptime_eval.zig`, `.equal` on two
+// `.string`s is `mem.eql`), the interpreter (`koru_std/interpreter.kz`), and
+// the JS target (verbatim `==` — which in JavaScript IS string value
+// equality). The Zig target was the odd one out: the expression text was
+// pasted through, and `[]const u8 == []const u8` is a Zig compile error, so a
+// `when` guard or `if` condition comparing strings died at Stage D quoting the
+// host ("cannot compare strings with ==") — one target implementing what the
+// other three meant.
+//
+// WHAT REWRITES: a `==` / `!=` whose either operand is a double-quoted string
+// LITERAL — the syntactically decidable subset, and the whole dispatch family
+// ("is this command/route/config-key equal to that word"). It becomes
+// `@import("std").mem.eql(u8, lhs, rhs)` (negated for `!=`), spliced back
+// with every other byte of the expression preserved.
+//
+// WHAT DOES NOT (yet): `a == b` where both sides are string-TYPED names.
+// Deciding that needs a type oracle at the rewrite site; guessing would
+// rewrite numeric comparisons into `mem.eql` and corrupt working code. Those
+// comparisons still fail loudly at Stage D on Zig (and work on JS) — the
+// remaining half of this symmetry, not a silent wrong answer.
+//
+// The scan is CONSERVATIVE BY CONSTRUCTION: the text is parsed with a small
+// span-tracking expression parser, and anything it does not fully recognize —
+// statement text, bit operators, struct literals, host-only syntax — returns
+// null and the caller keeps the original bytes. Unchanged regions are copied
+// from the source by span, never re-rendered, so a non-matching expression is
+// byte-identical.
+
+const StrEqError = error{ NoParse, OutOfMemory };
+
+/// A parsed subexpression: its rendered text (rewritten iff `changed`),
+/// its source span, and whether it is exactly one string literal.
+const StrEqPiece = struct {
+    text: []const u8,
+    start: usize,
+    end: usize,
+    is_string_lit: bool,
+    changed: bool,
+};
+
+const StrEqParser = struct {
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    pos: usize,
+
+    fn skipWs(self: *StrEqParser) void {
+        while (self.pos < self.text.len and std.ascii.isWhitespace(self.text[self.pos])) self.pos += 1;
+    }
+
+    fn peek(self: *StrEqParser) u8 {
+        return if (self.pos < self.text.len) self.text[self.pos] else 0;
+    }
+
+    /// Word-boundary keyword match at the current position.
+    fn atKeyword(self: *StrEqParser, kw: []const u8) bool {
+        if (self.pos + kw.len > self.text.len) return false;
+        if (!std.mem.eql(u8, self.text[self.pos .. self.pos + kw.len], kw)) return false;
+        if (self.pos > 0 and exprIdentChar(self.text[self.pos - 1])) return false;
+        const after = self.pos + kw.len;
+        if (after < self.text.len and exprIdentChar(self.text[after])) return false;
+        return true;
+    }
+
+    /// Combine a left-associative binary chain step. When neither side was
+    /// rewritten the piece is the original source slice; otherwise the two
+    /// rendered halves are joined by the ORIGINAL inter-operand bytes (the
+    /// operator and its spacing), so nothing outside a rewrite is respelled.
+    fn combine(self: *StrEqParser, left: StrEqPiece, right: StrEqPiece) StrEqError!StrEqPiece {
+        if (!left.changed and !right.changed) {
+            return .{ .text = self.text[left.start..right.end], .start = left.start, .end = right.end, .is_string_lit = false, .changed = false };
+        }
+        const joined = std.fmt.allocPrint(self.allocator, "{s}{s}{s}", .{
+            left.text, self.text[left.end..right.start], right.text,
+        }) catch return StrEqError.OutOfMemory;
+        return .{ .text = joined, .start = left.start, .end = right.end, .is_string_lit = false, .changed = true };
+    }
+
+    fn parseOr(self: *StrEqParser) StrEqError!StrEqPiece {
+        var left = try self.parseAnd();
+        while (true) {
+            self.skipWs();
+            if (self.atKeyword("or")) {
+                self.pos += 2;
+            } else if (self.pos + 1 < self.text.len and std.mem.eql(u8, self.text[self.pos .. self.pos + 2], "||")) {
+                self.pos += 2;
+            } else break;
+            const right = try self.parseAnd();
+            left = try self.combine(left, right);
+        }
+        return left;
+    }
+
+    fn parseAnd(self: *StrEqParser) StrEqError!StrEqPiece {
+        var left = try self.parseEq();
+        while (true) {
+            self.skipWs();
+            if (self.atKeyword("and")) {
+                self.pos += 3;
+            } else if (self.pos + 1 < self.text.len and std.mem.eql(u8, self.text[self.pos .. self.pos + 2], "&&")) {
+                self.pos += 2;
+            } else break;
+            const right = try self.parseEq();
+            left = try self.combine(left, right);
+        }
+        return left;
+    }
+
+    /// THE REWRITE LEVEL. `==` / `!=` with a string-literal operand becomes
+    /// the `mem.eql` call; every other comparison combines verbatim.
+    fn parseEq(self: *StrEqParser) StrEqError!StrEqPiece {
+        var left = try self.parseCmp();
+        while (true) {
+            self.skipWs();
+            var negated = false;
+            if (self.pos + 1 < self.text.len and std.mem.eql(u8, self.text[self.pos .. self.pos + 2], "==")) {
+                self.pos += 2;
+            } else if (self.pos + 1 < self.text.len and std.mem.eql(u8, self.text[self.pos .. self.pos + 2], "!=")) {
+                negated = true;
+                self.pos += 2;
+            } else break;
+            const right = try self.parseCmp();
+            if (left.is_string_lit or right.is_string_lit) {
+                const call = std.fmt.allocPrint(self.allocator, "{s}@import(\"std\").mem.eql(u8, {s}, {s})", .{
+                    if (negated) "!" else "", left.text, right.text,
+                }) catch return StrEqError.OutOfMemory;
+                left = .{ .text = call, .start = left.start, .end = right.end, .is_string_lit = false, .changed = true };
+            } else {
+                left = try self.combine(left, right);
+            }
+        }
+        return left;
+    }
+
+    fn parseCmp(self: *StrEqParser) StrEqError!StrEqPiece {
+        var left = try self.parseConcat();
+        while (true) {
+            self.skipWs();
+            if (self.pos + 1 < self.text.len and
+                (std.mem.eql(u8, self.text[self.pos .. self.pos + 2], "<=") or
+                    std.mem.eql(u8, self.text[self.pos .. self.pos + 2], ">=")))
+            {
+                self.pos += 2;
+            } else if ((self.peek() == '<' or self.peek() == '>') and
+                // `<<` / `>>` are bit shifts this parser does not model.
+                !(self.pos + 1 < self.text.len and (self.text[self.pos + 1] == '<' or self.text[self.pos + 1] == '>')))
+            {
+                self.pos += 1;
+            } else break;
+            const right = try self.parseConcat();
+            left = try self.combine(left, right);
+        }
+        return left;
+    }
+
+    fn parseConcat(self: *StrEqParser) StrEqError!StrEqPiece {
+        var left = try self.parseAdd();
+        while (true) {
+            self.skipWs();
+            if (self.pos + 1 < self.text.len and std.mem.eql(u8, self.text[self.pos .. self.pos + 2], "++")) {
+                self.pos += 2;
+            } else break;
+            const right = try self.parseAdd();
+            left = try self.combine(left, right);
+        }
+        return left;
+    }
+
+    fn parseAdd(self: *StrEqParser) StrEqError!StrEqPiece {
+        var left = try self.parseMul();
+        while (true) {
+            self.skipWs();
+            const c = self.peek();
+            // Not `++` (concat, handled above) and not a `-` glued to an
+            // identifier (kebab names are consumed by parseIdent).
+            if (c == '+' and !(self.pos + 1 < self.text.len and self.text[self.pos + 1] == '+')) {
+                self.pos += 1;
+            } else if (c == '-') {
+                self.pos += 1;
+            } else break;
+            const right = try self.parseMul();
+            left = try self.combine(left, right);
+        }
+        return left;
+    }
+
+    fn parseMul(self: *StrEqParser) StrEqError!StrEqPiece {
+        var left = try self.parseUnary();
+        while (true) {
+            self.skipWs();
+            const c = self.peek();
+            if (c == '*' or c == '/' or c == '%') {
+                self.pos += 1;
+            } else break;
+            const right = try self.parseUnary();
+            left = try self.combine(left, right);
+        }
+        return left;
+    }
+
+    fn parseUnary(self: *StrEqParser) StrEqError!StrEqPiece {
+        self.skipWs();
+        const start = self.pos;
+        if (self.peek() == '!' or self.peek() == '-') {
+            self.pos += 1;
+            const operand = try self.parseUnary();
+            if (!operand.changed) {
+                return .{ .text = self.text[start..operand.end], .start = start, .end = operand.end, .is_string_lit = false, .changed = false };
+            }
+            const joined = std.fmt.allocPrint(self.allocator, "{s}{s}", .{
+                self.text[start..operand.start], operand.text,
+            }) catch return StrEqError.OutOfMemory;
+            return .{ .text = joined, .start = start, .end = operand.end, .is_string_lit = false, .changed = true };
+        }
+        return self.parsePostfix();
+    }
+
+    fn parsePostfix(self: *StrEqParser) StrEqError!StrEqPiece {
+        var result = try self.parsePrimary();
+        while (true) {
+            // No skipWs here: postfix binds tightly, and a space before `(`
+            // or `[` in guard text is not a call we need to model.
+            const c = self.peek();
+            if (c == '.') {
+                if (self.pos + 1 >= self.text.len or !exprIdentStartChar(self.text[self.pos + 1])) return StrEqError.NoParse;
+                const dot_at = self.pos;
+                self.pos += 1;
+                _ = try self.parseIdentName();
+                if (result.changed) {
+                    const joined = std.fmt.allocPrint(self.allocator, "{s}{s}", .{ result.text, self.text[dot_at..self.pos] }) catch return StrEqError.OutOfMemory;
+                    result = .{ .text = joined, .start = result.start, .end = self.pos, .is_string_lit = false, .changed = true };
+                } else {
+                    result = .{ .text = self.text[result.start..self.pos], .start = result.start, .end = self.pos, .is_string_lit = false, .changed = false };
+                }
+            } else if (c == '(' or c == '[') {
+                const inner = try self.parseBalanced(c);
+                if (inner.changed or result.changed) {
+                    const joined = std.fmt.allocPrint(self.allocator, "{s}{s}", .{ result.text, inner.text }) catch return StrEqError.OutOfMemory;
+                    result = .{ .text = joined, .start = result.start, .end = self.pos, .is_string_lit = false, .changed = true };
+                } else {
+                    result = .{ .text = self.text[result.start..self.pos], .start = result.start, .end = self.pos, .is_string_lit = false, .changed = false };
+                }
+            } else break;
+        }
+        return result;
+    }
+
+    /// A balanced `(...)` / `[...]` region in postfix position (call
+    /// arguments, an index). Each top-level comma segment is offered the FULL
+    /// rewrite independently, so `@intFromBool(s == "x")` rewrites while an
+    /// argument this parser cannot read keeps its own bytes — per-segment
+    /// identity, never per-expression abandonment.
+    fn parseBalanced(self: *StrEqParser, open: u8) StrEqError!StrEqPiece {
+        const close: u8 = if (open == '(') ')' else ']';
+        const start = self.pos;
+        self.pos += 1;
+        var out = std.ArrayList(u8).initCapacity(self.allocator, 8) catch return StrEqError.OutOfMemory;
+        out.append(self.allocator, open) catch return StrEqError.OutOfMemory;
+        var changed = false;
+        var seg_start = self.pos;
+        var depth: usize = 0;
+        while (self.pos < self.text.len) {
+            const c = self.text[self.pos];
+            if (c == '"' or c == '\'') {
+                try self.skipStringLike(c);
+                continue;
+            }
+            if (c == '(' or c == '[' or c == '{') depth += 1;
+            if (c == ')' or c == ']' or c == '}') {
+                if (depth == 0) {
+                    if (c != close) return StrEqError.NoParse;
+                    const seg = self.text[seg_start..self.pos];
+                    const low = rewriteStrEqInner(self.allocator, seg);
+                    if (low) |l| {
+                        changed = true;
+                        out.appendSlice(self.allocator, l) catch return StrEqError.OutOfMemory;
+                    } else {
+                        out.appendSlice(self.allocator, seg) catch return StrEqError.OutOfMemory;
+                    }
+                    out.append(self.allocator, close) catch return StrEqError.OutOfMemory;
+                    self.pos += 1;
+                    return .{
+                        .text = if (changed) (out.toOwnedSlice(self.allocator) catch return StrEqError.OutOfMemory) else self.text[start..self.pos],
+                        .start = start,
+                        .end = self.pos,
+                        .is_string_lit = false,
+                        .changed = changed,
+                    };
+                }
+                depth -= 1;
+            }
+            if (c == ',' and depth == 0) {
+                const seg = self.text[seg_start..self.pos];
+                const low = rewriteStrEqInner(self.allocator, seg);
+                if (low) |l| {
+                    changed = true;
+                    out.appendSlice(self.allocator, l) catch return StrEqError.OutOfMemory;
+                } else {
+                    out.appendSlice(self.allocator, seg) catch return StrEqError.OutOfMemory;
+                }
+                out.append(self.allocator, ',') catch return StrEqError.OutOfMemory;
+                seg_start = self.pos + 1;
+            }
+            self.pos += 1;
+        }
+        return StrEqError.NoParse;
+    }
+
+    /// Skip a `"…"` or `'…'` literal including escapes; pos lands after the
+    /// closing quote.
+    fn skipStringLike(self: *StrEqParser, quote: u8) StrEqError!void {
+        self.pos += 1;
+        while (self.pos < self.text.len) {
+            const c = self.text[self.pos];
+            if (c == '\\') {
+                self.pos += 2;
+                continue;
+            }
+            if (c == quote) {
+                self.pos += 1;
+                return;
+            }
+            self.pos += 1;
+        }
+        return StrEqError.NoParse;
+    }
+
+    fn parseIdentName(self: *StrEqParser) StrEqError!void {
+        if (!exprIdentStartChar(self.peek())) return StrEqError.NoParse;
+        while (self.pos < self.text.len) {
+            const c = self.text[self.pos];
+            if (exprIdentChar(c)) {
+                self.pos += 1;
+            } else if (c == '-' and self.pos + 1 < self.text.len and exprIdentChar(self.text[self.pos + 1])) {
+                // Kebab-greedy, mirroring expression_parser.zig: an unspaced
+                // `-` joins identifier segments; subtraction needs spaces.
+                self.pos += 1;
+            } else break;
+        }
+    }
+
+    fn parsePrimary(self: *StrEqParser) StrEqError!StrEqPiece {
+        self.skipWs();
+        const start = self.pos;
+        const c = self.peek();
+        if (c == '"') {
+            try self.skipStringLike('"');
+            return .{ .text = self.text[start..self.pos], .start = start, .end = self.pos, .is_string_lit = true, .changed = false };
+        }
+        if (c == '\'') {
+            try self.skipStringLike('\'');
+            return .{ .text = self.text[start..self.pos], .start = start, .end = self.pos, .is_string_lit = false, .changed = false };
+        }
+        if (c == '(') {
+            self.pos += 1;
+            const inner = try self.parseOr();
+            self.skipWs();
+            if (self.peek() != ')') return StrEqError.NoParse;
+            self.pos += 1;
+            if (!inner.changed) {
+                return .{ .text = self.text[start..self.pos], .start = start, .end = self.pos, .is_string_lit = false, .changed = false };
+            }
+            const joined = std.fmt.allocPrint(self.allocator, "({s})", .{inner.text}) catch return StrEqError.OutOfMemory;
+            return .{ .text = joined, .start = start, .end = self.pos, .is_string_lit = false, .changed = true };
+        }
+        if (c == '@') {
+            self.pos += 1;
+            try self.parseIdentName();
+            self.skipWs();
+            if (self.peek() != '(') return StrEqError.NoParse;
+            const inner = try self.parseBalanced('(');
+            if (!inner.changed) {
+                return .{ .text = self.text[start..self.pos], .start = start, .end = self.pos, .is_string_lit = false, .changed = false };
+            }
+            const joined = std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.text[start..inner.start], inner.text }) catch return StrEqError.OutOfMemory;
+            return .{ .text = joined, .start = start, .end = self.pos, .is_string_lit = false, .changed = true };
+        }
+        if (std.ascii.isDigit(c)) {
+            // Number: consume the token loosely (hex/float/underscores); a
+            // malformed number surfaces as NoParse at the next operator.
+            while (self.pos < self.text.len) {
+                const nc = self.text[self.pos];
+                if (std.ascii.isAlphanumeric(nc) or nc == '_' or nc == '.') {
+                    self.pos += 1;
+                } else break;
+            }
+            return .{ .text = self.text[start..self.pos], .start = start, .end = self.pos, .is_string_lit = false, .changed = false };
+        }
+        if (exprIdentStartChar(c)) {
+            try self.parseIdentName();
+            return .{ .text = self.text[start..self.pos], .start = start, .end = self.pos, .is_string_lit = false, .changed = false };
+        }
+        return StrEqError.NoParse;
+    }
+};
+
+fn exprIdentStartChar(c: u8) bool {
+    return std.ascii.isAlphabetic(c) or c == '_';
+}
+
+/// Rewrite literal-grounded string `==` / `!=` in one Koru expression into the
+/// Zig value-equality spelling. Returns null when the text has no such
+/// comparison OR cannot be fully read as an expression — in both cases the
+/// caller keeps the original bytes, so this can never corrupt text it does
+/// not understand. The result (when non-null) is owned by the caller; every
+/// intermediate lives in an arena.
+pub fn rewriteStringEqualityZig(allocator: std.mem.Allocator, text: []const u8) StrEqError!?[]const u8 {
+    // Fast reject: no `==` / `!=` — nothing to parse at all.
+    if (std.mem.indexOf(u8, text, "==") == null and std.mem.indexOf(u8, text, "!=") == null) return null;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const rewritten = rewriteStrEqInner(arena.allocator(), text) orelse return null;
+    return allocator.dupe(u8, rewritten) catch return StrEqError.OutOfMemory;
+}
+
+/// Arena-side worker: parse and rewrite, or null for identity. Recursion
+/// (call-argument segments in `parseBalanced`) re-enters HERE so every
+/// intermediate shares one arena and one lifetime.
+fn rewriteStrEqInner(allocator: std.mem.Allocator, text: []const u8) ?[]const u8 {
+    if (std.mem.indexOf(u8, text, "==") == null and std.mem.indexOf(u8, text, "!=") == null) return null;
+    var parser = StrEqParser{ .allocator = allocator, .text = text, .pos = 0 };
+    const piece = parser.parseOr() catch return null;
+    parser.skipWs();
+    if (parser.pos < text.len) return null; // trailing content — not a whole expression
+    if (!piece.changed) return null;
+    // Preserve the original leading/trailing whitespace around the expression.
+    const lead = blk: {
+        var i: usize = 0;
+        while (i < text.len and std.ascii.isWhitespace(text[i])) i += 1;
+        break :blk text[0..i];
+    };
+    const trail = blk: {
+        var i: usize = text.len;
+        while (i > 0 and std.ascii.isWhitespace(text[i - 1])) i -= 1;
+        break :blk text[i..];
+    };
+    if (lead.len == 0 and trail.len == 0) return piece.text;
+    return std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ lead, piece.text, trail }) catch return null;
+}
+
+test "string equality: literal RHS in a guard rewrites to mem.eql" {
+    const out = (try rewriteStringEqualityZig(std.testing.allocator, "cmd == \"start\"")).?;
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("@import(\"std\").mem.eql(u8, cmd, \"start\")", out);
+}
+
+test "string equality: literal LHS and != negates" {
+    const out = (try rewriteStringEqualityZig(std.testing.allocator, "\"stop\" != cmd")).?;
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("!@import(\"std\").mem.eql(u8, \"stop\", cmd)", out);
+}
+
+test "string equality: compound guard rewrites only the string comparison" {
+    const out = (try rewriteStringEqualityZig(std.testing.allocator, "name == \"lars\" and age > 40")).?;
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("@import(\"std\").mem.eql(u8, name, \"lars\") and age > 40", out);
+}
+
+test "string equality: field access operand" {
+    const out = (try rewriteStringEqualityZig(std.testing.allocator, "req.path == \"/health\"")).?;
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("@import(\"std\").mem.eql(u8, req.path, \"/health\")", out);
+}
+
+test "string equality: numeric comparisons are untouched (null)" {
+    try std.testing.expectEqual(@as(?[]const u8, null), try rewriteStringEqualityZig(std.testing.allocator, "acc.floor == -1 and acc.pos == 0"));
+    try std.testing.expectEqual(@as(?[]const u8, null), try rewriteStringEqualityZig(std.testing.allocator, "c == '('"));
+    try std.testing.expectEqual(@as(?[]const u8, null), try rewriteStringEqualityZig(std.testing.allocator, "pv == 0"));
+}
+
+test "string equality: an == inside a string literal does not fire" {
+    try std.testing.expectEqual(@as(?[]const u8, null), try rewriteStringEqualityZig(std.testing.allocator, "\"a == b\""));
+}
+
+test "string equality: unreadable text returns null, never a guess" {
+    // Bit ops, statements, struct literals — all outside the modeled subset.
+    try std.testing.expectEqual(@as(?[]const u8, null), try rewriteStringEqualityZig(std.testing.allocator, "(mask >> j) & 1 == \"x\""));
+    try std.testing.expectEqual(@as(?[]const u8, null), try rewriteStringEqualityZig(std.testing.allocator, "const dx = a == \"x\";"));
+}
+
+test "string equality: rewrites inside builtin-call arguments" {
+    const out = (try rewriteStringEqualityZig(std.testing.allocator, "@intFromBool(s == \"x\")")).?;
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("@intFromBool(@import(\"std\").mem.eql(u8, s, \"x\"))", out);
+}
+
+test "string equality: identifier == identifier is left alone (needs a type oracle)" {
+    try std.testing.expectEqual(@as(?[]const u8, null), try rewriteStringEqualityZig(std.testing.allocator, "left == right"));
 }

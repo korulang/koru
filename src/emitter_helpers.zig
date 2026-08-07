@@ -3027,7 +3027,7 @@ fn emitSubflowContinuationsWithDepth(
                         } else {
                             try emitter.write("else if (");
                         }
-                        try emitter.write(condition);
+                        try emitter.write(strEqGuard(emitter, condition));
                         try emitter.write(") {\n");
                     } else {
                         // No when-clause - this is the else case
@@ -3695,7 +3695,7 @@ fn emitSubflowContinuationsWithDepth(
                         // at the impl-body sites that pass `ctx.inline_fire_conts`.
                         break :blk (try presenceConditionRewrite(alloc, condition, ev, null)) orelse condition;
                     };
-                    try emitter.write(cond_out);
+                    try emitter.write(strEqGuard(emitter, cond_out));
                     try emitter.write(") ");
                 } else {
                     // No when-clause - this is the else case
@@ -4408,7 +4408,7 @@ fn emitInlineCodeResolvingSplices(
                         break :blk (try presenceConditionRewrite(alloc, cont.condition.?, ev, ctx.inline_fire_conts)) orelse cont.condition.?;
                     };
                     try emitter.write("if (");
-                    try emitter.write(cond_out);
+                    try emitter.write(strEqGuard(emitter, cond_out));
                     try emitter.write(") { ");
                 }
                 // Give the spliced body a unique `result_N` namespace, so a
@@ -4556,9 +4556,9 @@ fn emitInlineCodeResolvingSplices(
                 };
                 try emitter.write("if (");
                 if (bind_rename) |br| {
-                    try emitValueWithBindingSubstitution(emitter, cond_out, br);
+                    try emitValueWithBindingSubstitution(emitter, strEqGuard(emitter, cond_out), br);
                 } else {
-                    try emitter.write(cond_out);
+                    try emitter.write(strEqGuard(emitter, cond_out));
                 }
                 try emitter.write(") { ");
             }
@@ -6834,7 +6834,7 @@ pub fn emitHandlersStruct(
             if (guarded) {
                 try emitter.writeIndent();
                 try emitter.write("if (");
-                try emitter.write(cont.condition.?);
+                try emitter.write(strEqGuard(emitter, cont.condition.?));
                 try emitter.write(") {\n");
                 emitter.indent();
             }
@@ -7058,6 +7058,18 @@ fn presenceConditionRewrite(
         );
     }
     return null;
+}
+
+/// Runtime string equality (Zig target): apply the value-equality spelling
+/// to a `when` guard before it is written. Koru's `==` on strings is value
+/// equality (the comptime fold, the interpreter, and the JS target all agree);
+/// pasted through, Zig refuses `[]const u8 == []const u8` at Stage D. The
+/// rewrite (codegen_utils.rewriteStringEqualityZig) fires only on a
+/// literal-grounded comparison it fully parsed — identity otherwise, and
+/// identity when this emitter has no allocator to build the new text with.
+fn strEqGuard(emitter: *CodeEmitter, cond: []const u8) []const u8 {
+    const alloc = emitter.allocator orelse return cond;
+    return (codegen_utils.rewriteStringEqualityZig(alloc, cond) catch null) orelse cond;
 }
 
 /// Write an arm-fire's payload argument list — the POSITIONAL shape shared
@@ -8734,7 +8746,7 @@ fn emitContinuationList(
             if (cont.condition_expr) |expr| {
                 try emitExpression(emitter, ctx, expr, null);
             } else {
-                try emitter.write(condition);
+                try emitter.write(strEqGuard(emitter, condition));
             }
             try emitter.write(") {\n");
             emitter.indent();
@@ -8962,7 +8974,7 @@ fn emitContinuationListWithUnreachableBranches(
                     } else {
                         try emitter.write("else if (");
                     }
-                    try emitter.write(condition);
+                    try emitter.write(strEqGuard(emitter, condition));
                     try emitter.write(") {\n");
                 } else {
                     if (idx > 0) {
@@ -9164,7 +9176,7 @@ fn emitContinuationCase(
         if (cont.condition_expr) |expr| {
             try emitExpression(emitter, ctx, expr, null);
         } else {
-            try emitter.write(condition);
+            try emitter.write(strEqGuard(emitter, condition));
         }
         try emitter.write(") {\n");
         emitter.indent();
@@ -9242,7 +9254,7 @@ fn emitWhenClauseCase(
             } else {
                 try emitter.write("else if (");
             }
-            try emitter.write(condition);
+            try emitter.write(strEqGuard(emitter, condition));
             try emitter.write(") {\n");
         } else {
             // No when-clause - this is the else case
@@ -10102,7 +10114,7 @@ fn emitStep(
                     const ev = ctx.impl_event_decl orelse break :blk cond;
                     break :blk (try presenceConditionRewrite(alloc, cond, ev, ctx.inline_fire_conts)) orelse cond;
                 };
-                try emitter.write(cond_out);
+                try emitter.write(strEqGuard(emitter, cond_out));
             }
 
             try emitter.write(") {\n");
@@ -10535,7 +10547,7 @@ fn emitStep(
                     const ev = ctx.impl_event_decl orelse break :blk cond.condition;
                     break :blk (try presenceConditionRewrite(alloc, cond.condition, ev, ctx.inline_fire_conts)) orelse cond.condition;
                 };
-                try emitter.write(cond_out);
+                try emitter.write(strEqGuard(emitter, cond_out));
             }
             try emitter.write(") {\n");
             emitter.indent();
@@ -10806,7 +10818,7 @@ fn emitStepWithBindingSubstitution(
             if (cb.condition_expr) |expr| {
                 try emitExpression(emitter, ctx, expr, substitution);
             } else if (cb.condition) |cond| {
-                try emitValueWithBindingSubstitution(emitter, cond, substitution);
+                try emitValueWithBindingSubstitution(emitter, strEqGuard(emitter, cond), substitution);
             }
 
             try emitter.write(") {\n");
@@ -10977,7 +10989,7 @@ fn emitStepWithBindingSubstitution(
 
             try emitter.writeIndent();
             try emitter.write("if (");
-            try emitValueWithBindingSubstitution(emitter, cond.condition, substitution);
+            try emitValueWithBindingSubstitution(emitter, strEqGuard(emitter, cond.condition), substitution);
             try emitter.write(") {\n");
             emitter.indent();
 

@@ -664,6 +664,7 @@ pub fn build(b: *std.Build) void {
     template_processor_module.addImport("liquid", liquid_module);
     template_processor_module.addImport("log", log_module);
     template_processor_module.addImport("struct_literal", struct_literal_module);
+    template_processor_module.addImport("codegen_utils", codegen_utils_module);
     exe.root_module.addImport("template_processor", template_processor_module);
 
     // Transform Pass Runner module - generic AST walker for transforms
