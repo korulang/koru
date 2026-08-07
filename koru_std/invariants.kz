@@ -92,7 +92,18 @@
 
 ~proc invariants|zig {
     const std = @import("std");
-    _ = argv;
+
+    // `invariants` takes no arguments. Refusing loudly matters more than it
+    // looks: this command's output is what a git gate consumes, so a caller
+    // holding a retired spelling (`invariants gate`) must get a non-zero exit,
+    // not the listing — a hook that greens on the wrong command checks nothing.
+    if (argv.len > 0) {
+        std.debug.print("error: `invariants` takes no arguments (got `{s}`)\n", .{argv[0]});
+        std.debug.print("A gate is a consumer of the listing, not a subcommand: run\n", .{});
+        std.debug.print("    koruc <file> invariants\n", .{});
+        std.debug.print("and act on its output. The surface is specified in koru_std/invariants.kz.\n", .{});
+        std.process.exit(1);
+    }
 
     const helpers = struct {
         // Pull one `"field": "value"` out of a declaration block. Returns an

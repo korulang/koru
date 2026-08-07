@@ -45,6 +45,18 @@ is *used* — so the module can be named, read, and learned from without ever
 running a fiction. Pinned both directions: 670_001 (use refuses, and the refusal
 names the address), 670_002 (import alone still builds).
 
+**The same rule binds at retirement, and there the caller count is exactly what
+makes it urgent.** When c37272f1 redesigned `std/invariants` down to pure
+enumeration, the retired spelling `koruc <file> invariants gate` did not start
+failing — the command's proc discarded its argv, so the old invocation printed
+the listing and exited 0. For a surface whose consumers are git hooks, the exit
+code *is* the output: a hook holding the retired spelling would have greened on
+violations forever, and nothing would ever have pointed back at the redesign.
+So a redesign that narrows a surface owes the old spelling a refusal for the
+same reason an unbuilt module owes its name one — the spelling is where the
+next caller arrives, and silence there is a fabricated verification. Pinned:
+675_002 (an argument to `invariants` refuses loudly and teaches the listing).
+
 One honest gap in the repair: the refusal is a Zig `@compileError`, so it reaches
 the author as a raw backend error rather than a Koru diagnostic. It is loud and it
 teaches, which beats lying, but it does not yet meet the bar that every stdlib
