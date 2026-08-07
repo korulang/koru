@@ -3981,12 +3981,15 @@ fn storeLowerText(
             } }) catch unreachable;
 
             var qr = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-            qr.appendSlice(allocator, "const __koru_r = @as(usize, @intCast(row));\n") catch unreachable;
+            qr.appendSlice(allocator, SW.rowHead(host_is_js)) catch unreachable;
             for (qs.proj_names, qs.proj_fields) |pname, pfidx| {
                 // A char column projects as a string slice into the cell —
                 // the bytes up to the first NUL (zero-padded buffers trim;
-                // an N-full buffer yields all N bytes).
-                const ld = if (field_char_caps[pfidx] != null)
+                // an N-full buffer yields all N bytes). On JS the column IS a
+                // string, and `_ = &x;` is Zig's discard, not JavaScript.
+                const ld = if (host_is_js)
+                    std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_r];\n", .{ pname, store_name, field_names[pfidx] }) catch unreachable
+                else if (field_char_caps[pfidx] != null)
                     std.fmt.allocPrint(allocator, "const {s} = @import(\"std\").mem.sliceTo(&__koru_store_{s}.{s}[__koru_r], 0);\n_ = &{s};\n", .{ pname, store_name, field_names[pfidx], pname }) catch unreachable
                 else
                     std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_r];\n_ = &{s};\n", .{ pname, store_name, field_names[pfidx], pname }) catch unreachable;
@@ -3997,7 +4000,10 @@ fn storeLowerText(
             // taking-cursor path and the [tree] cycle guards already make at
             // this site, so this adds no machinery, only a name.
             if (qs.req_id) |idn| {
-                const idz = std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.__koru_handle_of(__koru_r);\n_ = &{s};\n", .{ idn, store_name, idn }) catch unreachable;
+                const idz = if (host_is_js)
+                    std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.__koru_handle_of(__koru_r);\n", .{ idn, store_name }) catch unreachable
+                else
+                    std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.__koru_handle_of(__koru_r);\n_ = &{s};\n", .{ idn, store_name, idn }) catch unreachable;
                 qr.appendSlice(allocator, idz) catch unreachable;
             }
             if (qs.guard) |g| {
@@ -4006,7 +4012,7 @@ fn storeLowerText(
             }
             qr.appendSlice(allocator, emit_ns) catch unreachable;
             qr.appendSlice(allocator, qbody_name) catch unreachable;
-            qr.appendSlice(allocator, "_event.handler(.{ ") catch unreachable;
+            qr.appendSlice(allocator, if (host_is_js) "_event.handler({ " else "_event.handler(.{ ") catch unreachable;
             for (qs.proj_names, qs.proj_fields, 0..) |pname, pfidx, i| {
                 if (i > 0) qr.appendSlice(allocator, ", ") catch unreachable;
                 // The qbody input an OWNED column projects to is mangled
@@ -4017,7 +4023,7 @@ fn storeLowerText(
                     std.fmt.allocPrint(allocator, "__koru_qproj_{s}", .{pname}) catch unreachable
                 else
                     pname;
-                const p = std.fmt.allocPrint(allocator, ".{s} = {s}", .{ key, pname }) catch unreachable;
+                const p = BR.field(allocator, host_is_js, key, pname);
                 qr.appendSlice(allocator, p) catch unreachable;
             }
             if (qs.proj_names.len > 0) qr.appendSlice(allocator, ", ") catch unreachable;
@@ -4029,12 +4035,12 @@ fn storeLowerText(
             // `handle_of` on the way in and no `__koru_resolve` on the way out,
             // which is the whole four-deep dependent-load chain gone.
             const qrow_cursor = if (qs.cursor_dense)
-                std.fmt.allocPrint(allocator, ".{s} = @as(i64, @intCast(__koru_r)) ", .{qs.cursor}) catch unreachable
+                std.fmt.allocPrint(allocator, "{s} ", .{BR.field(allocator, host_is_js, qs.cursor, if (host_is_js) "__koru_r" else "@as(i64, @intCast(__koru_r))")}) catch unreachable
             else
-                std.fmt.allocPrint(allocator, ".{s} = __koru_store_{s}.__koru_handle_of(__koru_r) ", .{ qs.cursor, store_name }) catch unreachable;
+                std.fmt.allocPrint(allocator, "{s} ", .{BR.field(allocator, host_is_js, qs.cursor, std.fmt.allocPrint(allocator, "__koru_store_{s}.__koru_handle_of(__koru_r)", .{store_name}) catch unreachable)}) catch unreachable;
             qr.appendSlice(allocator, qrow_cursor) catch unreachable;
             if (qs.req_id) |idn| {
-                const idc = std.fmt.allocPrint(allocator, ", .{s} = {s} ", .{ idn, idn }) catch unreachable;
+                const idc = std.fmt.allocPrint(allocator, ", {s} ", .{BR.field(allocator, host_is_js, idn, idn)}) catch unreachable;
                 qr.appendSlice(allocator, idc) catch unreachable;
             }
             qr.appendSlice(allocator, "});\nreturn;") catch unreachable;
@@ -4042,7 +4048,7 @@ fn storeLowerText(
                 .path = H.mkPathH(allocator, home_ns, qrow_name),
                 .body = ast.Source{ .text = qr.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
-                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .target = allocator.dupe(u8, proc_target) catch unreachable,
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
@@ -4128,7 +4134,43 @@ fn storeLowerText(
             // at most once (as a root, or by its unique parent), so CAP
             // bounds the stack. The naive O(n^2) child scan is the
             // correctness rung.
-            const sweep_body = if (qs.is_preorder) std.fmt.allocPrint(allocator,
+            const sweep_body = if (host_is_js) (if (qs.is_preorder) std.fmt.allocPrint(allocator,
+                \\const __koru_stack = new Array({d}).fill(0);
+                \\let __koru_sp = 0;
+                \\for (let __koru_ri = 0; __koru_ri < __koru_store_{s}.len; __koru_ri++) {{
+                \\  const __koru_i = __koru_store_{s}.len - 1 - __koru_ri;
+                \\  if (__koru_store_{s}.parent[__koru_i] === -1) {{
+                \\    __koru_stack[__koru_sp] = __koru_i;
+                \\    __koru_sp += 1;
+                \\  }}
+                \\}}
+                \\while (__koru_sp > 0) {{
+                \\  __koru_sp -= 1;
+                \\  const __koru_cur = __koru_stack[__koru_sp];
+                \\  {s}{s}_event.handler({{ row: __koru_cur }});
+                \\  for (let __koru_rj = 0; __koru_rj < __koru_store_{s}.len; __koru_rj++) {{
+                \\    const __koru_j = __koru_store_{s}.len - 1 - __koru_rj;
+                \\    if (__koru_store_{s}.parent[__koru_j] === __koru_store_{s}.__koru_handle_of(__koru_cur)) {{
+                \\      __koru_stack[__koru_sp] = __koru_j;
+                \\      __koru_sp += 1;
+                \\    }}
+                \\  }}
+                \\}}
+                \\return;
+            , .{ CAP, store_name, store_name, store_name, emit_ns, qrow_name, store_name, store_name, store_name, store_name }) catch unreachable else if (qs.may_remove) std.fmt.allocPrint(allocator,
+                \\let __koru_i = 0;
+                \\while (__koru_i < __koru_store_{s}.len) {{
+                \\  const __koru_len_before = __koru_store_{s}.len;
+                \\  {s}{s}_event.handler({{ row: __koru_i }});
+                \\  if (__koru_store_{s}.len >= __koru_len_before) __koru_i += 1;
+                \\}}
+                \\return;
+            , .{ store_name, store_name, emit_ns, qrow_name, store_name }) catch unreachable else std.fmt.allocPrint(allocator,
+                \\for (let __koru_i = 0; __koru_i < __koru_store_{s}.len; __koru_i++) {{
+                \\  {s}{s}_event.handler({{ row: __koru_i }});
+                \\}}
+                \\return;
+            , .{ store_name, emit_ns, qrow_name }) catch unreachable) else if (qs.is_preorder) std.fmt.allocPrint(allocator,
                 \\var __koru_stack: [{d}]usize = undefined;
                 \\var __koru_sp: usize = 0;
                 \\for (0..__koru_store_{s}.len) |__koru_ri| {{
@@ -4173,7 +4215,7 @@ fn storeLowerText(
                 .path = H.mkPathH(allocator, home_ns, qsweep_name),
                 .body = ast.Source{ .text = sweep_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
-                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .target = allocator.dupe(u8, proc_target) catch unreachable,
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
