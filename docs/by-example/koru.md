@@ -2507,6 +2507,12 @@ add-two -> value + 2
 add-one(value: 10): a |> add-two(value: a): b |> std/io:print.ln("{{b:d}}")
 ```
 
+**Output:**
+
+```
+13
+```
+
 ### 212_nested_depth_3
 
 ```koru
@@ -2539,6 +2545,12 @@ add-three -> value + 3
 add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> std/io:print.ln("{{c:d}}")
 ```
 
+**Output:**
+
+```
+16
+```
+
 ### 213_nested_depth_4
 
 ```koru
@@ -2558,6 +2570,12 @@ tor add-four { value: i32 } -> i32
 add-four -> value + 4
 
 add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> std/io:print.ln("{{d:d}}")
+```
+
+**Output:**
+
+```
+20
 ```
 
 ### 214_nested_depth_5
@@ -2582,6 +2600,12 @@ tor add-five { value: i32 } -> i32
 add-five -> value + 5
 
 add-one(value: 10): a |> add-two(value: a): b |> add-three(value: b): c |> add-four(value: c): d |> add-five(value: d): e |> std/io:print.ln("{{e:d}}")
+```
+
+**Output:**
+
+```
+25
 ```
 
 ### 215_nested_depth_5_multi_branch

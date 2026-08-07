@@ -1,43 +1,43 @@
 {
-  "generated": "2026-08-07T12:10:12.987Z",
-  "scanned": 691,
-  "passing": 557,
+  "generated": "2026-08-07T13:44:48.008Z",
+  "scanned": 755,
+  "passing": 633,
   "families": [
     {
-      "name": "A_js_emitter_emit_failed_nojsprocbody",
-      "status": "js-compile",
-      "cause": "js_emitter.emit failed: NoJsProcBody",
-      "count": 35
+      "name": "A_syntaxerror_invalid_or_unexpected_token",
+      "status": "js-runtime",
+      "cause": "SyntaxError: Invalid or unexpected token",
+      "count": 9
     },
     {
-      "name": "B_js_emitter_emit_failed_unsupportedconstruct",
-      "status": "js-compile",
-      "cause": "js_emitter.emit failed: UnsupportedConstruct",
-      "count": 7
-    },
-    {
-      "name": "C_syntaxerror_missing_initializer_in_const_dec",
+      "name": "B_syntaxerror_missing_initializer_in_const_dec",
       "status": "js-runtime",
       "cause": "SyntaxError: Missing initializer in const declaration",
       "count": 6
     },
     {
-      "name": "D_syntaxerror_invalid_or_unexpected_token",
-      "status": "js-runtime",
-      "cause": "SyntaxError: Invalid or unexpected token",
-      "count": 6
-    },
-    {
-      "name": "E_syntaxerror_unexpected_token",
+      "name": "C_syntaxerror_unexpected_token",
       "status": "js-runtime",
       "cause": "SyntaxError: Unexpected token '{'",
       "count": 5
     },
     {
-      "name": "F_line_n_expected_n_got_n",
+      "name": "D_line_n_expected_n_got_n",
       "status": "js-mismatch",
       "cause": "line N: expected \"N\" got \"N\"",
       "count": 5
+    },
+    {
+      "name": "E_js_emitter_emit_failed_nojsprocbody_js_emitt",
+      "status": "js-compile",
+      "cause": "js_emitter.emit failed: NoJsProcBody — [js_emitter] event 'greet' has no |js proc, immedia",
+      "count": 4
+    },
+    {
+      "name": "F_koruc_exceeded_30s_cold_cache_raise_regressi",
+      "status": "js-timeout",
+      "cause": "koruc exceeded 30s (cold cache? raise REGRESSION_TEST_TIMEOUT)",
+      "count": 4
     },
     {
       "name": "G_referenceerror_name_is_not_defined",

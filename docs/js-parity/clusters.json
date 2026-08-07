@@ -1,79 +1,48 @@
 {
-  "A_js_emitter_emit_failed_nojsprocbody": [
-    "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_017_store_take_in_entry_tor",
-    "200_COMPILER_FEATURES/210_PARSER/210_060_proc_abstract_override",
-    "300_ADVANCED_FEATURES/310_COMPTIME/310_100_aspire_comptime_pgo_route_order",
-    "300_ADVANCED_FEATURES/310_COMPTIME/310_101_aspire_comptime_data_to_liquid",
-    "300_ADVANCED_FEATURES/350_SUBFLOWS/350_009_cross_module_impl_inline_body",
-    "300_ADVANCED_FEATURES/350_SUBFLOWS/350_007_subflow_inline_body",
-    "300_ADVANCED_FEATURES/370_VARIANTS/8214_subflow_variant_picks_no",
-    "300_ADVANCED_FEATURES/370_VARIANTS/8213_subflow_variant_parser_accepts",
-    "320_CONTROL_FLOW/320_051_expand_stdlib_wrap",
-    "320_CONTROL_FLOW/320_056_expand_basic",
-    "320_CONTROL_FLOW/320_052_expand_with_continuations",
-    "320_CONTROL_FLOW/320_095_recursive_value_event",
-    "400_RUNTIME_FEATURES/400_090_template_variant_passthrough",
-    "400_RUNTIME_FEATURES/400_091_template_variant_interpolation",
-    "400_RUNTIME_FEATURES/400_092_template_variant_conditional",
-    "600_STDLIB/690_STORE/690_023_store_entity_take_discharger",
-    "600_STDLIB/690_STORE/690_022_store_distinct_row_types_per_name",
-    "600_STDLIB/690_STORE/690_047_store_entity_take_auto_discharge_under_foreach",
-    "600_STDLIB/690_STORE/690_059_store_single_field_explicit_discharge",
-    "600_STDLIB/690_STORE/690_056_store_file_open_column",
-    "600_STDLIB/690_STORE/690_055_store_owned_resource_column",
-    "600_STDLIB/690_STORE/690_053_store_string_column_roundtrip",
-    "600_STDLIB/690_STORE/690_077_store_owned_insert_full_giveback",
-    "600_STDLIB/690_STORE/690_075_store_cross_store_row_index",
-    "600_STDLIB/690_STORE/690_070_store_take_empty_branch",
-    "600_STDLIB/690_STORE/690_071_insert_pun_shorthand",
-    "600_STDLIB/690_STORE/690_060_query_owned_string_store",
-    "600_STDLIB/690_STORE/690_065_removed_owned_string",
-    "600_STDLIB/690_STORE/690_061_react_inserted_owned_string",
-    "600_STDLIB/690_STORE/690_240_lifecycle_interceptor_body_runs_its_transforms",
-    "600_STDLIB/690_STORE/690_095_sparse_dispatch_reads_the_active_branch",
-    "600_STDLIB/690_STORE/690_238_rule_over_owned_string_store",
-    "600_STDLIB/695_STORE_TREE/695_002_tree_reparent_cycle_rejected",
-    "600_STDLIB/690_STORE/690_094_unbound_giveback_payload_threads_the_given_row",
-    "600_STDLIB/695_STORE_TREE/695_004_preorder_after_leaf_take"
-  ],
-  "B_js_emitter_emit_failed_unsupportedconstruct": [
-    "300_ADVANCED_FEATURES/320_STDLIB/320_100_print_blk_raw_posix_variant",
-    "400_RUNTIME_FEATURES/400_081_effect_branch_labeled_loop",
-    "400_RUNTIME_FEATURES/400_160_prototype_mode_incomplete_program_runs",
-    "400_RUNTIME_FEATURES/400_188_array_sort_lowers",
-    "600_STDLIB/690_STORE/690_031_store_query_sweep_take",
-    "600_STDLIB/690_STORE/690_041_store_arena_live_hp_aggregate",
-    "600_STDLIB/690_STORE/690_052_store_fixed_char_column"
-  ],
-  "C_syntaxerror_missing_initializer_in_const_dec": [
-    "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_002_switch_char_in_module",
-    "300_ADVANCED_FEATURES/320_STDLIB/320_036_capture_nested_qualified",
-    "600_STDLIB/645_SWITCH/645_002_char_range",
-    "600_STDLIB/645_SWITCH/645_003_char_set",
-    "600_STDLIB/645_SWITCH/645_001_char_single",
-    "600_STDLIB/645_SWITCH/645_004_day08_switch"
-  ],
-  "D_syntaxerror_invalid_or_unexpected_token": [
+  "A_syntaxerror_invalid_or_unexpected_token": [
+    "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_020_store_sweep_in_module",
     "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_001_kjs_extension_import",
     "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_003_directory_mixed_extensions",
     "100_MODULE_SYSTEM/140_FILE_LAYOUT/140_004_index_kjs_directory_source",
-    "810_AOC_2015/810_181_day18_part1",
+    "600_STDLIB/690_STORE/690_069_store_sweep_row_ordinal",
+    "600_STDLIB/690_STORE/690_246_sweep_names_its_own_row_handle",
     "810_AOC_2015/810_182_day18_part2",
+    "810_AOC_2015/810_181_day18_part1",
     "810_AOC_2015/810_231_day23_part1"
   ],
-  "E_syntaxerror_unexpected_token": [
+  "B_syntaxerror_missing_initializer_in_const_dec": [
+    "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_002_switch_char_in_module",
+    "300_ADVANCED_FEATURES/320_STDLIB/320_036_capture_nested_qualified",
+    "600_STDLIB/645_SWITCH/645_002_char_range",
+    "600_STDLIB/645_SWITCH/645_001_char_single",
+    "600_STDLIB/645_SWITCH/645_003_char_set",
+    "600_STDLIB/645_SWITCH/645_004_day08_switch"
+  ],
+  "C_syntaxerror_unexpected_token": [
     "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_012_parser_grammar_in_module",
     "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_041_parser_grammar_in_entry_tor",
-    "600_STDLIB/641_PARSER/641_005_ordered_choice_same_head",
     "600_STDLIB/641_PARSER/641_004_json_full_recognizer",
+    "600_STDLIB/641_PARSER/641_005_ordered_choice_same_head",
     "600_STDLIB/641_PARSER/641_031_nested_tree"
   ],
-  "F_line_n_expected_n_got_n": [
+  "D_line_n_expected_n_got_n": [
     "400_RUNTIME_FEATURES/400_154_effect_void_arm_presence_omitted",
     "810_AOC_2015/810_121_day12_part1",
     "810_AOC_2015/810_122_day12_part2",
     "810_AOC_2015/810_201_day20_part1",
     "810_AOC_2015/810_202_day20_part2"
+  ],
+  "E_js_emitter_emit_failed_nojsprocbody_js_emitt": [
+    "200_COMPILER_FEATURES/210_PARSER/210_060_proc_abstract_override",
+    "300_ADVANCED_FEATURES/370_VARIANTS/8213_subflow_variant_parser_accepts",
+    "300_ADVANCED_FEATURES/370_VARIANTS/8214_subflow_variant_picks_no",
+    "400_RUNTIME_FEATURES/400_090_template_variant_passthrough"
+  ],
+  "F_koruc_exceeded_30s_cold_cache_raise_regressi": [
+    "600_STDLIB/690_STORE/690_121_twenty_six_component_stores",
+    "600_STDLIB/690_STORE/690_129_mat4_inverse_roundtrip_frame_loop",
+    "600_STDLIB/690_STORE/690_190_store_text_dump_thousand_rows_parsed_back",
+    "600_STDLIB/690_STORE/690_194_store_rebuild_thousand_rows_two_scalar_types"
   ],
   "G_referenceerror_name_is_not_defined": [
     "300_ADVANCED_FEATURES/320_STDLIB/320_030_println_basic",
