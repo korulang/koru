@@ -1305,6 +1305,14 @@ fn mangleScopeName(comptime name: []const u8) []const u8 {
 /// well-formed answer built on an empty registry, which is the one failure
 /// shape on this boundary with no compile step left to fail in (115_036).
 fn scopeNamespaces() []const type {
+    // The walk is O(declarations in the whole program), and Zig's default
+    // budget is 1000 backwards branches. A program that links enough — vaxis
+    // plus curl plus yyjson plus sse was the case that found this — blows it
+    // and fails with "evaluation exceeded 1000 backwards branches" pointing at
+    // generated code, saying nothing about scopes or `register`. The quota is
+    // a compile-time-only cost and nothing here is recursive without bound:
+    // `collectNamespaces` is depth-limited to 2.
+    @setEvalBranchQuota(1_000_000);
     return collectNamespaces(@import("root"), 2, &[_]type{});
 }
 
@@ -1321,6 +1329,7 @@ fn collectNamespaces(comptime C: type, comptime depth: usize, comptime acc: []co
 }
 
 fn buildScopeTable() []const ScopeRuntime {
+    @setEvalBranchQuota(1_000_000);
     comptime var count: usize = 0;
     inline for (comptime scopeNamespaces()) |NS| {
         inline for (std.meta.declarations(NS)) |decl| {
