@@ -52,3 +52,24 @@ from a named artifact to a category — "the harness", "the pipeline", "nothing"
 - Same family as
   [[frag-a-reproducible-failure-localises-the-symptom-not-the-defect]]: both are
   a real observation carrying an unearned inference about scope.
+
+## The second instance, an hour later — a partial sweep is the same bug wearing a fix
+
+Having been caught, I swept for consumers of the `RULING` marker, found two
+(`scripts/rulings.js`, `scripts/prose_check.sh`), renamed them with the markers,
+verified both, and reported the rename complete. There was a third:
+`scripts/save-snapshot.js` reads the marker at two sites and derives
+`awaitingRuling`/`rulingSettled` from it. After the rename it published **zero
+awaiting a ruling** while eleven were — a false green in the snapshot the website
+consumes, and the exact metric whose job is to make that queue visible.
+
+So the corrected habit is not "sweep before concluding." It is **sweep
+exhaustively, and prove the sweep empty.** A rename that half-lands is worse than
+one not attempted: the moved files look handled, the surviving consumer looks
+healthy, and the signal it emits is confidently wrong. Nothing failed. No test
+went red. `prose_check` check E passed throughout, because it had been renamed.
+
+The mechanical form that would have caught both: after any rename of a
+convention, grep the OLD name across every script, doc and config in every repo
+that could consume it, and require the result to be empty or explained
+line-by-line. Not "did I find the consumers" — "is the old name gone."

@@ -117,11 +117,11 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 		const skip = await fileExists(join(fullPath, 'SKIP'));
 		const broken = await fileExists(join(fullPath, 'BROKEN'));
 		const benchmark = await fileExists(join(fullPath, 'BENCHMARK'));
-		// RULING: this test's verdict is blocked on a DECISION nobody has made,
+		// NEEDS_RULING: this test's verdict is blocked on a DECISION nobody has made,
 		// not on work nobody has done. Deliberately NOT a status — the test still
 		// runs and still counts as failed, so parking a question can never
 		// flatter the board. It rides alongside as a queue.
-		const ruling = await fileExists(join(fullPath, 'RULING'));
+		const ruling = await fileExists(join(fullPath, 'NEEDS_RULING'));
 
 		// A TEST has input.kz (or, for stub tests, only TODO/SKIP/BROKEN/BENCHMARK
 		// markers next to no input.kz). A CATEGORY has no input.kz and may carry a
@@ -158,7 +158,7 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 			const benchmarkReason = benchmark
 				? await readFirstLine(join(fullPath, 'BENCHMARK'))
 				: (effectiveCategoryBenchmark ? effectiveCategoryBenchmarkDesc : '');
-			const rulingQuestion = ruling ? await readFirstLine(join(fullPath, 'RULING')) : '';
+			const rulingQuestion = ruling ? await readFirstLine(join(fullPath, 'NEEDS_RULING')) : '';
 
 			// Determine status with proper precedence. BENCHMARK sits above
 			// TODO/SKIP/BROKEN because that's the harness's own precedence
@@ -359,7 +359,7 @@ async function saveSnapshot() {
 		console.log(`  Failed: ${failedTests}, TODO: ${todoTests}, Skipped: ${skippedTests}, Broken: ${brokenTests}, Benchmark: ${benchmarkTests}`);
 		if (awaitingRuling > 0 || rulingSettled > 0) {
 			const settledPart = rulingSettled > 0
-				? `, ${rulingSettled} RULING marker(s) on a PASSING test — retire them (prose-check E)`
+				? `, ${rulingSettled} NEEDS_RULING marker(s) on a PASSING test — retire them (prose-check E)`
 				: '';
 			console.log(`  Awaiting a ruling: ${awaitingRuling} of the ${failedTests} failures${settledPart}`);
 		}
