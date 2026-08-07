@@ -119,6 +119,202 @@ fn storeHostTarget() codegen_utils_store.HostTarget {
     return if (std.mem.eql(u8, CompilerEnv.lang, "js")) .js else .zig;
 }
 
+/// A `stored` WRITE TARGET, parsed. Two spellings reach here — the dotted
+/// singleton head `store.field` and the bracket row head `store[handle].field`,
+/// which is also what a sweep arm's row binding lowers to (690_118).
+///
+/// Module scope because it now has TWO readers: the `stored` transform, which
+/// turns a target into a write, and `storeWriteColumnSets` below, which reads
+/// the same targets from `new` to decide what to specialise. One grammar with
+/// two parsers is how the two would come to disagree about what a write site
+/// says, and a scan that mis-reads a head silently declines to optimise it.
+const StoreWriteHead = struct { store: []const u8, row: ?[]const u8, field: []const u8 };
+const StoreHeadError = error{ malformed_bracket, bracket_needs_field, not_dotted };
+
+fn storeParseWriteHead(name: []const u8) StoreHeadError!StoreWriteHead {
+    if (std.mem.indexOfScalar(u8, name, '[')) |lb| {
+        const rb = std.mem.lastIndexOfScalar(u8, name, ']') orelse return StoreHeadError.malformed_bracket;
+        if (rb + 1 >= name.len or name[rb + 1] != '.') return StoreHeadError.bracket_needs_field;
+        return .{
+            .store = std.mem.trim(u8, name[0..lb], " "),
+            .row = std.mem.trim(u8, name[lb + 1 .. rb], " "),
+            .field = name[rb + 2 ..],
+        };
+    }
+    const dotm = std.mem.indexOfScalar(u8, name, '.') orelse return StoreHeadError.not_dotted;
+    return .{ .store = name[0..dotm], .row = null, .field = name[dotm + 1 ..] };
+}
+
+/// The name of the write unit specialised to one COLUMN SET.
+///
+/// `__store_envwrite_<store>` takes a bitmask naming the columns a call writes
+/// and tests every bit at runtime. The mask is a COMPILE-TIME CONSTANT at every
+/// call site — the emitted call reads `field: (((5)))` — so those tests exist
+/// only because one unit serves every column set.
+///
+/// Measured (4096 rows x 50000 frames, two columns written per row): with the
+/// writes made unconditional the benchmark runs at the hand-written-JavaScript
+/// control, and with them conditional it runs ~2.1x slower. It is the
+/// CONDITIONALITY, not the mask arithmetic and not the body size: swapping
+/// `Math.floor(m / 2**i) % 2` for a bitwise test measured nothing, and padding
+/// an unconditional body back to full length also measured nothing.
+///
+/// Producer and consumer derive this name from the same sorted index list, so
+/// they agree by construction; if they ever did not, the consumer would name an
+/// event nobody declared and the emitter would say so.
+fn storeEnvwriteSpecName(alloc: std.mem.Allocator, store: []const u8, cols: []const usize) []const u8 {
+    var b = std.ArrayList(u8).initCapacity(alloc, 32) catch unreachable;
+    b.appendSlice(alloc, "__store_envwrite_") catch unreachable;
+    b.appendSlice(alloc, store) catch unreachable;
+    for (cols) |c| {
+        b.appendSlice(alloc, std.fmt.allocPrint(alloc, "_c{d}", .{c}) catch unreachable) catch unreachable;
+    }
+    return b.toOwnedSlice(alloc) catch unreachable;
+}
+
+/// EVERY DISTINCT COLUMN SET WRITTEN TO `store` ANYWHERE IN THE PROGRAM.
+///
+/// Shaped like `TakeScan` (~:2020): a `stored` site is very often NOT a
+/// top-level flow. Measured on an ECS benchmark whose only write lives in a
+/// `! query` arm, a scan of `flatItems` alone found ZERO sites — the write is a
+/// node inside the arm's continuation tree. So this walks flows AND their
+/// continuations, exactly as the take scan does.
+///
+/// Transform ORDER is deliberately not reasoned about, for `TakeScan`'s reason:
+/// it matches the pre-transform spelling and lets a site that has already been
+/// rewritten fall through. A missed site is not specialised and runs the
+/// general masked unit — slower, never wrong.
+fn storeCollectWriteSet(
+    alloc: std.mem.Allocator,
+    inv: ast_find.Invocation,
+    aliases: []const []const u8,
+    order: []const []const u8,
+    out: *std.ArrayList([]const usize),
+) void {
+
+    if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "stored")) return;
+    if (inv.path.module_qualifier) |mq| {
+        if (!std.mem.eql(u8, mq, "std.store")) return;
+    }
+    var block: ?[]const u8 = null;
+    for (inv.args) |a| {
+        if (std.mem.eql(u8, a.name, "source")) block = a.value;
+    }
+    const bt = block orelse return;
+    const struct_literal = @import("struct_literal");
+    const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{bt}) catch unreachable;
+    const writes = struct_literal.parseFields(alloc, braced) catch return;
+    if (writes.len < 2) return; // a one-column write has no mask to resolve
+    var cols = std.ArrayList(usize).initCapacity(alloc, writes.len) catch unreachable;
+    for (writes) |wm| {
+        const head = storeParseWriteHead(wm.name) catch return;
+        if (!storeNameIn(aliases, head.store)) return;
+        var found = false;
+        for (order, 0..) |fname, i| {
+            if (std.mem.eql(u8, fname, head.field)) {
+                cols.append(alloc, i) catch unreachable;
+                found = true;
+            }
+        }
+        if (!found) return;
+    }
+    // Ascending, so the key is a property of the SET and two blocks writing the
+    // same columns in different orders share one specialisation.
+    std.mem.sort(usize, cols.items, {}, comptime std.sort.asc(usize));
+    for (out.items) |seen| {
+        if (seen.len != cols.items.len) continue;
+        var same = true;
+        for (seen, cols.items) |a, b| {
+            if (a != b) same = false;
+        }
+        if (same) return;
+    }
+    out.append(alloc, cols.toOwnedSlice(alloc) catch unreachable) catch unreachable;
+}
+
+/// A write inside a sweep or rule arm names its target through the ARM'S ROW
+/// BINDING — `! query e |> std/store:stored { e.px: … }` — and the store's own
+/// name appears there only after the query transform rewrites it, which happens
+/// after this scan runs. So the walk carries the set of names that mean "this
+/// store" in the current subtree: the store itself, plus every binding
+/// introduced by an arm of a flow whose head is a store verb on it.
+fn storeCollectAliases(
+    alloc: std.mem.Allocator,
+    c: *const ast_find.Continuation,
+    out: *std.ArrayList([]const u8),
+) void {
+    if (c.binding) |b| {
+        const t = std.mem.trim(u8, b, " ");
+        if (t.len > 0 and !std.mem.eql(u8, t, "_") and !storeNameIn(out.items, t)) {
+            out.append(alloc, t) catch unreachable;
+        }
+    }
+    for (c.continuations) |*k| storeCollectAliases(alloc, k, out);
+}
+
+/// A store verb can sit at ANY depth, not only at a flow's head: in
+/// `for(0..N) ! each f |> std/store:query(ents) ! query e |> stored { e.px: … }`
+/// the flow's head is `std/control:for` and the query is a continuation node.
+/// So the alias set is extended on the way DOWN — at every site that targets
+/// this store, the arms below it bind its rows.
+fn storeScanCont(
+    alloc: std.mem.Allocator,
+    c: *const ast_find.Continuation,
+    aliases: []const []const u8,
+    store: []const u8,
+    order: []const []const u8,
+    out: *std.ArrayList([]const usize),
+) void {
+    var sub = aliases;
+    if (c.node) |n| {
+        if (n == .invocation) {
+            storeCollectWriteSet(alloc, n.invocation, aliases, order, out);
+            if (storeFlowTargets(n.invocation, store)) {
+                var ext = std.ArrayList([]const u8).initCapacity(alloc, aliases.len + 2) catch unreachable;
+                ext.appendSlice(alloc, aliases) catch unreachable;
+                for (c.continuations) |*k| storeCollectAliases(alloc, k, &ext);
+                sub = ext.items;
+            }
+        }
+    }
+    for (c.continuations) |*k| storeScanCont(alloc, k, sub, store, order, out);
+}
+
+/// Is this flow's head a `std/store:<verb>(store)` on the store we are scanning
+/// for? Only then do its arm bindings alias it.
+fn storeFlowTargets(inv: ast_find.Invocation, store: []const u8) bool {
+    if (inv.path.segments.len != 1) return false;
+    const mq = inv.path.module_qualifier orelse return false;
+    if (!std.mem.eql(u8, mq, "std.store")) return false;
+    for (inv.args) |a| {
+        if (!std.mem.eql(u8, a.name, "expr")) continue;
+        const v = if (a.value.len >= 2 and a.value[0] == '"') a.value[1 .. a.value.len - 1] else a.value;
+        const lb = std.mem.indexOfScalar(u8, v, '[') orelse return std.mem.eql(u8, std.mem.trim(u8, v, " "), store);
+        return std.mem.eql(u8, std.mem.trim(u8, v[0..lb], " "), store);
+    }
+    return false;
+}
+
+fn storeWriteColumnSets(
+    alloc: std.mem.Allocator,
+    prog: *const ast_find.Program,
+    store: []const u8,
+    order: []const []const u8,
+) []const []const usize {
+    var out = std.ArrayList([]const usize).initCapacity(alloc, 4) catch unreachable;
+    for (flatItems(alloc, prog.items)) |pi| {
+        if (pi.* != .flow) continue;
+        var aliases = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
+        aliases.append(alloc, store) catch unreachable;
+        if (storeFlowTargets(pi.flow.inv().*, store)) {
+            storeCollectAliases(alloc, &pi.flow.body, &aliases);
+        }
+        storeCollectWriteSet(alloc, pi.flow.inv().*, aliases.items, order, &out);
+        storeScanCont(alloc, &pi.flow.body, aliases.items, store, order, &out);
+    }
+    return out.toOwnedSlice(alloc) catch unreachable;
+}
+
 /// A KORU EXPRESSION on its way into a generated host body, rendered for the
 /// build's target.
 ///
@@ -3671,7 +3867,43 @@ fn storeLowerText(
                 else
                     allocator.dupe(u8, "const __koru_r = @as(usize, @intCast(row));\nconst __koru_mask = @as(u64, @bitCast(field));\n") catch unreachable;
                 ewb.appendSlice(allocator, ew_head) catch unreachable;
+                // ONE COLUMN'S WRITE, built once and composed twice: guarded by
+                // a mask bit in the general unit below, and unconditionally in
+                // each specialisation after it. Two generators for one write
+                // would be the drift this file has been bitten by before
+                // (frag-a-fix-lands-in-one-lowering-path), so there is one.
+                const col_arm = allocator.alloc([]const u8, field_names.len) catch unreachable;
                 for (field_names, 0..) |fname, i| {
+                    var ab = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+                    // The write half of the bundled apply arm, verbatim: tree
+                    // guard, pre-image read, cell write, updated interceptors.
+                    // No branch dispatch — that is announce's half.
+                    if (is_tree and i == user_field_count) {
+                        const eguard = std.fmt.allocPrint(allocator, "const __koru_self = __koru_store_{s}.__koru_handle_of(__koru_r); var __koru_cyc = value_{d}; while (__koru_cyc != -1) {{ if (__koru_cyc == __koru_self) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); const __koru_cycr = __koru_store_{s}.__koru_resolve(__koru_cyc); __koru_cyc = __koru_store_{s}.parent[__koru_cycr]; }} ", .{ store_name, i, store_name, store_name, store_name }) catch unreachable;
+                        ab.appendSlice(allocator, eguard) catch unreachable;
+                    }
+                    if (updated_needs_old) {
+                        const eoldr = if (field_char_caps[i] != null)
+                            std.fmt.allocPrint(allocator, "const __koru_oldbuf = __koru_store_{s}.{s}[__koru_r]; const __koru_old = @import(\"std\").mem.sliceTo(&__koru_oldbuf, 0); ", .{ store_name, fname }) catch unreachable
+                        else
+                            std.fmt.allocPrint(allocator, "const __koru_old = __koru_store_{s}.{s}[__koru_r]; ", .{ store_name, fname }) catch unreachable;
+                        ab.appendSlice(allocator, eoldr) catch unreachable;
+                    }
+                    const ewr = if (field_char_caps[i]) |n|
+                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value_{d}.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value_{d}[0..__koru_wl]); ", .{ store_name, fname, n, i, n, store_name, fname, i }) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, i }) catch unreachable;
+                    ab.appendSlice(allocator, ewr) catch unreachable;
+                    for (updated_arms.items, 0..) |ua, ai| {
+                        const ecall = if (ua.fields.len != 0)
+                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler({s}); ", .{ emit_ns, store_name, ai, HS.argRec(allocator, host_target, std.fmt.allocPrint(allocator, "{s}, {s}", .{ HS.recField(allocator, host_target, "old", "__koru_old"), HS.recField(allocator, host_target, "new", std.fmt.allocPrint(allocator, "value_{d}", .{i}) catch unreachable) }) catch unreachable) }) catch unreachable
+                        else
+                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler({s}); ", .{ emit_ns, store_name, ai, HS.argRec(allocator, host_target, "") }) catch unreachable;
+                        ab.appendSlice(allocator, ecall) catch unreachable;
+                    }
+                    col_arm[i] = ab.toOwnedSlice(allocator) catch unreachable;
+                }
+                for (field_names, 0..) |_, i| {
                     // BIT i OF THE MASK. JavaScript's bitwise operators coerce
                     // their operands to 32 bits, so `mask & (1 << i)` silently
                     // answers for the low 32 columns only — the same trap the
@@ -3682,32 +3914,7 @@ fn storeLowerText(
                     else
                         std.fmt.allocPrint(allocator, "if (__koru_mask & (@as(u64, 1) << {d}) != 0) {{ ", .{i}) catch unreachable;
                     ewb.appendSlice(allocator, arm_open) catch unreachable;
-                    // The write half of the bundled apply arm, verbatim: tree
-                    // guard, pre-image read, cell write, updated interceptors.
-                    // No branch dispatch — that is announce's half.
-                    if (is_tree and i == user_field_count) {
-                        const eguard = std.fmt.allocPrint(allocator, "const __koru_self = __koru_store_{s}.__koru_handle_of(__koru_r); var __koru_cyc = value_{d}; while (__koru_cyc != -1) {{ if (__koru_cyc == __koru_self) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); const __koru_cycr = __koru_store_{s}.__koru_resolve(__koru_cyc); __koru_cyc = __koru_store_{s}.parent[__koru_cycr]; }} ", .{ store_name, i, store_name, store_name, store_name }) catch unreachable;
-                        ewb.appendSlice(allocator, eguard) catch unreachable;
-                    }
-                    if (updated_needs_old) {
-                        const eoldr = if (field_char_caps[i] != null)
-                            std.fmt.allocPrint(allocator, "const __koru_oldbuf = __koru_store_{s}.{s}[__koru_r]; const __koru_old = @import(\"std\").mem.sliceTo(&__koru_oldbuf, 0); ", .{ store_name, fname }) catch unreachable
-                        else
-                            std.fmt.allocPrint(allocator, "const __koru_old = __koru_store_{s}.{s}[__koru_r]; ", .{ store_name, fname }) catch unreachable;
-                        ewb.appendSlice(allocator, eoldr) catch unreachable;
-                    }
-                    const ewr = if (field_char_caps[i]) |n|
-                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value_{d}.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value_{d}[0..__koru_wl]); ", .{ store_name, fname, n, i, n, store_name, fname, i }) catch unreachable
-                    else
-                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, i }) catch unreachable;
-                    ewb.appendSlice(allocator, ewr) catch unreachable;
-                    for (updated_arms.items, 0..) |ua, ai| {
-                        const ecall = if (ua.fields.len != 0)
-                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler({s}); ", .{ emit_ns, store_name, ai, HS.argRec(allocator, host_target, std.fmt.allocPrint(allocator, "{s}, {s}", .{ HS.recField(allocator, host_target, "old", "__koru_old"), HS.recField(allocator, host_target, "new", std.fmt.allocPrint(allocator, "value_{d}", .{i}) catch unreachable) }) catch unreachable) }) catch unreachable
-                        else
-                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler({s}); ", .{ emit_ns, store_name, ai, HS.argRec(allocator, host_target, "") }) catch unreachable;
-                        ewb.appendSlice(allocator, ecall) catch unreachable;
-                    }
+                    ewb.appendSlice(allocator, col_arm[i]) catch unreachable;
                     ewb.appendSlice(allocator, "}\n") catch unreachable;
                 }
                 ewb.appendSlice(allocator, "return;") catch unreachable;
@@ -3719,6 +3926,52 @@ fn storeLowerText(
                     .location = flow.location,
                     .module = allocator.dupe(u8, flow.module) catch unreachable,
                 } }) catch unreachable;
+
+                // ONE SPECIALISATION PER COLUMN SET the program actually writes.
+                // Same arms, no mask, no dead slots — see `storeEnvwriteSpecName`
+                // for the measurement that motivates it. A set the scan cannot
+                // see simply is not emitted, and its site keeps calling the
+                // general unit above: slower, never wrong.
+                const spec_head = if (host_is_js)
+                    "const __koru_r = row;\n"
+                else
+                    "const __koru_r = @as(usize, @intCast(row));\n";
+                for (storeWriteColumnSets(allocator, program, store_name, field_names)) |set| {
+                    const spec_name = storeEnvwriteSpecName(allocator, store_name, set);
+                    const sp_in = allocator.alloc(ast.Field, set.len + 1) catch unreachable;
+                    sp_in[0] = ast.Field{ .name = allocator.dupe(u8, "row") catch unreachable, .type = allocator.dupe(u8, "i64") catch unreachable };
+                    for (set, 0..) |ci, k| {
+                        // Named by COLUMN INDEX, not by position, so `col_arm`'s
+                        // `value_<i>` references land unchanged.
+                        sp_in[1 + k] = ast.Field{
+                            .name = std.fmt.allocPrint(allocator, "value_{d}", .{ci}) catch unreachable,
+                            .type = allocator.dupe(u8, field_types[ci]) catch unreachable,
+                            .module_path = if (field_owned_info[ci]) |oi| allocator.dupe(u8, oi.module_slash) catch unreachable else null,
+                        };
+                    }
+                    appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
+                        .path = H.mkPathH(allocator, home_ns, spec_name),
+                        .input = ast.Shape{ .fields = sp_in },
+                        .branches = &[_]ast.Branch{},
+                        .is_public = false,
+                        .is_implicit_flow = false,
+                        .annotations = &[_][]const u8{},
+                        .location = flow.location,
+                        .module = allocator.dupe(u8, flow.module) catch unreachable,
+                    } }) catch unreachable;
+                    var sb = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+                    sb.appendSlice(allocator, spec_head) catch unreachable;
+                    for (set) |ci| sb.appendSlice(allocator, col_arm[ci]) catch unreachable;
+                    sb.appendSlice(allocator, "\nreturn;") catch unreachable;
+                    appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
+                        .path = H.mkPathH(allocator, home_ns, spec_name),
+                        .body = ast.Source{ .text = sb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
+                        .annotations = &[_][]const u8{},
+                        .target = allocator.dupe(u8, proc_target) catch unreachable,
+                        .location = flow.location,
+                        .module = allocator.dupe(u8, flow.module) catch unreachable,
+                    } }) catch unreachable;
+                }
 
                 // peek: read the CURRENT value at the row, answer the field
                 // branch — announce's read half (the singleton peek, rowed).
@@ -6454,22 +6707,55 @@ fn storeLowerText(
                 re
             else
                 std.fmt.allocPrint(allocator, "@as(i64, @intCast(__koru_store_{s}.__koru_resolve({s})))", .{ env_store, re }) catch unreachable;
-            const a1 = allocator.alloc(ast.Arg, env_col_types.len + 2) catch unreachable;
-            a1[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, env_row_arg) catch unreachable };
-            a1[1] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "@as(i64, @bitCast(@as(u64, {d})))", .{mask}) catch unreachable };
-            for (env_col_types, 0..) |ct, ci| {
-                const is_float = std.mem.eql(u8, ct, "f64") or std.mem.eql(u8, ct, "f32");
-                const is_string = std.mem.eql(u8, ct, "string") or std.mem.eql(u8, ct, "[]const u8");
-                var slot: []const u8 = allocator.dupe(u8, if (is_string) "\"\"" else if (is_float) "0.0" else "0") catch unreachable;
-                for (env_idx, 0..) |ix, wi| {
-                    if (ix == ci) slot = env_values[wi];
+            // THE SPECIALISED UNIT IF `new` EMITTED ONE, else the general
+            // masked one. Both sides derive the name from the same ascending
+            // column list, so agreement is by construction; the existence check
+            // is the same shape `writec_name` already uses (~:6890), and a miss
+            // costs speed rather than correctness.
+            const sorted = allocator.alloc(usize, env_idx.len) catch unreachable;
+            @memcpy(sorted, env_idx);
+            std.mem.sort(usize, sorted, {}, comptime std.sort.asc(usize));
+            const spec_name = storeEnvwriteSpecName(allocator, env_store, sorted);
+            const has_spec = blk_spec: {
+                for (flatItems(allocator, program.items)) |pi| {
+                    if (pi.* != .event_decl) continue;
+                    const ed = &pi.event_decl;
+                    if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], spec_name)) break :blk_spec true;
                 }
-                a1[2 + ci] = ast.Arg{
-                    .name = std.fmt.allocPrint(allocator, "value_{d}", .{ci}) catch unreachable,
-                    .value = slot,
-                };
+                break :blk_spec false;
+            };
+            if (has_spec) {
+                const a1 = allocator.alloc(ast.Arg, sorted.len + 1) catch unreachable;
+                a1[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, env_row_arg) catch unreachable };
+                for (sorted, 0..) |ci, k| {
+                    var slot: []const u8 = "";
+                    for (env_idx, 0..) |ix, wi| {
+                        if (ix == ci) slot = env_values[wi];
+                    }
+                    a1[1 + k] = ast.Arg{
+                        .name = std.fmt.allocPrint(allocator, "value_{d}", .{ci}) catch unreachable,
+                        .value = slot,
+                    };
+                }
+                invs[0] = ast.Invocation{ .path = H.mkPathH2(allocator, env_home, spec_name), .args = a1 };
+            } else {
+                const a1 = allocator.alloc(ast.Arg, env_col_types.len + 2) catch unreachable;
+                a1[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, env_row_arg) catch unreachable };
+                a1[1] = ast.Arg{ .name = allocator.dupe(u8, "field") catch unreachable, .value = std.fmt.allocPrint(allocator, "@as(i64, @bitCast(@as(u64, {d})))", .{mask}) catch unreachable };
+                for (env_col_types, 0..) |ct, ci| {
+                    const is_float = std.mem.eql(u8, ct, "f64") or std.mem.eql(u8, ct, "f32");
+                    const is_string = std.mem.eql(u8, ct, "string") or std.mem.eql(u8, ct, "[]const u8");
+                    var slot: []const u8 = allocator.dupe(u8, if (is_string) "\"\"" else if (is_float) "0.0" else "0") catch unreachable;
+                    for (env_idx, 0..) |ix, wi| {
+                        if (ix == ci) slot = env_values[wi];
+                    }
+                    a1[2 + ci] = ast.Arg{
+                        .name = std.fmt.allocPrint(allocator, "value_{d}", .{ci}) catch unreachable,
+                        .value = slot,
+                    };
+                }
+                invs[0] = ast.Invocation{ .path = H.mkPathH2(allocator, env_home, envw_name), .args = a1 };
             }
-            invs[0] = ast.Invocation{ .path = H.mkPathH2(allocator, env_home, envw_name), .args = a1 };
             for (writes, 0..) |_, wi| {
                 const a2 = allocator.alloc(ast.Arg, 2) catch unreachable;
                 a2[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, env_row_arg) catch unreachable };
