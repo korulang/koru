@@ -1,0 +1,26 @@
+Parked on binding-field access in ARGUMENT position, and no longer on `~`.
+
+This test reported SUCCESS for as long as the tilde wall has existed
+(2026-07-24) while its entire output was the wall's own diagnostic:
+
+    Error: `~` is not legal in interpreter source. ...
+
+MUST_RUN with no expected.txt asserts only "exited 0", and the program handles
+`parse-error` by printing it, so a benchmark that never once executed a flow
+counted as a passing benchmark. Fixed 2026-08-07: the tilde is gone from
+FLOW_SOURCE, and the flow named `print_result` while the scope registers
+`print-result`, which was event-denied the moment the tilde stopped hiding it.
+
+It now really runs. What it prints:
+
+    Result: <r.value>
+
+`compute` returns 59 and the `result` branch is taken, but the continuation
+`print-result(r.value)` passes the literal placeholder text instead of the
+bound field. Plain bindings work (430_035 pins `n: v` green); it is field
+access on a binding in argument position that does not resolve. Same value
+model as the f64 hole parked in 430_041 — the interpreter carries argument
+values as strings and re-reads their type at the far end.
+
+expected.txt asserts the arithmetic the benchmark exists to measure, so this
+flips green when binding-field access lands.

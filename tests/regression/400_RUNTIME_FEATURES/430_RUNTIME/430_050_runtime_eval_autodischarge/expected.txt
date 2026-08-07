@@ -1,7 +1,4 @@
-[EVAL] Starting execution of pre-parsed flow
-[EVAL] Validation passed
 OPEN
-[EVAL] Execution complete, branch: opened
 CLOSE
 [AUTO-DISCHARGE] Invoked 'close-handle' for handle 'h1' [main:opened]
 OK

@@ -1,4 +1,20 @@
-Parked: the parse.source -> eval route returns validation-error ("No flow
-found in AST") for interpreted source that the run route executes green —
-koru_parser produces no flow item for bare invocation text; flow_parser does.
-Measured 2026-07-31. The run-route equivalents (430_043 family) are green.
+Parked on the f64 hole, NOT on the parse route. The original park ("the
+parse.source -> eval route returns validation-error / No flow found in AST")
+is FIXED: parse.source now uses the interpreter's own flow_parser, and this
+test parses and dispatches. Two things had to change in the test itself — the
+invented `file_name` argument is gone, and the source spelled the event
+`set_config` while the scope registers `set-config`, so it was event-denied.
+
+What remains, measured 2026-08-07:
+
+    enabled=true ratio=0 count=42
+
+`ratio: 3.5` arrives as 0. bool and i64 are correct. The interpreter reads any
+unquoted value containing a `.` as field access `binding.field`
+(koru_std/interpreter.kz evaluateExpr), so `3.5` becomes binding `3`, field
+`5`; `3` is unbound and the value hands back the string "<unbound:3>", which
+the generated dispatcher turns into 0 via `parseFloat(...) catch 0`. The
+`catch 0` is what makes it silent rather than loud.
+
+expected.txt asserts the CORRECT value, so this test flips green on its own the
+day floats dispatch. It is the only pin on f64 through runtime dispatch.

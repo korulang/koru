@@ -20,14 +20,14 @@ const std = @import("std");
     set-config
 }
 
-const SOURCE = "set_config(enabled: true, ratio: 3.5, count: 42)";
+const SOURCE = "set-config(enabled: true, ratio: 3.5, count: 42)";
 
-~std/runtime:parse.source(source: SOURCE, file_name: "typed_args.kz", allocator: std.heap.page_allocator)
-| parsed p |> std/runtime:eval(ast: p, scope: "config")
+~std/runtime:parse.source(source: SOURCE, allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(flow: p, scope: "config")
     | result _ |> std/io:print.ln("OK")
     | event-denied e |> std/io:print.ln("DENIED: {{e:s}}")
     | exhausted _ |> std/io:print.ln("EXHAUSTED")
     | validation-error _ |> std/io:print.ln("VALIDATION ERROR")
     | dispatch-error _ |> std/io:print.ln("DISPATCH ERROR")
     | scope-not-found _ |> std/io:print.ln("SCOPE NOT FOUND")
-| parse-error e |> std/io:print.ln("PARSE ERROR: {{e:s}}")
+| parse-error e |> std/io:print.ln("PARSE ERROR: {{e.message:s}}")

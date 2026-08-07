@@ -40,7 +40,7 @@ const std = @import("std");
 // =============================================================================
 
 const VALID_HANDLER =
-\\~db.user.get(id: 1)
+\\db.user.get(id: 1)
 \\| found u |> ok { status: 200, body: u.name }
 \\| unknown |> not-found {}
 ;
@@ -60,7 +60,7 @@ const VALID_HANDLER =
 // =============================================================================
 
 const TYPO_HANDLER =
-\\~db.user.get(id: 999)
+\\db.user.get(id: 999)
 \\| found u |> ok { status: 200, body: u.name }
 \\| unknown |> not_foundy {}
 ;
@@ -82,7 +82,7 @@ const TYPO_HANDLER =
 // =============================================================================
 
 const MISSING_FIELD_HANDLER =
-\\~db.user.get(id: 1)
+\\db.user.get(id: 1)
 \\| found u |> ok { status: 200 }
 \\| unknown |> not-found {}
 ;

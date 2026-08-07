@@ -59,26 +59,26 @@ const std = @import("std");
 
 // User code - should work with "user" scope
 const USER_CODE =
-    \\~users.get(id: 42)
+    \\users.get(id: 42)
     \\| found |> std/io:print.ln("Found")
     \\| not_found |> std/io:print.ln("Not found")
 ;
 
 // Admin code - should work with "admin" scope, fail with "user" scope
 const ADMIN_CODE =
-    \\~admin.delete_user(id: 42)
+    \\admin.delete_user(id: 42)
     \\| deleted |> std/io:print.ln("User deleted")
 ;
 
 // Debug code - should only work with "admin" scope AND --debug flag
 const DEBUG_CODE =
-    \\~debug.dump_state()
+    \\debug.dump_state()
     \\| dumped |> std/io:print.ln("State")
 ;
 
 // Test user scope
-~std/runtime:parse.source(source: USER_CODE, file_name: "user.kz", allocator: std.heap.page_allocator)
-| parsed p |> std/runtime:eval(ast: p, scope: "user")
+~std/runtime:parse.source(source: USER_CODE, allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(flow: p, scope: "user")
     | result _ |> std/io:print.ln("User code OK")
     | event-denied e |> std/io:print.ln("User denied: {{e:s}}")
     | exhausted _ |> std/io:print.ln("User exhausted")
@@ -88,8 +88,8 @@ const DEBUG_CODE =
 | parse-error e |> std/io:print.ln("Parse error: {{e:s}}")
 
 // Test debug scope in non-debug builds (should be denied)
-~std/runtime:parse.source(source: DEBUG_CODE, file_name: "debug.kz", allocator: std.heap.page_allocator)
-| parsed p |> std/runtime:eval(ast: p, scope: "admin")
+~std/runtime:parse.source(source: DEBUG_CODE, allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(flow: p, scope: "admin")
     | result _ |> std/io:print.ln("UNEXPECTED: Debug code ran without --debug")
     | event-denied e |> std/io:print.ln("Debug denied: {{e:s}}")
     | exhausted _ |> std/io:print.ln("Debug exhausted")
@@ -99,8 +99,8 @@ const DEBUG_CODE =
 | parse-error e |> std/io:print.ln("Parse error: {{e:s}}")
 
 // Test admin scope with user code (should work - admin includes user)
-~std/runtime:parse.source(source: USER_CODE, file_name: "user2.kz", allocator: std.heap.page_allocator)
-| parsed p |> std/runtime:eval(ast: p, scope: "admin")
+~std/runtime:parse.source(source: USER_CODE, allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(flow: p, scope: "admin")
     | result _ |> std/io:print.ln("User code with admin scope OK")
     | event-denied e |> std/io:print.ln("Unexpected denial: {{e:s}}")
     | exhausted _ |> std/io:print.ln("Admin exhausted")
@@ -110,8 +110,8 @@ const DEBUG_CODE =
 | parse-error e |> std/io:print.ln("Parse error: {{e:s}}")
 
 // Test admin code with user scope (should fail)
-~std/runtime:parse.source(source: ADMIN_CODE, file_name: "admin.kz", allocator: std.heap.page_allocator)
-| parsed p |> std/runtime:eval(ast: p, scope: "user")
+~std/runtime:parse.source(source: ADMIN_CODE, allocator: std.heap.page_allocator)
+| parsed p |> std/runtime:eval(flow: p, scope: "user")
     | result _ |> std/io:print.ln("UNEXPECTED: Admin code ran with user scope!")
     | event-denied e |> std/io:print.ln("Correctly denied admin event: {{e:s}}")
     | exhausted _ |> std/io:print.ln("Admin code exhausted")

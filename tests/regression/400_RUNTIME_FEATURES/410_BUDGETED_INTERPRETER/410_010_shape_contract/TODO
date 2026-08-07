@@ -2,3 +2,7 @@ Parked: the emitted Zig for this shape-contract program does not compile
 ("function with non-void return type '[]const u8' implicitly returns" in
 output_emitted.zig) — a stage-D codegen gap on this test's handler shape.
 Measured 2026-07-31.
+
+Second blocker removed 2026-08-07, not the one above: the three handler sources
+carried `~` on every invocation, which `std/runtime:run` refuses outright — so
+behind the codegen gap this test would have failed on the tilde wall as well.

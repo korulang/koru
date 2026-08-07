@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 // rulings.js — the queue of tests whose verdict is waiting on a DECISION.
 //
-// A `RULING` file in a test directory means: this test cannot be made right
+// A `NEEDS_RULING` file in a test directory means: this test cannot be made right
 // until someone decides what the language SHOULD do. It is the one blocker the
 // suite cannot clear by working harder, so it gets its own surface instead of
 // sitting inside the failure list looking like debt.
 //
 // What it is NOT:
-//   - not a STATUS. A RULING test keeps whatever verdict it had; a red one stays
+//   - not a STATUS. A NEEDS_RULING test keeps whatever verdict it had; a red one stays
 //     in the failure count. Parking a question can never flatter the pass rate,
 //     and that is the property that makes the marker safe to reach for.
 //   - not a replacement for TODO. The two answer different questions and compose:
-//     TODO says "this does not run", RULING says "a decision is what unblocks it".
+//     TODO says "this does not run", NEEDS_RULING says "a decision is what unblocks it".
 //     A test can carry both — commonly the ruling IS what the spelling waits on,
 //     so there is nothing to run yet. Those are listed here as parked, and their
 //     behaviour is only re-observed under `--todo-sweep`.
@@ -19,7 +19,7 @@
 // The file's first line is the question. Everything after it is context: the
 // options, what each would cost, what already depends on the answer.
 //
-// `prose-check:E` (scripts/prose_check.sh) fails the run when a RULING marker
+// `prose-check:E` (scripts/prose_check.sh) fails the run when a NEEDS_RULING marker
 // stops describing its test — the moment the test passes, the marker is stale.
 //
 // Usage:
@@ -59,7 +59,7 @@ async function findMarkers(dir, out = []) {
 		if (e.name === '_archive') continue;
 		const full = join(dir, e.name);
 		if (e.isDirectory()) await findMarkers(full, out);
-		else if (e.name === 'RULING') out.push(full);
+		else if (e.name === 'NEEDS_RULING') out.push(full);
 	}
 	return out;
 }
@@ -115,8 +115,8 @@ if (asJson) {
 }
 
 if (rows.length === 0) {
-	console.log('No RULING markers — nothing in the corpus is waiting on a decision.');
-	console.log('Mark one: write the question as the first line of tests/regression/<…>/<test>/RULING');
+	console.log('No NEEDS_RULING markers — nothing in the corpus is waiting on a decision.');
+	console.log('Mark one: write the question as the first line of tests/regression/<…>/<test>/NEEDS_RULING');
 	process.exit(0);
 }
 
@@ -146,5 +146,5 @@ for (const r of rows) {
 	console.log('');
 }
 
-console.log('Answer one by deleting its RULING file and writing the decision into the test');
+console.log('Answer one by deleting its NEEDS_RULING file and writing the decision into the test');
 console.log('header — plus a concept under concepts/ if a belief moved.');

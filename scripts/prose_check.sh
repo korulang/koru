@@ -11,7 +11,7 @@
 #   C (blocking) no duplicate NNN_NNN test ID          — the pointer-as-truth precondition
 #                (the 55 historical dupes were drained; a duplicate id now fails the run)
 #   D (blocking) every koru_std comptime transform has a mirror row
-#   E (blocking) every RULING marker still sits on a running, still-red test
+#   E (blocking) every NEEDS_RULING marker still sits on a running, still-red test
 #
 # Run from anywhere: bash scripts/prose_check.sh   (CANNOT lie — it regenerates and diffs.)
 set -o pipefail
@@ -237,8 +237,8 @@ else
   fail=1
 fi
 
-# --- E: every RULING marker still describes its test -------------------------
-# A `RULING` file says: this test's verdict is blocked on a decision nobody has
+# --- E: every NEEDS_RULING marker still describes its test -------------------------
+# A `NEEDS_RULING` file says: this test's verdict is blocked on a decision nobody has
 # made. That is prose attached to a red test, and prose attached to a red test is
 # checked by nothing (concepts/frag-a-red-pin-is-unfalsifiable-documentation.md).
 # One direction of it IS mechanical, and this is that direction: the moment the
@@ -248,7 +248,7 @@ fi
 #
 # The lever only exists where markers are LIVE. Two shapes it deliberately does
 # not judge, because judging them would be inventing a signal:
-#   - a RULING test that is also TODO. TODO short-circuits before koruc runs, so
+#   - a NEEDS_RULING test that is also TODO. TODO short-circuits before koruc runs, so
 #     the test has no current verdict at all — and run_regression.sh:937 exempts
 #     TODO dirs from marker cleanup, so any SUCCESS sitting there is a fossil of
 #     an old `--todo-sweep`, not a live pass. Parked-and-unruled is a legitimate
@@ -267,7 +267,7 @@ import pathlib
 
 root = pathlib.Path('tests/regression')
 STUB_MARKERS = ('TODO', 'SKIP', 'BENCHMARK', 'BROKEN')
-for marker in sorted(root.rglob('RULING')):
+for marker in sorted(root.rglob('NEEDS_RULING')):
     if '_archive' in marker.parts:
         continue
     d = marker.parent
@@ -275,25 +275,25 @@ for marker in sorted(root.rglob('RULING')):
     has_input = (d / 'input.kz').exists() or (d / 'input.k').exists()
     parked = any((d / m).exists() for m in STUB_MARKERS)
     if not has_input and not parked:
-        print(f"RULING-ORPHAN\t{rel}")
+        print(f"NEEDS_RULING-ORPHAN\t{rel}")
         continue
     if not marker.read_text(encoding='utf-8', errors='replace').strip():
-        print(f"RULING-EMPTY\t{rel}")
+        print(f"NEEDS_RULING-EMPTY\t{rel}")
     if not parked and (d / 'SUCCESS').exists():
-        print(f"RULING-ON-PASSING\t{rel}")
+        print(f"NEEDS_RULING-ON-PASSING\t{rel}")
 PY
 )
 if [ -z "$E" ]; then
-  nE=$(find tests/regression -name RULING -not -path '*/_archive/*' | wc -l | tr -d ' ')
-  echo -e "  ${GREEN}✓ E${NC} every RULING marker still describes its test (${nE} awaiting a ruling)"
+  nE=$(find tests/regression -name NEEDS_RULING -not -path '*/_archive/*' | wc -l | tr -d ' ')
+  echo -e "  ${GREEN}✓ E${NC} every NEEDS_RULING marker still describes its test (${nE} awaiting a ruling)"
 else
-  echo -e "  ${RED}✗ E${NC} a RULING marker no longer describes its test:"
+  echo -e "  ${RED}✗ E${NC} a NEEDS_RULING marker no longer describes its test:"
   printf '%s\n' "$E" | sed 's/^/      /'
-  echo "      RULING-ON-PASSING — the test runs and PASSES. The question was settled, or"
-  echo "                          the pin rotted. Delete RULING and write the answer into"
+  echo "      NEEDS_RULING-ON-PASSING — the test runs and PASSES. The question was settled, or"
+  echo "                          the pin rotted. Delete NEEDS_RULING and write the answer into"
   echo "                          the test header (and a concept, if a belief moved)."
-  echo "      RULING-EMPTY      — no question written. State it or delete the file."
-  echo "      RULING-ORPHAN     — no input file and no TODO/SKIP/BENCHMARK/BROKEN, so"
+  echo "      NEEDS_RULING-EMPTY      — no question written. State it or delete the file."
+  echo "      NEEDS_RULING-ORPHAN     — no input file and no TODO/SKIP/BENCHMARK/BROKEN, so"
   echo "                          this directory is not a test at all."
   echo "      The queue: node scripts/rulings.js"
   fail=1

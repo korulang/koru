@@ -1,5 +1,10 @@
 Aspirational design sketch: scope composition (scope(other)), globs (users:*),
 conditional registration ([debug]debug:*), and the ~[registry:scope(name)]
-annotation form. None of that surface exists; the test also predates the
-bare-return migration and the tilde-in-interpreter-source wall. Keep as the
-written design or retire when the registry design is ruled.
+annotation form. None of that surface exists. Keep as the written design or
+retire when the registry design is ruled.
+
+Two things it no longer waits on (fixed 2026-08-07): its interpreter source
+carried `~` on every invocation and it passed an invented `file_name` to
+parse.source. Both are gone — parse.source now takes no file name and goes
+through the interpreter's own flow_parser, so the `~` it used to require is
+refused here exactly as it is on `run`.

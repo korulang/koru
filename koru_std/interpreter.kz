@@ -1119,6 +1119,25 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | validation-error string
 | dispatch-error { event_name: string, message: string }
 
+// Parse WITHOUT executing — the other half of `eval`.
+//
+// Interpreter source is pure Koru: it has no file, so it has no host half and
+// no `~`. That is why this takes no file name. The full compiler parser
+// derives its host/pure mode from the filename extension
+// (`src/parser.zig:707`), so handing it a synthetic name silently answers a
+// question interpreted source does not have; `flow_parser` has no such notion
+// and is the only correct parser here.
+//
+// The returned Flow and every slice it points at are allocated from
+// `allocator` — the caller owns the AST and may `eval` it as many times as it
+// likes.
+~[retain]pub tor parse {
+    source: string,
+    allocator: std.mem.Allocator
+}
+| flow *const ast.Flow
+| parse-error { message: string, line: u32, column: u32 }
+
 ~proc run|zig {
     const koru_errors = @import("koru_errors");
     const koru_ast = @import("koru_ast");
@@ -1369,6 +1388,37 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         .used = budget_state.used,
         .handles = @intCast(active_pool.countUndischarged()),
     }};
+}
+
+~proc parse|zig {
+    if (findHostTilde(source)) |t| {
+        return .{ .parse_error = .{
+            .message = "`~` is not legal in interpreter source. It switches a host-embedded file (.kz/.kjs) from the host language into Koru; interpreter source is already pure Koru, so it marks nothing. Drop it: write `open(path: \"x\")`, not `~open(path: \"x\")`.",
+            .line = t.line,
+            .column = t.column,
+        }};
+    }
+
+    // The parsed Flow borrows slices of the source text, so the copy has to
+    // live in the caller's allocator alongside the AST it feeds.
+    const owned_source = allocator.dupe(u8, source) catch {
+        return .{ .parse_error = .{ .message = "out of memory", .line = 0, .column = 0 } };
+    };
+
+    switch (flow_parser.parseFlow(allocator, owned_source)) {
+        .flow => |f| {
+            const owned_flow = allocator.create(ast.Flow) catch {
+                return .{ .parse_error = .{ .message = "out of memory", .line = 0, .column = 0 } };
+            };
+            owned_flow.* = f;
+            return .{ .flow = owned_flow };
+        },
+        .err => |e| return .{ .parse_error = .{
+            .message = e.message,
+            .line = @intCast(e.line),
+            .column = @intCast(e.column),
+        }},
+    }
 }
 
 // ============================================================================
@@ -2417,17 +2467,12 @@ fn executeFlow(
 // ============================================================================
 
 ~proc eval|zig {
-    std.debug.print("[EVAL] Starting execution of pre-parsed flow\n", .{});
-
     const allocator = InterpreterThreadState.prepare();
 
     // Validation pass - check for errors BEFORE execution
     if (validateFlow(flow, allocator)) |validation_err| {
-        std.debug.print("[EVAL] Validation failed: {s} (binding: {s})\n",
-            .{validation_err.message, validation_err.binding_name});
         return .{ .validation_error = validation_err.message };
     }
-    std.debug.print("[EVAL] Validation passed\n", .{});
 
     // Create environment and context
     const env = &InterpreterThreadState.env;
@@ -2496,7 +2541,6 @@ fn executeFlow(
     };
 
     const stable_value = result_value.clonePersistent();
-    std.debug.print("[EVAL] Execution complete, branch: {s}\n", .{stable_value.branch});
 
     autoDischargeHandles(
         auto_discharge,
