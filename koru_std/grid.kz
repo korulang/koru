@@ -95,6 +95,10 @@ const grid_read = struct {
     // how `sweep` already calls its own body event), so there is no case that
     // needs the bare spelling and therefore no second rule to get wrong.
     fn nsFor(alloc: std.mem.Allocator, prog: *const ast_grid.Program, home: ?[]const u8) []const u8 {
+        // JS: the declaration lands at the emitted file's top level and is
+        // reached BARE from every handler via closure — the store's cell
+        // qualifier makes the same call (store.kz:109).
+        if (std.mem.eql(u8, CompilerEnv.lang, "js")) return "";
         const h = home orelse return "main_module.";
         if (h.len == 0 or std.mem.eql(u8, h, prog.main_module_name)) return "main_module.";
         return std.fmt.allocPrint(alloc, "{s}.", .{codegen_utils_grid.buildKoruModulePath(alloc, h) catch unreachable}) catch unreachable;
@@ -105,6 +109,24 @@ const grid_read = struct {
     // line it becomes.
     fn collect(alloc: std.mem.Allocator, prog: *const ast_grid.Program, out: *std.ArrayList(GridRef)) void {
         collectIn(alloc, prog, prog.items, null, out);
+    }
+    // Re-collect a grid from its ALREADY-LOWERED declaration text. The emitted
+    // text says which layout it is: a row grid declares exactly one storage
+    // member, `__koru_row`, so its presence between this header and the next
+    // is the whole test (the JS row instance spells `__koru_row: [...Array(N)]`
+    // to keep the same signature).
+    fn scanLowered(alloc: std.mem.Allocator, prog: *const ast_grid.Program, text: []const u8, home: ?[]const u8, out: *std.ArrayList(GridRef)) void {
+        const needle = "const __KoruGridT_";
+        var i: usize = 0;
+        while (std.mem.indexOfPos(u8, text, i, needle)) |at| {
+            const s = at + needle.len;
+            var e = s;
+            while (e < text.len and ast_grid.isKebabIdentChar(text[e])) e += 1;
+            const stop = std.mem.indexOfPos(u8, text, e, needle) orelse text.len;
+            const is_row = std.mem.indexOfPos(u8, text[0..stop], e, "__koru_row: [") != null;
+            out.append(alloc, GridRef{ .name = text[s..e], .ns = nsFor(alloc, prog, home), .row = is_row }) catch unreachable;
+            i = e;
+        }
     }
     fn collectIn(alloc: std.mem.Allocator, prog: *const ast_grid.Program, its: []const ast_grid.Item, home: ?[]const u8, out: *std.ArrayList(GridRef)) void {
         for (its) |pi| {
@@ -134,23 +156,12 @@ const grid_read = struct {
                         }
                     }
                 },
-                .host_line => |hl| {
-                    const needle = "const __KoruGridT_";
-                    var i: usize = 0;
-                    while (std.mem.indexOfPos(u8, hl.content, i, needle)) |at| {
-                        const s = at + needle.len;
-                        var e = s;
-                        while (e < hl.content.len and ast_grid.isKebabIdentChar(hl.content[e])) e += 1;
-                        // Already lowered: the emitted text says which layout
-                        // it is. A row grid declares exactly one storage
-                        // member, `__koru_row`, so its presence between this
-                        // header and the next is the whole test.
-                        const stop = std.mem.indexOfPos(u8, hl.content, e, needle) orelse hl.content.len;
-                        const is_row = std.mem.indexOfPos(u8, hl.content[0..stop], e, "__koru_row: [") != null;
-                        out.append(alloc, GridRef{ .name = hl.content[s..e], .ns = nsFor(alloc, prog, home), .row = is_row }) catch unreachable;
-                        i = e;
-                    }
-                },
+                .host_line => |hl| scanLowered(alloc, prog, hl.content, home, out),
+                // On JS the declaration rides an `.inline_code` item (a
+                // synthesized host_line pointing at a `.k` is dropped by the
+                // JS emitter's facet filter — same routing as the store cell,
+                // store.kz:3048), so the re-collection must read it there too.
+                .inline_code => |ic| scanLowered(alloc, prog, ic.code, home, out),
                 .module_decl => |m| collectIn(alloc, prog, m.items, m.logical_name, out),
                 else => {},
             }
@@ -341,19 +352,25 @@ const grid_read = struct {
                         // (frag-a-call-valued-index-copies-the-whole-array),
                         // and row layout re-opens exactly that hole because the
                         // element is now bigger, not smaller.
+                        //
+                        // On JS an array IS a reference, and `&` is only valid
+                        // where the expression rewriter runs (writeJsExpr) —
+                        // a proc-body splice (the write unit) never gets that
+                        // pass, so the `&` is dropped at the source instead.
+                        const amp: []const u8 = if (std.mem.eql(u8, CompilerEnv.lang, "js")) "" else "&";
                         const piece = if (comma) |cm| blk_two: {
                             const xs = lower(alloc, std.mem.trim(u8, idx_raw[0..cm], " "), refs);
                             const ys = lower(alloc, std.mem.trim(u8, idx_raw[cm + 1 ..], " "), refs);
                             break :blk_two if (gref.row)
-                                std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.__koru_row)[{s}__KoruGridT_{s}.__koru_at2({s}, {s})].{s}", .{ ns, gname, ns, gname, xs, ys, fname }) catch unreachable
+                                std.fmt.allocPrint(alloc, "({s}{s}__koru_grid_{s}.__koru_row)[{s}__KoruGridT_{s}.__koru_at2({s}, {s})].{s}", .{ amp, ns, gname, ns, gname, xs, ys, fname }) catch unreachable
                             else
-                                std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.{s})[{s}__KoruGridT_{s}.__koru_at2({s}, {s})]", .{ ns, gname, fname, ns, gname, xs, ys }) catch unreachable;
+                                std.fmt.allocPrint(alloc, "({s}{s}__koru_grid_{s}.{s})[{s}__KoruGridT_{s}.__koru_at2({s}, {s})]", .{ amp, ns, gname, fname, ns, gname, xs, ys }) catch unreachable;
                         } else blk_one: {
                             const idx = lower(alloc, idx_raw, refs);
                             break :blk_one if (gref.row)
-                                std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.__koru_row)[{s}__KoruGridT_{s}.__koru_at({s})].{s}", .{ ns, gname, ns, gname, idx, fname }) catch unreachable
+                                std.fmt.allocPrint(alloc, "({s}{s}__koru_grid_{s}.__koru_row)[{s}__KoruGridT_{s}.__koru_at({s})].{s}", .{ amp, ns, gname, ns, gname, idx, fname }) catch unreachable
                             else
-                                std.fmt.allocPrint(alloc, "(&{s}__koru_grid_{s}.{s})[{s}__KoruGridT_{s}.__koru_at({s})]", .{ ns, gname, fname, ns, gname, idx }) catch unreachable;
+                                std.fmt.allocPrint(alloc, "({s}{s}__koru_grid_{s}.{s})[{s}__KoruGridT_{s}.__koru_at({s})]", .{ amp, ns, gname, fname, ns, gname, idx }) catch unreachable;
                         };
                         out.appendSlice(alloc, piece) catch unreachable;
                         i = fe;
@@ -766,6 +783,53 @@ const grid_read = struct {
     const inst = std.fmt.allocPrint(allocator, "var __koru_grid_{s}: __KoruGridT_{s} = .{{}};", .{ grid_name, grid_name }) catch unreachable;
     g.appendSlice(allocator, inst) catch unreachable;
 
+    // THE JS RENDERING — same NAMES, JavaScript spellings. The type object
+    // keeps `__KoruGridT_<g>` with `__koru_size` / `__koru_wide` / `__koru_at`
+    // (+ `__koru_at2` for dimensions), so every read and write the shared
+    // `grid_read.lower` produced resolves against it unchanged; the instance
+    // keeps `__koru_grid_<g>`. The row instance spells its storage
+    // `__koru_row: [...Array(N)]` so the re-collection's layout test
+    // (`__koru_row: [`) reads the same on both targets.
+    const host_is_js = std.mem.eql(u8, CompilerEnv.lang, "js");
+    const gdecl = if (host_is_js) blk_gjs: {
+        var jg = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+        const jhead = std.fmt.allocPrint(allocator, "const __KoruGridT_{s} = {{\n  __koru_size: {d},\n  __koru_wide: (v) => v,\n", .{ grid_name, SIZE }) catch unreachable;
+        jg.appendSlice(allocator, jhead) catch unreachable;
+        const jat = if (unchecked)
+            std.fmt.allocPrint(allocator, "  __koru_at: (i) => i,\n", .{}) catch unreachable
+        else
+            std.fmt.allocPrint(allocator, "  __koru_at: (i) => {{ if (i < 0 || i >= {d}) throw new Error(\"std/grid: index out of range for grid '{s}' (size {d}) - a grid is addressed by position, and wrapping is the program's to write as `% {d}`\"); return i; }},\n", .{ SIZE, grid_name, SIZE, SIZE }) catch unreachable;
+        jg.appendSlice(allocator, jat) catch unreachable;
+        if (dims_text != null) {
+            const jat2 = if (unchecked)
+                std.fmt.allocPrint(allocator, "  __koru_rows: {d},\n  __koru_cols: {d},\n  __koru_at2: (x, y) => y * {d} + x,\n", .{ ROWS, COLS, COLS }) catch unreachable
+            else
+                std.fmt.allocPrint(allocator, "  __koru_rows: {d},\n  __koru_cols: {d},\n  __koru_at2: (x, y) => {{ if (x < 0 || x >= {d}) throw new Error(\"std/grid: x out of range for grid '{s}' (cols {d})\"); if (y < 0 || y >= {d}) throw new Error(\"std/grid: y out of range for grid '{s}' (rows {d})\"); return y * {d} + x; }},\n", .{ ROWS, COLS, COLS, grid_name, COLS, ROWS, grid_name, ROWS, COLS }) catch unreachable;
+            jg.appendSlice(allocator, jat2) catch unreachable;
+        }
+        jg.appendSlice(allocator, "};\n") catch unreachable;
+        if (row_layout) {
+            const jrow_head = std.fmt.allocPrint(allocator, "let __koru_grid_{s} = {{ __koru_row: [...Array({d})].map(() => ({{ ", .{ grid_name, SIZE }) catch unreachable;
+            jg.appendSlice(allocator, jrow_head) catch unreachable;
+            for (fields.items, 0..) |f, fi| {
+                if (fi > 0) jg.appendSlice(allocator, ", ") catch unreachable;
+                const m = std.fmt.allocPrint(allocator, "{s}: {s}", .{ f.name, f.dflt }) catch unreachable;
+                jg.appendSlice(allocator, m) catch unreachable;
+            }
+            jg.appendSlice(allocator, " })) };") catch unreachable;
+        } else {
+            const jcol_head = std.fmt.allocPrint(allocator, "let __koru_grid_{s} = {{ ", .{grid_name}) catch unreachable;
+            jg.appendSlice(allocator, jcol_head) catch unreachable;
+            for (fields.items, 0..) |f, fi| {
+                if (fi > 0) jg.appendSlice(allocator, ", ") catch unreachable;
+                const m = std.fmt.allocPrint(allocator, "{s}: new Array({d}).fill({s})", .{ f.name, SIZE, f.dflt }) catch unreachable;
+                jg.appendSlice(allocator, m) catch unreachable;
+            }
+            jg.appendSlice(allocator, " };") catch unreachable;
+        }
+        break :blk_gjs jg.toOwnedSlice(allocator) catch unreachable;
+    } else g.toOwnedSlice(allocator) catch unreachable;
+
     // WHOLE-PROGRAM READ LOWERING, owned by the DECLARATION.
     //
     // A cell read is not confined to a write block. A guard reads one
@@ -792,8 +856,34 @@ const grid_read = struct {
         grid_read.lowerItems(allocator, @constCast(program.items), seen.items);
     }
 
+    // Same routing problem as the store cell (store.kz:3048): a synthesized
+    // host_line points at the user's `.k`, and the JS emitter only takes host
+    // lines from a JS host facet — so on JS the declaration that RUNS rides
+    // `.inline_code`, emitted unconditionally at the file's top level.
+    //
+    // The Zig host_line is kept IN THE AST on both targets, because it is the
+    // record every later re-derivation reads — `columnType` parses the struct
+    // text for a write's column type, `collect` re-finds the grid and its
+    // layout from it. On JS it is never emitted (the facet filter drops it);
+    // it is the declaration's memory, not its artifact.
+    if (host_is_js) {
+        const jappended = allocator.alloc(ast.Item, 1) catch unreachable;
+        jappended[0] = ast.Item{ .inline_code = ast.InlineCode{
+            .code = gdecl,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        } };
+        return .{ .transformed = .{
+            .replacement = ast.Item{ .host_line = ast.HostLine{
+                .content = g.toOwnedSlice(allocator) catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } },
+            .appended = jappended,
+        } };
+    }
     return .{ .transformed = .{ .replacement = ast.Item{ .host_line = ast.HostLine{
-        .content = g.toOwnedSlice(allocator) catch unreachable,
+        .content = gdecl,
         .location = flow.location,
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } } } };
@@ -991,7 +1081,10 @@ const grid_read = struct {
         .path = mk.path(allocator, home_ns, unit),
         .body = ast.Source{ .text = body.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
         .annotations = &[_][]const u8{},
-        .target = allocator.dupe(u8, "zig") catch unreachable,
+        // The body (`<lvalue> = <param>;`) is the same statement on both
+        // targets once `grid_read.lower` drops the `&` for JS — only the
+        // proc's TARGET tag selects which emitter owns it.
+        .target = allocator.dupe(u8, if (std.mem.eql(u8, CompilerEnv.lang, "js")) "js" else "zig") catch unreachable,
         .location = flow.location,
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } };
@@ -1311,12 +1404,20 @@ const grid_read = struct {
         std.fmt.allocPrint(allocator, "    if (!({s})) continue;\n", .{c}) catch unreachable
     else
         "";
-    const loop = std.fmt.allocPrint(allocator, "for (0..{s}__KoruGridT_{s}.__koru_size) |{s}| {{\n{s}    {s}{s}_event.handler(.{{ .{s} = @as(i64, @intCast({s})) }});\n}}\nreturn;", .{ grid_ns, grid_name, cur, guard_line, emit_ns, body_name, cur, cur }) catch unreachable;
+    // Same loop, each host's own spelling: Zig's `for (0..N)` hands the
+    // optimizer a known trip count; JS gets the plain counted `for`, its
+    // events dispatched through the flat `main_module` object (the JS emitter
+    // flattens every module's events into it — store.kz:100's rule).
+    const sweep_is_js = std.mem.eql(u8, CompilerEnv.lang, "js");
+    const loop = if (sweep_is_js)
+        std.fmt.allocPrint(allocator, "for (let {s} = 0; {s} < {s}__KoruGridT_{s}.__koru_size; {s}++) {{\n{s}    main_module.{s}_event.handler({{ {s}: {s} }});\n}}\nreturn;", .{ cur, cur, grid_ns, grid_name, cur, guard_line, body_name, cur, cur }) catch unreachable
+    else
+        std.fmt.allocPrint(allocator, "for (0..{s}__KoruGridT_{s}.__koru_size) |{s}| {{\n{s}    {s}{s}_event.handler(.{{ .{s} = @as(i64, @intCast({s})) }});\n}}\nreturn;", .{ grid_ns, grid_name, cur, guard_line, emit_ns, body_name, cur, cur }) catch unreachable;
     appended.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
         .path = mk.path(allocator, home_ns, sweep_name),
         .body = ast.Source{ .text = loop, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
         .annotations = &[_][]const u8{},
-        .target = allocator.dupe(u8, "zig") catch unreachable,
+        .target = allocator.dupe(u8, if (sweep_is_js) "js" else "zig") catch unreachable,
         .location = flow.location,
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } }) catch unreachable;

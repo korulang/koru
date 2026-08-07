@@ -2095,7 +2095,13 @@ const Emitter = struct {
             };
             // Skip self-referential `const x = x;` — outer is already in scope.
             if (std.mem.eql(u8, field.name, arg_val)) continue;
-            try self.writeFmt("{s}const {s} = {s};\n", .{ inner, field.name, arg_val });
+            // The arg is a KORU expression and must go through the JS lowering:
+            // a rule-arm row read arrives as the Zig column read
+            // (`(&col)[@as(usize, @intCast(cur))]`), and only writeJsExpr
+            // strips the `&` and lowers the builtins. Raw splice = SyntaxError.
+            try self.writeFmt("{s}const {s} = ", .{ inner, field.name });
+            try self.writeJsExpr(arg_val);
+            try self.write(";\n");
         }
 
         try self.emitReindented(proc.body.text, inner);
@@ -2152,7 +2158,11 @@ const Emitter = struct {
             const tid = self.nextId();
             const temp = try std.fmt.allocPrint(self.allocator, "__arg_{d}", .{tid});
             try temps.append(self.allocator, .{ .field = field.name, .temp = temp });
-            try self.writeFmt("{s}const {s} = {s};\n", .{ indent, temp, arg_val });
+            // Same contract as the plain-inline path: the arg is a Koru
+            // expression, and only the JS lowering makes it JavaScript.
+            try self.writeFmt("{s}const {s} = ", .{ indent, temp });
+            try self.writeJsExpr(arg_val);
+            try self.write(";\n");
         }
 
         // Open a block so the producer's input-field locals don't leak into the
@@ -2262,7 +2272,15 @@ const Emitter = struct {
 
             if (arm_count == 1 and !any_selective) {
                 const binding = cont.binding orelse "_";
-                if (std.mem.eql(u8, binding, "_")) {
+                if (best_arg.len == 0) {
+                    // VOID fire — the op carries no payload, so there is nothing
+                    // to bind; `const x = ;` is not JavaScript. A named binding
+                    // on a payloadless branch has no value to name — refuse.
+                    if (!std.mem.eql(u8, binding, "_")) {
+                        log.err("[js_emitter] effect arm '! {s} {s}' binds a name, but the fire '{s}()' carries no payload\n", .{ cont.branch, binding, cont.branch });
+                        return JsEmitError.UnsupportedConstruct;
+                    }
+                } else if (std.mem.eql(u8, binding, "_")) {
                     // Throwaway binding — give it a unique name so nested splices at
                     // the same depth never collide (`_auto_<id>`), matching the
                     // closure path's `_auto_N` naming.
@@ -2291,7 +2309,8 @@ const Emitter = struct {
                 const fid = self.nextId();
                 const fire = try std.fmt.allocPrint(self.allocator, "__fire_{d}", .{fid});
                 defer self.allocator.free(fire);
-                try self.writeFmt("{s}const {s} = {s};\n", .{ block_indent, fire, best_arg });
+                // A VOID fire names no payload const — there is no value to name.
+                if (best_arg.len != 0) try self.writeFmt("{s}const {s} = {s};\n", .{ block_indent, fire, best_arg });
                 const sentinel = arm_count > 1;
                 if (sentinel) try self.writeFmt("{s}let __fired_{d} = false;\n", .{ block_indent, fid });
 
@@ -2303,7 +2322,13 @@ const Emitter = struct {
                 for (continuations) |*arm| {
                     if (arm.kind != .effect or !std.mem.eql(u8, arm.branch, cont.branch)) continue;
                     try self.writeFmt("{s}{{\n", .{block_indent});
-                    if (arm.destructure.len > 0) {
+                    if (best_arg.len == 0) {
+                        // VOID fire — no payload const exists to bind off.
+                        if (arm.destructure.len > 0 or (arm.binding != null and !std.mem.eql(u8, arm.binding.?, "_"))) {
+                            log.err("[js_emitter] effect arm on '{s}' binds a name, but the fire '{s}()' carries no payload\n", .{ arm.branch, arm.branch });
+                            return JsEmitError.UnsupportedConstruct;
+                        }
+                    } else if (arm.destructure.len > 0) {
                         try self.emitDestructureBindings(arm.destructure, fire, arm_indent);
                     } else if (arm.binding) |b| {
                         if (!std.mem.eql(u8, b, "_")) {
