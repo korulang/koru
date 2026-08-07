@@ -9,6 +9,27 @@
 ~import std/build
 
 const std = @import("std");
+const codegen_utils_io = @import("codegen_utils");
+
+/// A `{{ … }}` INTERPOLATION IS A KORU EXPRESSION, and this builder splices it
+/// into JavaScript. It is the third door onto the same pass — after `std/store`'s
+/// guards and `std/kernel`'s op bodies — and it was the last one still writing
+/// the text through raw.
+///
+/// What that cost: `print.ln("… {{ new:s }}")` over `! updated { old, new }`
+/// emitted a bare `new` into the concatenation, and node refused the file. It
+/// also meant an interpolation naming `a and b` or `@as(i64, x)` reached node
+/// unlowered, which nothing had noticed because no test interpolates one.
+///
+/// Refusal is swallowed rather than reported: an unmodelled `@`-operation here
+/// falls back to the raw text, which is what this site did for every expression
+/// until now, so the failure mode is unchanged rather than newly silent. The
+/// diagnostic belongs with the print transform's own error surface and that is a
+/// separate job.
+fn ioLowerJsExpr(alloc: std.mem.Allocator, text: []const u8) []const u8 {
+    var d = codegen_utils_io.LowerDiag{};
+    return codegen_utils_io.lowerKoruExpr(alloc, text, .js, .koru_expr, &d) catch text;
+}
 
 // Print without trailing newline — the no-newline sibling of print.ln.
 // SAME implementation (__printInterpolate, with_newline=false): comptime
@@ -833,7 +854,7 @@ fn __printInterpolateJs(
                     // must be ONE operand, else `"n=" + c + 1` folds left-to-right
                     // to `"n=<c>" + 1` = "n=<c>1" instead of the sum.
                     buf.append(allocator, '(') catch unreachable;
-                    buf.appendSlice(allocator, var_name) catch unreachable;
+                    buf.appendSlice(allocator, ioLowerJsExpr(allocator, var_name)) catch unreachable;
                     buf.append(allocator, ')') catch unreachable;
 
                     i = j + 2;
@@ -858,7 +879,7 @@ fn __printInterpolateJs(
         // Bare expression: stringify the whole value; leading `""` forces
         // string-concat context so a Number is promoted, not arithmetic-added.
         buf.appendSlice(allocator, "\"\" + (") catch unreachable;
-        buf.appendSlice(allocator, expr) catch unreachable;
+        buf.appendSlice(allocator, ioLowerJsExpr(allocator, expr)) catch unreachable;
         buf.append(allocator, ')') catch unreachable;
         first = false;
     }

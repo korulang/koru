@@ -323,6 +323,24 @@ const Emitter = struct {
             try self.buf.append(self.allocator, if (c == '-') '_' else c);
         }
     }
+
+    /// Same boundary, for a name in BINDING position — `const <n>`, a `while`
+    /// label, a local alias. Adds the reserved-word rename on top of the kebab
+    /// lowering, because JavaScript will not let `new`, `default` or `class` be
+    /// bound even though Koru names them freely (`! updated { old, new }` is
+    /// std/store's own vocabulary).
+    ///
+    /// Deliberately NOT `writeIdent`: the two differ exactly where a name is a
+    /// KEY rather than a binding, and a key needs no rename (ES5+ allows reserved
+    /// words there) and MUST NOT get one — transforms write object literals as
+    /// raw host text that never passes through this file, so renaming a key here
+    /// would desynchronise this reader from that writer without a syntax error to
+    /// show for it. `const new$ = __koru_input.new;` is the shape, and both halves
+    /// of it are deliberate.
+    fn writeBinding(self: *Emitter, name: []const u8) JsEmitError!void {
+        try self.writeIdent(name);
+        if (codegen_utils.needsJsMangle(name)) try self.buf.append(self.allocator, '$');
+    }
     /// Read a property whose KEY is written raw. A BRANCH name is kebab-canonical
     /// and stays that way on both the tag and the payload key
     /// (`emitBranchConstructorReturn`, so producer and reader cannot drift) — but
@@ -514,7 +532,7 @@ const Emitter = struct {
             for (event.branches) |b| {
                 if (b.kind != .effect) continue;
                 try self.write("      const ");
-                try self.writeIdent(b.name);
+                try self.writeBinding(b.name);
                 try self.write(" = H.");
                 try self.writeIdent(b.name);
                 try self.write(";\n");
@@ -537,7 +555,7 @@ const Emitter = struct {
         // can spell.
         for (event.input.fields) |field| {
             try self.write("      const ");
-            try self.writeIdent(field.name);
+            try self.writeBinding(field.name);
             try self.writeFmt(" = {s}.", .{INPUT_PARAM});
             try self.writeIdent(field.name);
             if (field.default) |dflt| {
@@ -1147,7 +1165,7 @@ const Emitter = struct {
             // JS labels live in their own namespace, so `loop:` cannot collide with
             // the `loop_n` state variables beside it.
             try self.writeFmt("{s}", .{indent});
-            try self.writeIdent(label);
+            try self.writeBinding(label);
             try self.write(": while (");
             var written: usize = 0;
             for (conts) |*cont| {
@@ -1235,7 +1253,7 @@ const Emitter = struct {
         try self.emitLabelStateArgs(frame.inv.args, label);
         try self.write(");\n");
         try self.writeFmt("{s}continue ", .{indent});
-        try self.writeIdent(frame.label);
+        try self.writeBinding(frame.label);
         try self.write(";\n");
     }
 
@@ -2009,11 +2027,11 @@ const Emitter = struct {
         // absent method, so the alias is undefined and the guard reads it.
         if (arm.is_optional and !has_resume) {
             try self.write("if (");
-            try self.writeIdent(arm.name);
+            try self.writeBinding(arm.name);
             try self.write(") ");
         }
         if (result_name) |rn| try self.writeFmt("const {s} = ", .{rn});
-        try self.writeIdent(arm.name);
+        try self.writeBinding(arm.name);
         try self.write("(");
         try self.emitArmFirePayload(arm, inv);
         try self.write(");\n");
@@ -2638,11 +2656,11 @@ const Emitter = struct {
                 // `enclosing_bare_return` and `result.<branch>`.
                 if (bare_return or cont.branch.len == 0) {
                     try self.writeFmt("{s}const ", .{body_indent});
-                    try self.writeIdent(binding);
+                    try self.writeBinding(binding);
                     try self.writeFmt(" = {s};\n", .{rn});
                 } else {
                     try self.writeFmt("{s}const ", .{body_indent});
-                    try self.writeIdent(binding);
+                    try self.writeBinding(binding);
                     try self.write(" = ");
                     try self.writeMember(rn, cont.branch);
                     try self.write(";\n");
@@ -2736,7 +2754,7 @@ const Emitter = struct {
                 continue;
             }
             try self.writeFmt("{s}const ", .{indent});
-            try self.writeIdent(field.name);
+            try self.writeBinding(field.name);
             try self.write(" = ");
             try self.writeMember(base, field.name);
             try self.write(";\n");

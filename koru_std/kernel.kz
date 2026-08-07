@@ -55,7 +55,11 @@ const codegen_utils_kernel = @import("codegen_utils");
 /// in the emitted file.
 fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []const u8 {
     var d = codegen_utils_kernel.LowerDiag{};
-    return codegen_utils_kernel.lowerKoruExpr(alloc, text, if (is_js) .js else .zig, .koru_expr, &d) catch |err| switch (err) {
+    // `.koru_body`, not `.koru_expr`: an op body is a STATEMENT SEQUENCE in host
+    // syntax (`const dx = k.other.x - k.x; …`), so its `const`/`let` are host
+    // keywords rather than binding references. Under `.koru_expr` the
+    // reserved-word rename hit them and emitted `const$ dx = …` (390_020).
+    return codegen_utils_kernel.lowerKoruExpr(alloc, text, if (is_js) .js else .zig, .koru_body, &d) catch |err| switch (err) {
         error.OutOfMemory => unreachable,
         error.UnsupportedBuiltin => {
             std.debug.print("error[KORU122]: std/kernel op body names `@{s}`, and that operation has no lowering for the --lang target - the operations Koru names with `@` are the shared table in codegen_utils.lowerBuiltin\n", .{d.unknown_builtin});

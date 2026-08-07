@@ -514,16 +514,33 @@ test "koruWrapperPrefix Phase 2" {
 /// Which host the expression is being rendered for.
 pub const HostTarget = enum { zig, js };
 
-/// `koru_expr` is text the USER wrote in a Koru expression slot. `host_text` is
-/// text a template already rendered into the host's own language.
+/// WHAT KIND OF TEXT THIS IS, which decides how much of the lowering applies.
 ///
-/// The distinction is exactly one rewrite wide: `++` is Koru's concatenation and
-/// must become `+` on JS, but in already-rendered host text a `++` is a genuine
-/// JavaScript increment and must be left alone. Everything else is lowered in
-/// both modes — a `when` guard arrives as Koru text while the identical
-/// condition, baked into a `for|template|js` body, arrives as host text, and
-/// lowering only one door leaves the other emitting `a and b`.
-pub const ExprMode = enum { koru_expr, host_text };
+/// - `koru_expr` — a Koru EXPRESSION: a `when` guard, a `stored` block's
+///   right-hand side. Every identifier in it is a REFERENCE to a binding.
+/// - `koru_body` — Koru-authored STATEMENT text: a `std/kernel:pairwise` op
+///   body is `const dx = k.other.x - k.x; …`, written in host syntax and
+///   spliced whole. Needs the operator and `@`-builtin lowering; its
+///   identifiers are NOT all references.
+/// - `host_text` — already rendered into the host's own language by a template.
+///
+/// Two rewrites key off this and they split it differently, which is the reason
+/// there are three modes and not two:
+///
+/// `++` is Koru's concatenation and must become `+`, but in already-rendered
+/// host text a `++` is a genuine JavaScript increment — so it fires for both
+/// Koru modes and not for `host_text`.
+///
+/// The RESERVED-WORD rename fires for `koru_expr` ALONE. It renames an
+/// identifier JavaScript cannot bind, which is only sound where every
+/// identifier is a reference. In a `koru_body` the same words are host
+/// KEYWORDS: applied there it turned `const dx = …` into `const$ dx = …` and
+/// broke 390_020, which is what taught this mode to exist.
+///
+/// Everything else is lowered in all three — a `when` guard arrives as Koru text
+/// while the identical condition, baked into a `for|template|js` body, arrives
+/// as host text, and lowering only one door leaves the other emitting `a and b`.
+pub const ExprMode = enum { koru_expr, koru_body, host_text };
 
 pub const LowerError = error{ UnsupportedBuiltin, OutOfMemory };
 
@@ -546,6 +563,67 @@ pub fn lowerKoruExpr(
     errdefer out.deinit(allocator);
     try lowerJsInto(&out, allocator, text, mode, diag);
     return out.toOwnedSlice(allocator);
+}
+
+/// JAVASCRIPT'S RESERVED WORDS — the names a Koru program may legally choose and
+/// JavaScript may not bind.
+///
+/// Koru's own store vocabulary walks straight into this: `! updated { old, new }`
+/// names its payload fields `old` and `new`, and `new` is a JS keyword, so the
+/// destructure emitted `const new = __koru_input.new;` and node refused the whole
+/// program. Nothing about the Koru is wrong, so refusing at the declaration would
+/// be refusing a correct program because of the host — the rename happens here
+/// instead (ruled 2026-08-07).
+///
+/// `true`, `false`, `null` and `undefined` are DELIBERATELY ABSENT. They are
+/// values with the same meaning in both languages, and renaming them in an
+/// expression would turn a literal into an undefined name. The list is keywords
+/// that cannot be BOUND, not every word JS treats specially.
+const JS_RESERVED = [_][]const u8{
+    "arguments", "await",     "break",  "case",       "catch",  "class",
+    "const",     "continue",  "debugger", "default",  "delete", "do",
+    "else",      "enum",      "eval",   "export",     "extends", "finally",
+    "for",       "function",  "if",     "implements", "import", "in",
+    "instanceof", "interface", "let",   "new",        "package", "private",
+    "protected", "public",    "return", "static",     "super",  "switch",
+    "this",      "throw",     "try",    "typeof",     "var",    "void",
+    "while",     "with",      "yield",
+};
+
+fn isJsReserved(name: []const u8) bool {
+    for (JS_RESERVED) |w| {
+        if (std.mem.eql(u8, name, w)) return true;
+    }
+    return false;
+}
+
+/// Does this name need renaming to be BOUND in JavaScript?
+///
+/// Reserved words do. So does a name that would COLLIDE with a renamed one:
+/// `mangleJsIdent` appends `$`, and Koru's parser permits `$` inside a name
+/// (700_000 pins `~test:name$with#special@chars`), so a program could contain a
+/// literal `new$` that the rename would alias onto. Stripping trailing `$`s and
+/// re-testing the stem makes the mapping injective — `new` -> `new$`,
+/// `new$` -> `new$$` — instead of merely unlikely to collide.
+pub fn needsJsMangle(name: []const u8) bool {
+    var stem = name;
+    while (stem.len > 0 and stem[stem.len - 1] == '$') stem = stem[0 .. stem.len - 1];
+    return isJsReserved(stem);
+}
+
+/// The JS spelling of a Koru name in BINDING position. Caller owns the result.
+///
+/// PROPERTY KEYS DO NOT COME HERE, and that asymmetry is the design rather than
+/// an omission: a reserved word is a perfectly legal key in ES5+, `writeMember`
+/// already brackets the ones JS cannot spell at all, and — the load-bearing
+/// reason — object literals are also written as RAW HOST TEXT by transforms
+/// (`std/store` emits `{ old: __koru_old, new: value_0 }` from its own string
+/// builder, which never passes through this function). Renaming keys here would
+/// desynchronise the emitter's reader from the transform's writer, silently, and
+/// the result would be `undefined` rather than a syntax error.
+pub fn mangleJsIdent(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+    if (!needsJsMangle(name)) return allocator.dupe(u8, name);
+    return std.fmt.allocPrint(allocator, "{s}$", .{name});
 }
 
 /// HOW A HOST SPELLS THE SHAPES A TRANSFORM EMITS — the sibling of
@@ -800,7 +878,7 @@ fn lowerJsInto(
         // increment operator, so an unlowered `a ++ b` is a SYNTAX error rather
         // than a wrong answer. Host text is already JavaScript, so its `++` is a
         // genuine increment and stays.
-        if (mode == .koru_expr and c == '+' and i + 1 < text.len and text[i + 1] == '+') {
+        if (mode != .host_text and c == '+' and i + 1 < text.len and text[i + 1] == '+') {
             try out.append(allocator, '+');
             i += 2;
             continue;
@@ -826,6 +904,30 @@ fn lowerJsInto(
         if (c == '@') {
             if (try lowerBuiltin(out, allocator, text, i, diag)) |after| {
                 i = after;
+                continue;
+            }
+        }
+        // A BINDING REFERENCE that JavaScript cannot spell. `! updated { old,
+        // new }` binds `new`, and the arm's own expression reads it back:
+        // `board.pool + new - old`. Renaming the declaration and not this would
+        // trade a syntax error for an undefined name, which is worse.
+        //
+        // `.koru_expr` ONLY. In `.host_text` the words are GENUINE JavaScript —
+        // `new Foo()`, `typeof x`, `return` — and renaming them would destroy
+        // working host code. Same discipline, and the same reason, as `++`.
+        //
+        // Word-boundary anchored and never after a `.`, so `x.new` (a property
+        // key, legal in JS and written unmangled by the transforms) is untouched.
+        if (mode == .koru_expr and exprIdentChar(c) and !(c >= '0' and c <= '9') and
+            (i == 0 or (!exprIdentChar(text[i - 1]) and text[i - 1] != '.' and text[i - 1] != '@')))
+        {
+            var e = i;
+            while (e < text.len and (exprIdentChar(text[e]) or text[e] == '$')) e += 1;
+            const word = text[i..e];
+            if (needsJsMangle(word)) {
+                try out.appendSlice(allocator, word);
+                try out.append(allocator, '$');
+                i = e;
                 continue;
             }
         }
