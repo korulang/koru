@@ -6018,7 +6018,15 @@ pub const Parser = struct {
 
         // Parse the pipeline steps from the continuation
         // Inline `~A() |> ...` is a void chain, not a branch handler body.
-        const steps = try self.parsePipelineSteps(continuation_part, false, self.getCurrentLocation());
+        //
+        // `chain_location`, NOT `getCurrentLocation()`. The head line is already
+        // consumed by the time we get here, so the cursor names the line AFTER
+        // the chain — and with every stage on one physical line, every step
+        // inherited it. A diagnostic on a mid-chain call then pointed at the
+        // first branch arm below, i.e. at working code (210_201's second
+        // witness). The two continuations built further down already use
+        // `chain_location`; only the steps were reading the cursor.
+        const steps = try self.parsePipelineSteps(continuation_part, false, chain_location);
 
         if (steps.len == 0) {
             return &[_]ast.Continuation{};
