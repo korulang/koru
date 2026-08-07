@@ -4272,8 +4272,27 @@ fn storeLowerText(
                 qr.appendSlice(allocator, idz) catch unreachable;
             }
             if (qs.guard) |g| {
+                // Cross-store reads lower to the cells HERE, at bake time: the
+                // guard becomes host text in this proc, so the whole-program
+                // walk (which lowers if-exprs and branch payloads later, on the
+                // live AST) can never reach it again. Same scope the walk uses;
+                // this store's own columns are bound (bindStrip left them bare),
+                // so a store sharing a column's name is not misread.
+                var gbound = std.ArrayList([]const u8).initCapacity(allocator, field_names.len + 2) catch unreachable;
+                for (field_names) |fnm2| gbound.append(allocator, fnm2) catch unreachable;
+                gbound.append(allocator, qs.cursor) catch unreachable;
+                if (qs.req_id) |idn| gbound.append(allocator, idn) catch unreachable;
+                const gscope = StoreScope{
+                    .names = pstore_names.items,
+                    .prefixes = blk_gpx: {
+                        const px = allocator.alloc([]const u8, pstore_names.items.len) catch unreachable;
+                        for (px) |*p| p.* = "";
+                        break :blk_gpx px;
+                    },
+                };
+                const g_cells = storeLowerText(allocator, program, g, gscope, pstore_identity.items, gbound.items);
                 var unknown_op: []const u8 = "";
-                const lowered_g = storeLowerExpr(allocator, g, &unknown_op) orelse
+                const lowered_g = storeLowerExpr(allocator, g_cells, &unknown_op) orelse
                     return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the guard names `@{s}`, and that operation has no lowering for this target - a store guard is a Koru expression, and the operations Koru names with `@` are the shared table in codegen_utils.lowerBuiltin", .{ store_name, unknown_op }) } };
                 const gz = std.fmt.allocPrint(allocator, "if (!({s})) return;\n", .{lowered_g}) catch unreachable;
                 qr.appendSlice(allocator, gz) catch unreachable;
