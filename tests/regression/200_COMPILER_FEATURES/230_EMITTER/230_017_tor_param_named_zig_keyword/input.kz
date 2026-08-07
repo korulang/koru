@@ -1,0 +1,28 @@
+// Pins that a Koru parameter name is spelled into the emitted Zig safely, even
+// when it collides with a Zig keyword.
+//
+// `align` is a legal Koru identifier and a reserved word in Zig, so the emitted
+// `const align = ...` is a Zig syntax error. Nothing in Koru's surface says the
+// name is unavailable, and `--check` passes — the refusal arrives from the Zig
+// compiler, quoting generated code, naming a line the author never wrote.
+//
+// The fix is at the emission site (`@"align"`), not in the author's surface: a
+// library author cannot be expected to know which identifiers Zig has taken, and
+// renaming the surface to suit the backend is the route-around this repo bans.
+//
+// Sibling: 230_018 pins the same disease for Zig's primitive TYPE names, which
+// fails with a different diagnostic and can be fixed independently.
+//
+// Control: rename the parameter and nothing else, and the program prints 16.
+
+const std = @import("std");
+
+~import std/io
+
+~pub tor reserve { align: u32 } -> u32
+
+~proc reserve|zig {
+    return align * 2;
+}
+
+~reserve(align: 8): got |> std/io:print.ln("got {{ got:d }}")

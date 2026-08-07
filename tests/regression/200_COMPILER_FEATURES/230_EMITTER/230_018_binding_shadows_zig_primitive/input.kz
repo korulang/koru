@@ -1,0 +1,25 @@
+// Pins that a continuation binding named after a Zig primitive type reaches the
+// emitted Zig safely.
+//
+// `u1` is a legal Koru identifier and a primitive type in Zig, so the emitted
+// binding fails as `name shadows primitive 'u1'`. Every Zig primitive name —
+// the whole `u*`/`i*` family, `bool`, `void`, `type`, `anyopaque` — is a legal
+// Koru identifier, so the surface a library author may safely use is smaller
+// than the language says and nothing reports the boundary.
+//
+// Sibling: 230_017 pins the same disease for Zig's KEYWORDS, which fails as a
+// syntax error rather than a shadowing error.
+//
+// Control: rename the binding and nothing else, and the program prints 2.
+
+const std = @import("std");
+
+~import std/io
+
+~pub tor pick { n: u32 } -> u32
+
+~proc pick|zig {
+    return n + 1;
+}
+
+~pick(n: 1): u1 |> std/io:print.ln("got {{ u1:d }}")
