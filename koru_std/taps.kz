@@ -816,7 +816,7 @@ var metatype_global_counter: usize = 0;
             current_source_is_opaque: bool,
             opaque_events: *const std.StringHashMap(void),
             source_produced: ?[]const u8,  // Bare-return source head's `: r` bind (produced value in scope at this level)
-        ) !struct { conts: []ast.Continuation, modified: bool } {
+        ) !struct { conts: []ast.Continuation, modified: bool, head_bind: ?[]const u8 = null } {
             const source_event = buildCanonicalName(alloc, current_source_path, containing_module) catch null;
             const source_matches = source_wildcard or pathMatches(
                 source_pattern, source_wildcard, current_source_path, containing_module, alloc
@@ -842,6 +842,7 @@ var metatype_global_counter: usize = 0;
                 };
 
                 var tap_inserted = false;
+                var synthesized_head_bind: ?[]const u8 = null;
                 const terminal_id = hashLocation(terminal_cont.location) ^
                     @intFromPtr(continuations.ptr) ^
                     @as(usize, continuations.len);
@@ -866,6 +867,23 @@ var metatype_global_counter: usize = 0;
                         continue;
                     }
 
+                    // A bare-return tap binding (`~tap(e -> *): f |> obs(f.x)`)
+                    // needs the observed value IN SCOPE. When the source head
+                    // has no `: r` bind, a binding stamped on the void wrapper
+                    // continuation names nothing the emitter ever declares —
+                    // the tap step then references an undeclared identifier
+                    // (330_031). Mint the head's bind HERE and hand it to the
+                    // caller, which stamps it as the head invocation's
+                    // return_binding; the wrap rewrites the tap's references
+                    // to it via the source_produced path.
+                    var effective_source_produced = source_produced;
+                    if (!is_metatype_tap and tap_binding != null and source_produced == null) {
+                        var head_buf: [32]u8 = undefined;
+                        const head_name = std.fmt.bufPrint(&head_buf, "_tap_{d}", .{(tap_salt ^ terminal_id) % 100000}) catch "_tap_head";
+                        synthesized_head_bind = alloc.dupe(u8, head_name) catch null;
+                        effective_source_produced = synthesized_head_bind;
+                    }
+
                     terminal_cont = try wrapContinuation(
                         alloc,
                         &terminal_cont,
@@ -881,7 +899,7 @@ var metatype_global_counter: usize = 0;
                         tap_is_opaque,
                         tap_cont.branch,
                         source_event,
-                        source_produced,
+                        effective_source_produced,
                     );
                     tap_inserted = true;
                     break;
@@ -893,7 +911,7 @@ var metatype_global_counter: usize = 0;
 
                 var result = try alloc.alloc(ast.Continuation, 1);
                 result[0] = terminal_cont;
-                return .{ .conts = result, .modified = true };
+                return .{ .conts = result, .modified = true, .head_bind = synthesized_head_bind };
             }
 
             var new_conts = try alloc.alloc(ast.Continuation, continuations.len);
@@ -1045,6 +1063,23 @@ var metatype_global_counter: usize = 0;
                     );
                     this_cont.continuations = nested.conts;
                     if (nested.modified) any_modified = true;
+                    // The nested terminal path minted a head bind for a
+                    // bare-return tap on THIS step's result — stamp it as the
+                    // step invocation's return_binding so the emitter declares
+                    // the value the tap references (330_031).
+                    if (nested.head_bind) |hb| {
+                        if (this_cont.node) |s| {
+                            if (s == .invocation) {
+                                var new_inv = s.invocation;
+                                new_inv.return_binding = hb;
+                                this_cont.node = ast.Step{ .invocation = new_inv };
+                            } else if (s == .label_with_invocation) {
+                                var new_lwi = s.label_with_invocation;
+                                new_lwi.invocation.return_binding = hb;
+                                this_cont.node = ast.Step{ .label_with_invocation = new_lwi };
+                            }
+                        }
+                    }
                 }
 
                 const should_wrap = allow_wrap_for_source and (force_dest_match or dest_matches) and !dest_is_opaque and !skip_wrap_for_tap;
@@ -1117,8 +1152,8 @@ var metatype_global_counter: usize = 0;
             opaque_events: *const std.StringHashMap(void),
             tap_branches: []const ast.Continuation,  // ALL tap continuations
             is_meta: bool,
-        ) !struct { conts: []ast.Continuation, modified: bool } {
-            return transformContinuations(
+        ) !struct { conts: []ast.Continuation, modified: bool, head_bind: ?[]const u8 = null } {
+            const inner = try transformContinuations(
                 alloc,
                 continuations,
                 tap_branches,
@@ -1137,6 +1172,7 @@ var metatype_global_counter: usize = 0;
                 opaque_events,
                 null,
             );
+            return .{ .conts = inner.conts, .modified = inner.modified, .head_bind = inner.head_bind };
         }
     };
 
@@ -1211,9 +1247,14 @@ var metatype_global_counter: usize = 0;
             }
 
             if (flow_modified) {
+                // A bare-return tap on an unbound head minted the head's bind
+                // (330_031) — stamp it so the emitter declares the observed
+                // value the tap step references.
+                var head_inv = flow.inv().*;
+                if (result.head_bind) |hb| head_inv.return_binding = hb;
                 // Create modified flow
                 const new_flow = ast.Flow{
-                    .body = ast.rootSite(flow.inv().*, new_continuations, flow.location),
+                    .body = ast.rootSite(head_inv, new_continuations, flow.location),
                     .annotations = flow.annotations,
                     .pre_label = flow.pre_label,
                     .super_shape = flow.super_shape,
@@ -1326,8 +1367,12 @@ var metatype_global_counter: usize = 0;
                     }
 
                     if (flow_modified) {
+                        // Same head-bind stamp as the top-level flow site
+                        // (330_031): a bare-return tap on an unbound head.
+                        var head_inv = flow.inv().*;
+                        if (result.head_bind) |hb| head_inv.return_binding = hb;
                         const new_flow = ast.Flow{
-                            .body = ast.rootSite(flow.inv().*, new_continuations, flow.location),
+                            .body = ast.rootSite(head_inv, new_continuations, flow.location),
                             .annotations = flow.annotations,
                             .pre_label = flow.pre_label,
                             .super_shape = flow.super_shape,
