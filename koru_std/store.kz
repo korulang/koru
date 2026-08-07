@@ -9617,8 +9617,10 @@ fn storeLowerText(
         .path = H.mkPathH(allocator, home_ns, stripe_name),
         .args = &[_]ast.Arg{},
     };
+    // The chain tail joins the rewritten call (690_028's `stored` contract):
+    // `stripe(s) |> tail` runs the tail after the sweep, never swallows it.
     return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
-        .body = ast.rootSite(stripe_inv, &[_]ast.Continuation{}, flow.location),
+        .body = ast.rootSite(stripe_inv, flow.body.continuations, flow.location),
         .pre_label = null,
         .impl_of = flow.impl_of,
         .super_shape = null,
