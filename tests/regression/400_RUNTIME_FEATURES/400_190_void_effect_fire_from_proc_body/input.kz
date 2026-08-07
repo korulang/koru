@@ -1,0 +1,7 @@
+const std = @import("std");
+
+~proc boot|zig {
+    ready();
+}
+
+~proc report|zig { std.debug.print("ready fired\n", .{}); }

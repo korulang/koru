@@ -1,0 +1,5 @@
+~proc boot|js {
+    ready();
+}
+
+~proc report|js { console.log("ready fired"); }
