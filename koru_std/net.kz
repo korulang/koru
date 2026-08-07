@@ -1,54 +1,63 @@
-// Koru Standard Library - Network Operations (Simplified Demo)
-// Pure events with stub implementations for showcase
+// Koru Standard Library — Network Operations
+//
+// THIS SURFACE IS NOT IMPLEMENTED. Every tor below refuses at compile time and
+// names what to reach for instead.
+//
+// It previously shipped stub bodies that reported SUCCESS: `tcp.listen` printed
+// "[NET] Server would listen on port {}" and returned `listening`; `tcp.accept`
+// returned a hardcoded connection id of 1; `tcp.read` returned a fixed string,
+// `"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"`, on every call. A program built
+// on those compiled, ran, printed plausible logs, and served the same fabricated
+// request forever — the substitute-output shape the project bans outright.
+//
+// The declarations stay so the refusal can carry an address. Importing this
+// module is fine; reaching for a tor is what fails.
+//
+// WHERE THE REAL SURFACES ARE:
+//   HTTP client  — `koru/curl` in koru-libs: a libcurl lift behind phantom
+//                  obligations (`*Response<open!>`), with sync and multi-transfer
+//                  paths. This is the one to use today.
+//   HTTP server  — Orisha, its own repo: a compile-time HTTP server framework.
+//                  `orisha:handler` + `orisha:serve(port:)`.
+//   Raw frames   — `unikraft/net` in koru-libs lifts uknetdev, but its surface is
+//                  Ethernet frames, not sockets. There is no TCP/IP stack in
+//                  this project.
 
-const std = @import("std");
-
-// TCP Server (simplified for demo)
 ~pub tor tcp.listen { port: u16 }
 | listening u16
 | error string
 
 ~proc tcp.listen|zig {
-    std.debug.print("[NET] Server would listen on port {}\n", .{port});
-    // For demo, just return success
-    return .{ .@"listening" = .{ .port = port } };
+    @compileError("std/net:tcp.listen is not implemented. For an HTTP server use Orisha (~orisha:serve(port:)); for an HTTP client use koru/curl. There is no socket surface in koru_std.");
 }
 
-// Accept connection (stub)
 ~pub tor tcp.accept { port: u16 }
 | connection u32
 | error string
 
 ~proc tcp.accept|zig {
-    std.debug.print("[NET] Would accept connection\n", .{});
-    return .{ .@"connection" = .{ .id = 1 } };
+    @compileError("std/net:tcp.accept is not implemented. For an HTTP server use Orisha, which owns its own accept loop. There is no socket surface in koru_std.");
 }
 
-// Read from connection (stub)
 ~pub tor tcp.read { id: u32, max_bytes: usize }
 | data string
 | closed
 | error string
 
 ~proc tcp.read|zig {
-    // Return sample HTTP request
-    const sample = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    return .{ .@"data" = .{ .bytes = sample } };
+    @compileError("std/net:tcp.read is not implemented. For an HTTP client use koru/curl (`koru/curl:get`, `koru/curl:post`). There is no socket surface in koru_std.");
 }
 
-// Write to connection (stub)
 ~pub tor tcp.write { id: u32, data: string }
 | sent usize
 | error string
 
 ~proc tcp.write|zig {
-    std.debug.print("[NET] Would write {} bytes\n", .{data.len});
-    return .{ .@"sent" = .{ .bytes = data.len } };
+    @compileError("std/net:tcp.write is not implemented. For an HTTP client use koru/curl; for a server response use Orisha's `response { status:, body:, content_type: }`. There is no socket surface in koru_std.");
 }
 
-// Close connection (stub)  
 ~pub tor tcp.close { id: u32 }
 
 ~proc tcp.close|zig {
-    std.debug.print("[NET] Connection {} closed\n", .{id});
+    @compileError("std/net:tcp.close is not implemented. koru/curl closes a response through its `<open!>` obligation; Orisha owns its own connection lifetime.");
 }
