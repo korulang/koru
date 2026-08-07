@@ -48,3 +48,32 @@ the half you tested — it manufactures confidence in the half that has none.
 Related: [[frag-a-record-nothing-re-reads-becomes-a-fossil-that-gives-orders]]
 — the sibling failure. There a record was true and went stale; here it was never
 enforced at all. Both are claims nothing executes, and both read as authority.
+
+## The same asymmetry in CODE PATHS, not just rule statements
+
+2026-08-07, twice in one session, both found by pushing a real program through
+the compiler rather than by reading it:
+
+- A `->` produce lowering existed for bare-return tors and had **no counterpart**
+  for tors with named branches, so a flow could only ever implement the former.
+  Every flow-impl test in the suite produces a bare value — the untested case was
+  the missing one. Fixed and pinned as 350_017.
+- `rewriteModToBare` was called on **three of four** variant-emission paths. The
+  fourth — the one an effect-bearing tor takes — shipped `$mod.` verbatim into
+  the emitted Zig. Fixed; the pin (370_010) is red on a further defect.
+
+So the form generalises past prose: **where a behaviour is implemented once per
+path, it is real only on the paths some test walks.** N-of-M coverage does not
+average out; the unwalked path is not "slightly less correct", it is arbitrary,
+because nothing was ever pushing it anywhere.
+
+**The countable tell, restated for code:** grep the helper, count its call sites,
+and compare against the number of paths that structurally need it. Three of four
+looks like thoroughness and is the exact signature of the bug. The healthy
+version of "we do X everywhere" is a single chokepoint, not four call sites that
+agree today.
+
+And the sharpest instance: a *diagnostic* is the untested path par excellence —
+see [[frag-a-diagnostics-hint-is-a-claim-not-a-tested-path]], where the hint
+named a spelling no test compiled, and following the compiler's own advice was
+the way into the bug.

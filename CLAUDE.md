@@ -46,6 +46,18 @@ Each test's backend build compiles its emitted Zig against the **live** `src/`
 tree, so a half-written file there turns into reds that name your own edit —
 33 of them in one measured case, all reported as `backend`, none real.
 
+**A board run from a worktree under-reports, and says nothing about it.** Tests
+that reach outside the repo do it by *relative depth* — `350_013`'s `koru.json`
+names `../../../../../../orisha/lib`, six levels up. From the main checkout that
+lands on the real library; from `.claude/worktrees/<name>/` the same six levels
+land somewhere that does not exist, and the test fails `frontend` with
+`KORU002 module not found`. Measured 2026-08-08: **4 such tests**, one of which
+was green on the main-tree baseline and looks exactly like a regression.
+
+So before calling any worktree board's delta real: grep the failures for
+`KORU002.*module not found` and subtract them. They are a property of *where you
+ran*, not of what you changed.
+
 **A filter that matches nothing is dropped in silence.** `./run_regression.sh
 <real_name> <typo>` runs one test and prints `ALL TESTS PASSED`, exit 0. Zero
 matches refuses (`f1a74bd1`); a *partial* match does not. So a control set

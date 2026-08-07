@@ -1,0 +1,54 @@
+// Pins TWO things about a variant-selected tor that also carries an EFFECT arm.
+//
+// 1. `$mod.` is rewritten in EVERY variant body, not only the selected one.
+//    Both bodies are emitted regardless of which is chosen, so an unselected
+//    variant using `$mod.` shipped it verbatim into the Zig and failed the
+//    build on a platform whose variant was never selected. FIXED.
+//
+// 2. RED, and the reason this test does not pass: an effect-bearing tor with
+//    proc variants emits each variant as a STANDALONE `handler__<variant>`
+//    function, whose body still calls the effect arm — `tick(...)` — which
+//    does not exist in that scope. The effect arm is only in scope on the
+//    inline-splice path the bare handler takes. So today an effect arm and a
+//    proc variant cannot be combined at all, which is exactly what a
+//    platform-selected event loop needs.
+//
+// A proc body that carries effect branches splices into its caller, so module
+// scope is gone and KORU112 requires `$mod.<name>`. Both variant bodies are
+// emitted into the binary regardless of which is selected — so an unselected
+// variant using `$mod.` shipped it verbatim into the Zig, failing the build on
+// a platform whose variant was never chosen.
+//
+// `alt` is never selected here. It must still compile.
+
+~import std/io
+
+const std = @import("std");
+const factor: i32 = 10;
+
+~tor pump { n: i32 }
+! tick i32
+| done string
+
+~proc pump|zig {
+    tick(n * $mod.factor);
+    return .{ .done = "zig" };
+}
+
+~proc pump|alt {
+    tick(n * $mod.factor * 2);
+    return .{ .done = "alt" };
+}
+
+~tor drive { n: i32 }
+| finished string
+| blank
+
+~drive =
+    pump(n)
+    ! tick _ |> _
+    | done d -> finished d
+
+~drive(n: 3)
+| finished f |> std/io:print.ln(f)
+| blank |> std/io:print.ln("blank")
