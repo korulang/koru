@@ -21,3 +21,33 @@ asserting nothing — deleting that marker is the same human decision as this on
 
 Noted at the time as "fine as written", which is an opinion about the surface, not a
 ruling about which layer is wrong.
+
+EVIDENCE ADDED 2026-08-07 — reading (b) got substantially stronger, but the
+call is still yours.
+
+The identical anti-pattern was found and fixed elsewhere the same day.
+`std/runtime:parse.source` handed interpreted source to the COMPILER's file
+parser under an invented filename ("runtime_eval.kz"), and because that parser
+picks host-vs-pure from the extension (src/parser.zig:707, defaulting to
+host-embedded for anything not ending `.k`), the invented name silently
+answered a question the source does not have. Measured there: `greet(...)`
+failed and `~greet(...)` ran green — the exact inverse of the shipped rule. The
+fix carried no design content: the parse entry point now takes no file name at
+all, so there is no parameter left to answer by accident.
+
+Lars, on being shown that: "There is no 'dialect' for interpreted files, it's
+always PURE KORU." That ruling is about INTERPRETER source, which a test body
+is not — a test body is nested Koru inside a real file that has a real dialect.
+So it does not settle this one by itself. What it does settle is the shape of
+the mistake: a synthetic filename is not a neutral placeholder, it is a silent
+answer.
+
+One more thing that points the same way, and is inside this file rather than
+by analogy: `koru_std/testing.kz:36` ALREADY prefers the source's real file
+when it has one, and only falls back to "__test__.kz". Line 280 hardcodes the
+fallback unconditionally. Two lines in one file disagree about whether the real
+filename matters, which makes it likelier that one of them is simply a bug
+rather than that the language wants a mode declaration here.
+
+Still unresolved and still a human call: whether a test body should inherit the
+entry file's dialect (b), or declare its own mode (the TODO's second reading).

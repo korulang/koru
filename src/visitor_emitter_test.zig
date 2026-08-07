@@ -368,3 +368,41 @@ test "writeZigStringLiteral: empty string" {
     try ce.writeZigStringLiteral("");
     try testing.expectEqualStrings("\"\"", ce.getOutput());
 }
+
+// ============================================================================
+// AST-TYPE PREFIXING — the alias decides, and it should not
+// ============================================================================
+//
+// `writeFieldType` rewrites bare AST type names to `__koru_ast.<Type>`, and
+// skips the rewrite when the text already contains "ast." — a SUBSTRING test,
+// not a check of what the module was actually imported as. So the rewrite is
+// governed by the spelling of the caller's alias:
+//
+//     const ast     = @import("ast");   ->  "ast.Flow"      untouched, compiles
+//     const ast_mod = @import("ast");   ->  "ast_mod.Flow"  becomes
+//                                          "ast_mod.__koru_ast.Flow", which does not
+//
+// Both name the same module. `koru_std/runtime.kz` used the second spelling and
+// could not declare a tor returning a Flow until it was renamed to match
+// `interpreter.kz` (2026-08-07). Nothing warns; the failure surfaces as a Zig
+// error in generated code naming a member the ast module does not have.
+//
+// Both tests below pin CURRENT behaviour, so the trap is visible and a fix has
+// to come here and say so. The second one is the defect.
+
+test "writeFieldType: an `ast`-spelled alias is left alone" {
+    var buffer: [256]u8 = undefined;
+    var ce = emitter_helpers.CodeEmitter.init(&buffer);
+    const field = ast.Field{ .name = "flow", .type = "*const ast.Flow" };
+    try emitter_helpers.writeFieldType(&ce, field, null);
+    try testing.expectEqualStrings("*const ast.Flow", ce.getOutput());
+}
+
+test "writeFieldType: any other alias for the same module is mangled" {
+    // Documents the defect rather than endorsing it — see the block comment.
+    var buffer: [256]u8 = undefined;
+    var ce = emitter_helpers.CodeEmitter.init(&buffer);
+    const field = ast.Field{ .name = "flow", .type = "*const ast_mod.Flow" };
+    try emitter_helpers.writeFieldType(&ce, field, null);
+    try testing.expectEqualStrings("*const ast_mod.__koru_ast.Flow", ce.getOutput());
+}
