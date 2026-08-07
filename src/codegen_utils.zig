@@ -548,6 +548,144 @@ pub fn lowerKoruExpr(
     return out.toOwnedSlice(allocator);
 }
 
+/// HOW A HOST SPELLS THE SHAPES A TRANSFORM EMITS — the sibling of
+/// `lowerKoruExpr` one level up. That function renders an EXPRESSION; this one
+/// renders the STRUCTURE a generated body is built out of, where the two hosts
+/// differ in shape rather than in syntax.
+///
+/// A terminal branch value is the clearest case. Zig returns a tagged-union
+/// literal; JS returns `{ tag: "<name>", <name>: payload }` — the payload key
+/// REPEATS the branch name (js_emitter.zig:594 writes it, :1381 and :2847 read
+/// it back). Nothing about `.{ .full = x }` suggests that, so a site spelling it
+/// by hand gets it right the first four times and wrong the fifth.
+///
+/// This lives here, not in the transform that first needed it, for the reason
+/// `lowerKoruExpr` does: `std/store` emits these shapes from `new` AND from
+/// `query`, and a second copy beside the first is how the two spellings drift.
+/// Compiler-side placement also matters — a helper hoisted to a `.kz` module's
+/// own scope is emitted into every program that imports it, 90 dead lines of
+/// compiler machinery in a shipped artifact.
+pub const HostShape = struct {
+    /// `| name <value>` — a payload that IS the value.
+    pub fn branchOne(alloc: std.mem.Allocator, t: HostTarget, name: []const u8, value: []const u8) []const u8 {
+        return if (t == .js)
+            std.fmt.allocPrint(alloc, "{{ tag: \"{s}\", {s}: {s} }}", .{ name, name, value }) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, ".{{ .{s} = {s} }}", .{ name, value }) catch unreachable;
+    }
+
+    /// `| name` — a branch that carries nothing.
+    pub fn branchEmpty(alloc: std.mem.Allocator, t: HostTarget, name: []const u8) []const u8 {
+        return if (t == .js)
+            std.fmt.allocPrint(alloc, "{{ tag: \"{s}\", {s}: {{}} }}", .{ name, name }) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, ".{{ .{s} = .{{}} }}", .{name}) catch unreachable;
+    }
+
+    /// `| name { a, b }` — a record payload. `body` is the already-joined field
+    /// list in the host's own spelling, which `recField` produces.
+    pub fn branchRec(alloc: std.mem.Allocator, t: HostTarget, name: []const u8, body: []const u8) []const u8 {
+        return if (t == .js)
+            std.fmt.allocPrint(alloc, "{{ tag: \"{s}\", {s}: {{ {s} }} }}", .{ name, name, body }) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, ".{{ .{s} = .{{ {s} }} }}", .{ name, body }) catch unreachable;
+    }
+
+    /// One `name = value` pair inside a record payload or argument object.
+    pub fn recField(alloc: std.mem.Allocator, t: HostTarget, name: []const u8, value: []const u8) []const u8 {
+        return if (t == .js)
+            std.fmt.allocPrint(alloc, "{s}: {s}", .{ name, value }) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, ".{s} = {s}", .{ name, value }) catch unreachable;
+    }
+
+    /// A handler's ARGUMENT object — `.{ … }` on Zig, `{ … }` on JS. Not a
+    /// branch: nothing is tagged, it is just the input record. `body` is the
+    /// already-joined pair list from `recField`; empty for a no-arg call.
+    pub fn argRec(alloc: std.mem.Allocator, t: HostTarget, body: []const u8) []const u8 {
+        if (body.len == 0) return if (t == .js) "{}" else ".{}";
+        return if (t == .js)
+            std.fmt.allocPrint(alloc, "{{ {s} }}", .{body}) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, ".{{ {s} }}", .{body}) catch unreachable;
+    }
+
+    /// A COLUMN-ORDINAL DISPATCH. The arms' statements are largely the same text
+    /// on both hosts (`__koru_store_x.hp[__koru_r] = value_0;` needs no
+    /// translation); what differs is the frame. Zig writes a switch EXPRESSION
+    /// whose arms are `blk: { … break :blk v; }`, closed with `else =>
+    /// unreachable`. JS writes a switch STATEMENT whose arms `return`, followed
+    /// by a throw — falling out of a JS switch yields `undefined`, and the
+    /// caller would read that as a branch object.
+    pub fn switchHead(t: HostTarget) []const u8 {
+        return if (t == .js) "switch (field) {\n" else "return switch (field) {\n";
+    }
+
+    pub fn switchArmOpen(alloc: std.mem.Allocator, t: HostTarget, ordinal: usize) []const u8 {
+        return if (t == .js)
+            std.fmt.allocPrint(alloc, "  case {d}: {{ ", .{ordinal}) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, "    {d} => blk: {{ ", .{ordinal}) catch unreachable;
+    }
+
+    pub fn switchArmClose(alloc: std.mem.Allocator, t: HostTarget, value: []const u8) []const u8 {
+        return if (t == .js)
+            std.fmt.allocPrint(alloc, "return {s}; }}\n", .{value}) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, "break :blk {s}; }},\n", .{value}) catch unreachable;
+    }
+
+    pub fn switchTail(alloc: std.mem.Allocator, t: HostTarget, unit: []const u8, store: []const u8) []const u8 {
+        return if (t == .js)
+            std.fmt.allocPrint(alloc, "}}\nthrow new Error(\"{s}: field index \" + field + \" is not a column of store '{s}'\");", .{ unit, store }) catch unreachable
+        else
+            "    else => unreachable,\n};";
+    }
+
+    /// `row` arrives DENSE, so Zig only needs the index cast; JS has no such
+    /// distinction and binds it straight through, keeping one name for the
+    /// statements above to share.
+    pub fn rowHead(t: HostTarget) []const u8 {
+        return if (t == .js) "const __koru_r = row;\n" else "const __koru_r = @as(usize, @intCast(row));\n";
+    }
+
+    /// A COUNTED LOOP over `0..limit`, binding `cursor`. Zig's range-`for` and
+    /// JS's three-clause `for` are the same loop and share nothing textually.
+    pub fn loopHead(alloc: std.mem.Allocator, t: HostTarget, cursor: []const u8, limit: []const u8) []const u8 {
+        return if (t == .js)
+            std.fmt.allocPrint(alloc, "for (let {s} = 0; {s} < {s}; {s}++) {{\n", .{ cursor, cursor, limit, cursor }) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, "for (0..{s}) |{s}| {{\n", .{ limit, cursor }) catch unreachable;
+    }
+
+    /// Bind a loop-local `const`. Zig warns on an unused local, and a projected
+    /// column the body never reads is normal, so the Zig arm carries the `_ = &x`
+    /// discard. JS has no such rule and the discard is a syntax error there.
+    pub fn constBind(alloc: std.mem.Allocator, t: HostTarget, name: []const u8, value: []const u8) []const u8 {
+        return if (t == .js)
+            std.fmt.allocPrint(alloc, "const {s} = {s};\n", .{ name, value }) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, "const {s} = {s};\n_ = &{s};\n", .{ name, value, name }) catch unreachable;
+    }
+
+    /// A dense cursor used where the host expects a signed integer. Zig needs
+    /// the cast; JS has one number type.
+    pub fn asI64(alloc: std.mem.Allocator, t: HostTarget, expr: []const u8) []const u8 {
+        return if (t == .js)
+            alloc.dupe(u8, expr) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, "@as(i64, @intCast({s}))", .{expr}) catch unreachable;
+    }
+
+    /// A dense cursor used as an INDEX. Same split, different target type.
+    pub fn asIndex(alloc: std.mem.Allocator, t: HostTarget, expr: []const u8) []const u8 {
+        return if (t == .js)
+            alloc.dupe(u8, expr) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, "@as(usize, @intCast({s}))", .{expr}) catch unreachable;
+    }
+};
+
 fn exprIdentChar(c: u8) bool {
     return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
         (c >= '0' and c <= '9') or c == '_';

@@ -135,8 +135,25 @@ const trim = (s) => s.split('\n').map((l) => l.replace(/[ \t]+$/, '')).join('\n'
 // part of a stack trace that says nothing about what went wrong.
 function firstError(raw) {
   const lines = (raw || '').split('\n').map((l) => l.trim()).filter(Boolean)
-  const named = lines.find((l) => /(^|\s)(\w*Error|error\[?\w*\]?|panic)[:\s]/i.test(l))
-  return (named || lines[0] || 'failed').slice(0, 200)
+  const idx = lines.findIndex((l) => /(^|\s)(\w*Error|error\[?\w*\]?|panic)[:\s]/i.test(l))
+  if (idx === -1) return (lines[0] || 'failed').slice(0, 200)
+  return withSubject(lines, idx, lines[idx]).slice(0, 200)
+}
+
+// A panic names the ERROR; the line above it names the SUBJECT, and for the
+// emitter that subject is a SYNTHESIZED identifier that appears in no source
+// file: `[js_emitter] event '__store_sweeprun_squad_L39' has no |js proc`, then
+// `panic: js_emitter.emit failed: NoJsProcBody`. Keeping only the panic
+// collapsed 84 board rows into one indistinguishable wall — they were seven
+// separate jobs of very different size, and the only way to rank them was to
+// recompile all 84 and read this line out of the log by hand. The board should
+// carry it.
+const SUBJECT = /^\[[a-z_]+\] .+/
+function withSubject(lines, idx, msg) {
+  for (let i = idx - 1; i >= 0 && i >= idx - 3; i--) {
+    if (SUBJECT.test(lines[i])) return `${msg} — ${lines[i]}`
+  }
+  return msg
 }
 
 // The Zig baseline, as the real closer reads it (regression_lib.sh:277):
