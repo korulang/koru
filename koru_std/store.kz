@@ -2467,8 +2467,14 @@ fn storeLowerText(
                     std.fmt.allocPrint(alloc, "__koru_store_{s}.__koru_resolve({s})", .{ store, cur }) catch unreachable;
                 // A char column reads as the string slice up to the first NUL
                 // (the same shape the qrow projection binds); scalars read
-                // their cell slot directly.
+                // their cell slot directly. On the JS target the char cell IS
+                // a string (seeded "", written by truncation at insert), so
+                // the read is the plain column read — `@import(...)` has no JS
+                // lowering and must never reach that emitter.
                 if (is_char) {
+                    if (std.mem.eql(u8, CompilerEnv.lang, "js")) {
+                        return std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[{s}]", .{ store, field, idx }) catch unreachable;
+                    }
                     return std.fmt.allocPrint(alloc, "@import(\"std\").mem.sliceTo(&(&__koru_store_{s}.{s})[{s}], 0)", .{ store, field, idx }) catch unreachable;
                 }
                 return std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[{s}]", .{ store, field, idx }) catch unreachable;
@@ -2635,6 +2641,16 @@ fn storeLowerText(
                                         @constCast(a).source_value = fresh;
                                     }
                                 }
+                            }
+                            // Template expand (`if`/`for`) froze its rendered
+                            // body — condition text included — into inline_body
+                            // BEFORE this walk runs (690_074's freeze). The row
+                            // binding has to reach into the frozen text too, or
+                            // an `if(e.id == 7)` under the arm ships its raw
+                            // surface. Mutate via the NODE pointer — the switch
+                            // capture is a temporary (the 690_074 trap).
+                            if (n.invocation.inline_body) |ib| {
+                                n.invocation.inline_body = entityRefs(alloc, ib, store, fields, char_caps, owned, false, true, bind, used, cur, dense);
                             }
                         },
                         else => {},
@@ -4386,7 +4402,13 @@ fn storeLowerText(
                 .pre_label = null,
                 .impl_of = H.mkPathH(allocator, home_ns, qbody_name),
                 .super_shape = null,
-                .inline_body = null,
+                // A template root (`! row e |> if(...)`) carries its rendered
+                // body on the INVOCATION (frozen by the per-call pass while it
+                // was still nested under the arm). The transplant makes it the
+                // flow's root, and the impl emitter reads the FLOW's
+                // inline_body — promote it, or the emitter falls back to
+                // calling a `koru_control.if_event` that is never emitted.
+                .inline_body = body_node.invocation.inline_body,
                 .preamble_code = null,
                 .is_pure = false,
                 .is_transitively_pure = false,
