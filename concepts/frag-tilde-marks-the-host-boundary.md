@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-tilde-marks-the-host-boundary
-provenance: ruled while orienting on the budgeted interpreter / resource bridge / shell direction; settles the design question 430_047's TODO had carried open since 2026-05-15. Corrected 2026-08-07 after Lars asked whether the interpreter still accepted `~` and the answer turned out to be "on one route it is mandatory"
+provenance: ruled while orienting on the budgeted interpreter / resource bridge / shell direction; settles the design question 430_047's TODO had carried open since 2026-05-15. Corrected 2026-08-07 after Lars asked whether the interpreter still accepted `~` and the answer turned out to be "on one route it is mandatory". Evolved later the same day by a four-repo sweep for the forbidden spelling: the corpus came back clean, but the enforcement did not — the compiler half of the rule had no pin, and the interpreter's flow parser still documents and unit-tests the tilde as optional beneath every guarded door
 ts: 2026-08-07
 ---
 
@@ -70,6 +70,38 @@ Two things follow, and they are the durable part:
 The residue is in code rather than here: the parse entry point takes no file
 name at all, so the question that produced this has no parameter left to be
 answered by accident.
+
+## The door was closed; the room still disagrees
+
+Swept the same day, and the closing claim above needs qualifying. Fixing the
+fourth door fixed *a door*. One layer beneath every door, the interpreter's own
+flow parser still documents the tilde as optional, strips it when present, and
+carries a unit test asserting that acceptance — named for the behaviour it
+protects, running on every `zig build test`.
+
+So the rule is **guard-shaped, not machinery-shaped**. Each executing entry
+point calls a check before dispatching; the thing they all dispatch *into*
+believes the opposite. Every current route is walled and the corpus measured
+clean, which is exactly why this is worth writing down instead of trusting:
+the arrangement is correct today and self-repealing tomorrow. The next caller
+to reach the parser directly does not *forget* the wall — it never meets one,
+and inherits a subsystem that treats the forbidden spelling as ordinary. That
+is the fourth door's topology reproduced one level down, with a green test
+holding the old belief in place.
+
+The general form, and the reason this outlives the tilde: **a guard at each
+door is not the same as a rule in the room.** Guards enumerate; rules hold. A
+rule enforced only by enumeration is bounded by whoever last counted the doors
+— and this fragment has already been wrong about that count once.
+
+Being unpinned is the same defect in the other direction. The `.k` half of the
+rule ran a year enforced by the parser and asserted by nothing; its diagnostic
+existed at exactly one site, so any refactor of the boundary would have taken
+it away silently, with a green board. Pinned now (210_203), quoting the
+diagnostic's own words rather than its code, so rewording the wall is also a
+red. The interpreter half had pins throughout; nobody noticed the compiler half
+did not, because the *rule* felt covered — which is what a half-pinned rule
+feels like from the inside.
 
 Related: [[frag-k-file-is-a-full-program]] (the `.k` half of the same rule),
 [[frag-a-watcher-off-the-normal-path-is-not-a-wall]] (the general shape).

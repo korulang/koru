@@ -1,0 +1,4 @@
+FRONTEND_COMPILE_ERROR
+CONTAINS error[PARSE003]
+CONTAINS host->Koru switch
+CONTAINS pure-Koru '.k' file
