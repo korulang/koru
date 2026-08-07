@@ -44,24 +44,45 @@ closes it in another. The JS cell did exactly that: `" = {\n"` (a real string, s
 the `{` is skipped) opened the object and `\\}};` (a multiline string, so both
 braces are counted) closed it. Net minus two.
 
-## What follows
+## FIXED, same day — the belief now lives in code and this is the pointer
 
-- **The fix is one line in the scanner and it has not been made.** `\\` outside a
-  string should `break` the line exactly as `//` does. `src/parser.zig` is
-  ask-first by `AGENTS.md`, so this is written down rather than done. Until then
-  the rule a `.kz` author has to hold in their head is: *a proc body must be
-  brace-balanced as raw source text, counting `{{` as two.*
-- **A workaround exists and should not be mistaken for the fix.** Appending a
-  closing brace as a plain `"};"` string keeps the source balanced, because plain
-  strings ARE skipped. That is what `store.kz` does now, with a comment saying
-  why. It is a local dodge around a scanner defect, not a design.
-- Same disease as
-  [[frag-a-host-line-local-degrades-tor-input-binding-to-textual-substitution]],
-  one stage earlier: a pass over source with no model of the language it is
-  reading. There the emitter substituted tokens inside string literals; here the
-  parser counts braces inside them. Both are cheap scanners standing where a
-  lexer belongs, and both fail by producing a wrong artifact rather than an
-  error.
-- **What would make this loud without fixing the scanner:** a proc whose body
-  ended early almost always leaves the enclosing module holding statements that
-  are not declarations. Nothing checks for that today.
+`\\` outside a string breaks the line exactly as `//` does
+(`src/parser.zig`, in `extractProcBody`), and
+`tests/regression/200_COMPILER_FEATURES/210_PARSER/210_202_multiline_string_is_not_proc_body_code`
+pins all three shapes. `store.kz`'s `"};"` dodge is gone; the cell closes its
+object in the format string like anything else, which is the proof the scanner
+really changed. Full board after: **zero regressions**.
+
+What is left here is only what the pin cannot hold.
+
+**The loud failure was the lucky one.** The defect has two shapes and they differ
+by nothing but nesting depth. At the top level the count goes NEGATIVE, and the
+parser does report `PARSE004: unbalanced braces in proc body` — pointing at the
+multiline string, naming no cause, but at least in the right file. One block
+deeper the same fragment lands the depth on exactly ZERO, and **nothing is
+reported at all**: the body is cut mid-`allocPrint`, its tail is emitted as
+declarations of the enclosing module, and the first sign of trouble is `zig`
+failing on a generated file. Which shape you get is decided by where you happened
+to write the fragment. The instance that started this was the silent one.
+
+**A survey found the blindness in one other scanner and it is unreachable.** Five
+sibling brace scanners in `src/parser.zig` (the top-level `=`, `->`, `:` and head-
+arrow finders, and the tor-shape reader) scan only Koru declaration and
+invocation text, which never carries a `\\`. The inline-flow collector inside
+`extractInlineFlows` genuinely does scan proc-body text and genuinely is blind —
+and sits behind `if (false)` with a hard error in front of it. Fixing it would
+have been speculative, so it was not fixed. Recorded because "we checked and left
+one alone deliberately" is a different fact from "we checked and found nothing."
+
+**The general shape survives the fix.** Same disease as
+[[frag-a-host-line-local-degrades-tor-input-binding-to-textual-substitution]],
+one stage earlier: a pass over source with no model of the language it is
+reading. There the emitter substituted tokens inside string literals; here the
+parser counted braces inside them. Both are cheap scanners standing where a lexer
+belongs, and both failed by producing a wrong artifact rather than an error. The
+scanner is one line better; it is still a scanner.
+
+**Still unguarded, and it is the mirror worth building.** A proc whose body ends
+early almost always leaves the enclosing module holding statements that are not
+declarations. Nothing checks for that, so the NEXT way a body gets truncated will
+be just as silent as this one was.

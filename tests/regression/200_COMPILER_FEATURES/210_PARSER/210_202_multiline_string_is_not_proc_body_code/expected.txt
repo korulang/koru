@@ -1,0 +1,7 @@
+flat = {
+  ok: true
+};
+nested = {
+  ok: true
+};
+}}{{

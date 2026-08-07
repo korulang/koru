@@ -1,0 +1,71 @@
+// PINS: a Zig `\\` multiline string inside a `~proc …|zig` body is DATA that
+// runs to end of line exactly like `//`, so its braces must never move the
+// depth `extractProcBody` counts to find that body's closing `}`.
+//
+// The scanner (src/parser.zig, extractProcBody) skipped `//` and `"…"`/`'…'`
+// but read `\\` as one escaped backslash: `escape_count` landed even and the
+// remainder of the line was counted as code. A fragment that is balanced in
+// the text it EMITS is then unbalanced in the SOURCE that writes it, because a
+// literal brace in a `std.fmt` format string is written `{{` / `}}` and counts
+// as TWO. Three shapes, and none of the two failures named a brace:
+//
+//   1. `flat` — the object's `{` arrives from a plain `"…"` (skipped) and its
+//      `}}` from a `\\` line (counted twice). Net -2 drove the depth below
+//      zero, and the parser blamed `PARSE004: unbalanced braces in proc body`
+//      on the multiline string — right file, wrong line, wrong cause.
+//   2. `nested` — the same fragment one block deeper, so the depth lands on
+//      exactly zero and NOTHING is reported. The body is cut mid-`allocPrint`,
+//      its tail is emitted as declarations of the enclosing module, and zig
+//      fails on the generated file with `expected ')', found '}'`.
+//   3. `inline-open` — `\\` opened after `=` on the same line, pinning that
+//      the rule is the token and not the line's first character.
+//
+// Provenance: koru_std/store.kz's JS container cell hit shape 2 and dodged it
+// by appending its `};` as a plain string.
+
+const std = @import("std");
+
+~import std/io
+
+~pub tor flat { name: string } -> string
+
+~proc flat|zig {
+    const alloc = std.heap.page_allocator;
+    const head = std.fmt.allocPrint(alloc, "{s} = {{\n", .{name}) catch unreachable;
+    const tail = std.fmt.allocPrint(alloc,
+        \\  ok: true
+        \\}};
+    , .{}) catch unreachable;
+    return std.fmt.allocPrint(alloc, "{s}{s}", .{ head, tail }) catch unreachable;
+}
+
+~pub tor nested { name: string } -> string
+
+~proc nested|zig {
+    const alloc = std.heap.page_allocator;
+    var out: []const u8 = "";
+    if (name.len > 0) {
+        const head = std.fmt.allocPrint(alloc, "{s} = {{\n", .{name}) catch unreachable;
+        const tail = std.fmt.allocPrint(alloc,
+            \\  ok: true
+            \\}};
+        , .{}) catch unreachable;
+        out = std.fmt.allocPrint(alloc, "{s}{s}", .{ head, tail }) catch unreachable;
+    }
+    return out;
+}
+
+~pub tor inline-open { name: string } -> string
+
+~proc inline-open|zig {
+    _ = name;
+    const raw = \\}}{{
+    ;
+    return raw;
+}
+
+~flat(name: "flat"): a |> std/io:print.ln("{{ a:s }}")
+
+~nested(name: "nested"): b |> std/io:print.ln("{{ b:s }}")
+
+~inline-open(name: "x"): c |> std/io:print.ln("{{ c:s }}")

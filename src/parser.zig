@@ -3783,6 +3783,19 @@ pub const Parser = struct {
                     break; // Rest of line is comment, stop processing
                 }
 
+                // Zig multiline string: a `\\` that is NOT inside a `"…"` or
+                // `'…'` literal opens a raw line whose remainder is DATA, and
+                // it runs to end of line exactly like `//`. Without this the
+                // two backslashes cancel in `escape_count` below and every
+                // brace in the string moves the depth — in a `std.fmt` format
+                // string a literal `}}` then counts as TWO closes, ending the
+                // proc early and spilling its tail into the enclosing module.
+                // Guarded on `!in_string`/`!in_char` so `"a\\b"` and `'\\'`
+                // keep their ordinary escape handling.
+                if (!in_string and !in_char and c == '\\' and i + 1 < line.len and line[i + 1] == '\\') {
+                    break; // Rest of line is multiline-string content
+                }
+
                 // Track escape sequences: odd number of backslashes means next char is escaped
                 if (c == '\\') {
                     escape_count += 1;

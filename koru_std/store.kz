@@ -2858,19 +2858,9 @@ fn storeLowerText(
                 \\    const slot = this.__koru_row_hslot[dense];
                 \\    return slot + this.__koru_brand * 16777216 + this.__koru_hslot_gen[slot] * 4294967296;
                 \\  }},
+                \\}};
             , .{ CAP, CAP, CAP, CAP, store_ordinal, store_name, store_name }) catch unreachable;
             jc.appendSlice(allocator, tail) catch unreachable;
-            // The object's closing brace is appended as a PLAIN string rather
-            // than written `}}` at the end of the format string above, and that
-            // is load-bearing rather than a style choice. `extractProcBody`
-            // (parser.zig:3725) finds this proc's end by counting braces, and it
-            // skips `//` and `"…"` but NOT `\\` multiline strings — so `}}` in
-            // one counts as TWO closes, while the `{` that opened this object
-            // lives inside a plain `"…"` string and is not counted at all. The
-            // body then ends two lines into the cell builder and everything
-            // after it is emitted as module declarations. See
-            // concepts/frag-a-proc-body-is-delimited-by-a-brace-scanner-that-cannot-see-multiline-strings.md
-            jc.appendSlice(allocator, "};") catch unreachable;
             break :blk_pjs jc.toOwnedSlice(allocator) catch unreachable;
         } else pc.toOwnedSlice(allocator) catch unreachable;
 
