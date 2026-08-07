@@ -1,51 +1,87 @@
-// invariants.kz - Declared invariants: rules a program states about itself
+// ============================================================
+// INVARIANTS - rules that only inference can check
+// ============================================================
+// Every checker this compiler ships decides a fixed question: does the
+// obligation discharge, does the shape match, is the proc pure. A rule outside
+// that set has no subject to hang on — "comments are written in English",
+// "this diff adds a fallback where the charter wants an assertion", "a record
+// whose subtractions are zero while its subject moved has stopped tracking
+// anything". No algorithm decides those. A reader does, and increasingly that
+// reader is an agent.
 //
-// An invariant is a rule that lives in the AST as data, declared with the same
-// [norun] mechanics as std/compiler:flag.declare. The declaration and its
-// reader ship together: this module also provides the `invariants` command
-// that lists the declared rules and gates on them.
+// So they are declared, not enforced. The declaration lives in the source, next
+// to the code it constrains, and is machine-enumerable — which is the entire
+// difference between an invariant and a comment. `koruc <file> invariants`
+// lists them; anything that wants to act on them (a git gate, a review pass, a
+// session brief) reads that list and needs no change here.
 //
-// Two dispositions, named by the event you invoke:
+// Weak links are the FEATURE. The rule is natural language on purpose: a
+// consumer that reads prose finds things a formal target vocabulary would have
+// excluded before it ever looked. Demanding a subject destroys the point.
 //
-//   ~std/invariants:inferred { ... }      permanent by nature — growth is good
-//   ~std/invariants:aspirational { ... }  debt by construction — growth is a smell
+// TWO DISPOSITIONS, OPPOSITE GRADIENTS. They differ by exactly one undecidable
+// bit — does the author intend this to become code — and the NAME carries it.
+// That is why they are two tors and not one with a field: you cannot tell them
+// apart afterwards by re-reading, so the distinction has to be made at the
+// moment of writing or it is lost.
 //
-// Usage in a program (or a repo's invariants manifest):
+//   inferred    — permanent by nature. Nothing will ever make "comments are in
+//                 English" a compiler check. Zero pressure; GROWTH IS GOOD.
+//                 A large `inferred` set is a well-described project.
 //
-//   ~import std/invariants
+//   aspirational — debt by construction. The author means this to become a real
+//                 check and has not built it yet. GROWTH IS A SMELL, and a gate
+//                 is entitled to say so.
 //
-//   ~std/invariants:inferred {
-//       "name": "comment-language",
-//       "tags": ["git-gate"],
-//       "rule": "Comments are written in English, not Norwegian."
+// Usage — a JSON block, exactly as `flag.declare` takes one:
+//
+//   std/invariants:inferred {
+//     "name": "comment-language",
+//     "tags": ["git-gate"],
+//     "rule": "Comments are written in English, not Norwegian."
 //   }
 //
-// A declaration may carry a "check": a shell command run from the compilation
-// root; exit 0 means the invariant holds, non-zero means it is violated, and
-// the command's output is the evidence. A declaration without a "check" is an
-// inference rule: the gate prints its rule text for the reviewer — human or
-// agent — because no algorithm can decide it.
+//   std/invariants:aspirational {
+//     "name": "no-silent-truncation",
+//     "tags": ["git-gate", "review"],
+//     "rule": "No emitter drops elements without a diagnostic. Today three
+//              sites slice and stay quiet; this should become a wall."
+//   }
 //
-// Then:
-//   koruc main.kz invariants          # List declared invariants
-//   koruc main.kz invariants gate     # Check "git-gate"-tagged invariants;
-//                                     # exits non-zero if any check fails
+// `name` is the identity — nothing else is. `tags` route it to consumers.
+// `rule` is the claim, in prose, addressed to whoever reads it.
+//
+// In pure `.k` there is no tilde — this is a Koru feature, not a
+// host-embedding one. A host-embedding file writes the same block with `~`.
+//
+// [norun] for the same reason as flag.declare: the declaration never executes.
+// It is data in the AST, harvested after the parse by whoever asks. That is
+// what makes the surface metacircular — a consumer discovers invariants by
+// parsing the program, never from a hardcoded list.
+
+~[comptime|norun]pub tor inferred { source: Source }
+
+~[comptime|norun]pub tor aspirational { source: Source }
 
 ~import std/compiler
 
 ~[comptime]
 
 // ============================================================
-// INVARIANTS COMMAND - List and gate declared invariants
+// INVARIANTS COMMAND - the module ships its own reader
 // ============================================================
+// `koruc <file> invariants` lists every invariant the program declares,
+// including those declared by imported libraries (`ast.allFlows` descends
+// through module declarations, so a library's own rules are visible rather
+// than silently dropped).
+//
+// This is the whole difference between an invariant and a comment: the set is
+// machine-enumerable. A git gate, a review pass or a session brief consumes
+// this listing and needs no change to this module to do it.
 
 ~std/compiler:command.declare {
     "name": "invariants",
-    "description": "List and gate declared invariants",
-    "subcommands": [
-        { "name": "list", "description": "List declared invariants (default)" },
-        { "name": "gate", "description": "Run git-gate invariants; exit non-zero on violation" }
-    ]
+    "description": "List the invariants a program declares"
 }
 
 ~[comptime|command]pub tor invariants {
@@ -56,203 +92,79 @@
 
 ~proc invariants|zig {
     const std = @import("std");
-
-    const Invariant = struct {
-        name: []const u8 = "",
-        disposition: []const u8 = "",
-        rule: []const u8 = "",
-        check: []const u8 = "",
-        git_gate: bool = false,
-    };
+    _ = argv;
 
     const helpers = struct {
-        // Extract "field": "value" from a Source block's JSON text.
-        // Handles \" and \\ escapes inside the value (a rule is natural
-        // language; a check is a shell command — both want quotes).
-        fn extractField(alloc: std.mem.Allocator, source: []const u8, field: []const u8) []const u8 {
-            var search_buf: [64]u8 = undefined;
-            const pat = std.fmt.bufPrint(&search_buf, "\"{s}\":", .{field}) catch return "";
-            const start = std.mem.indexOf(u8, source, pat) orelse return "";
-            var i = start + pat.len;
-            while (i < source.len and (source[i] == ' ' or source[i] == '\t' or source[i] == '\n')) : (i += 1) {}
-            if (i >= source.len or source[i] != '"') return "";
-            i += 1;
-            var out = std.ArrayListUnmanaged(u8){};
-            while (i < source.len) : (i += 1) {
-                const ch = source[i];
-                if (ch == '\\' and i + 1 < source.len) {
-                    i += 1;
-                    const esc = source[i];
-                    const decoded: u8 = switch (esc) {
-                        'n' => '\n',
-                        't' => '\t',
-                        else => esc,
-                    };
-                    out.append(alloc, decoded) catch return "";
-                    continue;
-                }
-                if (ch == '"') break;
-                out.append(alloc, ch) catch return "";
+        // Pull one `"field": "value"` out of a declaration block. Returns an
+        // empty slice when absent, so a malformed block degrades to a visibly
+        // incomplete row rather than a crash.
+        fn jsonField(source: []const u8, field: []const u8) []const u8 {
+            var needle_buf: [64]u8 = undefined;
+            const needle = std.fmt.bufPrint(&needle_buf, "\"{s}\"", .{field}) catch return "";
+            const at = std.mem.indexOf(u8, source, needle) orelse return "";
+            var i = at + needle.len;
+            while (i < source.len and (source[i] == ' ' or source[i] == ':')) : (i += 1) {}
+            if (i >= source.len) return "";
+            if (source[i] == '"') {
+                i += 1;
+                const start = i;
+                while (i < source.len and source[i] != '"') : (i += 1) {}
+                return source[start..i];
             }
-            return out.toOwnedSlice(alloc) catch "";
-        }
-
-        fn hasTag(source: []const u8, tag: []const u8) bool {
-            const key = std.mem.indexOf(u8, source, "\"tags\"") orelse return false;
-            const after = source[key + 6 ..];
-            const open = std.mem.indexOf(u8, after, "[") orelse return false;
-            const close = std.mem.indexOf(u8, after[open..], "]") orelse return false;
-            const body = after[open .. open + close];
-            var buf: [64]u8 = undefined;
-            const quoted = std.fmt.bufPrint(&buf, "\"{s}\"", .{tag}) catch return false;
-            return std.mem.indexOf(u8, body, quoted) != null;
+            if (source[i] == '[') {
+                const start = i;
+                while (i < source.len and source[i] != ']') : (i += 1) {}
+                if (i < source.len) i += 1;
+                return source[start..i];
+            }
+            return "";
         }
     };
 
-    // Subcommand: default is list; "gate" runs the git-gate.
-    var do_gate = false;
-    for (argv) |arg| {
-        if (std.mem.eql(u8, arg, "gate")) do_gate = true;
-    }
-
-    // Checks run from the COMPILATION ROOT — the directory of the entry file,
-    // never the directory of the file that happens to carry a declaration.
-    // The command backend already executes with that directory as its working
-    // directory (koruc emits and runs the backend next to the entry file), so
-    // checks inherit it.
-
-    // Collect declarations — including those made by imported libraries.
-    const ast_dep = @import("ast");
-    const all_flows = ast_dep.allFlows(allocator, program);
+    const ast_inv = @import("ast");
+    const all_flows = ast_inv.allFlows(allocator, program);
     defer allocator.free(all_flows);
 
-    var invariants_list = std.ArrayListUnmanaged(Invariant){};
-    defer {
-        for (invariants_list.items) |inv| {
-            if (inv.name.len > 0) allocator.free(inv.name);
-            if (inv.rule.len > 0) allocator.free(inv.rule);
-            if (inv.check.len > 0) allocator.free(inv.check);
-        }
-        invariants_list.deinit(allocator);
-    }
+    var inferred_n: usize = 0;
+    var aspirational_n: usize = 0;
 
-    for (all_flows) |flow| {
-        const mq = flow.inv().path.module_qualifier orelse continue;
-        if (!std.mem.eql(u8, mq, "std.invariants")) continue;
-        if (flow.inv().path.segments.len != 1) continue;
-        const disposition = flow.inv().path.segments[0];
-        if (!std.mem.eql(u8, disposition, "inferred") and
-            !std.mem.eql(u8, disposition, "aspirational")) continue;
+    // Two passes so each disposition prints as a block. They are opposite
+    // gradients and reading them interleaved hides that.
+    for ([_][]const u8{ "inferred", "aspirational" }) |kind| {
+        var printed_header = false;
+        for (all_flows) |flow| {
+            const mq = flow.inv().path.module_qualifier orelse continue;
+            if (!std.mem.eql(u8, mq, "std.invariants")) continue;
+            if (flow.inv().path.segments.len != 1) continue;
+            if (!std.mem.eql(u8, flow.inv().path.segments[0], kind)) continue;
 
-        for (flow.inv().args) |arg| {
-            if (!std.mem.eql(u8, arg.name, "source")) continue;
-            var inv = Invariant{};
-            inv.name = helpers.extractField(allocator, arg.value, "name");
-            if (inv.name.len == 0) continue;
-            inv.rule = helpers.extractField(allocator, arg.value, "rule");
-            inv.check = helpers.extractField(allocator, arg.value, "check");
-            inv.disposition = disposition;
-            inv.git_gate = helpers.hasTag(arg.value, "git-gate");
-            invariants_list.append(allocator, inv) catch {
-                std.debug.print("Out of memory\n", .{});
-                return;
-            };
-        }
-    }
+            for (flow.inv().args) |arg| {
+                if (!std.mem.eql(u8, arg.name, "source")) continue;
+                const name = helpers.jsonField(arg.value, "name");
+                const rule = helpers.jsonField(arg.value, "rule");
+                const tags = helpers.jsonField(arg.value, "tags");
 
-    if (invariants_list.items.len == 0) {
-        std.debug.print("No invariants declared.\n", .{});
-        std.debug.print("Use: ~std/invariants:inferred {{ \"name\": \"...\", \"tags\": [\"git-gate\"], \"rule\": \"...\" }}\n", .{});
-        std.debug.print("     ~std/invariants:aspirational {{ \"name\": \"...\", \"rule\": \"...\" }}\n", .{});
-        return;
-    }
+                if (!printed_header) {
+                    std.debug.print("\n{s}\n", .{kind});
+                    printed_header = true;
+                }
+                std.debug.print("  {s}", .{name});
+                if (tags.len > 0) std.debug.print("  {s}", .{tags});
+                std.debug.print("\n    {s}:{d}\n", .{ flow.location.file, flow.location.line });
+                if (rule.len > 0) std.debug.print("    {s}\n", .{rule});
 
-    if (!do_gate) {
-        std.debug.print("\nDeclared invariants:\n\n", .{});
-        for (invariants_list.items) |inv| {
-            std.debug.print("  {s} ({s})", .{ inv.name, inv.disposition });
-            if (inv.git_gate) std.debug.print(" [git-gate]", .{});
-            if (inv.check.len > 0) std.debug.print(" [check]", .{});
-            std.debug.print("\n", .{});
-            if (inv.rule.len > 0) {
-                std.debug.print("      rule: {s}\n", .{inv.rule});
+                if (std.mem.eql(u8, kind, "inferred")) {
+                    inferred_n += 1;
+                } else {
+                    aspirational_n += 1;
+                }
             }
         }
-        std.debug.print("\n", .{});
-        return;
     }
 
-    // ============================================================
-    // GATE — run every "git-gate"-tagged invariant.
-    // A check decides mechanically. A rule without a check is decided by
-    // inference: the gate prints it for the reviewer and moves on.
-    // ============================================================
-
-    var held: usize = 0;
-    var violated: usize = 0;
-    var inference: usize = 0;
-
-    for (invariants_list.items) |inv| {
-        if (!inv.git_gate) continue;
-
-        if (inv.check.len == 0) {
-            inference += 1;
-            std.debug.print("  {s} \x1b[36m∴ inference\x1b[0m\n", .{inv.name});
-            std.debug.print("      {s}\n", .{inv.rule});
-            continue;
-        }
-
-        const result = std.process.Child.run(.{
-            .allocator = allocator,
-            .argv = &[_][]const u8{ "sh", "-c", inv.check },
-        }) catch {
-            violated += 1;
-            std.debug.print("  {s} \x1b[31m✗ VIOLATED\x1b[0m (check could not run)\n", .{inv.name});
-            continue;
-        };
-        defer allocator.free(result.stdout);
-        defer allocator.free(result.stderr);
-
-        const passed = result.term == .Exited and result.term.Exited == 0;
-        if (passed) {
-            held += 1;
-            std.debug.print("  {s} \x1b[32m✓ holds\x1b[0m\n", .{inv.name});
-        } else {
-            violated += 1;
-            std.debug.print("  {s} \x1b[31m✗ VIOLATED\x1b[0m\n", .{inv.name});
-            std.debug.print("      {s}\n", .{inv.rule});
-        }
-        if (result.stdout.len > 0) {
-            std.debug.print("      {s}\n", .{std.mem.trim(u8, result.stdout, " \t\n\r")});
-        }
-        if (result.stderr.len > 0) {
-            std.debug.print("      {s}\n", .{std.mem.trim(u8, result.stderr, " \t\n\r")});
-        }
+    if (inferred_n == 0 and aspirational_n == 0) {
+        std.debug.print("no invariants declared\n", .{});
+    } else {
+        std.debug.print("\n{d} inferred, {d} aspirational\n", .{ inferred_n, aspirational_n });
     }
-
-    std.debug.print("\ngate: {d} held, {d} violated, {d} by inference\n", .{ held, violated, inference });
-
-    if (violated > 0) {
-        std.process.exit(1);
-    }
-}
-
-// ============================================================
-// INFERRED EVENT - Declare a permanent invariant
-// ============================================================
-
-~[comptime|norun]pub tor inferred { source: Source }
-
-~proc inferred|zig {
-    // Void event - collected during AST walking
-}
-
-// ============================================================
-// ASPIRATIONAL EVENT - Declare an invariant that is debt
-// ============================================================
-
-~[comptime|norun]pub tor aspirational { source: Source }
-
-~proc aspirational|zig {
-    // Void event - collected during AST walking
 }
