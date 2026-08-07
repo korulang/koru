@@ -68,21 +68,48 @@ fn extractDeclaredName(content: []const u8) ?[]const u8 {
     return s[0..end];
 }
 
+const zigCodeMask = codegen_utils.zigCodeMask;
+
+/// Net brace depth delta of a chunk of host code, counting only braces that
+/// are code (not inside literals or comments).
+fn braceDepthDelta(allocator: std.mem.Allocator, text: []const u8) !isize {
+    const mask = try zigCodeMask(allocator, text);
+    defer allocator.free(mask);
+    var delta: isize = 0;
+    for (text, mask) |c, in_code| {
+        if (!in_code) continue;
+        if (c == '{') delta += 1;
+        if (c == '}') delta -= 1;
+    }
+    return delta;
+}
+
 /// Collect all module-level declared names from items in the same scope.
-/// These are names that would cause Zig shadowing errors if used as local bindings.
+/// These are names that would cause Zig shadowing errors if used as local
+/// bindings. Only depth-0 declarations count: a `const` local inside a host
+/// `fn` body is invisible where the handler runs, and treating it as a
+/// collision routes the proc body through textual rewriting for a shadow that
+/// does not exist (230_016).
 fn collectDeclaredNames(items: []const ast.Item, allocator: std.mem.Allocator) !std.ArrayList([]const u8) {
     var names = try std.ArrayList([]const u8).initCapacity(allocator, 0);
+    var depth: isize = 0;
     for (items) |item| {
         switch (item) {
             .host_line => |hl| {
-                if (extractDeclaredName(hl.content)) |name| {
-                    try names.append(allocator, name);
+                if (depth == 0) {
+                    if (extractDeclaredName(hl.content)) |name| {
+                        try names.append(allocator, name);
+                    }
                 }
+                depth += try braceDepthDelta(allocator, hl.content);
             },
             .inline_code => |ic| {
-                if (extractDeclaredName(ic.code)) |name| {
-                    try names.append(allocator, name);
+                if (depth == 0) {
+                    if (extractDeclaredName(ic.code)) |name| {
+                        try names.append(allocator, name);
+                    }
                 }
+                depth += try braceDepthDelta(allocator, ic.code);
             },
             .host_type_decl => |htd| {
                 try names.append(allocator, htd.name);
@@ -101,55 +128,7 @@ fn nameIsShadowed(name: []const u8, declared_names: []const []const u8) bool {
     return false;
 }
 
-/// Replace word-boundary-matched identifier occurrences in text.
-/// Returns a new allocated string with all occurrences of `old_name` (as a whole identifier)
-/// replaced with `new_name`.
-fn replaceIdentifier(allocator: std.mem.Allocator, text: []const u8, old_name: []const u8, new_name: []const u8) ![]const u8 {
-    if (old_name.len == 0) return try allocator.dupe(u8, text);
-
-    // Count replacements to calculate output size
-    var count: usize = 0;
-    var i: usize = 0;
-    while (i + old_name.len <= text.len) {
-        if (std.mem.eql(u8, text[i .. i + old_name.len], old_name)) {
-            const before_ok = (i == 0) or (!std.ascii.isAlphanumeric(text[i - 1]) and text[i - 1] != '_');
-            const after_idx = i + old_name.len;
-            const after_ok = (after_idx >= text.len) or (!std.ascii.isAlphanumeric(text[after_idx]) and text[after_idx] != '_');
-            if (before_ok and after_ok) {
-                count += 1;
-                i += old_name.len;
-                continue;
-            }
-        }
-        i += 1;
-    }
-
-    if (count == 0) return try allocator.dupe(u8, text);
-
-    // Calculate output size: original - (count * old) + (count * new)
-    const new_len = text.len - (count * old_name.len) + (count * new_name.len);
-    const result = try allocator.alloc(u8, new_len);
-
-    var pos: usize = 0;
-    i = 0;
-    while (i < text.len) {
-        if (i + old_name.len <= text.len and std.mem.eql(u8, text[i .. i + old_name.len], old_name)) {
-            const before_ok = (i == 0) or (!std.ascii.isAlphanumeric(text[i - 1]) and text[i - 1] != '_');
-            const after_idx = i + old_name.len;
-            const after_ok = (after_idx >= text.len) or (!std.ascii.isAlphanumeric(text[after_idx]) and text[after_idx] != '_');
-            if (before_ok and after_ok) {
-                @memcpy(result[pos .. pos + new_name.len], new_name);
-                pos += new_name.len;
-                i += old_name.len;
-                continue;
-            }
-        }
-        result[pos] = text[i];
-        pos += 1;
-        i += 1;
-    }
-    return result[0..pos];
-}
+const replaceIdentifier = codegen_utils.replaceIdentifier;
 
 /// Strip phantom type annotations from a type string
 /// e.g., "*Resource<state!>" -> "*Resource", "[]const u8" -> "[]const u8"
@@ -2818,8 +2797,17 @@ pub const VisitorEmitter = struct {
                             var proc_body: []const u8 = proc.body.text;
                             for (event.input.fields) |field| {
                                 if (nameIsShadowed(field.name, declared_names.items)) {
-                                    const replacement = try std.fmt.allocPrint(self.allocator, "__koru_event_input.{s}", .{field.name});
+                                    const member = try codegen_utils.escapeZigIdentifier(self.allocator, field.name);
+                                    const replacement = try std.fmt.allocPrint(self.allocator, "__koru_event_input.{s}", .{member});
                                     proc_body = try replaceIdentifier(self.allocator, proc_body, field.name, replacement);
+                                } else if (codegen_utils.needsEscaping(field.name)) {
+                                    // The binding above was emitted escaped (`const @"align" = …`),
+                                    // so the body's bare references must be rewritten to the same
+                                    // spelling — a Koru param may legally collide with a Zig
+                                    // keyword or primitive, and the fix belongs to emission, not
+                                    // the author's surface (230_017).
+                                    const escaped = try codegen_utils.escapeZigIdentifier(self.allocator, field.name);
+                                    proc_body = try replaceIdentifier(self.allocator, proc_body, field.name, escaped);
                                 }
                             }
 
@@ -2829,8 +2817,11 @@ pub const VisitorEmitter = struct {
                             // "pointless discard of local constant" error.
                             for (event.input.fields) |field| {
                                 if (!nameIsShadowed(field.name, declared_names.items)) {
-                                    const discard_old = try std.fmt.allocPrint(self.allocator, "_ = {s}", .{field.name});
-                                    const discard_new = try std.fmt.allocPrint(self.allocator, "_ = &{s}", .{field.name});
+                                    // Escaped params were rewritten to `@"name"` above, so the
+                                    // discard in the body now carries that spelling too.
+                                    const spelling = try codegen_utils.escapeZigIdentifier(self.allocator, field.name);
+                                    const discard_old = try std.fmt.allocPrint(self.allocator, "_ = {s}", .{spelling});
+                                    const discard_new = try std.fmt.allocPrint(self.allocator, "_ = &{s}", .{spelling});
                                     proc_body = try replaceIdentifier(self.allocator, proc_body, discard_old, discard_new);
                                 }
                             }

@@ -397,6 +397,28 @@ fn __printInterpolate(
             for (keywords) |kw| {
                 if (std.mem.eql(u8, word, kw)) return true;
             }
+            // Zig primitive names — a local may not shadow them, so they
+            // escape exactly like keywords (230_018).
+            const primitives = [_][]const u8{
+                "bool",         "void",     "noreturn", "anyopaque",
+                "usize",        "isize",    "f16",      "f32",
+                "f64",          "f80",      "f128",     "undefined",
+                "comptime_int", "comptime_float",       "c_char",
+                "c_short",      "c_ushort", "c_int",    "c_uint",
+                "c_long",       "c_ulong",  "c_longlong",
+                "c_ulonglong",  "c_longdouble",
+            };
+            for (primitives) |p| {
+                if (std.mem.eql(u8, word, p)) return true;
+            }
+            // u<digits> / i<digits> — the arbitrary-width integer family.
+            if (word.len >= 2 and (word[0] == 'u' or word[0] == 'i')) {
+                var all_digits = true;
+                for (word[1..]) |c| {
+                    if (c < '0' or c > '9') all_digits = false;
+                }
+                if (all_digits) return true;
+            }
             return false;
         }
     }.check;
@@ -421,6 +443,13 @@ fn __printInterpolate(
                         } else {
                             buf.appendSlice(alloc, segment) catch unreachable;
                         }
+                    } else if (isZigKeyword(segment)) {
+                        // A bare binding may legally collide with a Zig
+                        // keyword or primitive (`: u1` — 230_018); the first
+                        // segment escapes like any other.
+                        buf.appendSlice(alloc, "@\"") catch unreachable;
+                        buf.appendSlice(alloc, segment) catch unreachable;
+                        buf.append(alloc, '"') catch unreachable;
                     } else {
                         buf.appendSlice(alloc, segment) catch unreachable;
                     }
@@ -1006,6 +1035,28 @@ fn __printInterpolateJs(
             for (keywords) |kw| {
                 if (std.mem.eql(u8, word, kw)) return true;
             }
+            // Zig primitive names — a local may not shadow them, so they
+            // escape exactly like keywords (230_018).
+            const primitives = [_][]const u8{
+                "bool",         "void",     "noreturn", "anyopaque",
+                "usize",        "isize",    "f16",      "f32",
+                "f64",          "f80",      "f128",     "undefined",
+                "comptime_int", "comptime_float",       "c_char",
+                "c_short",      "c_ushort", "c_int",    "c_uint",
+                "c_long",       "c_ulong",  "c_longlong",
+                "c_ulonglong",  "c_longdouble",
+            };
+            for (primitives) |p| {
+                if (std.mem.eql(u8, word, p)) return true;
+            }
+            // u<digits> / i<digits> — the arbitrary-width integer family.
+            if (word.len >= 2 and (word[0] == 'u' or word[0] == 'i')) {
+                var all_digits = true;
+                for (word[1..]) |c| {
+                    if (c < '0' or c > '9') all_digits = false;
+                }
+                if (all_digits) return true;
+            }
             return false;
         }
     }.check;
@@ -1029,6 +1080,13 @@ fn __printInterpolateJs(
                         } else {
                             buf.appendSlice(alloc, segment) catch unreachable;
                         }
+                    } else if (isZigKeyword(segment)) {
+                        // A bare binding may legally collide with a Zig
+                        // keyword or primitive (`: u1` — 230_018); the first
+                        // segment escapes like any other.
+                        buf.appendSlice(alloc, "@\"") catch unreachable;
+                        buf.appendSlice(alloc, segment) catch unreachable;
+                        buf.append(alloc, '"') catch unreachable;
                     } else {
                         buf.appendSlice(alloc, segment) catch unreachable;
                     }
@@ -1380,6 +1438,28 @@ fn __printInterpolateJs(
             for (keywords) |kw| {
                 if (std.mem.eql(u8, word, kw)) return true;
             }
+            // Zig primitive names — a local may not shadow them, so they
+            // escape exactly like keywords (230_018).
+            const primitives = [_][]const u8{
+                "bool",         "void",     "noreturn", "anyopaque",
+                "usize",        "isize",    "f16",      "f32",
+                "f64",          "f80",      "f128",     "undefined",
+                "comptime_int", "comptime_float",       "c_char",
+                "c_short",      "c_ushort", "c_int",    "c_uint",
+                "c_long",       "c_ulong",  "c_longlong",
+                "c_ulonglong",  "c_longdouble",
+            };
+            for (primitives) |p| {
+                if (std.mem.eql(u8, word, p)) return true;
+            }
+            // u<digits> / i<digits> — the arbitrary-width integer family.
+            if (word.len >= 2 and (word[0] == 'u' or word[0] == 'i')) {
+                var all_digits = true;
+                for (word[1..]) |c| {
+                    if (c < '0' or c > '9') all_digits = false;
+                }
+                if (all_digits) return true;
+            }
             return false;
         }
     }.check;
@@ -1402,6 +1482,13 @@ fn __printInterpolateJs(
                         } else {
                             buf.appendSlice(alloc, segment) catch unreachable;
                         }
+                    } else if (isZigKeyword(segment)) {
+                        // A bare binding may legally collide with a Zig
+                        // keyword or primitive (`: u1` — 230_018); the first
+                        // segment escapes like any other.
+                        buf.appendSlice(alloc, "@\"") catch unreachable;
+                        buf.appendSlice(alloc, segment) catch unreachable;
+                        buf.append(alloc, '"') catch unreachable;
                     } else {
                         buf.appendSlice(alloc, segment) catch unreachable;
                     }

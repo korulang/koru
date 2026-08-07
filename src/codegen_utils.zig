@@ -52,9 +52,58 @@ const zig_keywords = std.StaticStringMap(void).initComptime(.{
     .{ "while", {} },
 });
 
+/// Zig primitive names. Binding one of these as a local is a compile error
+/// ("name shadows primitive"), yet every one of them is a legal Koru
+/// identifier — so they need `@"..."` escaping exactly like keywords do
+/// (230_018). The arbitrary-width `u*`/`i*` family is matched structurally
+/// below, not listed here.
+const zig_primitives = std.StaticStringMap(void).initComptime(.{
+    .{ "anyerror", {} },
+    .{ "anyopaque", {} },
+    .{ "bool", {} },
+    .{ "c_char", {} },
+    .{ "c_int", {} },
+    .{ "c_long", {} },
+    .{ "c_longdouble", {} },
+    .{ "c_longlong", {} },
+    .{ "c_short", {} },
+    .{ "c_uint", {} },
+    .{ "c_ulong", {} },
+    .{ "c_ulonglong", {} },
+    .{ "c_ushort", {} },
+    .{ "comptime_float", {} },
+    .{ "comptime_int", {} },
+    .{ "f128", {} },
+    .{ "f16", {} },
+    .{ "f32", {} },
+    .{ "f64", {} },
+    .{ "f80", {} },
+    .{ "false", {} },
+    .{ "isize", {} },
+    .{ "noreturn", {} },
+    .{ "null", {} },
+    .{ "true", {} },
+    .{ "type", {} },
+    .{ "undefined", {} },
+    .{ "usize", {} },
+    .{ "void", {} },
+});
+
+/// `u<digits>` / `i<digits>` — Zig's arbitrary-width integer family, all of
+/// them primitives no local may shadow.
+fn isZigIntPrimitive(name: []const u8) bool {
+    if (name.len < 2) return false;
+    if (name[0] != 'u' and name[0] != 'i') return false;
+    for (name[1..]) |c| {
+        if (!std.ascii.isDigit(c)) return false;
+    }
+    return true;
+}
+
 /// Check if an identifier needs escaping for Zig
 /// Returns true for:
 /// - Zig keywords (const, fn, etc.)
+/// - Zig primitive names (u8, bool, type, …) — locals may not shadow them
 /// - Identifiers starting with @ (npm scoped packages like @koru)
 /// - Identifiers containing non-identifier chars (hyphens, etc.)
 pub fn needsEscaping(name: []const u8) bool {
@@ -64,6 +113,8 @@ pub fn needsEscaping(name: []const u8) bool {
     }
 
     if (zig_keywords.has(name)) return true;
+    if (zig_primitives.has(name)) return true;
+    if (isZigIntPrimitive(name)) return true;
     if (name.len == 0) return false;
     // Starts with @ (npm scoped packages like @koru)
     if (name[0] == '@') return true;
@@ -1124,4 +1175,121 @@ fn lowerBuiltin(
 
     if (diag) |d| d.unknown_builtin = name;
     return LowerError.UnsupportedBuiltin;
+}
+
+// ============================================================================
+// Textual hygiene over host (Zig) code
+// ============================================================================
+
+/// Byte mask over Zig source text: `true` where an identifier could occur as
+/// code, `false` inside the regions where a name is just text — string
+/// literals, char literals, `//` comments, and `\\` multiline-string lines.
+/// Every textual tool over host code consults this, because a name inside a
+/// literal is not a declaration and not a reference (the corrupted-sentence
+/// bug 230_016 pins).
+pub fn zigCodeMask(allocator: std.mem.Allocator, text: []const u8) ![]bool {
+    const mask = try allocator.alloc(bool, text.len);
+    var i: usize = 0;
+    while (i < text.len) {
+        const c = text[i];
+        if (c == '/' and i + 1 < text.len and text[i + 1] == '/') {
+            while (i < text.len and text[i] != '\n') : (i += 1) mask[i] = false;
+            continue;
+        }
+        if (c == '\\' and i + 1 < text.len and text[i + 1] == '\\') {
+            // Zig multiline string literal: `\\` to end of line is text.
+            while (i < text.len and text[i] != '\n') : (i += 1) mask[i] = false;
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            const quote = c;
+            mask[i] = false;
+            i += 1;
+            while (i < text.len and text[i] != quote and text[i] != '\n') {
+                mask[i] = false;
+                if (text[i] == '\\' and i + 1 < text.len) {
+                    i += 1;
+                    mask[i] = false;
+                }
+                i += 1;
+            }
+            if (i < text.len and text[i] == quote) {
+                mask[i] = false;
+                i += 1;
+            }
+            continue;
+        }
+        mask[i] = true;
+        i += 1;
+    }
+    return mask;
+}
+
+/// Replace word-boundary-matched identifier occurrences in text — but only
+/// where the occurrence is code (see zigCodeMask). Rewriting a name inside a
+/// string literal ships a corrupted program that still compiles (230_016).
+pub fn replaceIdentifier(allocator: std.mem.Allocator, text: []const u8, old_name: []const u8, new_name: []const u8) ![]const u8 {
+    if (old_name.len == 0) return try allocator.dupe(u8, text);
+
+    const mask = try zigCodeMask(allocator, text);
+    defer allocator.free(mask);
+
+    var result = try std.ArrayList(u8).initCapacity(allocator, text.len);
+    var i: usize = 0;
+    while (i < text.len) {
+        if (mask[i] and i + old_name.len <= text.len and std.mem.eql(u8, text[i .. i + old_name.len], old_name)) {
+            const before_ok = (i == 0) or (!std.ascii.isAlphanumeric(text[i - 1]) and text[i - 1] != '_');
+            const after_idx = i + old_name.len;
+            const after_ok = (after_idx >= text.len) or (!std.ascii.isAlphanumeric(text[after_idx]) and text[after_idx] != '_');
+            if (before_ok and after_ok) {
+                try result.appendSlice(allocator, new_name);
+                i += old_name.len;
+                continue;
+            }
+        }
+        try result.append(allocator, text[i]);
+        i += 1;
+    }
+    return try result.toOwnedSlice(allocator);
+}
+
+/// Collect the payload-capture names a chunk of Zig code declares — the
+/// `|name|` groups after `)`, `else`, or `catch`. Multi-captures and `*name`
+/// pointer captures contribute each identifier. Appends to `out`; names are
+/// slices into `text`.
+pub fn collectZigCaptureNames(allocator: std.mem.Allocator, text: []const u8, out: *std.ArrayList([]const u8)) !void {
+    const mask = try zigCodeMask(allocator, text);
+    defer allocator.free(mask);
+
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        if (!mask[i] or text[i] != '|') continue;
+        // The token before the `|` decides whether this is a capture group.
+        var j = i;
+        while (j > 0 and (text[j - 1] == ' ' or text[j - 1] == '\t' or text[j - 1] == '\n')) j -= 1;
+        const is_capture = j > 0 and (text[j - 1] == ')' or
+            (j >= 4 and std.mem.eql(u8, text[j - 4 .. j], "else")) or
+            (j >= 5 and std.mem.eql(u8, text[j - 5 .. j], "catch")));
+        if (!is_capture) continue;
+        // Parse `| [*]ident (, [*]ident)* |`; bail on anything else.
+        var k = i + 1;
+        var parsed_any = false;
+        while (true) {
+            while (k < text.len and (text[k] == ' ' or text[k] == '*')) k += 1;
+            const name_start = k;
+            while (k < text.len and (std.ascii.isAlphanumeric(text[k]) or text[k] == '_')) k += 1;
+            if (k == name_start) break;
+            try out.append(allocator, text[name_start..k]);
+            parsed_any = true;
+            while (k < text.len and text[k] == ' ') k += 1;
+            if (k < text.len and text[k] == ',') {
+                k += 1;
+                continue;
+            }
+            break;
+        }
+        if (parsed_any and k < text.len and text[k] == '|') {
+            i = k;
+        }
+    }
 }

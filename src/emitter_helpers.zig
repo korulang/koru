@@ -333,6 +333,23 @@ pub const EmissionContext = struct {
     // to: unique} so the binding's uses in the spliced body rewrite too.
     // Set only around the affected continuation body; honored by emitExpression.
     splice_binding_rename: ?BindingSubstitution = null,
+    // Inline-frame arg bindings currently in scope, pushed by
+    // emitInlineEffectfulCall around its spliced body. A nested inlined event
+    // that binds the same name to the SAME value expression reuses the
+    // enclosing `const` instead of re-binding — two `const n = (3)` frames in
+    // nested scopes are a Zig shadowing error (230_015).
+    inline_arg_bindings: std.ArrayList(InlineArgBinding) = .empty,
+    // Payload-capture names (`for (…) |i|`) declared by enclosing spliced
+    // bodies. A nested spliced body declaring the same capture is a Zig
+    // "capture shadows capture" error, so uniquifyForCapture renames the
+    // inner one — collision-driven, so unnested emission keeps the author's
+    // spelling (230_015).
+    active_capture_names: std.ArrayList([]const u8) = .empty,
+};
+
+pub const InlineArgBinding = struct {
+    name: []const u8,
+    value: []const u8,
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -4624,6 +4641,8 @@ pub fn emitInlineBodyNode(
         inline_code_uniq = uniq;
         inline_code = uniq;
     }
+    const pushed_captures = try pushBodyCaptures(ctx, inline_code);
+    defer popBodyCaptures(ctx, pushed_captures);
 
     const trimmed_inline = std.mem.trimRight(u8, inline_code, " \t\r\n");
     // Check if inline code is already a statement (ends with ;) or is comment-only (no ; needed)
@@ -5963,12 +5982,72 @@ fn rewriteInlineHasDeclPresence(
 /// than the bug.
 fn uniquifyForCapture(ctx: *EmissionContext, code: []const u8) !?[]u8 {
     const KORU_ITEM = "__koru_item";
-    if (std.mem.indexOf(u8, code, KORU_ITEM) == null) return null;
-    const for_id = ctx.for_counter;
-    ctx.for_counter += 1;
-    var unique_buf: [64]u8 = undefined;
-    const unique_item = std.fmt.bufPrint(&unique_buf, "__koru_item_{d}", .{for_id}) catch KORU_ITEM;
-    return try std.mem.replaceOwned(u8, ctx.allocator, code, KORU_ITEM, unique_item);
+    var current: ?[]u8 = null;
+
+    if (std.mem.indexOf(u8, code, KORU_ITEM) != null) {
+        const for_id = ctx.for_counter;
+        ctx.for_counter += 1;
+        var unique_buf: [64]u8 = undefined;
+        const unique_item = std.fmt.bufPrint(&unique_buf, "__koru_item_{d}", .{for_id}) catch KORU_ITEM;
+        current = try std.mem.replaceOwned(u8, ctx.allocator, code, KORU_ITEM, unique_item);
+    }
+
+    // USER-authored captures collide the same way the template's does: two
+    // nested inlined frames of the same proc body each declare `|i|`, and Zig
+    // rejects the inner as "capture shadows capture from outer scope"
+    // (230_015). Collision-driven: only a capture name an enclosing spliced
+    // body already declares is renamed, so everything unnested keeps the
+    // author's spelling.
+    const scan_src: []const u8 = current orelse code;
+    var declared: std.ArrayList([]const u8) = .empty;
+    defer declared.deinit(ctx.allocator);
+    try codegen_utils.collectZigCaptureNames(ctx.allocator, scan_src, &declared);
+    // The collected names are slices into scan_src, which a rename below may
+    // free — own them for the loop's lifetime.
+    for (declared.items) |*n| n.* = try ctx.allocator.dupe(u8, n.*);
+    defer for (declared.items) |n| ctx.allocator.free(n);
+    for (declared.items) |name| {
+        var colliding = false;
+        for (ctx.active_capture_names.items) |active| {
+            if (std.mem.eql(u8, name, active)) {
+                colliding = true;
+                break;
+            }
+        }
+        if (!colliding) continue;
+        const for_id = ctx.for_counter;
+        ctx.for_counter += 1;
+        var rename_buf: [96]u8 = undefined;
+        const renamed = std.fmt.bufPrint(&rename_buf, "{s}_{d}", .{ name, for_id }) catch continue;
+        const rewritten = try codegen_utils.replaceIdentifier(ctx.allocator, current orelse code, name, renamed);
+        if (current) |owned| ctx.allocator.free(owned);
+        current = @constCast(rewritten);
+    }
+
+    return current;
+}
+
+/// Register a spliced body's payload-capture names as active for the frames
+/// nested inside it (see EmissionContext.active_capture_names). Returns how
+/// many were pushed; the caller pops the same count at scope exit.
+fn pushBodyCaptures(ctx: *EmissionContext, body: []const u8) !usize {
+    var names: std.ArrayList([]const u8) = .empty;
+    defer names.deinit(ctx.allocator);
+    try codegen_utils.collectZigCaptureNames(ctx.allocator, body, &names);
+    var pushed: usize = 0;
+    for (names.items) |name| {
+        try ctx.active_capture_names.append(ctx.allocator, try ctx.allocator.dupe(u8, name));
+        pushed += 1;
+    }
+    return pushed;
+}
+
+fn popBodyCaptures(ctx: *EmissionContext, pushed: usize) void {
+    var i: usize = 0;
+    while (i < pushed) : (i += 1) {
+        const name = ctx.active_capture_names.pop() orelse break;
+        ctx.allocator.free(name);
+    }
 }
 
 /// Emit the inline lowering at the invocation site. `result_name` is null
@@ -6019,6 +6098,8 @@ fn emitInlineEffectfulCall(
         spliced_owned = uniq;
         spliced_text = uniq;
     }
+    const pushed_captures = try pushBodyCaptures(ctx, spliced_text);
+    defer popBodyCaptures(ctx, pushed_captures);
 
     // A label is only legal if something breaks to it; a statement block
     // takes no trailing semicolon. (The const form always has breaks —
@@ -6034,7 +6115,7 @@ fn emitInlineEffectfulCall(
         // handler-call path. The splice must not drop it, or the author's own
         // name reaches Zig as an undeclared identifier (210_189).
         try emitter.write("const ");
-        try emitter.write(inv.return_binding orelse rn);
+        try writeBranchName(emitter, inv.return_binding orelse rn);
         try emitter.write(": ");
         try emitInvocationTarget(emitter, ctx, &inv.path);
         try emitter.write(".Output = ");
@@ -6058,10 +6139,26 @@ fn emitInlineEffectfulCall(
     // Bind event params from the invocation's argument expressions. A
     // punned arg (`read-lines(path)` where the value IS the param name)
     // already has the right name in scope — rebinding would self-shadow.
+    var pushed_arg_bindings: usize = 0;
+    defer ctx.inline_arg_bindings.shrinkRetainingCapacity(
+        ctx.inline_arg_bindings.items.len - pushed_arg_bindings,
+    );
     for (inv.args) |arg| {
         var pun_buf: [128]u8 = undefined;
         const lowered_name = lowerIdent(&pun_buf, arg.name);
-        if (std.mem.eql(u8, std.mem.trim(u8, arg.value, " \t"), lowered_name)) continue;
+        const trimmed_value = std.mem.trim(u8, arg.value, " \t");
+        if (std.mem.eql(u8, trimmed_value, lowered_name)) continue;
+        // A nested inlined event re-binding the same name to the same value
+        // expression reuses the enclosing frame's `const` — re-binding in the
+        // nested scope is a Zig shadowing error (230_015).
+        const enclosing_identical = blk: {
+            for (ctx.inline_arg_bindings.items) |b| {
+                if (std.mem.eql(u8, b.name, arg.name) and
+                    std.mem.eql(u8, b.value, trimmed_value)) break :blk true;
+            }
+            break :blk false;
+        };
+        if (enclosing_identical) continue;
         try emitter.writeIndent();
         try emitter.write("const ");
         try writeBranchName(emitter, arg.name);
@@ -6070,6 +6167,11 @@ fn emitInlineEffectfulCall(
         try emitter.write("); _ = &");
         try writeBranchName(emitter, arg.name);
         try emitter.write(";\n");
+        try ctx.inline_arg_bindings.append(ctx.allocator, .{
+            .name = arg.name,
+            .value = trimmed_value,
+        });
+        pushed_arg_bindings += 1;
     }
 
     // OPTIONAL PARAMETER INJECTION, splice flavor (400_182): an omitted
@@ -7297,7 +7399,9 @@ fn emitInvocation(
     if (!std.mem.eql(u8, bound_var, "_")) {
         try emitter.write(if (bound_mutable) "var " else "const ");
     }
-    try emitter.write(bound_var);
+    // A call-site binding may legally collide with a Zig keyword or primitive
+    // (`: u1` — 230_018); writeBranchName escapes it to `@"u1"`.
+    try writeBranchName(emitter, bound_var);
     try emitter.write(" = ");
     // Only emit 'try' for async calls (is_sync = false means async)
     if (!ctx.is_sync) {
