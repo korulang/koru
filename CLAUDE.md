@@ -2,6 +2,12 @@
 
 Koru is a compiler. The toolchain is the product.
 
+**So this repo is where every defect found anywhere ends up.** When work in
+`orisha`, `koru-libs`, an example, or a gauntlet hits a `koruc` bug, that work
+stops and the fix lands *here*. A repro, a pin, or a report is not a fix — the
+commit is. Never leave a consumer shaped around a compiler bug; the shape
+outlives the memory of why it exists, and the bug ships.
+
 **Start with the `koru-toolchain` skill** — how to compile, how to run the suite,
 the four-stage metacircular pipeline, what bites you. `koruc <file> glance` gives
 a declaration surface before reading a big file.
