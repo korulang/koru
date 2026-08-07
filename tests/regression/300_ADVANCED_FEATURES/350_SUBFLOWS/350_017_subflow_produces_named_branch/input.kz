@@ -1,0 +1,37 @@
+// Pins: a flow that implements a tor with NAMED BRANCHES may produce one of
+// those branches from a terminal arm — `-> finished d` where the implemented
+// tor declares `| finished string`.
+//
+// The bare-return twin (`-> expr` on a `-> T` tor) was always emitted as
+// `return expr;`. A branchy tor had no counterpart, so the produce fell through
+// to a discard, `_ = finished d;`, which is not valid Zig — meaning a flow
+// could only ever implement a bare-return tor. Both arms are exercised here:
+// a payload branch and an empty one.
+
+~import std/io
+
+~tor source { n: i32 }
+| done string
+| empty
+
+~proc source|zig {
+    if (n == 0) return .empty;
+    return .{ .done = "ok" };
+}
+
+~tor drive { n: i32 }
+| finished string
+| blank
+
+~drive =
+    source(n)
+    | done d -> finished d
+    | empty -> blank
+
+~drive(n: 1)
+| finished f |> std/io:print.ln(f)
+| blank |> std/io:print.ln("blank")
+
+~drive(n: 0)
+| finished f |> std/io:print.ln(f)
+| blank |> std/io:print.ln("blank")

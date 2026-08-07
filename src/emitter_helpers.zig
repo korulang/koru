@@ -333,6 +333,11 @@ pub const EmissionContext = struct {
     // to: unique} so the binding's uses in the spliced body rewrite too.
     // Set only around the affected continuation body; honored by emitExpression.
     splice_binding_rename: ?BindingSubstitution = null,
+    // The event whose body is being emitted, when that body is a FLOW implementing
+    // it. A `->` produce naming one of this event's own branches lowers to a
+    // tagged return; see `emitBranchProduce`. Kept separate from
+    // `impl_event_decl`, which additionally redirects own-arm effect calls.
+    produce_event: ?*const ast.EventDecl = null,
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -1847,8 +1852,9 @@ pub fn emitSubflowContinuations(
     // True when the enclosing handler's event has a bare `-> T` return; makes
     // `.expression` produce arms lower to `return EXPR;` (see EmissionContext).
     enclosing_bare_return: bool,
+    enclosing_event: ?*const ast.EventDecl,
 ) !void {
-    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, null);
+    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, enclosing_event, null);
 }
 
 /// Same as emitSubflowContinuations, but names the ROOT result const the
@@ -1868,9 +1874,10 @@ pub fn emitSubflowContinuationsRooted(
     source_event_name: ?[]const u8,
     module_prefix: []const u8,
     enclosing_bare_return: bool,
+    enclosing_event: ?*const ast.EventDecl,
     root_result_name: ?[]const u8,
 ) !void {
-    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, root_result_name);
+    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, enclosing_event, root_result_name);
 }
 
 /// Helper to check if any continuation in a list has a label
@@ -2297,6 +2304,7 @@ fn emitSubflowContinuationsWithDepth(
     source_event_name: ?[]const u8,
     module_prefix: []const u8,
     enclosing_bare_return: bool,
+    enclosing_event: ?*const ast.EventDecl,
     // Actual name of the parent step's result when it deviates from the
     // `result`/`nested_result_{depth-1}` formula — a `: bind` names the parent
     // const after the bind, and every formula-derived discard here would
@@ -2355,6 +2363,7 @@ fn emitSubflowContinuationsWithDepth(
                     .main_module_name = main_module_name,
                     .current_source_event = source_event_name,
                     .bare_return_active = enclosing_bare_return,
+                    .produce_event = enclosing_event,
                 };
                 var label_contexts = std.StringHashMap(LabelContext).init(ctx.allocator);
                 ctx.label_contexts = &label_contexts;
@@ -2406,6 +2415,7 @@ fn emitSubflowContinuationsWithDepth(
                 .main_module_name = main_module_name,
                 .current_source_event = source_event_name,
                 .bare_return_active = enclosing_bare_return,
+                    .produce_event = enclosing_event,
             };
             var label_contexts = std.StringHashMap(LabelContext).init(ctx.allocator);
             ctx.label_contexts = &label_contexts;
@@ -2673,6 +2683,7 @@ fn emitSubflowContinuationsWithDepth(
                 source_event_name,
                 module_prefix,
                 enclosing_bare_return,
+                enclosing_event,
                 // A bind-named step is the new parent; a switch-assigned step
                 // follows the formula (pass null); otherwise the parent is
                 // unchanged at this level.
@@ -2708,6 +2719,7 @@ fn emitSubflowContinuationsWithDepth(
             .main_module_name = main_module_name, // Pass through for canonical event naming
             .current_source_event = source_event_name, // Set source event for inline tap emission!
             .bare_return_active = enclosing_bare_return,
+                    .produce_event = enclosing_event,
         };
         // A label-fold emitted through this subflow path (visitor emitter) still
         // runs `emitContinuationBody`'s `label_with_invocation` arm, which
@@ -3053,6 +3065,7 @@ fn emitSubflowContinuationsWithDepth(
             .main_module_name = main_module_name,
             .current_source_event = source_event_name,
             .bare_return_active = enclosing_bare_return,
+                    .produce_event = enclosing_event,
         };
         var result_counter_sole: usize = depth;
         try emitContinuationBody(emitter, &ctx_sole, &remaining_conts[0], &result_counter_sole);
@@ -3444,7 +3457,7 @@ fn emitSubflowContinuationsWithDepth(
                                 const extra = "            ";
                                 @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
                                 const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
-                                try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, if (cont.node) |st| (if (st == .invocation) st.invocation.return_binding else null) else null);
+                                try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, enclosing_event, if (cont.node) |st| (if (st == .invocation) st.invocation.return_binding else null) else null);
                             }
 
                             try emitter.write(indent);
@@ -3495,7 +3508,7 @@ fn emitSubflowContinuationsWithDepth(
                     const extra = "        ";
                     @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
                     const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
-                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, if (cont.node) |st| (if (st == .invocation) st.invocation.return_binding else null) else null);
+                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, enclosing_event, if (cont.node) |st| (if (st == .invocation) st.invocation.return_binding else null) else null);
                 }
 
                 try emitter.write(indent);
@@ -3701,6 +3714,7 @@ fn emitSubflowContinuationsWithDepth(
             .main_module_name = main_module_name,
             .current_source_event = source_event_name,
             .bare_return_active = enclosing_bare_return,
+                    .produce_event = enclosing_event,
         };
         var result_counter_ca: usize = depth;
         try emitSubflowCatchallOptionalArms(
@@ -9229,6 +9243,51 @@ fn emitPipelineStep(
     }
 }
 
+/// A `->` produce whose expression NAMES one of the implemented event's own
+/// branches: `~drive = source(n) | done d -> finished d`, where `drive` declares
+/// `| finished string`. The bare-return twin of this (`-> expr` on a `-> T`
+/// event) is handled by `bare_return_active`; an event with NAMED branches had
+/// no counterpart, so the produce fell through to `_ = finished d;` — invalid
+/// Zig, and the reason a flow could only ever implement a bare-return event.
+///
+/// Returns true when it emitted the tagged return, false to fall through.
+fn emitBranchProduce(emitter: *CodeEmitter, ctx: *EmissionContext, code: []const u8) !bool {
+    const decl = ctx.produce_event orelse ctx.impl_event_decl orelse return false;
+    if (decl.branches.len == 0) return false;
+
+    const trimmed = std.mem.trim(u8, code, " \t");
+    if (trimmed.len == 0 or std.mem.eql(u8, trimmed, "_")) return false;
+
+    // First token is the candidate branch name; the rest is its payload.
+    var split: usize = 0;
+    while (split < trimmed.len and trimmed[split] != ' ' and trimmed[split] != '\t') : (split += 1) {}
+    const head = trimmed[0..split];
+    const payload = std.mem.trim(u8, trimmed[split..], " \t");
+
+    const branch = for (decl.branches) |*b| {
+        if (b.kind != .terminal) continue;
+        if (std.mem.eql(u8, b.name, head)) break b;
+    } else return false;
+
+    // An empty-payload branch takes no value: `-> stopped` → `return .stopped;`.
+    if (branch.payload.fields.len == 0 and !branch.payload.is_wildcard) {
+        if (payload.len != 0) return false; // shape mismatch — let the checker speak
+        try emitter.write("return .");
+        try writeBranchName(emitter, branch.name);
+        try emitter.write(";\n");
+        return true;
+    }
+
+    if (payload.len == 0) return false;
+
+    try emitter.write("return .{ .");
+    try writeBranchName(emitter, branch.name);
+    try emitter.write(" = ");
+    try emitter.write(payload);
+    try emitter.write(" };\n");
+    return true;
+}
+
 pub fn emitContinuationBody(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
@@ -10156,11 +10215,17 @@ fn emitStep(
             try emitter.writeIndent();
             if (ctx.bare_return_active and !std.mem.eql(u8, std.mem.trim(u8, code, " \t"), "_")) {
                 try emitter.write("return ");
+                try emitter.write(code);
+                try emitter.write(";\n");
+            } else if (try emitBranchProduce(emitter, ctx, code)) {
+                // Handled: the produce named one of the implemented event's own
+                // branches, so it lowered to a tagged return rather than a
+                // discard. See emitBranchProduce.
             } else {
                 try emitter.write("_ = ");
+                try emitter.write(code);
+                try emitter.write(";\n");
             }
-            try emitter.write(code);
-            try emitter.write(";\n");
         },
         .foreach => |fe| {
             // Emit for loop with proper AST body
