@@ -37,7 +37,7 @@
 import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { join, dirname } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const execFileAsync = promisify(execFile)
@@ -50,7 +50,8 @@ const flag = (n, d) => { const i = argv.indexOf(n); return i === -1 ? d : argv[i
 const SAMPLE = Number(flag('--sample', 0))
 const JOBS = Number(flag('--jobs', 4))
 const BUCKET = flag('--bucket', 'emitter')
-const OUT = flag('--out', join(ROOT, 'test-results/js-scan.json'))
+const BOARD = join(ROOT, 'test-results/js-scan.json')
+const OUT_FLAG = flag('--out', null)
 
 // The map is the source of scope. Re-deriving "which tests are emitter-testable"
 // here would be a second definition free to drift from the first.
@@ -99,6 +100,24 @@ if (TESTS_FILE) {
   }
   tests = want.filter((w) => byName.has(w)).map((w) => byName.get(w))
 }
+
+// Whether this run measures the whole emitter bucket decides what it may write.
+// Computed once, here, because every flag that narrows the scan has now been read.
+const isFullRun = BUCKET === 'emitter' && !SAMPLE && !CLUSTER && !TESTS_FILE
+
+// The board artifact is a claim about the WHOLE emitter bucket, and a slice run
+// writing it replaces 564 rows with however many the slice held. That happened
+// three times in one day and was caught three times by hand; hand-vigilance is
+// not a guard. A narrowed run gets its own filename and says so, and pointing
+// --out at the board from a narrowed run is refused rather than honoured — the
+// explicit flag is the one path a guard on defaults alone would not cover.
+if (!isFullRun && OUT_FLAG && resolve(ROOT, OUT_FLAG) === BOARD) {
+  console.error(`  refusing to write the full-bucket board from a narrowed run.`)
+  console.error(`  ${BOARD} holds the emitter bucket; this run measures ${tests.length} test(s).`)
+  console.error(`  drop --out, or name a different file.`)
+  process.exit(2)
+}
+const OUT = OUT_FLAG ?? (isFullRun ? BOARD : join(ROOT, 'test-results/js-scan-slice.json'))
 
 // test_entry (regression_lib.sh:77): input.kz when present, else input.k.
 function entryOf(dir) {
@@ -315,8 +334,10 @@ for (const r of results) {
 
 writeFileSync(OUT, JSON.stringify({
   generated: new Date().toISOString(), bucket: BUCKET, sample: SAMPLE || null,
+  fullRun: isFullRun, scanned: results.length,
   wallSeconds: Number(wall), byStatus, byCluster, results,
 }, null, 2))
+if (!isFullRun) console.log(`\n  slice of ${results.length} — wrote ${OUT} (the board at ${BOARD} is untouched)`)
 
 // Only a FULL emitter-bucket run may rewrite the families. Every narrowing flag
 // sees a slice by construction, and letting one rewrite the map shrinks it to
@@ -329,7 +350,7 @@ writeFileSync(OUT, JSON.stringify({
 // WaveW4Core rather than by me. A guard that enumerates the narrowings it knows
 // about will keep failing this way, so it now asks the inverse question: a
 // narrowing added later is excluded by default instead of included by omission.
-const isFullRun = BUCKET === 'emitter' && !SAMPLE && !CLUSTER && !TESTS_FILE
+// `isFullRun` is resolved beside the flags now, because the OUT path needs it too.
 let derived = null
 if (isFullRun) {
   derived = deriveClusters(results)

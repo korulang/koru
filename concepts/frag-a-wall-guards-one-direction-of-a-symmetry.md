@@ -157,3 +157,30 @@ reading the resolve would come away believing foreign handles are caught.
 
 It was found by pointing a borrowed workload at the store, not by review — see
 `frag-a-corpus-exercises-its-authors-idioms`.
+
+## Generalising a guard along the axis that bit you leaves the other axis specific
+
+`js-scan.mjs` had a guard against narrowed runs rewriting the derived family map,
+and its comment is the most self-aware in the harness: the guard was written for
+`--sample` and `--cluster`, `--tests` was added without extending it, and the fix
+was to invert the question so *a narrowing added later is excluded by default
+instead of included by omission.* That is the mirror lesson, correctly applied.
+
+It still shipped the same defect, twenty lines earlier in the same file. The
+guard generalised over **which narrowings** and stayed specific about **which
+artifacts**: the board — the 564-row claim the whole port is measured against —
+was written unconditionally, by every narrowed run, above the guard that names
+them. It was clobbered and hand-restored three times in one day by the person who
+wrote the inversion.
+
+So a mirror is not always the *opposite value* of the condition a guard tests. A
+guard has more than one axis, and hardening the one that produced the incident
+reads as thoroughness precisely because that axis is now airtight. The question
+that finds the rest: **this guard decides whether to do something — what else does
+this code do that it never asked about?** Here the answer was two `writeFileSync`
+calls in the same function, one guarded and one not.
+
+A corollary about vigilance, since three manual restores is what a wall's absence
+feels like from the inside: catching the same clobber by hand three times is not a
+near-miss record, it is an unbuilt guard reporting itself. The cost of noticing had
+been paid three times over; only the fix had not.

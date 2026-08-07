@@ -271,3 +271,8 @@ invariants/a.out
 invariants/zig-out/
 invariants/.zig-cache/
 invariants/checks/__pycache__/
+
+# A narrowed js-scan run writes here instead of the board (scripts/js-scan.mjs).
+# It is a transient measurement of whatever slice was last looked at, never a claim
+# about the emitter bucket, so it must not accumulate beside the tracked boards.
+test-results/js-scan-slice.json
