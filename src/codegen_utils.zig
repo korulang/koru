@@ -471,3 +471,405 @@ test "koruWrapperPrefix Phase 2" {
     try std.testing.expectEqualStrings("koru_", koruWrapperPrefix(true));
     try std.testing.expectEqualStrings("koru_", koruWrapperPrefix(false));
 }
+
+// ============================================================================
+// THE KORU EXPRESSION LOWERING — one pass, one vocabulary, two targets
+// ============================================================================
+//
+// Koru expression text used to be lowered in exactly one place: inside the JS
+// emitter, reachable only from text the emitter itself wrote. Every OTHER route
+// an expression takes to a host — a `std/store` query guard spliced into a
+// generated proc body, a `std/kernel` op body, any transform that assembles host
+// text — carried it past that pass untouched. Three symptoms, one cause: a guard
+// reached `node` as `hp > 40 and kind == 1`, and `@sqrt(dsq)` reached it with the
+// `@` still on it, while `js_emitter` had known how to lower both for months.
+//
+// So the pass lives here, as a pure function any caller can reach, and
+// `js_emitter` is now one of its callers rather than its owner. `koruStructToZig`
+// above is the same shape and the reason this file is the right home.
+//
+// WHAT THE VOCABULARY IS. `lowerBuiltin` below is the list of operations Koru
+// names with an `@`, and it is the closest thing the language has to a written
+// definition of its own operation set. That is not an accident of the JS port —
+// it is a CONSEQUENCE of it. A single target never has to say what its
+// vocabulary is, because the host's own spelling answers every question by
+// default. A second target cannot pass anything through, so it has to name what
+// it knows and refuse the rest, and naming-and-refusing is what a definition is.
+//
+// RULED 2026-08-07 (Lars): the Zig spelling stays the Koru spelling for now, and
+// the exact shape of the vocabulary is deliberately NOT settled yet. What matters
+// at this rung is that a vocabulary EXISTS in one place with one home. So the
+// `.zig` arm is the identity: Koru's operators are a Zig subset (`and` and `or`
+// are Zig keywords, arithmetic and comparison are shared, `++` is Zig's own
+// concat), and Zig accepts an unmodelled `@foo` because it is a Zig builtin.
+//
+// WHAT THAT DEFERS, said plainly so it does not go invisible: the vocabulary is
+// ENFORCED on JS and ABSENT on Zig. A `.k` naming an `@foo` nobody modelled is
+// accepted by one target and refused by the other, so the table can drift into
+// "whatever JS happened to need" — the one-direction-of-a-symmetry shape this
+// repo has been bitten by before. Closing it means growing the `.zig` arm from
+// identity to table-consulting, which is a WALL and will turn things red on
+// purpose. That is the next rung and it is a language ruling, not a refactor.
+
+/// Which host the expression is being rendered for.
+pub const HostTarget = enum { zig, js };
+
+/// `koru_expr` is text the USER wrote in a Koru expression slot. `host_text` is
+/// text a template already rendered into the host's own language.
+///
+/// The distinction is exactly one rewrite wide: `++` is Koru's concatenation and
+/// must become `+` on JS, but in already-rendered host text a `++` is a genuine
+/// JavaScript increment and must be left alone. Everything else is lowered in
+/// both modes — a `when` guard arrives as Koru text while the identical
+/// condition, baked into a `for|template|js` body, arrives as host text, and
+/// lowering only one door leaves the other emitting `a and b`.
+pub const ExprMode = enum { koru_expr, host_text };
+
+pub const LowerError = error{ UnsupportedBuiltin, OutOfMemory };
+
+/// Filled in when `lowerKoruExpr` returns `error.UnsupportedBuiltin`, so the
+/// caller can name the operation in its own diagnostic rather than reporting
+/// that something, somewhere, was not understood.
+pub const LowerDiag = struct { unknown_builtin: []const u8 = "" };
+
+/// Render Koru expression text for `target`. Caller owns the result.
+pub fn lowerKoruExpr(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    target: HostTarget,
+    mode: ExprMode,
+    diag: ?*LowerDiag,
+) LowerError![]const u8 {
+    if (target == .zig) return allocator.dupe(u8, text);
+
+    var out = try std.ArrayList(u8).initCapacity(allocator, text.len + 32);
+    errdefer out.deinit(allocator);
+    try lowerJsInto(&out, allocator, text, mode, diag);
+    return out.toOwnedSlice(allocator);
+}
+
+fn exprIdentChar(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+        (c >= '0' and c <= '9') or c == '_';
+}
+
+/// Is `text[at]` (a `&`) in PREFIX position — Zig address-of — rather than infix
+/// bitwise-and? Prefix means nothing that could END an operand precedes it.
+/// `a & b` is infix and means the same thing in both languages; `&items` is an
+/// address JS does not have.
+///
+/// The one case a character test alone gets wrong is a preceding KEYWORD. In
+/// `for (const x of &items)` the char before is `f`, which looks exactly like the
+/// end of an identifier — but `of` cannot END an operand, it demands one. That is
+/// the shape the `for|template|js` body renders for every `~for(&xs)` in the
+/// corpus, so the scan reads back a whole WORD and asks what the word is.
+fn exprPrefixPosition(text: []const u8, at: usize) bool {
+    var j = at;
+    while (j > 0 and (text[j - 1] == ' ' or text[j - 1] == '\t')) j -= 1;
+    if (j == 0) return true;
+    const p = text[j - 1];
+    if (!(exprIdentChar(p) or p == ')' or p == ']' or p == '}' or p == '"' or p == '\'')) return true;
+    if (!exprIdentChar(p)) return false;
+    var w = j;
+    while (w > 0 and exprIdentChar(text[w - 1])) w -= 1;
+    const operand_expecting = [_][]const u8{
+        "of",     "in",   "return", "typeof", "case", "new",
+        "delete", "void", "yield",  "await",  "instanceof",
+    };
+    for (operand_expecting) |kw| {
+        if (std.mem.eql(u8, text[w..j], kw)) return true;
+    }
+    return false;
+}
+
+/// At `text[at] == '['`, is this the opening of a Zig ARRAY LITERAL type prefix
+/// (`[_]i32{`, `[3]i32{`, `[2][2]i32{`)? Returns the index just past the `{` when
+/// so. An ordinary INDEX (`arr[i]`) has no brace after the type slot.
+fn exprArrayLiteralOpen(text: []const u8, at: usize) ?usize {
+    var j = at;
+    var dims: usize = 0;
+    while (j < text.len and text[j] == '[') {
+        const close = std.mem.indexOfScalarPos(u8, text, j, ']') orelse return null;
+        if (std.mem.indexOfScalarPos(u8, text[0..close], j + 1, '[') != null) return null;
+        j = close + 1;
+        dims += 1;
+    }
+    if (dims == 0) return null;
+    while (j < text.len and (exprIdentChar(text[j]) or text[j] == '.' or text[j] == '*' or text[j] == ' ')) j += 1;
+    if (j >= text.len or text[j] != '{') return null;
+    return j + 1;
+}
+
+/// At `text[at] == '{'` opening a `.{ … }`, are its top-level entries POSITIONAL
+/// (`.{ 0, 0 }` — a tuple, i.e. a JS array) rather than NAMED (`.{ .ok = v }` — a
+/// branch constructor, whose JS shape this lowering deliberately does not guess)?
+/// An empty `.{}` counts as positional: it is the void payload.
+fn exprPositionalTuple(text: []const u8, at: usize) bool {
+    var j = at + 1;
+    var depth: usize = 0;
+    while (j < text.len) : (j += 1) {
+        switch (text[j]) {
+            '(', '[', '{' => depth += 1,
+            ')', ']' => depth -= 1,
+            '}' => {
+                if (depth == 0) return true;
+                depth -= 1;
+            },
+            '.' => if (depth == 0 and j + 1 < text.len and exprIdentChar(text[j + 1])) return false,
+            else => {},
+        }
+    }
+    return true;
+}
+
+/// The JS arm: walk the text once, leave string and char literals untouched, and
+/// rewrite the constructs JavaScript cannot parse.
+fn lowerJsInto(
+    out: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    mode: ExprMode,
+    diag: ?*LowerDiag,
+) LowerError!void {
+    var i: usize = 0;
+    var quote: ?u8 = null;
+    // One entry per open `{` we are inside, saying whether its closer must be
+    // written as `]`. A Zig ARRAY literal opens with a brace and closes with one;
+    // JavaScript's opens and closes with brackets, so the decision made at the
+    // opener has to survive to the matching closer.
+    var brace_is_bracket: [64]bool = undefined;
+    var brace_depth: usize = 0;
+    while (i < text.len) {
+        const c = text[i];
+        if (quote) |q| {
+            if (c == '\\' and i + 1 < text.len) {
+                try out.appendSlice(allocator, text[i .. i + 2]);
+                i += 2;
+                continue;
+            }
+            if (c == q) quote = null;
+            try out.append(allocator, c);
+            i += 1;
+            continue;
+        }
+        if (c == '"' or c == '\'' or c == '`') {
+            quote = c;
+            try out.append(allocator, c);
+            i += 1;
+            continue;
+        }
+        // `++` is Koru's concatenation, spelled Zig's way. In JavaScript it is the
+        // increment operator, so an unlowered `a ++ b` is a SYNTAX error rather
+        // than a wrong answer. Host text is already JavaScript, so its `++` is a
+        // genuine increment and stays.
+        if (mode == .koru_expr and c == '+' and i + 1 < text.len and text[i + 1] == '+') {
+            try out.append(allocator, '+');
+            i += 2;
+            continue;
+        }
+        // `and`/`or` are word-boundary anchored, so `android` and `.or_else` are
+        // untouched. Lowered in BOTH modes — see `ExprMode`.
+        if ((c == 'a' or c == 'o') and (i == 0 or (!exprIdentChar(text[i - 1]) and text[i - 1] != '.'))) {
+            const word: ?[]const u8 = if (std.mem.startsWith(u8, text[i..], "and"))
+                "&&"
+            else if (std.mem.startsWith(u8, text[i..], "or"))
+                "||"
+            else
+                null;
+            if (word) |js_op| {
+                const len: usize = if (js_op[0] == '&') 3 else 2;
+                if (i + len >= text.len or !exprIdentChar(text[i + len])) {
+                    try out.appendSlice(allocator, js_op);
+                    i += len;
+                    continue;
+                }
+            }
+        }
+        if (c == '@') {
+            if (try lowerBuiltin(out, allocator, text, i, diag)) |after| {
+                i = after;
+                continue;
+            }
+        }
+        // ZIG-SHAPED EXPRESSION TEXT, lowered in BOTH modes — unlike `++` and
+        // `and`/`or`, which are real JavaScript and must stay `.koru_expr`-only.
+        // Neither shape below has ANY valid JavaScript reading, so neither can
+        // misfire on genuine host text.
+        //
+        // Zig ADDRESS-OF in prefix position. A JS array or object IS a reference,
+        // so taking its address is the identity. An INFIX `&` is bitwise-and in
+        // both languages and is left alone — position is the whole discriminator.
+        if (c == '&' and exprPrefixPosition(text, i)) {
+            i += 1;
+            continue;
+        }
+        // Zig ARRAY literal: `[_]i32{1, 2, 3}`. The type prefix has no JS
+        // counterpart and the braces become brackets.
+        if (c == '[') {
+            if (exprArrayLiteralOpen(text, i)) |after_brace| {
+                if (brace_depth < brace_is_bracket.len) {
+                    brace_is_bracket[brace_depth] = true;
+                    brace_depth += 1;
+                    try out.append(allocator, '[');
+                    i = after_brace;
+                    continue;
+                }
+            }
+        }
+        // Anonymous POSITIONAL tuple: `.{ 0, 0 }`. Only the positional form —
+        // `.{ .ok = v }` is a BRANCH constructor whose JS shape is
+        // `{ tag: "ok", ok: v }`, and quietly lowering it to a plain object would
+        // produce a wrong answer rather than a syntax error. That one stays raw.
+        if (c == '.' and i + 1 < text.len and text[i + 1] == '{' and exprPositionalTuple(text, i + 1)) {
+            if (brace_depth < brace_is_bracket.len) {
+                brace_is_bracket[brace_depth] = true;
+                brace_depth += 1;
+                try out.append(allocator, '[');
+                i += 2;
+                continue;
+            }
+        }
+        if (c == '{' and brace_depth < brace_is_bracket.len) {
+            brace_is_bracket[brace_depth] = false;
+            brace_depth += 1;
+        }
+        if (c == '}' and brace_depth > 0) {
+            brace_depth -= 1;
+            try out.appendSlice(allocator, if (brace_is_bracket[brace_depth]) "]" else "}");
+            i += 1;
+            continue;
+        }
+        try out.append(allocator, c);
+        i += 1;
+    }
+}
+
+/// THE VOCABULARY. Lower one `@`-operation starting at `text[at] == '@'`,
+/// returning the index just past it, or null when the `@` does not open a call at
+/// all (so the caller writes it through unchanged).
+///
+/// Every operation Koru names with an `@` is listed here, and an operation that
+/// is not listed is REFUSED rather than passed through. That refusal is the only
+/// reason this list is a definition instead of a description.
+fn lowerBuiltin(
+    out: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    at: usize,
+    diag: ?*LowerDiag,
+) LowerError!?usize {
+    var p = at + 1;
+    while (p < text.len and exprIdentChar(text[p])) p += 1;
+    const name = text[at + 1 .. p];
+    if (name.len == 0) return null;
+    if (p >= text.len or text[p] != '(') return null;
+
+    // Balanced-paren scan for the argument list, then split it at TOP-LEVEL
+    // commas only — `@as(i64, @intCast(i))` nests.
+    const args_start = p + 1;
+    var depth: usize = 1;
+    var j = args_start;
+    var split: ?usize = null;
+    while (j < text.len and depth > 0) : (j += 1) {
+        switch (text[j]) {
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => depth -= 1,
+            ',' => if (depth == 1 and split == null) {
+                split = j;
+            },
+            else => {},
+        }
+    }
+    if (depth != 0) return null; // unbalanced — not a call we can read
+    const args_end = j - 1; // index of the closing ')'
+    const first = std.mem.trim(u8, text[args_start .. split orelse args_end], " \t");
+    const second = if (split) |s| std.mem.trim(u8, text[s + 1 .. args_end], " \t") else "";
+
+    const eql = std.mem.eql;
+    // Representation casts: JavaScript has ONE number type, so the cast is the
+    // value. `@as`/`@enumFromInt` carry the type first, the value second.
+    if (eql(u8, name, "as") or eql(u8, name, "enumFromInt") or eql(u8, name, "bitCast")) {
+        try out.append(allocator, '(');
+        try lowerJsInto(out, allocator, if (split != null) second else first, .koru_expr, diag);
+        try out.append(allocator, ')');
+        return j;
+    }
+    if (eql(u8, name, "intCast") or eql(u8, name, "truncate") or
+        eql(u8, name, "floatFromInt") or eql(u8, name, "intFromEnum") or
+        eql(u8, name, "floatCast"))
+    {
+        try out.append(allocator, '(');
+        try lowerJsInto(out, allocator, first, .koru_expr, diag);
+        try out.append(allocator, ')');
+        return j;
+    }
+    // A bool IS 0/1 once it is a number, and JS `+true` is 1. `Number(...)` is
+    // the spelling that cannot be misread as string concatenation when the
+    // operand is spliced next to a `+`.
+    if (eql(u8, name, "intFromBool")) {
+        try out.appendSlice(allocator, "Number(");
+        try lowerJsInto(out, allocator, first, .koru_expr, diag);
+        try out.append(allocator, ')');
+        return j;
+    }
+    if (eql(u8, name, "intFromFloat")) {
+        try out.appendSlice(allocator, "Math.trunc(");
+        try lowerJsInto(out, allocator, first, .koru_expr, diag);
+        try out.append(allocator, ')');
+        return j;
+    }
+    // JS bitwise operators coerce to 32 bits, so the population count is done on
+    // the value itself rather than through `>>`/`&`, which would silently answer
+    // for the low 32 bits of a 53-bit-safe integer.
+    if (eql(u8, name, "popCount")) {
+        try out.appendSlice(allocator, "((v) => { let n = 0; let x = v; while (x > 0) { n += x % 2; x = Math.floor(x / 2); } return n; })(");
+        try lowerJsInto(out, allocator, first, .koru_expr, diag);
+        try out.append(allocator, ')');
+        return j;
+    }
+    if (eql(u8, name, "divTrunc") or eql(u8, name, "divFloor") or eql(u8, name, "divExact")) {
+        try out.appendSlice(allocator, if (eql(u8, name, "divTrunc")) "Math.trunc((" else if (eql(u8, name, "divFloor")) "Math.floor((" else "((");
+        try lowerJsInto(out, allocator, first, .koru_expr, diag);
+        try out.appendSlice(allocator, ") / (");
+        try lowerJsInto(out, allocator, second, .koru_expr, diag);
+        try out.appendSlice(allocator, "))");
+        return j;
+    }
+    if (eql(u8, name, "rem")) {
+        try out.appendSlice(allocator, "((");
+        try lowerJsInto(out, allocator, first, .koru_expr, diag);
+        try out.appendSlice(allocator, ") % (");
+        try lowerJsInto(out, allocator, second, .koru_expr, diag);
+        try out.appendSlice(allocator, "))");
+        return j;
+    }
+    if (eql(u8, name, "mod")) {
+        // Euclidean: Zig's @mod is non-negative for a positive divisor,
+        // JavaScript's `%` keeps the dividend's sign.
+        try out.appendSlice(allocator, "((((");
+        try lowerJsInto(out, allocator, first, .koru_expr, diag);
+        try out.appendSlice(allocator, ") % (");
+        try lowerJsInto(out, allocator, second, .koru_expr, diag);
+        try out.appendSlice(allocator, ")) + (");
+        try lowerJsInto(out, allocator, second, .koru_expr, diag);
+        try out.appendSlice(allocator, ")) % (");
+        try lowerJsInto(out, allocator, second, .koru_expr, diag);
+        try out.appendSlice(allocator, "))");
+        return j;
+    }
+    if (eql(u8, name, "min") or eql(u8, name, "max") or eql(u8, name, "abs") or eql(u8, name, "sqrt")) {
+        try out.appendSlice(allocator, "Math.");
+        try out.appendSlice(allocator, name);
+        try out.append(allocator, '(');
+        try lowerJsInto(out, allocator, first, .koru_expr, diag);
+        if (split != null) {
+            try out.appendSlice(allocator, ", ");
+            try lowerJsInto(out, allocator, second, .koru_expr, diag);
+        }
+        try out.append(allocator, ')');
+        return j;
+    }
+
+    if (diag) |d| d.unknown_builtin = name;
+    return LowerError.UnsupportedBuiltin;
+}

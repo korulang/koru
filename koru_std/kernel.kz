@@ -40,6 +40,30 @@
 
 const std = @import("std");
 
+/// The ONE Koru expression lowering — see `codegen_utils.lowerKoruExpr`.
+const codegen_utils_kernel = @import("codegen_utils");
+
+/// A kernel OP BODY is Koru expression text the user wrote inside `! step`
+/// or `! pairwise`, and this transform splices it into a loop it assembles
+/// itself. That route never reached the emitter's lowering, so `@sqrt(dsq)`
+/// arrived at `node` with the `@` still on it — even though `js_emitter` has
+/// mapped `@sqrt` to `Math.sqrt` all along. The mapping was never missing; the
+/// text just never passed the pass. On Zig this is the identity.
+///
+/// Refuses by name when the body uses an `@`-operation the vocabulary does not
+/// model, so an unrunnable JS kernel is a diagnostic rather than a syntax error
+/// in the emitted file.
+fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []const u8 {
+    var d = codegen_utils_kernel.LowerDiag{};
+    return codegen_utils_kernel.lowerKoruExpr(alloc, text, if (is_js) .js else .zig, .koru_expr, &d) catch |err| switch (err) {
+        error.OutOfMemory => unreachable,
+        error.UnsupportedBuiltin => {
+            std.debug.print("error[KORU122]: std/kernel op body names `@{s}`, and that operation has no lowering for the --lang target - the operations Koru names with `@` are the shared table in codegen_utils.lowerBuiltin\n", .{d.unknown_builtin});
+            std.process.exit(1);
+        },
+    };
+}
+
 // ============================================================================
 // KERNEL.SHAPE - Declare kernel data structure (just metadata, no execution)
 // ============================================================================
@@ -777,6 +801,12 @@ const std = @import("std");
                         body.append(alloc, ';') catch unreachable;
                     }
 
+                    // THE OP BODY IS A KORU EXPRESSION, so it goes through the
+                    // one lowering rather than being spliced as host text. On Zig
+                    // this is the identity; on JS it is what turns `@sqrt(dsq)`
+                    // into `Math.sqrt(dsq)`.
+                    const op_src = kernelLowerOpBody(alloc, body.items, is_js);
+
                     const pair_loop = if (is_js)
                         std.fmt.allocPrint(alloc,
                             \\
@@ -786,7 +816,7 @@ const std = @import("std");
                             \\    }}
                             \\}}
                             ,
-                            .{ elem_count, elem_count, body.items }
+                            .{ elem_count, elem_count, op_src }
                         ) catch unreachable
                     else
                         std.fmt.allocPrint(alloc,
@@ -797,7 +827,7 @@ const std = @import("std");
                             \\    }}
                             \\}}
                             ,
-                            .{ elem_count, elem_count, body.items }
+                            .{ elem_count, elem_count, op_src }
                         ) catch unreachable;
                     code.appendSlice(alloc, pair_loop) catch unreachable;
                 } else if (std.mem.eql(u8, op.op_type, "self")) {
@@ -1268,6 +1298,12 @@ const std = @import("std");
                         body.append(alloc, ';') catch unreachable;
                     }
 
+                    // THE OP BODY IS A KORU EXPRESSION, so it goes through the
+                    // one lowering rather than being spliced as host text. On Zig
+                    // this is the identity; on JS it is what turns `@sqrt(dsq)`
+                    // into `Math.sqrt(dsq)`.
+                    const op_src = kernelLowerOpBody(alloc, body.items, is_js);
+
                     const self_loop = if (is_js)
                         std.fmt.allocPrint(alloc,
                             \\
@@ -1275,7 +1311,7 @@ const std = @import("std");
                             \\    {s}
                             \\}}
                             ,
-                            .{ elem_count, body.items }
+                            .{ elem_count, op_src }
                         ) catch unreachable
                     else
                         std.fmt.allocPrint(alloc,
@@ -1284,7 +1320,7 @@ const std = @import("std");
                             \\    {s}
                             \\}}
                             ,
-                            .{ elem_count, body.items }
+                            .{ elem_count, op_src }
                         ) catch unreachable;
                     code.appendSlice(alloc, self_loop) catch unreachable;
                 }

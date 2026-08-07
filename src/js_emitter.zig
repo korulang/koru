@@ -33,6 +33,11 @@ const annotation_parser = @import("annotation_parser");
 /// and the template engine. Reading a `{ … }` literal with a second brace-splitter
 /// is how two hosts' answers drift.
 const struct_literal = @import("struct_literal");
+/// The ONE Koru expression lowering, shared with every transform that assembles
+/// host text. It used to live in this file as a private method, which is exactly
+/// why a `std/store` guard and a `std/kernel` op body reached `node` unlowered:
+/// the pass was reachable only from text this emitter wrote itself.
+const codegen_utils = @import("codegen_utils");
 
 pub const JsEmitError = error{
     OutOfMemory,
@@ -706,7 +711,7 @@ const Emitter = struct {
     ///    target passes straight through. In JavaScript `++` is the increment
     ///    operator, so an unlowered `a ++ b` is a SYNTAX error, not a wrong answer.
     ///  - `and` / `or` → `&&` / `||` (see `writeLowered`).
-    ///  - Zig host builtins → their JS twins (see `writeHostBuiltin`).
+    ///  - Zig host builtins → their JS twins (see `codegen_utils.lowerBuiltin`).
     ///
     /// Everything else passes through verbatim, exactly as
     /// emitter_helpers.emitValue passes a value through for Zig.
@@ -721,255 +726,25 @@ const Emitter = struct {
         try self.writeLowered(text, .host_text);
     }
 
-    const LowerMode = enum { koru_expr, host_text };
+    const LowerMode = codegen_utils.ExprMode;
 
-    /// The shared scanner behind `writeJsExpr` / `writeHostText`. Walks the text
-    /// once, leaving string and char literals untouched, and rewrites the
-    /// constructs JavaScript cannot parse.
-    ///
-    /// `and` / `or` are rewritten in BOTH modes, not just `.koru_expr`. A `when`
-    /// guard and an `~if(…)` condition are the same Koru-authored boolean text,
-    /// but they reach the emitter through different doors: the guard arrives as
-    /// `cont.condition`, while the condition is baked into the template's rendered
-    /// body by template_processor and arrives as host text. Lowering only one door
-    /// would leave the other emitting `a and b`, which is a JS syntax error. The
-    /// rewrite is word-boundary anchored, so `android` and `.or_else` are untouched.
+    /// The emitter's door onto the shared lowering. The pass itself lives in
+    /// `codegen_utils.lowerKoruExpr` so that a transform assembling host text can
+    /// reach it too; all this does is spend the result into the buffer and turn a
+    /// refused operation into this emitter's own diagnostic.
     fn writeLowered(self: *Emitter, text: []const u8, mode: LowerMode) JsEmitError!void {
-        var i: usize = 0;
-        var quote: ?u8 = null;
-        // One entry per open `{` we are inside, saying whether its closer must be
-        // written as `]`. A Zig ARRAY literal opens with a brace and closes with
-        // one; JavaScript's opens and closes with brackets, so the decision made
-        // at the opener has to survive to the matching closer.
-        var brace_is_bracket: [64]bool = undefined;
-        var brace_depth: usize = 0;
-        while (i < text.len) {
-            const c = text[i];
-            if (quote) |q| {
-                if (c == '\\' and i + 1 < text.len) {
-                    try self.buf.appendSlice(self.allocator, text[i .. i + 2]);
-                    i += 2;
-                    continue;
-                }
-                if (c == q) quote = null;
-                try self.buf.append(self.allocator, c);
-                i += 1;
-                continue;
-            }
-            if (c == '"' or c == '\'' or c == '`') {
-                quote = c;
-                try self.buf.append(self.allocator, c);
-                i += 1;
-                continue;
-            }
-            if (mode == .koru_expr and c == '+' and i + 1 < text.len and text[i + 1] == '+') {
-                try self.write("+");
-                i += 2;
-                continue;
-            }
-            if ((c == 'a' or c == 'o') and (i == 0 or (!isIdentChar(text[i - 1]) and text[i - 1] != '.'))) {
-                const word: ?[]const u8 = if (std.mem.startsWith(u8, text[i..], "and"))
-                    "&&"
-                else if (std.mem.startsWith(u8, text[i..], "or"))
-                    "||"
-                else
-                    null;
-                if (word) |js_op| {
-                    const len: usize = if (js_op[0] == '&') 3 else 2;
-                    if (i + len >= text.len or !isIdentChar(text[i + len])) {
-                        try self.write(js_op);
-                        i += len;
-                        continue;
-                    }
-                }
-            }
-            if (c == '@') {
-                if (try self.writeHostBuiltin(text, i)) |after| {
-                    i = after;
-                    continue;
-                }
-            }
-            // ZIG-SHAPED EXPRESSION TEXT, lowered in BOTH modes — unlike `++` and
-            // `and`/`or`, which are real JavaScript and must stay `.koru_expr`-only.
-            // Neither shape below has ANY valid JavaScript reading, so neither can
-            // misfire on genuine host text. It has to be both modes: a `~for(&items)`
-            // argument reaches the emitter as `.koru_expr`, but the SAME text also
-            // arrives baked into the `for|template|js` body as rendered host text.
-            //
-            // Zig ADDRESS-OF in prefix position. A JS array or object IS a
-            // reference, so taking its address is the identity. An INFIX `&` is
-            // bitwise-and in both languages and is left alone — position is the
-            // whole discriminator.
-            {
-                if (c == '&' and isPrefixPosition(text, i)) {
-                    i += 1;
-                    continue;
-                }
-                // Zig ARRAY literal: `[_]i32{1, 2, 3}`, `[3]i32{0, 0, 0}`,
-                // `[2][2]i32{ … }`. The type prefix has no JS counterpart and the
-                // braces become brackets.
-                if (c == '[') {
-                    if (zigArrayLiteralOpen(text, i)) |after_brace| {
-                        if (brace_depth < brace_is_bracket.len) {
-                            brace_is_bracket[brace_depth] = true;
-                            brace_depth += 1;
-                            try self.write("[");
-                            i = after_brace;
-                            continue;
-                        }
-                    }
-                }
-                // Anonymous POSITIONAL tuple: `.{ 0, 0 }`, a row of the 2-D literal
-                // above. Only the positional form — `.{ .ok = v }` is a BRANCH
-                // constructor whose JS shape is `{ tag: "ok", ok: v }`, and quietly
-                // lowering it to a plain object would produce a wrong answer rather
-                // than a syntax error. That one stays refused.
-                if (c == '.' and i + 1 < text.len and text[i + 1] == '{' and isPositionalTuple(text, i + 1)) {
-                    if (brace_depth < brace_is_bracket.len) {
-                        brace_is_bracket[brace_depth] = true;
-                        brace_depth += 1;
-                        try self.write("[");
-                        i += 2;
-                        continue;
-                    }
-                }
-                if (c == '{' and brace_depth < brace_is_bracket.len) {
-                    brace_is_bracket[brace_depth] = false;
-                    brace_depth += 1;
-                }
-                if (c == '}' and brace_depth > 0) {
-                    brace_depth -= 1;
-                    try self.write(if (brace_is_bracket[brace_depth]) "]" else "}");
-                    i += 1;
-                    continue;
-                }
-            }
-            try self.buf.append(self.allocator, c);
-            i += 1;
-        }
+        var diag = codegen_utils.LowerDiag{};
+        const lowered = codegen_utils.lowerKoruExpr(self.allocator, text, .js, mode, &diag) catch |err| switch (err) {
+            error.OutOfMemory => return JsEmitError.OutOfMemory,
+            error.UnsupportedBuiltin => {
+                log.err("[js_emitter] host builtin '@{s}' has no JS lowering\n", .{diag.unknown_builtin});
+                return JsEmitError.UnsupportedConstruct;
+            },
+        };
+        defer self.allocator.free(lowered);
+        try self.buf.appendSlice(self.allocator, lowered);
     }
 
-    /// Lower a Zig HOST builtin call starting at `text[at] == '@'` to its
-    /// JavaScript equivalent, returning the index just past it. Returns null when
-    /// what follows `@` is not a builtin CALL at all (no name, no open paren), so
-    /// the caller emits the character verbatim.
-    ///
-    /// WHY this exists: Koru `.k` body expressions currently reach the backend as
-    /// raw HOST text — that is the gap 010_063 pins as red ("give .k
-    /// body-expressions a parse-and-lower layer"). Until that layer exists the
-    /// integer arithmetic a `.k` author writes is Zig, so a JS target either
-    /// translates these builtins or emits text no JavaScript engine can parse.
-    /// The mapping is mechanical and semantics-preserving:
-    ///
-    ///   @as(T, x) @intCast(x) @truncate(x) @floatFromInt(x) @enumFromInt(x)
-    ///   @intFromEnum(x) @bitCast(x)                → the value, unchanged
-    ///   @intFromFloat(x)                           → Math.trunc(x)
-    ///   @divTrunc(a, b)                            → Math.trunc((a) / (b))
-    ///   @divFloor(a, b)                            → Math.floor((a) / (b))
-    ///   @divExact(a, b)                            → ((a) / (b))
-    ///   @rem(a, b)                                 → ((a) % (b))          truncated, C's %
-    ///   @mod(a, b)                                 → (((a) % (b) + (b)) % (b))  euclidean
-    ///   @min @max @abs @sqrt                       → Math.min max abs sqrt
-    ///
-    /// An `@`-builtin this does not model is refused rather than passed through:
-    /// `@` is not an expression character in JavaScript, so emitting it produces
-    /// a syntax error at `node` instead of a diagnostic here.
-    fn writeHostBuiltin(self: *Emitter, text: []const u8, at: usize) JsEmitError!?usize {
-        var p = at + 1;
-        while (p < text.len and isIdentChar(text[p])) p += 1;
-        const name = text[at + 1 .. p];
-        if (name.len == 0) return null;
-        if (p >= text.len or text[p] != '(') return null;
-
-        // Balanced-paren scan for the argument list, then split it at TOP-LEVEL
-        // commas only — `@as(i64, @intCast(i))` nests.
-        const args_start = p + 1;
-        var depth: usize = 1;
-        var j = args_start;
-        var split: ?usize = null;
-        while (j < text.len and depth > 0) : (j += 1) {
-            switch (text[j]) {
-                '(', '[', '{' => depth += 1,
-                ')', ']', '}' => depth -= 1,
-                ',' => if (depth == 1 and split == null) {
-                    split = j;
-                },
-                else => {},
-            }
-        }
-        if (depth != 0) return null; // unbalanced — not a call we can read
-        const args_end = j - 1; // index of the closing ')'
-        const first = std.mem.trim(u8, text[args_start .. split orelse args_end], " \t");
-        const second = if (split) |s| std.mem.trim(u8, text[s + 1 .. args_end], " \t") else "";
-
-        const eql = std.mem.eql;
-        // Representation casts: JavaScript has ONE number type, so the cast is
-        // the value. `@as`/`@enumFromInt` carry the type first, the value second.
-        if (eql(u8, name, "as") or eql(u8, name, "enumFromInt") or eql(u8, name, "bitCast")) {
-            try self.write("(");
-            try self.writeLowered(if (split != null) second else first, .koru_expr);
-            try self.write(")");
-            return j;
-        }
-        if (eql(u8, name, "intCast") or eql(u8, name, "truncate") or
-            eql(u8, name, "floatFromInt") or eql(u8, name, "intFromEnum") or
-            eql(u8, name, "floatCast"))
-        {
-            try self.write("(");
-            try self.writeLowered(first, .koru_expr);
-            try self.write(")");
-            return j;
-        }
-        if (eql(u8, name, "intFromFloat")) {
-            try self.write("Math.trunc(");
-            try self.writeLowered(first, .koru_expr);
-            try self.write(")");
-            return j;
-        }
-        if (eql(u8, name, "divTrunc") or eql(u8, name, "divFloor") or eql(u8, name, "divExact")) {
-            try self.write(if (eql(u8, name, "divTrunc")) "Math.trunc((" else if (eql(u8, name, "divFloor")) "Math.floor((" else "((");
-            try self.writeLowered(first, .koru_expr);
-            try self.write(") / (");
-            try self.writeLowered(second, .koru_expr);
-            try self.write("))");
-            return j;
-        }
-        if (eql(u8, name, "rem")) {
-            try self.write("((");
-            try self.writeLowered(first, .koru_expr);
-            try self.write(") % (");
-            try self.writeLowered(second, .koru_expr);
-            try self.write("))");
-            return j;
-        }
-        if (eql(u8, name, "mod")) {
-            // Euclidean: Zig's @mod is non-negative for a positive divisor,
-            // JavaScript's `%` keeps the dividend's sign.
-            try self.write("((((");
-            try self.writeLowered(first, .koru_expr);
-            try self.write(") % (");
-            try self.writeLowered(second, .koru_expr);
-            try self.write(")) + (");
-            try self.writeLowered(second, .koru_expr);
-            try self.write(")) % (");
-            try self.writeLowered(second, .koru_expr);
-            try self.write("))");
-            return j;
-        }
-        if (eql(u8, name, "min") or eql(u8, name, "max") or eql(u8, name, "abs") or eql(u8, name, "sqrt")) {
-            try self.writeFmt("Math.{s}(", .{name});
-            try self.writeLowered(first, .koru_expr);
-            if (split != null) {
-                try self.write(", ");
-                try self.writeLowered(second, .koru_expr);
-            }
-            try self.write(")");
-            return j;
-        }
-
-        log.err("[js_emitter] host builtin '@{s}' has no JS lowering\n", .{name});
-        return JsEmitError.UnsupportedConstruct;
-    }
 
     /// Where an event declaration was found, paired with the item list its
     /// implementation must be resolved against. The scope is half the answer: a
@@ -3159,83 +2934,6 @@ fn isJsIdentifier(name: []const u8) bool {
     if (name[0] >= '0' and name[0] <= '9') return false;
     for (name) |c| {
         if (!(isIdentChar(c) or c == '$')) return false;
-    }
-    return true;
-}
-
-/// Is `text[at]` (a `&`) in PREFIX position — Zig address-of — rather than infix
-/// bitwise-and? Prefix means nothing that could END an operand precedes it: start
-/// of text, an opener, a comma, or an operator. `a & b` is infix and means the
-/// same thing in both languages; `&items` is an address JS does not have.
-///
-/// The one case a character test alone gets wrong is a preceding KEYWORD. In
-/// `for (const x of &items)` the char before is `f`, which looks exactly like the
-/// end of an identifier — but `of` cannot END an operand, it demands one. That is
-/// not a corner: it is the shape the `for|template|js` body renders for every
-/// `~for(&xs)` in the corpus. So the scan reads back a whole WORD and asks what
-/// the word is, not what its last letter is.
-fn isPrefixPosition(text: []const u8, at: usize) bool {
-    var j = at;
-    while (j > 0 and (text[j - 1] == ' ' or text[j - 1] == '\t')) j -= 1;
-    if (j == 0) return true;
-    const p = text[j - 1];
-    if (!(isIdentChar(p) or p == ')' or p == ']' or p == '}' or p == '"' or p == '\'')) return true;
-    if (!isIdentChar(p)) return false;
-    var w = j;
-    while (w > 0 and isIdentChar(text[w - 1])) w -= 1;
-    const operand_expecting = [_][]const u8{
-        "of",   "in",    "return", "typeof", "case",  "new",
-        "delete", "void", "yield",  "await",  "instanceof",
-    };
-    for (operand_expecting) |kw| {
-        if (std.mem.eql(u8, text[w..j], kw)) return true;
-    }
-    return false;
-}
-
-/// At `text[at] == '['`, is this the opening of a Zig ARRAY LITERAL type prefix
-/// (`[_]i32{`, `[3]i32{`, `[2][2]i32{`, `[_]const u8{`)? Returns the index just
-/// past the `{` when so. An ordinary INDEX (`arr[i]`) has no brace after the
-/// type slot and returns null, as does a plain slice type with no literal body.
-fn zigArrayLiteralOpen(text: []const u8, at: usize) ?usize {
-    var j = at;
-    // One or more `[…]` dimension groups.
-    var dims: usize = 0;
-    while (j < text.len and text[j] == '[') {
-        const close = std.mem.indexOfScalarPos(u8, text, j, ']') orelse return null;
-        // A dimension is `_` or a constant expression; a `[` inside it means this
-        // is not the simple literal shape this lowering models.
-        if (std.mem.indexOfScalarPos(u8, text[0..close], j + 1, '[') != null) return null;
-        j = close + 1;
-        dims += 1;
-    }
-    if (dims == 0) return null;
-    // The element type: identifier chars, `.`, and any `const`/`*` qualifiers.
-    while (j < text.len and (isIdentChar(text[j]) or text[j] == '.' or text[j] == '*' or text[j] == ' ')) j += 1;
-    if (j >= text.len or text[j] != '{') return null;
-    return j + 1;
-}
-
-/// At `text[at] == '{'` opening a `.{ … }`, are its top-level entries POSITIONAL
-/// (`.{ 0, 0 }` — a tuple, i.e. a JS array) rather than NAMED (`.{ .ok = v }` — a
-/// branch constructor or struct, whose JS shape this lowering deliberately does
-/// not guess)? An empty `.{}` counts as positional: it is the void payload.
-fn isPositionalTuple(text: []const u8, at: usize) bool {
-    var j = at + 1;
-    var depth: usize = 0;
-    while (j < text.len) : (j += 1) {
-        switch (text[j]) {
-            '(', '[', '{' => depth += 1,
-            ')', ']' => depth -= 1,
-            '}' => {
-                if (depth == 0) return true;
-                depth -= 1;
-            },
-            // A top-level `.name` is the named form. `.{` nested inside is a row
-            // of its own and is decided when the scan reaches it.
-            '.' => if (depth == 0 and j + 1 < text.len and isIdentChar(text[j + 1])) return false,
-            else => {},
-        }
     }
     return true;
 }

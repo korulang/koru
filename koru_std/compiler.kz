@@ -521,6 +521,12 @@ pub const CompilerContext = struct {
     // in control.kz's capture seed and template_processor's lowerScrutinee both name
     // that reason.
     js_emitter_module.addImport("struct_literal", struct_literal_module);
+    // The ONE Koru expression lowering. It used to be a private method on this
+    // emitter, which is exactly why a `std/store` guard and a `std/kernel` op
+    // body reached `node` unlowered — the pass was reachable only from text the
+    // emitter wrote itself. It now lives in codegen_utils and this emitter is one
+    // of its callers.
+    js_emitter_module.addImport("codegen_utils", codegen_utils_module);
 
     // Build.zig emission
     const emit_build_zig_module = b.createModule(.{

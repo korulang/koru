@@ -110,6 +110,37 @@ fn storeCellQualifier(alloc: std.mem.Allocator, home: []const u8, main_module_na
     return storeEmitQualifier(alloc, home, main_module_name);
 }
 
+/// A KORU EXPRESSION on its way into a generated host body, rendered for the
+/// build's target.
+///
+/// A `std/store` guard is text the user wrote in Koru — `hp > 40 and kind == 1`
+/// — and this transform splices it into a proc body it assembles itself. That
+/// route never passed through the emitter's lowering, so the guard reached
+/// `node` with `and` still in it while `js_emitter` had known how to lower it
+/// for months. The pass now lives in `codegen_utils.lowerKoruExpr` precisely so
+/// a transform can reach it; this is that call.
+///
+/// On Zig it is the identity, so the emitted text is unchanged to the byte —
+/// Koru's operator set is a Zig subset and that is the current ruling.
+///
+/// Returns null when the expression names an `@`-operation the vocabulary does
+/// not model, filling `unknown` with the name so the caller can refuse by name.
+/// Refusing is the point: passing an unmodelled operation through is how one
+/// target silently accepts what the other cannot run.
+fn storeLowerExpr(alloc: std.mem.Allocator, text: []const u8, unknown: *[]const u8) ?[]const u8 {
+    const target: codegen_utils_store.HostTarget =
+        if (std.mem.eql(u8, CompilerEnv.lang, "js")) .js else .zig;
+    var d = codegen_utils_store.LowerDiag{};
+    const lowered = codegen_utils_store.lowerKoruExpr(alloc, text, target, .koru_expr, &d) catch |err| switch (err) {
+        error.OutOfMemory => unreachable,
+        error.UnsupportedBuiltin => {
+            unknown.* = d.unknown_builtin;
+            return null;
+        },
+    };
+    return lowered;
+}
+
 /// Find a SYNTHESIZED store declaration by its exact generated name, at any
 /// module depth.
 ///
@@ -3997,7 +4028,10 @@ fn storeLowerText(
                 qr.appendSlice(allocator, idz) catch unreachable;
             }
             if (qs.guard) |g| {
-                const gz = std.fmt.allocPrint(allocator, "if (!({s})) return;\n", .{g}) catch unreachable;
+                var unknown_op: []const u8 = "";
+                const lowered_g = storeLowerExpr(allocator, g, &unknown_op) orelse
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the guard names `@{s}`, and that operation has no lowering for this target - a store guard is a Koru expression, and the operations Koru names with `@` are the shared table in codegen_utils.lowerBuiltin", .{ store_name, unknown_op }) } };
+                const gz = std.fmt.allocPrint(allocator, "if (!({s})) return;\n", .{lowered_g}) catch unreachable;
                 qr.appendSlice(allocator, gz) catch unreachable;
             }
             qr.appendSlice(allocator, emit_ns) catch unreachable;
@@ -8757,7 +8791,10 @@ fn storeLowerText(
     // costs one compile; a guard that is ignored reads as working and quietly
     // widens every write behind it.
     if (guard_z) |cond| {
-        const gz = std.fmt.allocPrint(allocator, "if (!({s})) continue;\n", .{cond}) catch unreachable;
+        var unknown_op: []const u8 = "";
+        const lowered_c = storeLowerExpr(allocator, cond, &unknown_op) orelse
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the sweep guard names `@{s}`, and that operation has no lowering for this target - a store guard is a Koru expression, and the operations Koru names with `@` are the shared table in codegen_utils.lowerBuiltin", .{ store_name, unknown_op }) } };
+        const gz = std.fmt.allocPrint(allocator, "if (!({s})) continue;\n", .{lowered_c}) catch unreachable;
         loop.appendSlice(allocator, gz) catch unreachable;
     }
     loop.appendSlice(allocator, storeEventQualifier(allocator, home_ns, program.main_module_name)) catch unreachable;
