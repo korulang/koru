@@ -1,1 +1,1 @@
-impure events without mocks
+Test 'Impure events should error' has impure events without mocks: fetch-user, save-log

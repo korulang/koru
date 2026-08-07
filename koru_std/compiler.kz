@@ -1550,16 +1550,18 @@ const processTestFlow = struct {
             }
         }
 
-        // If there are impure events without mocks, error
+        // If there are impure events without mocks, error. One line, names
+        // comma-separated — kept byte-identical to the transform-pass twin in
+        // koru_std/testing.kz so which producer fired is never something a
+        // reader (or a pinned regression) has to know.
         if (impure_events.items.len > 0) {
             var err_msg = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
             err_msg.appendSlice(allocator, "Test '") catch {};
             err_msg.appendSlice(allocator, test_name) catch {};
-            err_msg.appendSlice(allocator, "' has impure events without mocks:\n") catch {};
-            for (impure_events.items) |event_path| {
-                err_msg.appendSlice(allocator, "  - ") catch {};
+            err_msg.appendSlice(allocator, "' has impure events without mocks: ") catch {};
+            for (impure_events.items, 0..) |event_path, i| {
+                if (i > 0) err_msg.appendSlice(allocator, ", ") catch {};
                 err_msg.appendSlice(allocator, event_path) catch {};
-                err_msg.appendSlice(allocator, "\n") catch {};
             }
             @panic(err_msg.items);
         }

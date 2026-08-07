@@ -101,6 +101,37 @@ const validateMocks = struct {
                 continue;
             }
 
+            // A bare return (`~ev -> value`) is the TWIN of the branch
+            // constructor (`~ev => branch value`), not a degenerate case of it:
+            // it pairs with the declaration's `return_type` and carries no
+            // branch tag at all, so `bc.branch_name` is empty by construction.
+            // Looking that empty name up in `branches` is what refused every
+            // correctly-mocked `-> T` tor with "unknown branch ''" — the mock
+            // form the compiler itself recommends (flow_checker.zig:419) was the
+            // one the mock validator could not express (395_006). There is no
+            // branch payload to shape-check here; the value is checked against
+            // `return_type` by the ordinary emission path.
+            if (bc.is_bare_return) {
+                const declares_branches = if (event_decl) |decl|
+                    decl.branches.len > 0
+                else if (event_type) |et|
+                    et.return_type == null
+                else
+                    false;
+                if (declares_branches) {
+                    reporter.addError(
+                        .KORU021,
+                        mock_line,
+                        mock_column,
+                        "mocked tor declares branches, so its mock constructs one — a bare return (`->`) produces no branch tag",
+                        .{},
+                    ) catch {
+                        @panic("Mock shape validation failed");
+                    };
+                }
+                continue;
+            }
+
             var payload_fields: []const ast.Field = &[_]ast.Field{};
             var payload_is_wildcard = false;
 
@@ -551,16 +582,24 @@ const validateMocks = struct {
     }
     std_import.debug.print("[TEST] Purity walk complete, {d} impure events\n", .{impure_events.items.len});
 
-    // Error on impure events without mocks
+    // Error on impure events without mocks.
+    //
+    // The whole point of this refusal is that it names EVERY impure event at
+    // once — one recompile, not one per event. So the names go on the SAME LINE
+    // as the headline: a `@panic` payload is read as a single `panic: <msg>`
+    // line by every tool that quotes it, and a one-per-line list is silently
+    // dropped by anything that quotes only that first line (which is how this
+    // diagnostic got reported as printing nothing at all). One line also makes
+    // the full list a literal substring the regression corpus can PIN, so
+    // "lists them all" is defended by 395_005 rather than by eyeball.
     if (impure_events.items.len > 0) {
         var err_msg = std_import.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
         err_msg.appendSlice(allocator, "Test '") catch {};
         err_msg.appendSlice(allocator, test_name) catch {};
-        err_msg.appendSlice(allocator, "' has impure events without mocks:\n") catch {};
-        for (impure_events.items) |event_path| {
-            err_msg.appendSlice(allocator, "  - ") catch {};
+        err_msg.appendSlice(allocator, "' has impure events without mocks: ") catch {};
+        for (impure_events.items, 0..) |event_path, i| {
+            if (i > 0) err_msg.appendSlice(allocator, ", ") catch {};
             err_msg.appendSlice(allocator, event_path) catch {};
-            err_msg.appendSlice(allocator, "\n") catch {};
         }
         @panic(err_msg.items);
     }
