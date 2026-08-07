@@ -1,0 +1,4 @@
+const std = @import("std");
+
+~proc mk|zig { return "x"; }
+~proc show|zig { std.debug.print("row {d} {s}\n", .{ id, label }); }

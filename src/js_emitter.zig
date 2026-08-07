@@ -2095,7 +2095,13 @@ const Emitter = struct {
             };
             // Skip self-referential `const x = x;` — outer is already in scope.
             if (std.mem.eql(u8, field.name, arg_val)) continue;
-            try self.writeFmt("{s}const {s} = {s};\n", .{ inner, field.name, arg_val });
+            // The arg is a KORU expression and must go through the JS lowering:
+            // a rule-arm row read arrives as the Zig column read
+            // (`(&col)[@as(usize, @intCast(cur))]`), and only writeJsExpr
+            // strips the `&` and lowers the builtins. Raw splice = SyntaxError.
+            try self.writeFmt("{s}const {s} = ", .{ inner, field.name });
+            try self.writeJsExpr(arg_val);
+            try self.write(";\n");
         }
 
         try self.emitReindented(proc.body.text, inner);
@@ -2152,7 +2158,11 @@ const Emitter = struct {
             const tid = self.nextId();
             const temp = try std.fmt.allocPrint(self.allocator, "__arg_{d}", .{tid});
             try temps.append(self.allocator, .{ .field = field.name, .temp = temp });
-            try self.writeFmt("{s}const {s} = {s};\n", .{ indent, temp, arg_val });
+            // Same contract as the plain-inline path: the arg is a Koru
+            // expression, and only the JS lowering makes it JavaScript.
+            try self.writeFmt("{s}const {s} = ", .{ indent, temp });
+            try self.writeJsExpr(arg_val);
+            try self.write(";\n");
         }
 
         // Open a block so the producer's input-field locals don't leak into the

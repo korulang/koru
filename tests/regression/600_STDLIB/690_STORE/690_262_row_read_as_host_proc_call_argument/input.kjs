@@ -1,0 +1,2 @@
+~proc mk|js { return "x"; }
+~proc show|js { console.log("row " + id + " " + label); }
