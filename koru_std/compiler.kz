@@ -1459,10 +1459,30 @@ const processTestFlow = struct {
         log.verbose("[TEST-GEN] Processing test '{s}' with {d} bytes of source\n", .{test_name, source_text.len});
 
         // Parse the source body
+        // The test body has no file of its own. It inherits the ENCLOSING file's
+        // DIALECT — and only the dialect. A `.k` is pure Koru with no `~`; the
+        // invented "__test__.kz" told the parser this was host-embedded, so every
+        // line of the body parsed as HOST TEXT, nothing was collected, and the
+        // emitted test block came out EMPTY — a pass with zero assertions in it
+        // (395_002, 395_009).
+        //
+        // The synthetic NAME is kept deliberately. A filename answers two
+        // questions in Parser.init — the dialect (parser.zig:707) and the MODULE
+        // NAME (parser.zig:696-705) — and handing it the real path fixes the
+        // first while silently renaming the module, which took 395_005 and
+        // 395_010 red. Same disease as std/runtime:parse.source, seen from the
+        // other side: one parameter, two questions. So: synthetic name for the
+        // module, real extension for the dialect, set after init because is_k is
+        // read during parse and never during init.
+        //
+        // Ruled by Lars 2026-08-07: "use the same extension and semantics as the
+        // original file... Writing `~` inside a `.k`-file makes no sense, that is
+        // literally the actual rule."
         var parser = parser_impl.Parser.init(allocator, source_text, "__test__.kz", &[_][]const u8{}, null) catch {
             log.verbose("[TEST-GEN] Failed to init parser for test '{s}'\n", .{test_name});
             return null;
         };
+        if (source_ptr) |sp| parser.is_k = std.mem.endsWith(u8, sp.location.file, ".k");
         defer parser.deinit();
 
         var parse_result = parser.parse() catch {
