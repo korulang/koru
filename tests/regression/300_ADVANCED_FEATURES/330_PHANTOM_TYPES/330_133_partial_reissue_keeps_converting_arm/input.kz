@@ -1,0 +1,52 @@
+// A tor that re-issues its input state on ONE arm and genuinely converts it
+// on ANOTHER stays a disposal candidate for that state.
+//
+// 330_118 states the rule this pins the other half of: "A CONVERTING tor is
+// a different thing and stays a legitimate candidate — only same-obligation
+// conservation is disqualifying." 330_118's `step` conserves on EVERY arm,
+// so excluding it is right. `settle` below conserves on one arm and converts
+// on the other, and the converting arm is called explicitly here.
+//
+// RED. `eventReIssuesObligation` walks every branch and returns "excluded"
+// on the FIRST that re-issues, with no check for whether another arm
+// converts — so a partially-conserving tor is dropped from the candidate
+// list entirely and the caller is told `No tor accepts <!built>` while
+// calling the arm that accepts it. The predicate exists twice, independently
+// (phantom_semantic_checker.zig:296, auto_discharge_inserter.zig:3057), and
+// both copies carry the same any-arm test, so both `koruc` and
+// `--auto-discharge=disable` fail with differently-worded versions of it.
+//
+// Invisible to `--check`: shape-checking does not walk the obligation flow.
+// Needs no cross-module import and no FFI beyond an allocation — the
+// one-tor, two-arm shape is the whole trigger.
+//
+// Found 2026-08-07 by the ukstore Unikraft lift, whose `add` tor had exactly
+// this shape (a "nothing happened, retry" refusal re-minting the input).
+
+const std = @import("std");
+const Obj = struct { v: i32 };
+
+~pub tor mk { } -> *Obj<built!>
+~proc mk|zig {
+    const o = std.heap.page_allocator.create(Obj) catch unreachable;
+    o.* = Obj{ .v = 1 };
+    return o;
+}
+
+~pub tor settle { obj: *Obj<!built> }
+| ok *Obj<held!>
+| refused { obj: *Obj<built!>, reason: string }
+~proc settle|zig {
+    return .{ .ok = obj };
+}
+
+~pub tor finish { obj: *Obj<!held> }
+~proc finish|zig {
+    _ = obj;
+    std.debug.print("settled\n", .{});
+}
+
+~mk()
+| ready obj |> settle(obj)
+    | ok held |> finish(obj: held)
+    | refused _ |> _
