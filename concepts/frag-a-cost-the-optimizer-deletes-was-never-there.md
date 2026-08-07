@@ -69,6 +69,64 @@ enough to make routine: four instructions of `fadd.2d` against twenty scalar
 ones. Instruction SHAPE separated the terms correctly where the mock's timings
 ranked them backwards. Read the two loops before modelling either.
 
+## The claim was target-relative and stated as universal (2026-08-07)
+
+"A cost the optimizer deletes was never there" was true, and it quietly meant
+*LLVM's* optimizer, because there was only one backend. A JavaScript target
+arrived, and the sentence stopped being about costs and started being about
+which backend you happened to measure.
+
+`std/store` announces every written column. With no rule observing the store the
+announce reads the column back through `peek`, allocates a branch object, tests
+its tag against every column and discards the payload — per write, per row. LLVM
+deletes the whole chain; the Zig arm has never paid a cycle for it, and by the
+old sentence it was never there. On V8 it was 77% of total runtime. Deleting it
+took an ECS integration benchmark from 2.78s to 0.64s, a **4.3x whole-program
+speedup**, and moved the Zig arm not at all.
+
+So the belief keeps its shape and loses its universality:
+
+> A cost the optimizer deletes was never there **on that target**. Emitted waste
+> that one backend erases is emitted waste, and the moment a second backend
+> exists it is somebody's real cost. A single-backend project cannot tell the
+> difference between "we do not emit this" and "our backend removes it", and has
+> no reason to care — right up until it does.
+
+The sibling reading is sharper than the correction: **a second backend is a free
+audit of what the compiler actually emits.** LLVM had been hiding this since the
+store was written, and no amount of reading `output_emitted.zig` would have
+raised it, because the code is plainly there and plainly harmless. It took a host
+with no optimizer to make the emission visible as a cost.
+
+## The method's own Open, closed: patch the ARTIFACT, not a mock
+
+The Open below asks what else rests on a mock, and the fragment's diagnosis is
+that "a mock reproduces the shape of emitted code and never its context". There
+is a way to have the context by construction: **hand-edit the emitted file and
+time that.** It is not a model of the compiler's output — it IS the compiler's
+output, minus exactly the thing under test.
+
+Four candidate optimizations were priced this way in about ten minutes, before a
+line of compiler code was written, and THREE OF THEM WERE WORTH NOTHING:
+
+- removing the dead announce CALL, once its body was empty — 0.62s vs 0.61s.
+  V8 inlines an empty method away, so the cheap fix (empty the callee) and the
+  invasive one (prove no observer at every call site) measure the same.
+- inlining the sweep body into its single caller — 0.29s vs 0.29s. V8 already
+  does it.
+- replacing the mask's `Math.floor(m / 2**i) % 2` with a bitwise `m & (1<<i)` —
+  0.61s vs 0.62s. The cost is the four BRANCHES per row, not the arithmetic, so
+  the one-line fix buys nothing and only monomorphising the mask does.
+
+Each is a plausible optimization that a reasonable person schedules and builds.
+Each would have shipped for zero. The negative results are the return on the
+method, and they are only cheap because the artifact is a text file: the same
+four questions asked of the Zig arm need a disassembler and a rebuild each.
+
+**A target whose emitted code you can edit in a text editor and run is a
+profiling instrument the native target does not have.** That is a reason to keep
+the JS backend honest that has nothing to do with shipping JavaScript.
+
 ## Open
 
 Whether anything else on that board rests on a mock. The decomposition is now
