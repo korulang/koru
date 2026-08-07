@@ -1,0 +1,72 @@
+// What does the interpreter do when interpreted source handles only SOME of an
+// event's branches, and the unhandled one is taken?
+//
+// In compiled Koru that is KORU022 at compile time. Interpreted source arrives
+// after every compile step is over, so the same rule has nowhere to fire.
+~import std/runtime
+~import std/io
+
+const std = @import("std");
+
+// Two branches, and which one fires is a runtime decision.
+~pub tor pick { n: i64 }
+| ok i64
+| bad string
+
+~proc pick|zig {
+    if (n > 0) return .{ .ok = n };
+    return .{ .bad = "n was not positive" };
+}
+
+~pub tor note { text: string }
+
+~proc note|zig {
+    std.debug.print("      note: {s}\n", .{text});
+}
+
+~std/runtime:register(scope: "api") {
+    pick(1)
+    note(1)
+}
+
+// A: no continuations at all. The event's outcome has nowhere to go.
+const A = "pick(n: -1)";
+
+// B: only `| ok` is handled, and `| bad` is the branch that fires. THE QUESTION.
+const B = "pick(n: -1)\n| ok v |> note(text: \"took ok\")";
+
+// C: control — same source, and the handled branch is the one that fires.
+const C = "pick(n: 5)\n| ok v |> note(text: \"took ok\")";
+
+~std/io:print.ln("--- A: no arms, unhandled outcome")
+~std/runtime:run(source: A, scope: "api")
+| result r |> std/io:print.ln("  result branch=[{{ r.value.branch:s }}]")
+| exhausted _ |> std/io:print.ln("  EXHAUSTED")
+| parse-error e |> std/io:print.ln("  PARSE ERROR: {{ e.message:s }}")
+| validation-error v |> std/io:print.ln("  VALIDATION ERROR: {{ v:s }}")
+| shape-error s |> std/io:print.ln("  SHAPE ERROR: {{ s.message:s }}")
+| event-denied ev |> std/io:print.ln("  EVENT DENIED: {{ ev:s }}")
+| dispatch-error d |> std/io:print.ln("  DISPATCH ERROR: {{ d.message:s }}")
+| scope-not-found _ |> std/io:print.ln("  SCOPE NOT FOUND")
+
+~std/io:print.ln("--- B: only | ok handled, | bad fires")
+~std/runtime:run(source: B, scope: "api")
+| result r |> std/io:print.ln("  result branch=[{{ r.value.branch:s }}]")
+| exhausted _ |> std/io:print.ln("  EXHAUSTED")
+| parse-error e |> std/io:print.ln("  PARSE ERROR: {{ e.message:s }}")
+| validation-error v |> std/io:print.ln("  VALIDATION ERROR: {{ v:s }}")
+| shape-error s |> std/io:print.ln("  SHAPE ERROR: {{ s.message:s }}")
+| event-denied ev |> std/io:print.ln("  EVENT DENIED: {{ ev:s }}")
+| dispatch-error d |> std/io:print.ln("  DISPATCH ERROR: {{ d.message:s }}")
+| scope-not-found _ |> std/io:print.ln("  SCOPE NOT FOUND")
+
+~std/io:print.ln("--- C: control, | ok handled and | ok fires")
+~std/runtime:run(source: C, scope: "api")
+| result r |> std/io:print.ln("  result branch=[{{ r.value.branch:s }}]")
+| exhausted _ |> std/io:print.ln("  EXHAUSTED")
+| parse-error e |> std/io:print.ln("  PARSE ERROR: {{ e.message:s }}")
+| validation-error v |> std/io:print.ln("  VALIDATION ERROR: {{ v:s }}")
+| shape-error s |> std/io:print.ln("  SHAPE ERROR: {{ s.message:s }}")
+| event-denied ev |> std/io:print.ln("  EVENT DENIED: {{ ev:s }}")
+| dispatch-error d |> std/io:print.ln("  DISPATCH ERROR: {{ d.message:s }}")
+| scope-not-found _ |> std/io:print.ln("  SCOPE NOT FOUND")

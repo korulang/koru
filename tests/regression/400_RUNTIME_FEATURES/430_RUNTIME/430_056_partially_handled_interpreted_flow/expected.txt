@@ -1,0 +1,7 @@
+--- A: no arms, unhandled outcome
+  result branch=[bad]
+--- B: only | ok handled, | bad fires
+  result branch=[bad]
+--- C: control, | ok handled and | ok fires
+      note: took ok
+  result branch=[ok]
