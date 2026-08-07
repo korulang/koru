@@ -1,0 +1,46 @@
+// `$mod.` must interpolate in a plain HOST-LINE `fn`, not only inside a
+// `~proc` body. Ruled by Lars 2026-08-07: "I think probably $mod should also
+// interpolate in the hostlines. It feels very likely."
+//
+// ASPIRATIONAL RED until it does. Today the token survives verbatim into the
+// emitted Zig and the build dies with
+//
+//     output_emitted.zig:56:9: error: expected statement, found 'invalid token'
+//
+// which names generated code and implicates no line the author wrote. The
+// author's options are to guess, or to discover by bisection that the rule is
+// "$mod works in ~proc, not in fn" — which nothing states.
+//
+// FOUND BY AN APP. koru-examples kopium-headless/wire.kz factored a helper out
+// of a working `~proc` into a plain `fn` beside it — the most ordinary
+// refactor there is, moving code DOWN into a helper in the same module — and it
+// stopped compiling. The proc kept working; the fn did not. Nothing about the
+// two spellings suggests they differ in what they may name.
+//
+// NOT MARKED `TODO`, following 210_201: a TODO makes the harness return before
+// running the test, so a TODO-parked aspirational test pins nothing and would
+// not flip when the cause is fixed. Red is the honest state, and red is what
+// flips.
+//
+// The workaround is real and is why this is not a blocker: a `fn` in the same
+// container can reach a module var by BARE name. But then one module has two
+// spellings for one thing, chosen by which construct you happen to be in.
+~import std/io
+
+const std = @import("std");
+
+var counter: i64 = 40;
+
+// The plain host-line fn. `$mod.counter` here is the whole point of the test.
+fn bump(by: i64) void {
+    $mod.counter += by;
+}
+
+~pub tor run {} -> i64
+
+~proc run|zig {
+    bump(2);
+    return $mod.counter;
+}
+
+~run(): n |> std/io:print.ln("counter={{ n:d }}")
