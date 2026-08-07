@@ -345,11 +345,24 @@ pub const EmissionContext = struct {
     // inner one — collision-driven, so unnested emission keeps the author's
     // spelling (230_015).
     active_capture_names: std.ArrayList([]const u8) = .empty,
+    // User names bound as `const`s at the current Zig function scope (chain
+    // return bindings — `get-count(n: 3): v`). An inline frame binding a
+    // callee param of the same name would shadow them (400_151), so the frame
+    // consults this list and site-unique-renames on collision. Owned dupes;
+    // emitFlow save/restores the length around each flow.
+    zig_scope_bindings: std.ArrayList([]const u8) = .empty,
 };
 
 pub const InlineArgBinding = struct {
     name: []const u8,
     value: []const u8,
+    // The name the binding was actually emitted under — differs from `name`
+    // when a collision forced a site-unique rename (400_151).
+    spelled: []const u8,
+    // Whether body references of `name` rewrite to `spelled`. True for a
+    // rename or a keyword/primitive escape; false for the kebab mangle, whose
+    // textual form (`a-b`) is subtraction in Zig and must not be rewritten.
+    rewrites_body: bool,
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -2180,6 +2193,31 @@ fn substituteParamNamesInPlainValue(
                 const valid_end = idx + param.len >= plain_value.len or
                     !isIdentifierChar(plain_value[idx + param.len]);
                 if (valid_start and valid_end) {
+                    // Punned field position — `{ x, y }` — the identifier is
+                    // the field name AND the value. Substituting only the text
+                    // hands the VALUE to the pun lowering as the field name
+                    // (`.{ .10 = 10 }` — 210_025). Expand the pun here so the
+                    // name survives the substitution: `x` → `x: <arg>`.
+                    const prev_ns: u8 = blk: {
+                        var j = out.items.len;
+                        while (j > 0) : (j -= 1) {
+                            const c = out.items[j - 1];
+                            if (c != ' ' and c != '\t' and c != '\n') break :blk c;
+                        }
+                        break :blk 0;
+                    };
+                    const next_ns: u8 = blk: {
+                        var j = idx + param.len;
+                        while (j < plain_value.len) : (j += 1) {
+                            const c = plain_value[j];
+                            if (c != ' ' and c != '\t' and c != '\n') break :blk c;
+                        }
+                        break :blk 0;
+                    };
+                    if ((prev_ns == '{' or prev_ns == ',') and (next_ns == ',' or next_ns == '}')) {
+                        try out.appendSlice(allocator, param);
+                        try out.appendSlice(allocator, ": ");
+                    }
                     try out.appendSlice(allocator, arg_val);
                     idx += param.len;
                     replaced = true;
@@ -4644,6 +4682,21 @@ pub fn emitInlineBodyNode(
     const pushed_captures = try pushBodyCaptures(ctx, inline_code);
     defer popBodyCaptures(ctx, pushed_captures);
 
+    // Cross-boundary splice hygiene, text half (400_169): when the consumer
+    // binding was site-unique-renamed against a producer local, AST-borne
+    // references rewrite in emitExpression — but a transform-rendered body
+    // (print.ln's `__kw(…, .{k})`) carries its references as TEXT, already
+    // rendered before the rename existed. Rewrite them here, or the spliced
+    // body silently reads the producer's live local instead of the payload.
+    if (ctx.splice_binding_rename) |br| {
+        if (std.mem.indexOf(u8, inline_code, br.from) != null) {
+            const rewritten_text = try codegen_utils.replaceIdentifier(ctx.allocator, inline_code, br.from, br.to);
+            if (inline_code_uniq) |owned| ctx.allocator.free(owned);
+            inline_code_uniq = @constCast(rewritten_text);
+            inline_code = inline_code_uniq.?;
+        }
+    }
+
     const trimmed_inline = std.mem.trimRight(u8, inline_code, " \t\r\n");
     // Check if inline code is already a statement (ends with ;) or is comment-only (no ; needed)
     const is_comment_only = blk: {
@@ -4915,9 +4968,14 @@ pub fn emitFlow(
     const prev_flow_location = ctx.current_flow_location;
     ctx.current_flow_annotations = if (flow.annotations.len > 0) flow.annotations else null;
     ctx.current_flow_location = flow.location;
+    const prev_scope_bindings_len = ctx.zig_scope_bindings.items.len;
     defer {
         ctx.current_flow_annotations = prev_flow_annotations;
         ctx.current_flow_location = prev_flow_location;
+        while (ctx.zig_scope_bindings.items.len > prev_scope_bindings_len) {
+            const name = ctx.zig_scope_bindings.pop() orelse break;
+            ctx.allocator.free(name);
+        }
     }
 
     // Preamble code: emitted BEFORE continuations. ~const/~for/~if/~capture set it
@@ -6140,38 +6198,98 @@ fn emitInlineEffectfulCall(
     // punned arg (`read-lines(path)` where the value IS the param name)
     // already has the right name in scope — rebinding would self-shadow.
     var pushed_arg_bindings: usize = 0;
-    defer ctx.inline_arg_bindings.shrinkRetainingCapacity(
-        ctx.inline_arg_bindings.items.len - pushed_arg_bindings,
-    );
+    defer {
+        var popped: usize = 0;
+        while (popped < pushed_arg_bindings) : (popped += 1) {
+            const b = ctx.inline_arg_bindings.pop() orelse break;
+            ctx.allocator.free(b.spelled);
+        }
+    }
     for (inv.args) |arg| {
         var pun_buf: [128]u8 = undefined;
         const lowered_name = lowerIdent(&pun_buf, arg.name);
         const trimmed_value = std.mem.trim(u8, arg.value, " \t");
         if (std.mem.eql(u8, trimmed_value, lowered_name)) continue;
+
         // A nested inlined event re-binding the same name to the same value
         // expression reuses the enclosing frame's `const` — re-binding in the
-        // nested scope is a Zig shadowing error (230_015).
-        const enclosing_identical = blk: {
-            for (ctx.inline_arg_bindings.items) |b| {
-                if (std.mem.eql(u8, b.name, arg.name) and
-                    std.mem.eql(u8, b.value, trimmed_value)) break :blk true;
+        // nested scope is a Zig shadowing error (230_015). The reused frame's
+        // SPELLING carries over, so a renamed outer binding still resolves.
+        var spelled: ?[]const u8 = null;
+        var rewrites_body = false;
+        for (ctx.inline_arg_bindings.items) |b| {
+            if (std.mem.eql(u8, b.name, arg.name) and
+                std.mem.eql(u8, b.value, trimmed_value))
+            {
+                spelled = b.spelled;
+                rewrites_body = b.rewrites_body;
+                break;
             }
-            break :blk false;
-        };
-        if (enclosing_identical) continue;
-        try emitter.writeIndent();
-        try emitter.write("const ");
-        try writeBranchName(emitter, arg.name);
-        try emitter.write(" = (");
-        try emitter.write(arg.value);
-        try emitter.write("); _ = &");
-        try writeBranchName(emitter, arg.name);
-        try emitter.write(";\n");
-        try ctx.inline_arg_bindings.append(ctx.allocator, .{
-            .name = arg.name,
-            .value = trimmed_value,
-        });
-        pushed_arg_bindings += 1;
+        }
+
+        if (spelled == null) {
+            // The callee's own param name collides with a name already bound
+            // in this Zig function scope — a chain return binding (`: v` —
+            // 400_151) or an enclosing inline frame's different-valued arg.
+            // Neither author can see the other across the boundary, so the
+            // frame's binding site-unique-renames and the body follows.
+            const collides = blk: {
+                for (ctx.zig_scope_bindings.items) |n| {
+                    if (std.mem.eql(u8, n, arg.name)) break :blk true;
+                }
+                for (ctx.inline_arg_bindings.items) |b| {
+                    if (std.mem.eql(u8, b.name, arg.name)) break :blk true;
+                }
+                break :blk false;
+            };
+            // Spelling mirrors writeBranchName: kebab mangles, a Zig
+            // keyword/primitive escapes (and the body references follow).
+            const owned_spelling: []const u8 = blk: {
+                if (collides) {
+                    break :blk try std.fmt.allocPrint(ctx.allocator, "__koru_arg_{s}_{d}", .{ lowered_name, proc_uniq });
+                }
+                if (std.mem.indexOfScalar(u8, arg.name, '-') != null) {
+                    const mangled = try ctx.allocator.dupe(u8, arg.name);
+                    for (mangled) |*c| {
+                        if (c.* == '-') c.* = '_';
+                    }
+                    break :blk mangled;
+                }
+                if (codegen_utils.needsEscaping(arg.name)) {
+                    break :blk try std.fmt.allocPrint(ctx.allocator, "@\"{s}\"", .{arg.name});
+                }
+                break :blk try ctx.allocator.dupe(u8, arg.name);
+            };
+
+            try emitter.writeIndent();
+            try emitter.write("const ");
+            try emitter.write(owned_spelling);
+            try emitter.write(" = (");
+            try emitter.write(arg.value);
+            try emitter.write("); _ = &");
+            try emitter.write(owned_spelling);
+            try emitter.write(";\n");
+            rewrites_body = collides or
+                (std.mem.indexOfScalar(u8, arg.name, '-') == null and codegen_utils.needsEscaping(arg.name));
+            try ctx.inline_arg_bindings.append(ctx.allocator, .{
+                .name = arg.name,
+                .value = trimmed_value,
+                .spelled = owned_spelling,
+                .rewrites_body = rewrites_body,
+            });
+            pushed_arg_bindings += 1;
+            spelled = owned_spelling;
+        }
+
+        // Body references follow the binding's spelling. The kebab mangle is
+        // deliberately excluded: its textual form (`a-b`) is subtraction in
+        // Zig, so a rewrite could land on arithmetic.
+        if (rewrites_body) {
+            const rewritten_body = try codegen_utils.replaceIdentifier(ctx.allocator, spliced_text, arg.name, spelled.?);
+            if (spliced_owned) |owned| ctx.allocator.free(owned);
+            spliced_owned = @constCast(rewritten_body);
+            spliced_text = spliced_owned.?;
+        }
     }
 
     // OPTIONAL PARAMETER INJECTION, splice flavor (400_182): an omitted
@@ -7117,14 +7235,22 @@ fn emitInvocation(
             // type is the bare return_type (not `.Output`), and the block yields the
             // value directly (no tagged union) — see the `break :blk` below.
             const bare_return = immediate_bc.is_bare_return;
-            const bind_name = if (bare_return)
+            const named_bind = if (bare_return)
                 (invocation.return_binding orelse result_var)
             else
                 result_var;
+            // A `: _` discard still needs the typed labeled block (the break's
+            // anonymous literal has no result type without it), but Zig has no
+            // `_: T = …` form — bind a scoped const and discard it after.
+            const bind_discarded = std.mem.eql(u8, named_bind, "_");
+            var imm_disc_buf: [48]u8 = undefined;
+            const bind_name = if (bind_discarded) blk: {
+                const n = std.fmt.bufPrint(&imm_disc_buf, "__koru_imm_disc_{d}", .{ctx.proc_label_counter}) catch "__koru_imm_disc";
+                ctx.proc_label_counter += 1;
+                break :blk n;
+            } else named_bind;
             try emitter.writeIndent();
-            if (!std.mem.eql(u8, bind_name, "_")) {
-                try emitter.write("const ");
-            }
+            try emitter.write("const ");
             try emitter.write(bind_name);
             try emitter.write(": ");
             if (bare_return and event_decl != null and event_decl.?.return_type != null) {
@@ -7380,6 +7506,12 @@ fn emitInvocation(
             emitter.indent_level -= 1;
             try emitter.writeIndent();
             try emitter.write("};\n");
+            if (bind_discarded) {
+                try emitter.writeIndent();
+                try emitter.write("_ = ");
+                try emitter.write(bind_name);
+                try emitter.write(";\n");
+            }
             return;
         }
     }
@@ -7398,6 +7530,9 @@ fn emitInvocation(
     };
     if (!std.mem.eql(u8, bound_var, "_")) {
         try emitter.write(if (bound_mutable) "var " else "const ");
+        // Record the name for the current Zig function scope: an inline frame
+        // downstream in the same chain must not re-bind it (400_151).
+        try ctx.zig_scope_bindings.append(ctx.allocator, try ctx.allocator.dupe(u8, bound_var));
     }
     // A call-site binding may legally collide with a Zig keyword or primitive
     // (`: u1` — 230_018); writeBranchName escapes it to `@"u1"`.

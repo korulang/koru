@@ -68,3 +68,16 @@ Board Broken:0: the mandatory-punning rule forced rewrites of every
 `field: path.field` site in the corpus (670_045, 810_091/092/131/132 — AoC, exact
 outputs unchanged, so the rewrites are provably equivalent). 320_136 / 690_071 /
 690_072 flipped RED→GREEN.
+
+## A pun can also be destroyed UPSTREAM of the lowering (2026-08-08)
+
+A third way to break the law, found in 210_025: the pun lowering itself was
+correct, but a textual pass that runs BEFORE it — bare-return param
+substitution (`substituteParamNamesInPlainValue`) — replaced the punned
+identifier with the call-site value, so the lowering received `{ 10, 20 }` and
+minted `.{ .10 = 10 }`: the VALUE promoted to field name. In a pun the
+identifier is the name AND the value; any rewrite that touches one must
+preserve the other. The substitution now expands the pun in place
+(`{ x, y }` → `{ x: 10, y: 20 }`) when its match sits in punned field
+position. Same law, new obligation: every pass that rewrites text upstream of
+the pun lowering owes the punned name its survival.
