@@ -53,3 +53,32 @@ them is most of why taps feel heavier than they are.
 The pit this belief walls: treating a terminal tap like a mid-flow tap — reaching
 for a downstream that a bare-return does not have, and synthesizing one. When the
 tapped transition is a terminus, the weave does *less*, not more.
+
+## The terminus with an obligation brings a THIRD actor (2026-08-08)
+
+330_031 exposes the shape this fragment had not yet met: the tapped terminus is
+an UNBOUND head whose bare return carries an obligation
+(`~open(path:)`, `open -> *File<opened!>`, no `: r`). Two facts, measured:
+
+- **Each pass mints its own synthetic name for the same value and neither
+  consults the other.** The tap weave stamped `_tap_N` on its void wrapper — a
+  binding the emitter never declares for a bare-return — while auto-discharge,
+  running later, minted `_auto_N` for the head it saw as unbound. The tap step
+  then referenced a name nothing declares. Fixed on the tap side: the weave now
+  mints the HEAD's bind and hands it to the flow site to stamp as
+  return_binding, so there is one name and it is the head's.
+- **An observer-only flow has no exit the disposal machinery may legally
+  use — and that is open, not fixed.** The wrapped flow's single continuation
+  is the @scope observer; auto-discharge's terminal-disposal only fires at a
+  real flow exit, discharge inside @scope is forbidden by design (an observer
+  must not satisfy obligations), and appending a synthesized terminal sibling
+  trips SHAPE002 in both structural checkers. So the composed program runs,
+  the tap observes, and the obligation silently never discharges. The question
+  this parks: WHERE is the flow exit of a flow whose author wrote only a
+  terminus and whose every continuation was synthesized by an observer weave?
+  The disposal wants to fire "after the observers, at the level of the head" —
+  a position the current continuation grammar cannot spell.
+
+Same lesson at a bigger radius: the weave, the discharge inserter, and the
+shape walls each hold locally and compose into a hole, because no one of them
+owns the composed flow's exit.

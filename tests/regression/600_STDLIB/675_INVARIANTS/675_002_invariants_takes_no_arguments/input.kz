@@ -1,0 +1,22 @@
+// `invariants` takes no arguments — its listing is the whole surface, and a
+// consumer (a git gate, a review pass) is a script over that listing, never a
+// subcommand. A caller holding a retired or misspelled spelling must be
+// refused with a non-zero exit: the alternative is a hook that greens while
+// checking nothing.
+//
+// Run: koruc input.kz invariants gate   (must refuse)
+
+~import std/invariants
+
+~std/invariants:inferred {
+    "name": "comment-language",
+    "tags": ["git-gate"],
+    "rule": "Comments are written in English, not Norwegian."
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

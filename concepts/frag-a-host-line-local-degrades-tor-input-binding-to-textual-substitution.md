@@ -74,3 +74,22 @@ The two symptoms are of different severity and only one is loud.
   state names and the handle's field names are the design; an incidental local is
   not. Renaming the surface to satisfy an emitter bug is the route-around the repo
   bans, and it also hides the defect from the next reader.
+
+## The repair, and what the belief becomes
+
+Fixed 2026-08-08, in the two halves the analysis above already named. The
+shadow collector (`collectDeclaredNames`) now tracks brace depth over host
+lines — counting only braces that are code — so a function-local `const` no
+longer registers as a module-level collision at all; the trigger this fragment
+opens with is gone. And the substitution itself (`replaceIdentifier`) consults
+a code mask (`zigCodeMask` in codegen_utils, shared by every textual tool over
+host code) that marks string literals, char literals, comments and `\\`
+multiline lines as text, so the rewrite that remains — for a *genuine*
+module-level collision — lands only on code and can no longer corrupt a
+sentence. 230_016 pins the guarantee from the outside: the corrupted output is
+only observable on stdout, so the pin is a MUST_RUN on the sentence itself.
+
+The durable lesson survives the fix: a textual tool over host code is only as
+scoped as the mask it consults, and both defects here were one missing mask —
+one in the collector's idea of "declared", one in the replacer's idea of
+"occurrence".

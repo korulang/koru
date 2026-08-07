@@ -56,3 +56,20 @@ reader.
 - **`--check` passing is not evidence the program will build.** That is worth
   holding separately from these two pins: `--check` is a shape check, and every
   defect in this family lives strictly after it.
+
+## The repair, and where the boundary now sits
+
+Fixed 2026-08-08 the way this fragment prescribed — escaping at emission, no
+blocklist on the author's surface. `needsEscaping` (codegen_utils) now knows
+Zig's primitives alongside its keywords, including the whole `u*`/`i*` family
+structurally; the proc-body references of an escaped param rewrite to the same
+`@"…"` spelling as their binding; a continuation binding routes through
+`writeBranchName` at the invocation site; and the five copy-pasted
+interpolation escapers in `io.kz`/`fmt.kz` escape the *first* path segment too
+(a bare binding is exactly the segment they all skipped). 230_017 and 230_018
+both run green, each on its own half.
+
+What stays true: the rule generalises past Zig. The JS facet still writes
+names it never escapes against JavaScript's different reserved list, so the
+safe surface there is still smaller than the grammar — same disease, next
+organ, and the fix pattern is now on file.
