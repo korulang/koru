@@ -1,0 +1,29 @@
+// Does the interpreter's parser accept an English sentence as an invocation?
+// Found by kopium-headless/live.k turn 6: a model declined a request in prose,
+// and the prose came back `event-denied` rather than `parse-error`.
+~import std/runtime
+~import std/io
+
+const std = @import("std");
+
+~pub tor greet { name: string } -> string
+
+~proc greet|zig {
+    return name;
+}
+
+~std/runtime:register(scope: "api") {
+    greet(1)
+}
+
+const PROSE = "I cannot delete files. My vocabulary only includes open(), append(), and close().";
+
+~std/runtime:run(source: PROSE, scope: "api")
+| result _ |> std/io:print.ln("RESULT")
+| exhausted _ |> std/io:print.ln("EXHAUSTED")
+| parse-error _ |> std/io:print.ln("PARSE ERROR")
+| validation-error _ |> std/io:print.ln("VALIDATION ERROR")
+| shape-error _ |> std/io:print.ln("SHAPE ERROR")
+| event-denied ev |> std/io:print.ln("EVENT DENIED: [{{ ev:s }}]")
+| dispatch-error _ |> std/io:print.ln("DISPATCH ERROR")
+| scope-not-found _ |> std/io:print.ln("SCOPE NOT FOUND")
