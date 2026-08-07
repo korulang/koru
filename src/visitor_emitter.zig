@@ -3804,8 +3804,14 @@ pub const VisitorEmitter = struct {
                                 try self.code_emitter.write(ret_line);
                             }
                         } else {
+                            // `$mod.` -> bare, exactly as the bare handler and the
+                            // other two variant-emission paths do. A variant body
+                            // is emitted whether or not it is the SELECTED one, so
+                            // skipping the rewrite here left `$mod.` verbatim in
+                            // every unselected sibling — invalid Zig that fails the
+                            // build on a platform whose variant was never chosen.
+                            var variant_proc_body: []const u8 = try emitter.rewriteModToBare(self.allocator, proc.body.text);
                             // Rewrite _ = field to _ = &field (see main handler comment)
-                            var variant_proc_body: []const u8 = proc.body.text;
                             for (event.input.fields) |field| {
                                 const discard_old = try std.fmt.allocPrint(self.allocator, "_ = {s}", .{field.name});
                                 const discard_new = try std.fmt.allocPrint(self.allocator, "_ = &{s}", .{field.name});
