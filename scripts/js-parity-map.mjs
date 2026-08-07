@@ -23,6 +23,14 @@
  *   ("produces JS output, body is structurally Zig"), so it stays in `.kz`.
  *   Only a runtime proc whose body is literally JavaScript belongs in `.kjs`.
  *
+ * PORT DETECTION (2026-08-07): a declaration line does not say whether a proc
+ *   is ported. Store and kernel kept ONE `|zig` transform body and branched on
+ *   `CompilerEnv.lang` inside it, so the spelling never changed and the map
+ *   went on calling `store:new` an unported blocker for 129 tests it already
+ *   rendered — and `unlock` ranked that finished port first. Worse, 30 more
+ *   transforms emit no host source at all and were counted as debt for being
+ *   spelled `|zig`. The predicate now READS THE BODY: see `rendersJs`.
+ *
  *   ./scripts/js-parity-map.mjs           human report
  *   ./scripts/js-parity-map.mjs unlock    ranked port-this-next list
  *   ./scripts/js-parity-map.mjs split     contract-extraction (phase 1) sizing
@@ -65,6 +73,22 @@ const CALL = /\bstd[/.]([A-Za-z0-9_-]+):([A-Za-z0-9_.%-]+)\s*\(/g
 // Same shape without the paren — counted only so the map can report how much it
 // deliberately ignored, rather than silently discarding it.
 const REFERENCE = /\bstd[/.]([A-Za-z0-9_-]+):([A-Za-z0-9_.%-]+)(?!\s*\()/g
+// A KEYWORD transform is invoked with no module prefix at all — `~float(T)`,
+// not `std/types:float(T)` — so `CALL` never saw one, and every test whose only
+// stdlib contact was a keyword landed in `no-stdlib-calls`: declared free of
+// stdlib dependency while depending on a transform that emits Zig. That is how
+// `115_032` and `115_037` sat on the emitter board as greens, then turned red
+// the moment `f9723183` stopped dropping imported-module host lines and
+// `const Temperature = f64;` reached node. The failure was always there; the
+// map had classified it out of sight.
+//
+// The spelling is indistinguishable from calling a locally declared tor
+// (`~process(value: 10)`), so resolution is gated twice: the name must be a
+// keyword tor of an IMPORTED stdlib module, and must NOT be declared in the
+// test's own sources. A user tor shadowing a stdlib keyword name resolves to
+// the user's, which is also what the compiler does.
+const KEYWORD_CALL = /^[^\S\n]*~([a-z][A-Za-z0-9_.-]*)\s*\(/gm
+const LOCAL_DECL = /^\s*~?(?:\[[^\]]*\])?\s*(?:pub\s+)?(?:tor|proc)\s+([A-Za-z0-9_.:%-]+)/gm
 
 // A transform proc runs INSIDE the compiler; its body is Zig even when tagged
 // `|js` ("produces JS output, body is structurally Zig" — io.kz:1726-1728).
@@ -73,6 +97,62 @@ const REFERENCE = /\bstd[/.]([A-Za-z0-9_-]+):([A-Za-z0-9_.%-]+)(?!\s*\()/g
 // Two different jobs with two different prerequisites; conflating them mis-sizes
 // both and invents a contract-extraction dependency the transform half lacks.
 const isTransform = (ann) => !!ann && /transform|comptime|keyword/.test(ann)
+
+// A transform proc can be ported to a second target WITHOUT growing a `|js`
+// sibling, and store and kernel both did it that way: one body that branches on
+// `CompilerEnv.lang` and renders whichever host it is asked for. Judged by
+// spelling alone that body is `|zig` and nothing else, so the map called
+// `store:new` an unported blocker for 129 tests it had already been ported for
+// — over-reporting the remaining work and ranking `unlock` off a port that was
+// finished. Reading the body is what tells the two apart.
+const LANG_AWARE = /CompilerEnv\.lang/
+
+// The four Item variants that carry HOST SOURCE out of a transform (ast.zig
+// :361-379). A transform that constructs none of them contributes no host text
+// to the produced program — it rewrites the AST and the emitter renders the
+// result — so it cannot block a target no matter how it is spelled. 47 of the
+// 75 transform procs in koru_std are this shape, `store:insert` among them,
+// and every one was counted as debt.
+const HOST_NODE = /ast\.(InlineCode|ProcDecl|HostLine|HostTypeDecl)\b|\.(inline_code|proc_decl|host_line|host_type_decl)\s*=/
+
+// Brace-match a proc body, treating Zig's lexical hiding places as data: `//`
+// to end of line, `"…"` and `'…'` with escapes, and — the one that actually
+// bit — `\\` multiline strings, where a `}}` in emitted text is two closing
+// braces to a naive counter. That exact defect lived in parser.zig until today
+// (a8379684); this scanner is the same rule, written once more because it must
+// hold here for the census to mean anything.
+function procBody(src, from) {
+  let i = src.indexOf('{', from)
+  if (i < 0) return ''
+  const start = i
+  let depth = 0
+  while (i < src.length) {
+    const c = src[i]
+    if (c === '/' && src[i + 1] === '/') { i = src.indexOf('\n', i); if (i < 0) break; continue }
+    if (c === '\\' && src[i + 1] === '\\') { i = src.indexOf('\n', i); if (i < 0) break; continue }
+    if (c === '"' || c === "'") {
+      const q = c
+      i++
+      while (i < src.length && src[i] !== q) { if (src[i] === '\\') i++; i++ }
+      i++
+      continue
+    }
+    if (c === '{') depth++
+    else if (c === '}' && --depth === 0) return src.slice(start, i + 1)
+    i++
+  }
+  return src.slice(start)
+}
+
+// Does this proc put JavaScript in front of the emitter? Three ways, and only
+// the first is visible in the declaration line:
+//   a `|js` variant           — the spelling the map was built to read
+//   a lang-aware `|zig` body  — one body, both hosts (store:new, kernel:init)
+//   no host emission at all   — nothing target-specific to render
+// Runtime procs are excluded from the last two: their body IS host source
+// rather than a program that writes host source, so "constructs no ast.Item"
+// is true of every one of them and would mark the whole runtime surface ported.
+const rendersJs = (p) => p.langs.has('js') || (p.transform && (p.langAware || !p.emitsHost))
 
 function loadStdlib() {
   const mods = new Map()
@@ -96,12 +176,16 @@ function loadStdlib() {
     // kernel:init a portable runtime port worth 27 tests, when it is the
     // Zig-only MLIR/GPU backend that must never be ported at all.
     for (const t of src.matchAll(TOR_DECL)) mod.tors.set(t[2], t[1] || '')
-    for (const [, ann, proc, lang] of src.matchAll(PROC_DECL)) {
-      if (!mod.procs.has(proc)) mod.procs.set(proc, { langs: new Set(), facets: new Set(), transform: false })
+    for (const d of src.matchAll(PROC_DECL)) {
+      const [, ann, proc, lang] = d
+      if (!mod.procs.has(proc)) mod.procs.set(proc, { langs: new Set(), facets: new Set(), transform: false, emitsHost: false, langAware: false })
       const p = mod.procs.get(proc)
       p.langs.add(lang)
       p.facets.add(ext)
       if (isTransform(ann) || isTransform(mod.tors.get(proc))) p.transform = true
+      const body = procBody(src, d.index + d[0].length)
+      if (HOST_NODE.test(body)) p.emitsHost = true
+      if (LANG_AWARE.test(body)) p.langAware = true
     }
   }
   return mods
@@ -131,6 +215,21 @@ function readTestSources(dir) {
   }
   return src
 }
+// The board is EVIDENCE, not scope: js-scan derives its scope from this map, so
+// reading its output back would be circular if it decided what to measure. It
+// decides only what NOT to re-litigate. A green row is a proof that survives
+// re-measurement — the next scan runs the test again and would demote it — and
+// a missing or stale board costs nothing but a static verdict.
+const BOARD = join(ROOT, 'test-results/js-scan.json')
+const MEASURED_GREEN = new Set()
+if (existsSync(BOARD)) {
+  try {
+    for (const r of JSON.parse(readFileSync(BOARD, 'utf8')).results ?? []) {
+      if (r.status === 'js-ok') MEASURED_GREEN.add(r.test)
+    }
+  } catch { /* an unparseable board is no evidence, not a crash */ }
+}
+
 
 function analyze() {
   const std = loadStdlib()
@@ -138,11 +237,30 @@ function analyze() {
   const unresolved = new Map()
   const blockerHits = new Map()
 
+  // name -> [module, …] for every keyword tor in the stdlib. Two modules can
+  // own the same keyword (`new` and `stored` are both grid's and store's), so
+  // the index is one-to-many and the test's import set picks the owner.
+  const keywordOwners = new Map()
+  for (const mod of std.values()) {
+    for (const [tor, ann] of mod.tors) {
+      if (!/keyword/.test(ann)) continue
+      if (!keywordOwners.has(tor)) keywordOwners.set(tor, [])
+      keywordOwners.get(tor).push(mod.name)
+    }
+  }
+
   for (const dir of findTests(TESTS)) {
     const rel = dir.slice(TESTS.length + 1)
     const src = readTestSources(dir)
     const imports = new Set([...src.matchAll(IMPORT)].map((m) => m[1]))
     const calls = new Set([...src.matchAll(CALL)].map((c) => `${c[1]}:${c[2]}`))
+    const localNames = new Set([...src.matchAll(LOCAL_DECL)].map((m) => m[1]))
+    for (const k of src.matchAll(KEYWORD_CALL)) {
+      const name = k[1]
+      if (localNames.has(name)) continue
+      const owner = (keywordOwners.get(name) || []).find((m) => imports.has(m))
+      if (owner) calls.add(`${owner}:${name}`)
+    }
 
     // A test's OWN host bodies. The stdlib is not the only place `|zig` lives:
     // an `input.kz` fixture carries its own procs, and the JS emitter aborts
@@ -181,12 +299,10 @@ function analyze() {
         unknown.push(key)
         continue
       }
-      if (p.langs.has('js')) covered.push(key)
+      if (rendersJs(p)) covered.push(key)
       else if (p.langs.has('zig')) {
         blocked.push(key)
         if (p.transform) needsTransformPort++; else needsRuntimePort++
-        if (!blockerHits.has(key)) blockerHits.set(key, new Set())
-        blockerHits.get(key).add(rel)
       } else covered.push(key) // template/raw lowering — host-agnostic
     }
 
@@ -196,7 +312,7 @@ function analyze() {
     // reach the JS emitter's later stages at all, so that verdict outranks any
     // stdlib finding: reporting such a test as "blocked on std/list" would send
     // someone to port list and change nothing.
-    const bucket =
+    const staticBucket =
       localZigOnly.length ? 'blocked-on-test-host'
       : calls.size === 0 ? 'no-stdlib-calls'
       : !touchesRuntime ? 'compile-time-only'
@@ -204,8 +320,27 @@ function analyze() {
       : blocked.length ? 'blocked-on-stdlib'
       : 'ready'
 
-    rows.push({ test: rel, bucket, imports: [...imports], covered, blocked, unknown,
-                needsTransformPort, needsRuntimePort, localZigOnly })
+    // A static predicate that contradicts a measurement is wrong, and this one
+    // does: `taps:tap` only REWRITES an `inline_code` step it found in the
+    // program, so `emitsHost` fires on a pass-through and 24 tests that node
+    // runs green were called blocked. Distinguishing "originates host text"
+    // from "re-wraps host text it was handed" is not something a regex over the
+    // body can do — but it does not have to, because a green run already proves
+    // every proc the test reached rendered JavaScript. Where the board has
+    // spoken, the map defers to it and says so; where it has not, the static
+    // verdict stands and the test gets scanned.
+    const demonstrated = MEASURED_GREEN.has(rel) && staticBucket.startsWith('blocked')
+    const bucket = demonstrated ? 'ready' : staticBucket
+
+    if (!demonstrated) {
+      for (const key of blocked) {
+        if (!blockerHits.has(key)) blockerHits.set(key, new Set())
+        blockerHits.get(key).add(rel)
+      }
+    }
+
+    rows.push({ test: rel, bucket, staticBucket, demonstrated, imports: [...imports],
+                covered, blocked, unknown, needsTransformPort, needsRuntimePort, localZigOnly })
   }
   return { std, rows, unresolved, blockerHits }
 }
@@ -231,15 +366,24 @@ function coverage() {
   const z = { runtime: 0, transform: 0 }
   const j = { runtime: 0, transform: 0 }
   const both = { runtime: 0, transform: 0 }
+  // How the transform half reaches JS, since "|js sibling" is now only one of
+  // three routes and the report should not let the other two hide inside a
+  // single total.
+  const via = { sibling: 0, langAware: 0, neutral: 0, unported: 0 }
   for (const m of runtimeModules()) {
     for (const p of m.procs.values()) {
       const k = p.transform ? 'transform' : 'runtime'
       if (p.langs.has('zig')) z[k]++
-      if (p.langs.has('js')) j[k]++
-      if (p.langs.has('zig') && p.langs.has('js')) both[k]++
+      if (rendersJs(p)) j[k]++
+      if (p.langs.has('zig') && rendersJs(p)) both[k]++
+      if (!p.transform) continue
+      if (p.langs.has('js')) via.sibling++
+      else if (p.langAware) via.langAware++
+      else if (!p.emitsHost) via.neutral++
+      else via.unported++
     }
   }
-  return { zig: z, js: j, both }
+  return { zig: z, js: j, both, via }
 }
 
 // A blocked test needs EVERY blocker ported. `hits` = how many blocked tests
@@ -325,21 +469,30 @@ for (const [k, v] of Object.entries(counts).sort((a, b) => b[1] - a[1])) {
   console.log(`    ${k.padEnd(22)} ${String(v).padStart(5)}   ${((v / total) * 100).toFixed(1).padStart(5)}%`)
 }
 console.log('\n  STDLIB PROC SURFACE  (compile-time pipeline modules excluded)')
-console.log('    kind         |zig    |js   unported   what a port means')
-console.log(`    runtime   ${String(cov.zig.runtime).padStart(7)} ${String(cov.js.runtime).padStart(6)} ${String(cov.zig.runtime - cov.both.runtime).padStart(10)}   a JS body in a .kjs sibling; no .k extraction needed`)
-console.log(`    transform ${String(cov.zig.transform).padStart(7)} ${String(cov.js.transform).padStart(6)} ${String(cov.zig.transform - cov.both.transform).padStart(10)}   a |js variant emitting JS, stays in .kz`)
+console.log('    kind         |zig  renders   unported   what a port means')
+console.log(`    runtime   ${String(cov.zig.runtime).padStart(7)} ${String(cov.js.runtime).padStart(8)} ${String(cov.zig.runtime - cov.both.runtime).padStart(10)}   a JS body in a .kjs sibling; no .k extraction needed`)
+console.log(`    transform ${String(cov.zig.transform).padStart(7)} ${String(cov.js.transform).padStart(8)} ${String(cov.zig.transform - cov.both.transform).padStart(10)}   a |js variant, or one body that branches on lang`)
+console.log(`\n    how the transform half reaches JS:  ${cov.via.sibling} |js sibling · ${cov.via.langAware} lang-aware body · ${cov.via.neutral} emit no host source · ${cov.via.unported} unported`)
 console.log('\n  TOP BLOCKING MODULES')
 for (const m of moduleRanking().slice(0, 10)) {
   console.log(`    ${m.module.padEnd(18)} blocks ${String(m.tests).padStart(4)}   (${m.sole} solely)   ${m.procs.size} unported procs`)
 }
-const tPort = rows.reduce((a, r) => a + (r.needsTransformPort > 0 ? 1 : 0), 0)
-const rPort = rows.reduce((a, r) => a + (r.needsRuntimePort > 0 ? 1 : 0), 0)
+const tPort = rows.reduce((a, r) => a + (!r.demonstrated && r.needsTransformPort > 0 ? 1 : 0), 0)
+const rPort = rows.reduce((a, r) => a + (!r.demonstrated && r.needsRuntimePort > 0 ? 1 : 0), 0)
 console.log(`\n    tests blocked by a TRANSFORM port   ${tPort}`)
 console.log(`    tests blocked by a RUNTIME  port    ${rPort}`)
 console.log('\n  INSTRUMENT HONESTY')
 console.log(`    unresolved call sites   ${unresolvedTotal}   across ${unresolved.size} distinct names`)
 for (const [k, v] of [...unresolved].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
   console.log(`      ${k.padEnd(34)} ${v}`)
+}
+const shown = rows.filter((r) => r.demonstrated)
+console.log(`    static verdict overruled by the board   ${shown.length}   (called blocked, measured green)`)
+for (const [k, v] of Object.entries(shown.reduce((a, r) => {
+  for (const b of new Set(r.blocked)) a[b] = (a[b] || 0) + 1
+  return a
+}, {})).sort((a, b) => b[1] - a[1]).slice(0, 5)) {
+  console.log(`      ${k.padEnd(34)} ${v}   emits host source only by passing it through`)
 }
 const frac = (counts.unresolved || 0) / total
 console.log(`    verdict: ${
