@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-08-07T08:04:53.185Z",
+  "timestamp": "2026-08-07T10:33:55.427Z",
   "summary": {
-    "passed": 325,
+    "passed": 327,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 337,
+    "total": 339,
     "suiteCount": 41,
     "status": "success"
   },
@@ -317,10 +317,10 @@
     },
     {
       "name": "visitor_emitter_tests",
-      "passed": 9,
+      "passed": 11,
       "failed": 0,
       "skipped": 2,
-      "total": 11,
+      "total": 13,
       "status": "success"
     },
     {
