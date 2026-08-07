@@ -20,6 +20,33 @@
 // continuation location at all. So the only surface that can see this value is
 // the rendered diagnostic, and `ERROR_AT` is the assertion for it.
 //
+// SECOND WITNESS, 2026-08-07 — this is not only an arm problem, and not only
+// KORU021. Writing a real app (koru-examples kopium-headless) produced:
+//
+//     tor send { req: string }
+//     send = recall(): auth |> multi.new() |> multi.add.post(url: ..., body, ...) |> multi.start()
+//     | started p |> await(p)
+//
+//     error[KORU080]: 'multi.add.post' requires input 'body'
+//       --> live.k:61      <- the `| started` line. The fault is on line 60.
+//
+// A whole chain on ONE physical line, so every stage's continuation records the
+// same stale cursor — which by then has reached the line AFTER the chain. The
+// caret lands on the first branch arm and the author reads it as a problem with
+// the arm. Reproduced minimally: the identical chain written across three lines
+// reports the CORRECT line, so the defect needs stages to share a line.
+//
+// That widens the blast radius twice over. It is not specific to arms (this
+// case is a mid-chain call), and it is not specific to KORU021 (this is
+// KORU080) — any diagnostic that resolves through a continuation location
+// inherits it. `ast.Invocation` carries no location of its own, which is why
+// every consumer has to borrow the continuation's.
+//
+// It cost three rebuild cycles in the app before the error was read as anything
+// other than a complaint about `multi.start()`. Keeping that measurement here
+// because it is the argument for the fix: the value is not merely imprecise,
+// it points at working code.
+//
 // NOT MARKED `TODO`. A TODO file makes the harness return before running the
 // test, so a TODO-marked aspirational test pins nothing and would not flip when
 // the cause is fixed. Red is the honest state, and red is what flips.
