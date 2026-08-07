@@ -1008,6 +1008,18 @@ fn lowerBuiltin(
         return j;
     }
 
+    // ABORT WITH A MESSAGE. Koru's only unconditional failure, and the one
+    // operation in this table that is a STATEMENT rather than a value — Zig's
+    // `@panic` has type `noreturn`, and `throw` is JavaScript's. A store's
+    // `[tree]` cycle guard reaches here (695_002) and so does every generated
+    // invariant that refuses rather than returns.
+    if (eql(u8, name, "panic")) {
+        try out.appendSlice(allocator, "(() => { throw new Error(");
+        try lowerJsInto(out, allocator, first, .koru_expr, diag);
+        try out.appendSlice(allocator, "); })()");
+        return j;
+    }
+
     if (diag) |d| d.unknown_builtin = name;
     return LowerError.UnsupportedBuiltin;
 }

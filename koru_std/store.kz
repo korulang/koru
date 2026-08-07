@@ -1450,7 +1450,15 @@ fn storeLowerText(
             }
             oi.disch_event = found_event;
             oi.disch_param = found_param;
-            oi.disch_host = HostPath.build(allocator, oi.module_slash);
+            // WHERE THE DISCHARGER'S EVENT LIVES, in the host's own namespace.
+            // Zig keeps the module structure (`koru_std.koru_string.free_event`);
+            // JavaScript does not — `js_emitter` flattens every event in the
+            // program, imported modules included, into the one `main_module`
+            // object (:155), which is the same reason `storeEventQualifier`
+            // exists. Emitting the Zig path here reached node as
+            // `ReferenceError: koru_std is not defined`, at teardown, on 13
+            // tests that had just started compiling.
+            oi.disch_host = if (storeHostTarget() == .js) "main_module" else HostPath.build(allocator, oi.module_slash);
             field_owned_info[oi_idx] = oi;
             // RETAIN the discovered discharger (its event_decl AND matching
             // proc_decl) so dead-strip preserves them. The teardown calls the
@@ -3500,7 +3508,7 @@ fn storeLowerText(
                     // straight-lined: `value` in place of `value_<i>`.
                     var fatext = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
                     // Dense row, same convention as the bundled apply above.
-                    const fapply_head = allocator.dupe(u8, "const __koru_r = @as(usize, @intCast(row));\n") catch unreachable;
+                    const fapply_head = allocator.dupe(u8, HS.rowHead(host_target)) catch unreachable;
                     fatext.appendSlice(allocator, fapply_head) catch unreachable;
                     if (is_tree and i == user_field_count) {
                         const fguard = std.fmt.allocPrint(allocator, "const __koru_self = __koru_store_{s}.__koru_handle_of(__koru_r); var __koru_cyc = value; while (__koru_cyc != -1) {{ if (__koru_cyc == __koru_self) @panic(\"std/store:stored: reparent in [tree] store '{s}' would make the row its own ancestor (cycle) - the write is rejected; handle it with a `| cycle` branch (default-on guard and branch are pinned at 695_002)\"); const __koru_cycr = __koru_store_{s}.__koru_resolve(__koru_cyc); __koru_cyc = __koru_store_{s}.parent[__koru_cycr]; }} ", .{ store_name, store_name, store_name, store_name }) catch unreachable;
@@ -3516,7 +3524,7 @@ fn storeLowerText(
                     // An OWNED arm is discharge-old + consume-new (690_062);
                     // the caller's <!state> was consumed at the fwrite event.
                     const fwr = if (field_owned_info[i]) |oi|
-                        std.fmt.allocPrint(allocator, "const __koru_old_ptr = __koru_store_{s}.{s}[__koru_r]; _ = {s}.{s}_event.handler(.{{ .{s} = __koru_old_ptr }}); __koru_store_{s}.{s}[__koru_r] = value; ", .{ store_name, fname, oi.disch_host, oi.disch_event, oi.disch_param, store_name, fname }) catch unreachable
+                        std.fmt.allocPrint(allocator, "const __koru_old_ptr = __koru_store_{s}.{s}[__koru_r]; {s}{s}.{s}_event.handler({s}); __koru_store_{s}.{s}[__koru_r] = value; ", .{ store_name, fname, if (host_is_js) "" else "_ = ", oi.disch_host, oi.disch_event, HS.argRec(allocator, host_target, HS.recField(allocator, host_target, oi.disch_param, "__koru_old_ptr")), store_name, fname }) catch unreachable
                     else if (field_char_caps[i]) |n|
                         std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value[0..__koru_wl]); ", .{ store_name, fname, n, n, store_name, fname }) catch unreachable
                     else
@@ -3524,22 +3532,22 @@ fn storeLowerText(
                     fatext.appendSlice(allocator, fwr) catch unreachable;
                     for (updated_arms.items, 0..) |ua, ai| {
                         const fcall = if (ua.fields.len != 0)
-                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value }}); ", .{ emit_ns, store_name, ai }) catch unreachable
+                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler({s}); ", .{ emit_ns, store_name, ai, HS.argRec(allocator, host_target, std.fmt.allocPrint(allocator, "{s}, {s}", .{ HS.recField(allocator, host_target, "old", "__koru_old"), HS.recField(allocator, host_target, "new", "value") }) catch unreachable) }) catch unreachable
                         else
-                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ emit_ns, store_name, ai }) catch unreachable;
+                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler({s}); ", .{ emit_ns, store_name, ai, HS.argRec(allocator, host_target, "") }) catch unreachable;
                         fatext.appendSlice(allocator, fcall) catch unreachable;
                     }
                     // An owned arm dispatches the FRESH cell read (690_061/063).
                     const ftail = if (field_owned_info[i] != null)
-                        std.fmt.allocPrint(allocator, "return .{{ .{s} = __koru_store_{s}.{s}[__koru_r] }};", .{ fname, store_name, fname }) catch unreachable
+                        std.fmt.allocPrint(allocator, "return {s};", .{HS.branchOne(allocator, host_target, fname, std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r]", .{ store_name, fname }) catch unreachable)}) catch unreachable
                     else
-                        std.fmt.allocPrint(allocator, "return .{{ .{s} = value }};", .{fname}) catch unreachable;
+                        std.fmt.allocPrint(allocator, "return {s};", .{HS.branchOne(allocator, host_target, fname, "value")}) catch unreachable;
                     fatext.appendSlice(allocator, ftail) catch unreachable;
                     appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                         .path = H.mkPathH(allocator, home_ns, fapply_name),
                         .body = ast.Source{ .text = fatext.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                         .annotations = &[_][]const u8{},
-                        .target = allocator.dupe(u8, "zig") catch unreachable,
+                        .target = allocator.dupe(u8, proc_target) catch unreachable,
                         .location = flow.location,
                         .module = allocator.dupe(u8, flow.module) catch unreachable,
                     } }) catch unreachable;
@@ -3658,10 +3666,21 @@ fn storeLowerText(
                 //
                 // It also deletes N-1 calls per block, each of which carried a
                 // full-width payload of typed zeros.
-                const ew_head = allocator.dupe(u8, "const __koru_r = @as(usize, @intCast(row));\nconst __koru_mask = @as(u64, @bitCast(field));\n") catch unreachable;
+                const ew_head = if (host_is_js)
+                    allocator.dupe(u8, "const __koru_r = row;\nconst __koru_mask = field;\n") catch unreachable
+                else
+                    allocator.dupe(u8, "const __koru_r = @as(usize, @intCast(row));\nconst __koru_mask = @as(u64, @bitCast(field));\n") catch unreachable;
                 ewb.appendSlice(allocator, ew_head) catch unreachable;
                 for (field_names, 0..) |fname, i| {
-                    const arm_open = std.fmt.allocPrint(allocator, "if (__koru_mask & (@as(u64, 1) << {d}) != 0) {{ ", .{i}) catch unreachable;
+                    // BIT i OF THE MASK. JavaScript's bitwise operators coerce
+                    // their operands to 32 bits, so `mask & (1 << i)` silently
+                    // answers for the low 32 columns only — the same trap the
+                    // `@popCount` lowering documents. Division by a power of two
+                    // stays exact across the 53-bit safe range.
+                    const arm_open = if (host_is_js)
+                        std.fmt.allocPrint(allocator, "if (Math.floor(__koru_mask / {d}) % 2 === 1) {{ ", .{@as(u64, 1) << @intCast(i)}) catch unreachable
+                    else
+                        std.fmt.allocPrint(allocator, "if (__koru_mask & (@as(u64, 1) << {d}) != 0) {{ ", .{i}) catch unreachable;
                     ewb.appendSlice(allocator, arm_open) catch unreachable;
                     // The write half of the bundled apply arm, verbatim: tree
                     // guard, pre-image read, cell write, updated interceptors.
@@ -3684,9 +3703,9 @@ fn storeLowerText(
                     ewb.appendSlice(allocator, ewr) catch unreachable;
                     for (updated_arms.items, 0..) |ua, ai| {
                         const ecall = if (ua.fields.len != 0)
-                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{ .old = __koru_old, .new = value_{d} }}); ", .{ emit_ns, store_name, ai, i }) catch unreachable
+                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler({s}); ", .{ emit_ns, store_name, ai, HS.argRec(allocator, host_target, std.fmt.allocPrint(allocator, "{s}, {s}", .{ HS.recField(allocator, host_target, "old", "__koru_old"), HS.recField(allocator, host_target, "new", std.fmt.allocPrint(allocator, "value_{d}", .{i}) catch unreachable) }) catch unreachable) }) catch unreachable
                         else
-                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler(.{{}}); ", .{ emit_ns, store_name, ai }) catch unreachable;
+                            std.fmt.allocPrint(allocator, "{s}__store_updated_{s}_{d}_event.handler({s}); ", .{ emit_ns, store_name, ai, HS.argRec(allocator, host_target, "") }) catch unreachable;
                         ewb.appendSlice(allocator, ecall) catch unreachable;
                     }
                     ewb.appendSlice(allocator, "}\n") catch unreachable;
@@ -3696,7 +3715,7 @@ fn storeLowerText(
                     .path = H.mkPathH(allocator, home_ns, penvw_name),
                     .body = ast.Source{ .text = ewb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                     .annotations = &[_][]const u8{},
-                    .target = allocator.dupe(u8, "zig") catch unreachable,
+                    .target = allocator.dupe(u8, proc_target) catch unreachable,
                     .location = flow.location,
                     .module = allocator.dupe(u8, flow.module) catch unreachable,
                 } }) catch unreachable;
@@ -3864,39 +3883,49 @@ fn storeLowerText(
             // other slots are zeros the parent arm never reads.
             var cw_slots = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
             for (0..field_names.len) |ci| {
-                if (ci == user_field_count) {
-                    const s = std.fmt.allocPrint(allocator, ", .value_{d} = value", .{ci}) catch unreachable;
-                    cw_slots.appendSlice(allocator, s) catch unreachable;
-                } else {
+                cw_slots.appendSlice(allocator, ", ") catch unreachable;
+                const slot = std.fmt.allocPrint(allocator, "value_{d}", .{ci}) catch unreachable;
+                const val = if (ci == user_field_count)
+                    "value"
                     // A char slot's typed zero is the empty string (the slot
                     // type is `string`); scalars ride comptime-int 0.
-                    const s = if (field_char_caps[ci] != null)
-                        std.fmt.allocPrint(allocator, ", .value_{d} = \"\"", .{ci}) catch unreachable
-                    else
-                        std.fmt.allocPrint(allocator, ", .value_{d} = 0", .{ci}) catch unreachable;
-                    cw_slots.appendSlice(allocator, s) catch unreachable;
-                }
+                else if (field_char_caps[ci] != null) "\"\"" else "0";
+                cw_slots.appendSlice(allocator, HS.recField(allocator, host_target, slot, val)) catch unreachable;
             }
             // `row` arrives DENSE (the write-family convention; the stored
             // transform resolved the caller's handle at its call site). The
             // ancestor chain carries HANDLES, so the self-compare
             // reconstructs this row's handle once.
             const cbody = std.fmt.allocPrint(allocator,
-                \\const __koru_self = __koru_store_{s}.__koru_handle_of(@as(usize, @intCast(row)));
+                \\const __koru_self = __koru_store_{s}.__koru_handle_of({s});
                 \\var __koru_cyc = value;
                 \\while (__koru_cyc != -1) {{
-                \\    if (__koru_cyc == __koru_self) return .{{ .cycle = .{{}} }};
+                \\    if (__koru_cyc == __koru_self) return {s};
                 \\    const __koru_cycr = __koru_store_{s}.__koru_resolve(__koru_cyc);
                 \\    __koru_cyc = __koru_store_{s}.parent[__koru_cycr];
                 \\}}
-                \\{s}__store_write_{s}_event.handler(.{{ .row = row, .field = field{s} }});
-                \\return .{{ .ok = .{{}} }};
-            , .{ store_name, store_name, store_name, emit_ns, store_name, cw_slots.items }) catch unreachable;
+                \\{s}__store_write_{s}_event.handler({s});
+                \\return {s};
+            , .{
+                store_name,
+                HS.asIndex(allocator, host_target, "row"),
+                HS.branchEmpty(allocator, host_target, "cycle"),
+                store_name,
+                store_name,
+                emit_ns,
+                store_name,
+                HS.argRec(allocator, host_target, std.fmt.allocPrint(allocator, "{s}, {s}{s}", .{
+                    HS.recField(allocator, host_target, "row", "row"),
+                    HS.recField(allocator, host_target, "field", "field"),
+                    cw_slots.items,
+                }) catch unreachable),
+                HS.branchEmpty(allocator, host_target, "ok"),
+            }) catch unreachable;
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, home_ns, pwritec_name),
                 .body = ast.Source{ .text = cbody, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
-                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .target = allocator.dupe(u8, proc_target) catch unreachable,
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
@@ -4278,11 +4307,24 @@ fn storeLowerText(
             // default, graceful when handled — 690_070 pins a re-take of the
             // same address answering `| empty`). Reads and writes have no such
             // branch, which is why their stale path traps instead.
-            const thead = std.fmt.allocPrint(allocator,
-                \\const __koru_r = __koru_store_{s}.__koru_row_of(row) orelse return .{{ .empty = .{{}} }};
-                \\const __koru_gone_slot = __koru_store_{s}.__koru_row_hslot[__koru_r];
-                \\
-            , .{ store_name, store_name }) catch unreachable;
+            // Zig's `orelse return` and JS's explicit null test are the same
+            // guard. `null` is the only absence the JS `__koru_row_of` returns
+            // (:2800) and row 0 is a real row, so the JS arm compares against
+            // null rather than testing truthiness.
+            const t_empty = HS.branchEmpty(allocator, host_target, "empty");
+            const thead = if (host_is_js)
+                std.fmt.allocPrint(allocator,
+                    \\const __koru_r = __koru_store_{s}.__koru_row_of(row);
+                    \\if (__koru_r === null) return {s};
+                    \\const __koru_gone_slot = __koru_store_{s}.__koru_row_hslot[__koru_r];
+                    \\
+                , .{ store_name, t_empty, store_name }) catch unreachable
+            else
+                std.fmt.allocPrint(allocator,
+                    \\const __koru_r = __koru_store_{s}.__koru_row_of(row) orelse return {s};
+                    \\const __koru_gone_slot = __koru_store_{s}.__koru_row_hslot[__koru_r];
+                    \\
+                , .{ store_name, t_empty, store_name }) catch unreachable;
             tb.appendSlice(allocator, thead) catch unreachable;
             for (field_names) |fname| {
                 const ld = std.fmt.allocPrint(allocator, "const __koru_out_{s} = __koru_store_{s}.{s}[__koru_r];\n", .{ fname, store_name, fname }) catch unreachable;
@@ -4291,7 +4333,7 @@ fn storeLowerText(
             // `removed` lifecycle interceptors fire before the swap-remove, with
             // the row's outgoing values (the qbody pattern, take side).
             for (removed_arms.items, 0..) |arm, ai| {
-                const head = std.fmt.allocPrint(allocator, "{s}__store_removed_{s}_{d}_event.handler(.{{ ", .{ emit_ns, store_name, ai }) catch unreachable;
+                const head = std.fmt.allocPrint(allocator, "{s}__store_removed_{s}_{d}_event.handler({s} ", .{ emit_ns, store_name, ai, if (host_is_js) "{" else ".{" }) catch unreachable;
                 tb.appendSlice(allocator, head) catch unreachable;
                 for (arm.fields, 0..) |fnm, fi| {
                     if (fi > 0) tb.appendSlice(allocator, ", ") catch unreachable;
@@ -4305,9 +4347,9 @@ fn storeLowerText(
                         break :blk false;
                     };
                     const p = if (fnm_is_char)
-                        std.fmt.allocPrint(allocator, ".{s} = @import(\"std\").mem.sliceTo(&__koru_out_{s}, 0)", .{ fnm, fnm }) catch unreachable
+                        HS.recField(allocator, host_target, fnm, std.fmt.allocPrint(allocator, "@import(\"std\").mem.sliceTo(&__koru_out_{s}, 0)", .{fnm}) catch unreachable)
                     else
-                        std.fmt.allocPrint(allocator, ".{s} = __koru_out_{s}", .{ fnm, fnm }) catch unreachable;
+                        HS.recField(allocator, host_target, fnm, std.fmt.allocPrint(allocator, "__koru_out_{s}", .{fnm}) catch unreachable);
                     tb.appendSlice(allocator, p) catch unreachable;
                 }
                 tb.appendSlice(allocator, " });\n") catch unreachable;
@@ -4324,25 +4366,30 @@ fn storeLowerText(
             // generation bump) and returns to the freelist.
             const mvfix = std.fmt.allocPrint(allocator, "    const __koru_mv_slot = __koru_store_{s}.__koru_row_hslot[__koru_last];\n    __koru_store_{s}.__koru_hslot_row[__koru_mv_slot] = __koru_r;\n    __koru_store_{s}.__koru_row_hslot[__koru_r] = __koru_mv_slot;\n", .{ store_name, store_name, store_name }) catch unreachable;
             tb.appendSlice(allocator, mvfix) catch unreachable;
-            const tail = std.fmt.allocPrint(allocator, "}}\n__koru_store_{s}.len = __koru_last;\n__koru_store_{s}.__koru_hslot_gen[__koru_gone_slot] +%= 1;\n__koru_store_{s}.__koru_hslot_free[__koru_store_{s}.__koru_hslot_free_len] = __koru_gone_slot;\n__koru_store_{s}.__koru_hslot_free_len += 1;\n", .{ store_name, store_name, store_name, store_name, store_name }) catch unreachable;
+            // The generation bump WRAPS — Zig spells that `+%=`, and a plain
+            // `+=` there is a compile error on the sized integer. JS has one
+            // number type and no wrapping operator; the counter is compared for
+            // equality only, so `+ 1` is the same guarantee.
+            const genbump = if (host_is_js) "+= 1" else "+%= 1";
+            const tail = std.fmt.allocPrint(allocator, "}}\n__koru_store_{s}.len = __koru_last;\n__koru_store_{s}.__koru_hslot_gen[__koru_gone_slot] {s};\n__koru_store_{s}.__koru_hslot_free[__koru_store_{s}.__koru_hslot_free_len] = __koru_gone_slot;\n__koru_store_{s}.__koru_hslot_free_len += 1;\n", .{ store_name, store_name, genbump, store_name, store_name, store_name }) catch unreachable;
             tb.appendSlice(allocator, tail) catch unreachable;
             if (item_identity_owned) {
-                const o = std.fmt.allocPrint(allocator, "return .{{ .item = __koru_out_{s} }};", .{field_names[0]}) catch unreachable;
+                const o = std.fmt.allocPrint(allocator, "return {s};", .{HS.branchOne(allocator, host_target, "item", std.fmt.allocPrint(allocator, "__koru_out_{s}", .{field_names[0]}) catch unreachable)}) catch unreachable;
                 tb.appendSlice(allocator, o) catch unreachable;
             } else {
-                tb.appendSlice(allocator, "return .{ .item = .{ ") catch unreachable;
-                for (field_names, 0..) |fname, i| {
-                    if (i > 0) tb.appendSlice(allocator, ", ") catch unreachable;
-                    const o = std.fmt.allocPrint(allocator, ".{s} = __koru_out_{s}", .{ fname, fname }) catch unreachable;
-                    tb.appendSlice(allocator, o) catch unreachable;
+                var ib = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                for (field_names) |fname| {
+                    if (ib.items.len > 0) ib.appendSlice(allocator, ", ") catch unreachable;
+                    ib.appendSlice(allocator, HS.recField(allocator, host_target, fname, std.fmt.allocPrint(allocator, "__koru_out_{s}", .{fname}) catch unreachable)) catch unreachable;
                 }
-                tb.appendSlice(allocator, " } };") catch unreachable;
+                const o = std.fmt.allocPrint(allocator, "return {s};", .{HS.branchRec(allocator, host_target, "item", ib.items)}) catch unreachable;
+                tb.appendSlice(allocator, o) catch unreachable;
             }
             appended_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = H.mkPathH(allocator, home_ns, take_name),
                 .body = ast.Source{ .text = tb.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
-                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .target = allocator.dupe(u8, proc_target) catch unreachable,
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
@@ -4422,7 +4469,12 @@ fn storeLowerText(
                             .path = H.mkPathH(alloc, module, ev_name),
                             .body = ast.Source{ .text = lbody_node.inline_code, .location = loc, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                             .annotations = &[_][]const u8{},
-                            .target = alloc.dupe(u8, "zig") catch unreachable,
+                            // Reads the target directly: this is a nested
+                            // helper struct, which cannot capture `new|zig`'s
+                            // local. The body is a nested store read's spliced
+                            // loop, which `query` now renders for whichever
+                            // host is being built, so the tag must follow it.
+                            .target = alloc.dupe(u8, if (storeHostTarget() == .js) "js" else "zig") catch unreachable,
                             .location = loc,
                             .module = alloc.dupe(u8, module) catch unreachable,
                         } }) catch unreachable;
@@ -4551,7 +4603,7 @@ fn storeLowerText(
                     .path = H.mkPathH(allocator, home_ns, pstripe_name),
                     .body = ast.Source{ .text = allocator.dupe(u8, "return;") catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                     .annotations = &[_][]const u8{},
-                    .target = allocator.dupe(u8, "zig") catch unreachable,
+                    .target = allocator.dupe(u8, proc_target) catch unreachable,
                     .location = flow.location,
                     .module = allocator.dupe(u8, flow.module) catch unreachable,
                 } }) catch unreachable;
@@ -4682,7 +4734,7 @@ fn storeLowerText(
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
             var td = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-            const td_head = std.fmt.allocPrint(allocator, "for (0..__koru_store_{s}.len) |__koru_i| {{\n", .{store_name}) catch unreachable;
+            const td_head = HS.loopHead(allocator, host_target, "__koru_i", std.fmt.allocPrint(allocator, "__koru_store_{s}.len", .{store_name}) catch unreachable);
             td.appendSlice(allocator, td_head) catch unreachable;
             if (drain_required) {
                 // Fire the user's `! discharge` handler with the row record —
@@ -4696,13 +4748,13 @@ fn storeLowerText(
                     const p = std.fmt.allocPrint(allocator, "    discharge(__koru_store_{s}.{s}[__koru_i]);\n", .{ store_name, field_names[0] }) catch unreachable;
                     td.appendSlice(allocator, p) catch unreachable;
                 } else {
-                    td.appendSlice(allocator, "    discharge(.{ ") catch unreachable;
-                    for (field_names, 0..) |fname, fi| {
-                        if (fi > 0) td.appendSlice(allocator, ", ") catch unreachable;
-                        const p = std.fmt.allocPrint(allocator, ".{s} = __koru_store_{s}.{s}[__koru_i]", .{ fname, store_name, fname }) catch unreachable;
-                        td.appendSlice(allocator, p) catch unreachable;
+                    var db = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                    for (field_names) |fname| {
+                        if (db.items.len > 0) db.appendSlice(allocator, ", ") catch unreachable;
+                        db.appendSlice(allocator, HS.recField(allocator, host_target, fname, std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_i]", .{ store_name, fname }) catch unreachable)) catch unreachable;
                     }
-                    td.appendSlice(allocator, " });\n") catch unreachable;
+                    const p = std.fmt.allocPrint(allocator, "    discharge({s});\n", .{HS.argRec(allocator, host_target, db.items)}) catch unreachable;
+                    td.appendSlice(allocator, p) catch unreachable;
                 }
             } else {
                 for (field_names, field_owned_info) |fname, foi| {
@@ -4712,7 +4764,7 @@ fn storeLowerText(
                     // the same `<name>_event.handler` convention every emitted call
                     // uses (buildKoruModulePath). std/string's `free` is just one
                     // instance; a user *Resource routes to its own `free`/`close`.
-                    const fr = std.fmt.allocPrint(allocator, "    _ = {s}.{s}_event.handler(.{{ .{s} = __koru_store_{s}.{s}[__koru_i] }});\n", .{ oi.disch_host, oi.disch_event, oi.disch_param, store_name, fname }) catch unreachable;
+                    const fr = std.fmt.allocPrint(allocator, "    {s}{s}.{s}_event.handler({s});\n", .{ if (host_is_js) "" else "_ = ", oi.disch_host, oi.disch_event, HS.argRec(allocator, host_target, HS.recField(allocator, host_target, oi.disch_param, std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_i]", .{ store_name, fname }) catch unreachable)) }) catch unreachable;
                     td.appendSlice(allocator, fr) catch unreachable;
                 }
             }
@@ -4722,7 +4774,7 @@ fn storeLowerText(
                 .path = H.mkPathH(allocator, home_ns, td_name),
                 .body = ast.Source{ .text = td.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
-                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .target = allocator.dupe(u8, proc_target) catch unreachable,
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
