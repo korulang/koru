@@ -88,6 +88,28 @@ fn storeEmitQualifier(alloc: std.mem.Allocator, home: []const u8, main_module_na
     return std.fmt.allocPrint(alloc, "{s}.", .{path}) catch unreachable;
 }
 
+/// JavaScript has ONE namespace for events and ANOTHER for the cell, and
+/// neither is the Zig one — which is why this cannot be a single answer.
+///
+/// `js_emitter` flattens every event in the program, imported modules included,
+/// into the one `main_module` object (its own comment at :155 says so: "JS
+/// object keys are a FLAT namespace while Koru event paths are not"). So an
+/// event dispatch is `main_module.<name>_event` no matter which module declared
+/// the store, and the `koru_app.koru_lib.` mangling names nothing.
+fn storeEventQualifier(alloc: std.mem.Allocator, home: []const u8, main_module_name: []const u8) []const u8 {
+    if (std.mem.eql(u8, CompilerEnv.lang, "js")) return "main_module.";
+    return storeEmitQualifier(alloc, home, main_module_name);
+}
+
+/// The CELL, on the other hand, is a module-scope `let` written above
+/// `main_module` (the `.inline_code` path), so it is reachable BARE from every
+/// handler and any qualifier at all is wrong. On Zig the cell lives inside the
+/// declaring module's emitted struct and needs the full namespace.
+fn storeCellQualifier(alloc: std.mem.Allocator, home: []const u8, main_module_name: []const u8) []const u8 {
+    if (std.mem.eql(u8, CompilerEnv.lang, "js")) return "";
+    return storeEmitQualifier(alloc, home, main_module_name);
+}
+
 /// Find a SYNTHESIZED store declaration by its exact generated name, at any
 /// module depth.
 ///
@@ -785,7 +807,7 @@ fn storeLowerText(
     // are raw Zig, so they must name the struct their sibling units emitted
     // into; a hardcoded `main_module.` reaches for a namespace the units are
     // not in.
-    const emit_ns = storeEmitQualifier(allocator, home_ns, program.main_module_name);
+    const emit_ns = storeEventQualifier(allocator, home_ns, program.main_module_name);
 
     // Per-store disposal contract: `[entity(<name>)]` opts this store into the
     // taken-obligation discipline. Its rows are named ENTITIES — `take` mints
@@ -5567,9 +5589,9 @@ fn storeLowerText(
         var sb2 = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
         for (field_names, 0..) |_, i| {
             const call2 = if (host_is_js)
-                std.fmt.allocPrint(allocator, "{s}{s}_event.handler({{ field: {d} }});\n", .{ storeEmitQualifier(allocator, home_ns, program.main_module_name), announce_name, i }) catch unreachable
+                std.fmt.allocPrint(allocator, "{s}{s}_event.handler({{ field: {d} }});\n", .{ storeEventQualifier(allocator, home_ns, program.main_module_name), announce_name, i }) catch unreachable
             else
-                std.fmt.allocPrint(allocator, "{s}{s}_event.handler(.{{ .field = {d} }});\n", .{ storeEmitQualifier(allocator, home_ns, program.main_module_name), announce_name, i }) catch unreachable;
+                std.fmt.allocPrint(allocator, "{s}{s}_event.handler(.{{ .field = {d} }});\n", .{ storeEventQualifier(allocator, home_ns, program.main_module_name), announce_name, i }) catch unreachable;
             sb2.appendSlice(allocator, call2) catch unreachable;
         }
         sb2.appendSlice(allocator, "return;") catch unreachable;
@@ -5622,7 +5644,7 @@ fn storeLowerText(
                     // rule as `emitter_helpers.writeModulePath`, so a cross-module
                     // cell read now lowers for ANY declaring module — it used to
                     // refuse, because this rewrite could only spell `main_module`.
-                    px[i] = storeEmitQualifier(alloc, home_logical_pre, prog.main_module_name);
+                    px[i] = storeCellQualifier(alloc, home_logical_pre, prog.main_module_name);
                 }
                 return px;
             }
@@ -8307,7 +8329,7 @@ fn storeLowerText(
         captures.append(allocator, .{
             .name = allocator.dupe(u8, idn) catch unreachable,
             .type = allocator.dupe(u8, "i64") catch unreachable,
-            .value = std.fmt.allocPrint(allocator, "{s}__koru_store_{s}.__koru_handle_of(__koru_si)", .{ storeEmitQualifier(allocator, home_ns, program.main_module_name), store_name }) catch unreachable,
+            .value = std.fmt.allocPrint(allocator, "{s}__koru_store_{s}.__koru_handle_of(__koru_si)", .{ storeCellQualifier(allocator, home_ns, program.main_module_name), store_name }) catch unreachable,
         }) catch unreachable;
     }
 
@@ -8415,7 +8437,7 @@ fn storeLowerText(
     //
     // Entry-file programs are unaffected: the qualifier is `main_module.` there
     // and the cell is declared inside `main_module`.
-    const cellq = storeEmitQualifier(allocator, home_ns, program.main_module_name);
+    const cellq = storeCellQualifier(allocator, home_ns, program.main_module_name);
     const hdr = std.fmt.allocPrint(allocator, "{{\nfor (0..{s}__koru_store_{s}.len) |__koru_si| {{\n", .{ cellq, store_name }) catch unreachable;
     loop.appendSlice(allocator, hdr) catch unreachable;
     for (proj_names, proj_cols) |pn, ci| {
@@ -8435,7 +8457,7 @@ fn storeLowerText(
         const gz = std.fmt.allocPrint(allocator, "if (!({s})) continue;\n", .{cond}) catch unreachable;
         loop.appendSlice(allocator, gz) catch unreachable;
     }
-    loop.appendSlice(allocator, storeEmitQualifier(allocator, home_ns, program.main_module_name)) catch unreachable;
+    loop.appendSlice(allocator, storeEventQualifier(allocator, home_ns, program.main_module_name)) catch unreachable;
     loop.appendSlice(allocator, sbody_name) catch unreachable;
     // A derived projection can be EMPTY — an arm that never names a field of the
     // row it stands on (690_087's outer sweep only nests another sweep). The
