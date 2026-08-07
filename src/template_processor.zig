@@ -24,6 +24,7 @@ const liquid = @import("liquid");
 const log = @import("log");
 const errors = @import("errors");
 const struct_literal = @import("struct_literal");
+const codegen_utils = @import("codegen_utils");
 
 const TEMPLATE_TAG = "template";
 const ONCE_MODE = "once";
@@ -787,7 +788,16 @@ fn renderTemplateInvocation(
         // `H.… !== undefined`), and no later pass gets a chance to retarget it.
         // A required arm is left verbatim: the shape checker walls it (KORU131)
         // before emission is reached.
-        const text = try presenceRewriteTemplateArg(allocator, invocation, impl_event, raw_text, HostLang.of(build_lang));
+        const presence_text = try presenceRewriteTemplateArg(allocator, invocation, impl_event, raw_text, HostLang.of(build_lang));
+        // Runtime string equality (Zig): `~if(cmd == "start")` bakes its
+        // condition right here, so the value-equality spelling must be
+        // applied before the render — same reasoning as the presence rewrite
+        // above. JS keeps the verbatim text: its `==` already IS string value
+        // equality. Identity for everything the rewriter doesn't recognize.
+        const text = if (HostLang.of(build_lang) == .zig)
+            (codegen_utils.rewriteStringEqualityZig(allocator, presence_text) catch null) orelse presence_text
+        else
+            presence_text;
         if (i == 0) scrutinee_text = text;
         const is_positional = std.mem.eql(u8, arg.name, arg.value);
         const key = if (!is_positional)
@@ -830,7 +840,15 @@ fn renderTemplateInvocation(
             sub.* = liquid.Context.init(allocator);
             try sub.put("link", .{ .string = cont.branch });
             try sub.put("binding", .{ .string = cont.binding orelse "" });
-            try sub.put("guard", .{ .string = cont.condition orelse "" });
+            // A `cond` arm's `when` guard is baked into the cascade by the
+            // template render, so the Zig string-equality spelling applies
+            // here — the emitter's guard sites never see this text.
+            const guard_text: []const u8 = blk: {
+                const g = cont.condition orelse break :blk "";
+                if (HostLang.of(build_lang) != .zig) break :blk g;
+                break :blk (codegen_utils.rewriteStringEqualityZig(allocator, g) catch null) orelse g;
+            };
+            try sub.put("guard", .{ .string = guard_text });
             try sub.put("kind", .{ .string = if (cont.kind == .effect) "effect" else "terminal" });
             // `inlined_link` is a marker the emitter resolves to the handler's
             // body spliced INLINE (in the enclosing scope), vs `link` which is a
