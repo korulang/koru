@@ -41,3 +41,36 @@ portable because `ptr[i].mass *= 2.0` is the same text in both languages. That
 holds for arithmetic and stops at Zig builtins — one fixture writes `@sqrt` into
 an op body and has no JS lowering. Portable-looking user text is portable only as
 far as the operators it uses.
+
+## The fraction that differs belongs to the SHAPE, not to the transform
+
+`store:new` was measured with this test and answered the opposite way to
+kernel — 40 Zig-bearing lines in 111 emitted, a data-structure implementation
+rather than a few seams, so: a second rendering. From that came a second
+conclusion, written down as a planning fact: *baseline 0/149, `store:new` gates
+148 of them, so unlike regex there is no incremental first green — nothing
+passes until `new` produces a working JS store.*
+
+Both halves were measured honestly and the second one is wrong, because
+`store:new` does not generate one artifact. Capacity selects the shape. The
+CONTAINER emits SoA columns, a handle table with generations, a free list, a
+brand, a row↔slot map and three methods on `@This()` — that is where the 40
+lines were counted. The SINGLETON emits a plain struct with a field per column
+and four small procs, and its whole JS rendering is an object literal plus four
+`switch`es. Nineteen tests in `690_STORE` declare only singleton stores; sixteen
+of them went green in one pass, and the container was not touched.
+
+So the test needs one more question in front of it: **does this transform
+generate more than one shape, and does the fraction differ per shape?** Where
+it does, the shapes are separable rungs with their own tests, and the cheap one
+is a real first green — measuring the expensive shape and reporting one number
+for the module hides it. The 111-vs-40 measurement was not wrong; it was an
+average over two populations, and an average over two populations describes
+neither.
+
+The corollary that makes this worth acting on rather than merely noting: the
+cheap shape is where the *mechanical* walls get paid off — the target string on
+every synthesized proc, the `host_line`-versus-`inline_code` routing, the branch
+return convention — and those are shared with the expensive shape. A rung that
+looks like 16 tests is also the whole scaffolding, bought against a small enough
+artifact to read in one screen.

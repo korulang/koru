@@ -190,11 +190,58 @@ not by tests.
   scope until someone rules otherwise — and unlike kernel, that judgement is
   about size and substance, not about vocabulary.
 
-## Store — RECONNAISSANCE, 2026-08-06 (measured, nothing built yet)
+## Store — the SINGLETON rung SHIPPED (2026-08-07): 0/19 → 16/19
 
 Baseline **0/149**, measured: 136 `js-compile`, 9 `js-runtime`, 4 `js-timeout`.
-`store:new` alone gates **148 of the 149**, so unlike regex there is no
-incremental first green — nothing passes until `new` produces a working JS store.
+`store:new` alone gates **148 of the 149**.
+
+**CORRECTION: this file said "there is no incremental first green — nothing
+passes until `new` produces a working JS store." There is one, and it is
+cheap.** `store:new` generates TWO shapes and capacity selects between them.
+The 111-line / 40-Zig-bearing measurement below is the CONTAINER. The SINGLETON
+(`std/store:new(ui) { sel: 0[i64] }`, no `capacity:`) emits a plain struct and
+four small procs, and its entire JS rendering is `let __koru_store_ui = { sel: 0
+};` plus four `switch`es. Nineteen `690_STORE` tests declare only singleton
+stores. Sixteen went green in one pass, the container untouched, and the Zig
+emission is byte-identical for both shapes (diffed on four tests, singleton and
+container). Gardened as the second section of
+`frag-a-transform-renders-two-languages-from-one-body`: **the fraction that
+differs belongs to the SHAPE, not to the transform** — one number for a
+transform that generates two shapes is an average over two populations.
+
+What the singleton rung actually bought, most of which the container inherits:
+
+1. **`host_is_js` / `proc_target` read once** at the top of `new` (kernel's
+   shape, `store.kz:539`). Every synthesized `ProcDecl` now takes
+   `.target = proc_target`; there are **20** such sites, not the 19 recorded
+   below, and the spelling is `allocator.dupe(u8, "zig")`, which is why a grep
+   for `.target = "zig"` found none of them.
+2. **The cell is `.inline_code` on JS and stays `.host_line` on Zig.** A
+   `host_line` reaches the JS file only when the file it points at is a JS host
+   facet (`js_emitter.zig:223`), and a synthesized line points at the user's
+   `.k` — so the cell was dropped in silence while every accessor that reads it
+   was emitted. `.inline_code` is written above `main_module`, where a JS `let`
+   is exactly as reachable as a Zig `var` inside the struct.
+3. **The branch-return convention differs in SHAPE, not syntax.** Zig returns a
+   tagged union (`.{ .sel = value }`); JS returns `{ tag: "sel", sel: value }`
+   (`js_emitter.zig:594`) — the payload key repeats the branch name. And
+   `else => unreachable` has no JS twin: an unmodelled field index must throw,
+   or the switch falls through returning `undefined` and the caller reads it as
+   a branch object.
+4. **The envelope mask is the word-size trap again.** `__store_envwrite` tests
+   `mask & (1 << i)`; JS bitwise operators coerce to 32 bits, so the literal
+   transliteration is silently wrong rather than a syntax error. Rendered as
+   `Math.floor(field / 2**i) % 2 === 1`, exact to 2^53.
+
+Residue of the 19, none of it singleton-shaped: `690_017` is `PARSE003` on
+`?persist` (a branch-name rule, and the test already carries a `RULING`), and
+`690_079`/`690_080` are one bug — `ReferenceError: koru_app is not defined`,
+a store declared in an IMPORTED module. `storeEmitQualifier` mints
+`koru_app.__store_…`, which is the Zig emitted-namespace path; the JS emitter
+has no such namespace. That is the next singleton item and it is shared with
+the container.
+
+## Store — CONTAINER reconnaissance, 2026-08-06 (measured, nothing built yet)
 
 **Store wants the VARIANT route, and kernel did not.** Apply the test kernel
 produced — what fraction of the OUTPUT differs — and the two modules answer

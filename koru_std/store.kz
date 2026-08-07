@@ -524,6 +524,20 @@ fn storeLowerText(
     const ast_functional = @import("ast_functional");
     const struct_literal = @import("struct_literal");
 
+    // THE TARGET LANGUAGE, READ ONCE — kernel's shape (kernel.kz:616), applied
+    // where the answer is the opposite one. Kernel found eight differing sites
+    // in ~60 and branched inside one body; store's generated artifact is a data
+    // structure, so most of what it emits genuinely differs and the two
+    // renderings are written side by side at each site rather than seamed.
+    //
+    // The SINGLETON shape is what lands first, and it is much smaller than the
+    // container: a plain object, four synthesized procs, no SoA columns, no
+    // handle table, no brand, no free list. The recon recorded "no incremental
+    // first green exists here" because it measured the container's 111 emitted
+    // lines; the singleton is a separable rung reached by its own tests.
+    const host_is_js = std.mem.eql(u8, CompilerEnv.lang, "js");
+    const proc_target = if (host_is_js) "js" else "zig";
+
     if (item.* != .flow) @panic("store:new transform: containing item is not a flow - walker dispatch contract broken");
     const flow = &item.flow;
 
@@ -4981,30 +4995,50 @@ fn storeLowerText(
     seed.appendSlice(allocator, " }") catch unreachable;
     const init_zig = seed.toOwnedSlice(allocator) catch unreachable;
 
-    var p = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
-    p.appendSlice(allocator, "const __KoruStoreT_") catch unreachable;
-    p.appendSlice(allocator, store_name) catch unreachable;
-    // Container-level const initializers are already comptime scope — no
-    // `comptime` keyword (capture's twin builder needs it because its
-    // preamble lands inside a function body).
-    p.appendSlice(allocator, " = blk: {\n") catch unreachable;
-    p.appendSlice(allocator, "    const __info = @typeInfo(@TypeOf(") catch unreachable;
-    p.appendSlice(allocator, init_zig) catch unreachable;
-    p.appendSlice(allocator, "));\n") catch unreachable;
-    p.appendSlice(allocator, "    var __fields: [__info.@\"struct\".fields.len]@import(\"std\").builtin.Type.StructField = undefined;\n") catch unreachable;
-    p.appendSlice(allocator, "    for (__info.@\"struct\".fields, 0..) |__f, __i| {\n") catch unreachable;
-    p.appendSlice(allocator, "        __fields[__i] = .{ .name = __f.name, .type = __f.type, .default_value_ptr = null, .is_comptime = false, .alignment = __f.alignment };\n") catch unreachable;
-    p.appendSlice(allocator, "    }\n") catch unreachable;
-    p.appendSlice(allocator, "    break :blk @Type(.{ .@\"struct\" = .{ .layout = .auto, .fields = &__fields, .decls = &.{}, .is_tuple = false } });\n") catch unreachable;
-    p.appendSlice(allocator, "};\n") catch unreachable;
-    p.appendSlice(allocator, "var __koru_store_") catch unreachable;
-    p.appendSlice(allocator, store_name) catch unreachable;
-    p.appendSlice(allocator, ": __KoruStoreT_") catch unreachable;
-    p.appendSlice(allocator, store_name) catch unreachable;
-    p.appendSlice(allocator, " = ") catch unreachable;
-    p.appendSlice(allocator, init_zig) catch unreachable;
-    p.appendSlice(allocator, ";") catch unreachable;
-    const cell_decl = p.toOwnedSlice(allocator) catch unreachable;
+    // The JS cell is the same object literal with the casts removed: a default
+    // is written by the author as a Koru literal, and JavaScript has no type to
+    // pin it to. There is no `@Type` twin because the Zig side only builds one
+    // to get a NAMED struct type for the `var` annotation, which JS neither has
+    // nor needs.
+    const cell_decl = if (host_is_js) blk_js: {
+        var jp = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+        jp.appendSlice(allocator, "let __koru_store_") catch unreachable;
+        jp.appendSlice(allocator, store_name) catch unreachable;
+        jp.appendSlice(allocator, " = { ") catch unreachable;
+        for (cell_fields, 0..) |cf, i| {
+            if (i > 0) jp.appendSlice(allocator, ", ") catch unreachable;
+            jp.appendSlice(allocator, cf.name) catch unreachable;
+            jp.appendSlice(allocator, ": ") catch unreachable;
+            jp.appendSlice(allocator, field_defaults[i] orelse "0") catch unreachable;
+        }
+        jp.appendSlice(allocator, " };") catch unreachable;
+        break :blk_js jp.toOwnedSlice(allocator) catch unreachable;
+    } else blk_zig: {
+        var p = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+        p.appendSlice(allocator, "const __KoruStoreT_") catch unreachable;
+        p.appendSlice(allocator, store_name) catch unreachable;
+        // Container-level const initializers are already comptime scope — no
+        // `comptime` keyword (capture's twin builder needs it because its
+        // preamble lands inside a function body).
+        p.appendSlice(allocator, " = blk: {\n") catch unreachable;
+        p.appendSlice(allocator, "    const __info = @typeInfo(@TypeOf(") catch unreachable;
+        p.appendSlice(allocator, init_zig) catch unreachable;
+        p.appendSlice(allocator, "));\n") catch unreachable;
+        p.appendSlice(allocator, "    var __fields: [__info.@\"struct\".fields.len]@import(\"std\").builtin.Type.StructField = undefined;\n") catch unreachable;
+        p.appendSlice(allocator, "    for (__info.@\"struct\".fields, 0..) |__f, __i| {\n") catch unreachable;
+        p.appendSlice(allocator, "        __fields[__i] = .{ .name = __f.name, .type = __f.type, .default_value_ptr = null, .is_comptime = false, .alignment = __f.alignment };\n") catch unreachable;
+        p.appendSlice(allocator, "    }\n") catch unreachable;
+        p.appendSlice(allocator, "    break :blk @Type(.{ .@\"struct\" = .{ .layout = .auto, .fields = &__fields, .decls = &.{}, .is_tuple = false } });\n") catch unreachable;
+        p.appendSlice(allocator, "};\n") catch unreachable;
+        p.appendSlice(allocator, "var __koru_store_") catch unreachable;
+        p.appendSlice(allocator, store_name) catch unreachable;
+        p.appendSlice(allocator, ": __KoruStoreT_") catch unreachable;
+        p.appendSlice(allocator, store_name) catch unreachable;
+        p.appendSlice(allocator, " = ") catch unreachable;
+        p.appendSlice(allocator, init_zig) catch unreachable;
+        p.appendSlice(allocator, ";") catch unreachable;
+        break :blk_zig p.toOwnedSlice(allocator) catch unreachable;
+    };
 
     // ------------------------------------------------------------------
     // Unit 2+3: the apply event (one terminal branch per field) + its
@@ -5064,23 +5098,42 @@ fn storeLowerText(
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } };
 
+    // A branch value is a tagged union on Zig and `{ tag, <branch> }` on JS
+    // (js_emitter.zig:594) — the payload key repeats the branch name, so the
+    // two spellings differ in shape and not only in syntax. `else => unreachable`
+    // has no JS twin either: an unmodelled field index must SAY so at runtime
+    // rather than fall off the end of a switch returning `undefined`, which the
+    // caller would read as a branch object and dereference.
     var pb = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-    pb.appendSlice(allocator, "return switch (field) {\n") catch unreachable;
-    for (field_names, 0..) |fname, i| {
-        const arm = if (old_new_mode)
-            std.fmt.allocPrint(allocator, "    {d} => blk: {{ const __old = __koru_store_{s}.{s}; __koru_store_{s}.{s} = value; break :blk .{{ .{s} = .{{ .old = __old, .new = value }} }}; }},\n", .{ i, store_name, fname, store_name, fname, fname }) catch unreachable
-        else
-            std.fmt.allocPrint(allocator, "    {d} => blk: {{ __koru_store_{s}.{s} = value; break :blk .{{ .{s} = value }}; }},\n", .{ i, store_name, fname, fname }) catch unreachable;
-        pb.appendSlice(allocator, arm) catch unreachable;
+    if (host_is_js) {
+        pb.appendSlice(allocator, "switch (field) {\n") catch unreachable;
+        for (field_names, 0..) |fname, i| {
+            const arm = if (old_new_mode)
+                std.fmt.allocPrint(allocator, "  case {d}: {{ const __old = __koru_store_{s}.{s}; __koru_store_{s}.{s} = value; return {{ tag: \"{s}\", {s}: {{ old: __old, new: value }} }}; }}\n", .{ i, store_name, fname, store_name, fname, fname, fname }) catch unreachable
+            else
+                std.fmt.allocPrint(allocator, "  case {d}: {{ __koru_store_{s}.{s} = value; return {{ tag: \"{s}\", {s}: value }}; }}\n", .{ i, store_name, fname, fname, fname }) catch unreachable;
+            pb.appendSlice(allocator, arm) catch unreachable;
+        }
+        pb.appendSlice(allocator, "}\n") catch unreachable;
+        pb.appendSlice(allocator, std.fmt.allocPrint(allocator, "throw new Error(\"{s}: field index \" + field + \" is not a column of store '{s}'\");", .{ apply_name, store_name }) catch unreachable) catch unreachable;
+    } else {
+        pb.appendSlice(allocator, "return switch (field) {\n") catch unreachable;
+        for (field_names, 0..) |fname, i| {
+            const arm = if (old_new_mode)
+                std.fmt.allocPrint(allocator, "    {d} => blk: {{ const __old = __koru_store_{s}.{s}; __koru_store_{s}.{s} = value; break :blk .{{ .{s} = .{{ .old = __old, .new = value }} }}; }},\n", .{ i, store_name, fname, store_name, fname, fname }) catch unreachable
+            else
+                std.fmt.allocPrint(allocator, "    {d} => blk: {{ __koru_store_{s}.{s} = value; break :blk .{{ .{s} = value }}; }},\n", .{ i, store_name, fname, fname }) catch unreachable;
+            pb.appendSlice(allocator, arm) catch unreachable;
+        }
+        pb.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
     }
-    pb.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
     const apply_proc_body = pb.toOwnedSlice(allocator) catch unreachable;
 
     const apply_proc_item = ast.Item{ .proc_decl = ast.ProcDecl{
         .path = mkPath(allocator, home_ns, apply_name),
         .body = ast.Source{ .text = apply_proc_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
         .annotations = &[_][]const u8{},
-        .target = allocator.dupe(u8, "zig") catch unreachable,
+        .target = allocator.dupe(u8, proc_target) catch unreachable,
         .location = flow.location,
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } };
@@ -5349,17 +5402,27 @@ fn storeLowerText(
 
         // Peek proc: read the CURRENT value, announce the field branch.
         var pk = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-        pk.appendSlice(allocator, "return switch (field) {\n") catch unreachable;
-        for (field_names, 0..) |fname, i| {
-            const arm = std.fmt.allocPrint(allocator, "    {d} => .{{ .{s} = __koru_store_{s}.{s} }},\n", .{ i, fname, store_name, fname }) catch unreachable;
-            pk.appendSlice(allocator, arm) catch unreachable;
+        if (host_is_js) {
+            pk.appendSlice(allocator, "switch (field) {\n") catch unreachable;
+            for (field_names, 0..) |fname, i| {
+                const arm = std.fmt.allocPrint(allocator, "  case {d}: return {{ tag: \"{s}\", {s}: __koru_store_{s}.{s} }};\n", .{ i, fname, fname, store_name, fname }) catch unreachable;
+                pk.appendSlice(allocator, arm) catch unreachable;
+            }
+            pk.appendSlice(allocator, "}\n") catch unreachable;
+            pk.appendSlice(allocator, std.fmt.allocPrint(allocator, "throw new Error(\"{s}: field index \" + field + \" is not a column of store '{s}'\");", .{ peek_name, store_name }) catch unreachable) catch unreachable;
+        } else {
+            pk.appendSlice(allocator, "return switch (field) {\n") catch unreachable;
+            for (field_names, 0..) |fname, i| {
+                const arm = std.fmt.allocPrint(allocator, "    {d} => .{{ .{s} = __koru_store_{s}.{s} }},\n", .{ i, fname, store_name, fname }) catch unreachable;
+                pk.appendSlice(allocator, arm) catch unreachable;
+            }
+            pk.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
         }
-        pk.appendSlice(allocator, "    else => unreachable,\n};") catch unreachable;
         stripe_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
             .path = mkPath(allocator, home_ns, peek_name),
             .body = ast.Source{ .text = pk.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
             .annotations = &[_][]const u8{},
-            .target = allocator.dupe(u8, "zig") catch unreachable,
+            .target = allocator.dupe(u8, proc_target) catch unreachable,
             .location = flow.location,
             .module = allocator.dupe(u8, flow.module) catch unreachable,
         } }) catch unreachable;
@@ -5456,17 +5519,32 @@ fn storeLowerText(
             // one bit here, and the mask keeps the two units' contracts the
             // same shape.
             var ew = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
-            ew.appendSlice(allocator, "const __koru_mask = @as(u64, @bitCast(field));\n") catch unreachable;
-            for (field_names, 0..) |fname, i| {
-                const arm3 = std.fmt.allocPrint(allocator, "if (__koru_mask & (@as(u64, 1) << {d}) != 0) __koru_store_{s}.{s} = value;\n", .{ i, store_name, fname }) catch unreachable;
-                ew.appendSlice(allocator, arm3) catch unreachable;
+            if (host_is_js) {
+                // JS bitwise operators coerce to 32 bits, so `1 << 40` is not
+                // the fortieth bit — it is the eighth. The mask is tested by
+                // division instead, which is exact to 2^53 and therefore covers
+                // more columns than a store can declare. This is the
+                // word-size-is-part-of-the-rendering-contract trap, and the
+                // literal transliteration of the Zig line above is silently
+                // wrong rather than a syntax error.
+                for (field_names, 0..) |fname, i| {
+                    const arm3 = std.fmt.allocPrint(allocator, "if (Math.floor(field / {d}) % 2 === 1) __koru_store_{s}.{s} = value;\n", .{ @as(u64, 1) << @intCast(i), store_name, fname }) catch unreachable;
+                    ew.appendSlice(allocator, arm3) catch unreachable;
+                }
+                ew.appendSlice(allocator, "return;") catch unreachable;
+            } else {
+                ew.appendSlice(allocator, "const __koru_mask = @as(u64, @bitCast(field));\n") catch unreachable;
+                for (field_names, 0..) |fname, i| {
+                    const arm3 = std.fmt.allocPrint(allocator, "if (__koru_mask & (@as(u64, 1) << {d}) != 0) __koru_store_{s}.{s} = value;\n", .{ i, store_name, fname }) catch unreachable;
+                    ew.appendSlice(allocator, arm3) catch unreachable;
+                }
+                ew.appendSlice(allocator, "return;") catch unreachable;
             }
-            ew.appendSlice(allocator, "return;") catch unreachable;
             stripe_items.append(allocator, ast.Item{ .proc_decl = ast.ProcDecl{
                 .path = mkPath(allocator, home_ns, envw_name),
                 .body = ast.Source{ .text = ew.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
-                .target = allocator.dupe(u8, "zig") catch unreachable,
+                .target = allocator.dupe(u8, proc_target) catch unreachable,
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
@@ -5483,9 +5561,15 @@ fn storeLowerText(
             .location = flow.location,
             .module = allocator.dupe(u8, flow.module) catch unreachable,
         } }) catch unreachable;
+        // The announce call is the SAME text on both targets: `main_module` is a
+        // struct on Zig and a const object on JS, and the arg list is the only
+        // difference (`.{ .field = 0 }` vs `{ field: 0 }`).
         var sb2 = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
         for (field_names, 0..) |_, i| {
-            const call2 = std.fmt.allocPrint(allocator, "{s}{s}_event.handler(.{{ .field = {d} }});\n", .{ storeEmitQualifier(allocator, home_ns, program.main_module_name), announce_name, i }) catch unreachable;
+            const call2 = if (host_is_js)
+                std.fmt.allocPrint(allocator, "{s}{s}_event.handler({{ field: {d} }});\n", .{ storeEmitQualifier(allocator, home_ns, program.main_module_name), announce_name, i }) catch unreachable
+            else
+                std.fmt.allocPrint(allocator, "{s}{s}_event.handler(.{{ .field = {d} }});\n", .{ storeEmitQualifier(allocator, home_ns, program.main_module_name), announce_name, i }) catch unreachable;
             sb2.appendSlice(allocator, call2) catch unreachable;
         }
         sb2.appendSlice(allocator, "return;") catch unreachable;
@@ -5493,7 +5577,7 @@ fn storeLowerText(
             .path = mkPath(allocator, home_ns, stripe_name),
             .body = ast.Source{ .text = sb2.toOwnedSlice(allocator) catch unreachable, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
             .annotations = &[_][]const u8{},
-            .target = allocator.dupe(u8, "zig") catch unreachable,
+            .target = allocator.dupe(u8, proc_target) catch unreachable,
             .location = flow.location,
             .module = allocator.dupe(u8, flow.module) catch unreachable,
         } }) catch unreachable;
@@ -5576,7 +5660,19 @@ fn storeLowerText(
     // left in the file-derived module is emitted outside the namespace its own
     // apply/write units live in, and every `<store>.<field>` reference resolves
     // to nothing.
-    appended[0] = ast.Item{ .host_line = ast.HostLine{
+    // A `host_line` reaches the JS file only when the FILE it points at is a JS
+    // host facet (js_emitter.zig:223), and a synthesized line points at the
+    // user's `.k` — so on JS the cell was dropped in silence while every
+    // accessor that reads it was emitted. `.inline_code` is the top-level path
+    // that carries a transform's appended declarations on both targets; on Zig
+    // the `host_line` stays, because that is what places the cell INSIDE the
+    // declaring module's emitted struct, and `.inline_code` is written above
+    // `main_module` where a JS `let` is exactly as reachable.
+    appended[0] = if (host_is_js) ast.Item{ .inline_code = ast.InlineCode{
+        .code = cell_decl,
+        .location = flow.location,
+        .module = allocator.dupe(u8, home_ns) catch unreachable,
+    } } else ast.Item{ .host_line = ast.HostLine{
         .content = cell_decl,
         .location = flow.location,
         .module = allocator.dupe(u8, home_ns) catch unreachable,
