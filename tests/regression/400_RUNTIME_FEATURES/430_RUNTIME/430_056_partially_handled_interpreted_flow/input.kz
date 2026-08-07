@@ -1,3 +1,43 @@
+// ═══ RULED 2026-08-07 (Lars). This test is now red against a DECIDED target. ═══
+//
+// "Why don't we make something like `unhandled-branch`? We add leniency as a
+// mode, and add a branch like that which sends out the references too, living
+// on the resource bridge?"
+//
+// THE RULING:
+//   1. `run` gains a branch — `| unhandled-branch { branch, payload, handles }`.
+//      An interpreted fragment that does not handle an outcome hands it back
+//      rather than erroring. Distinct from `| result`, because "finished with
+//      this value" and "stopped, nobody handled this" are different events and
+//      a host wants to tell them apart.
+//   2. Leniency is a MODE on `run`, not the interpreter's nature. `run` already
+//      takes fail_fast / shape / budget / auto_discharge; totality is one more.
+//      Policy (which API key gets which mode) is resolved by the CALLER — the
+//      interpreter never sees a key.
+//   3. Strict mode REFUSES PRE-FLIGHT, shape-checking the incoming source for
+//      full handling before anything executes. Today's failure is worse than
+//      either option: NoBranchMatch fires after the event already ran.
+//   4. The payload carries NAMED handles, not the count `run` returns today, so
+//      the next line of a shell can address what the last one parked on the
+//      bridge.
+//
+// WHY THIS IS PRINCIPLED AND NOT MERELY LENIENT: the host MUST handle
+// `| unhandled-branch` — KORU022 makes it. Totality is not abandoned, it is
+// RELOCATED to the boundary where a compiler still exists. The fragment may be
+// partial; the program receiving partiality may not be.
+//
+// WHO THE OUTER HANDLER IS, which is what the mode selects:
+//   a human at a prompt   — the shell prints it; that IS the handling
+//   a model over a bridge — it is fed back as a message and teaches the model
+//   a test harness        — an unhandled branch is a test FAILURE (Lars, on 395_002)
+//   nobody (compiled)     — strict; refuse pre-flight
+//
+// C (the empty branch name when an arm fires) needed no ruling and is a plain
+// defect: a terminal void event overwrites the flow's real branch with "".
+//
+// STILL RED, and correctly: `| unhandled-branch` does not exist yet. expected.txt
+// asserts today's measured A/B/C so the file documents the gap honestly; it is
+// rewritten to the ruled shape by whoever implements it.
 // What does the interpreter do when interpreted source handles only SOME of an
 // event's branches, and the unhandled one is taken?
 //
