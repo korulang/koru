@@ -13,16 +13,16 @@
   "B_syntaxerror_missing_initializer_in_const_dec": [
     "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_002_switch_char_in_module",
     "300_ADVANCED_FEATURES/320_STDLIB/320_036_capture_nested_qualified",
-    "600_STDLIB/645_SWITCH/645_002_char_range",
     "600_STDLIB/645_SWITCH/645_001_char_single",
+    "600_STDLIB/645_SWITCH/645_002_char_range",
     "600_STDLIB/645_SWITCH/645_003_char_set",
     "600_STDLIB/645_SWITCH/645_004_day08_switch"
   ],
   "C_syntaxerror_unexpected_token": [
     "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_012_parser_grammar_in_module",
     "100_MODULE_SYSTEM/115_COMPTIME_MIRROR/115_041_parser_grammar_in_entry_tor",
-    "600_STDLIB/641_PARSER/641_004_json_full_recognizer",
     "600_STDLIB/641_PARSER/641_005_ordered_choice_same_head",
+    "600_STDLIB/641_PARSER/641_004_json_full_recognizer",
     "600_STDLIB/641_PARSER/641_031_nested_tree"
   ],
   "D_line_n_expected_n_got_n": [
@@ -40,9 +40,9 @@
   ],
   "F_koruc_exceeded_30s_cold_cache_raise_regressi": [
     "600_STDLIB/690_STORE/690_121_twenty_six_component_stores",
+    "600_STDLIB/690_STORE/690_128_stored_block_det_column_reused_in_block",
     "600_STDLIB/690_STORE/690_129_mat4_inverse_roundtrip_frame_loop",
-    "600_STDLIB/690_STORE/690_190_store_text_dump_thousand_rows_parsed_back",
-    "600_STDLIB/690_STORE/690_194_store_rebuild_thousand_rows_two_scalar_types"
+    "600_STDLIB/690_STORE/690_190_store_text_dump_thousand_rows_parsed_back"
   ],
   "G_referenceerror_name_is_not_defined": [
     "300_ADVANCED_FEATURES/320_STDLIB/320_030_println_basic",

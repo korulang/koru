@@ -1,0 +1,18 @@
+name: capability
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: |
+  Auto-registered when 4eb9d8cf declared `Signal: capability` for "Koru's
+  JavaScript output now measures at hand-written JavaScript".
+
+  IT SHOULD NOT HAVE BEEN A NEW TYPE. The registry already carries
+  `capability-gained`, `new-capability` and `novel-capability`, and this makes a
+  fourth name for one idea — the type was invented at the commit rather than
+  chosen from the list, which is exactly how a categorical vocabulary stops
+  being categorical.
+
+  Left in place rather than deleted because the commit that emitted it is
+  pushed and the ticket derefs to it. Consolidate the four when someone next
+  touches this registry; `capability-gained` reads best of them.
