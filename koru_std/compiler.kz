@@ -1934,6 +1934,7 @@ const emitFlowWithMocks = struct {
         &type_registry,
         .runtime_only
     );
+    visitor_emitter.library = CompilerEnv.library;
 
     // Emit using visitor pattern!
     visitor_emitter.emit(ctx.ast) catch unreachable;

@@ -288,6 +288,10 @@ pub const VisitorEmitter = struct {
     /// callers assign `visitor_emitter.lang = config.lang` after init.
     /// Variant-tag namespace ("zig", "js", "gpu", ...).
     lang: []const u8 = "zig",
+    /// True for `koruc lib`: emit C-ABI `export fn` wrappers for the entry
+    /// module's `pub` events, so the object is callable from C and from any
+    /// language that speaks it. Assigned after init, like `lang`.
+    library: bool = false,
 
     const ComptimeFlowCall = struct {
         call_path: []const u8,
@@ -689,6 +693,12 @@ pub const VisitorEmitter = struct {
 
         // Emit module hierarchy as SIBLINGS to main_module
         try self.emitModuleHierarchy(modules.items, source_file.module_annotations);
+
+        // A LIBRARY's door: one C-ABI `export fn` per entry-module `pub` event.
+        // Keeping the symbol (the root rule) and being able to CALL it are two
+        // different problems; this is the second, and the Zig side of what the
+        // JS emitter does with named exports.
+        if (self.library) try self.emitCAbiExports(source_file.items);
 
         // ========================================================================
         // MODULE-LEVEL INFRASTRUCTURE (taps namespace with metatypes)
@@ -4041,6 +4051,72 @@ pub const VisitorEmitter = struct {
         self.code_emitter.indent_level -= 1;
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("};\n");
+    }
+
+    /// One `export fn` per entry-module `pub` event, giving the library C
+    /// linkage. The wrapper unpacks C parameters into the event's input record
+    /// and calls the handler, so a C caller never sees Koru's shapes.
+    ///
+    /// SCALARS ONLY this rung, and the skip is LOUD rather than silent: a
+    /// parameter Koru passes as a slice (`string`) has no single C
+    /// representation — it is a pointer and a length — and choosing that
+    /// spelling is a decision, not an omission. An event carrying one gets a
+    /// comment in the output naming itself, so a caller who cannot find the
+    /// symbol reads why instead of guessing.
+    fn emitCAbiExports(self: *VisitorEmitter, items: []const ast.Item) !void {
+        const entry = self.main_module_name orelse return;
+        try self.code_emitter.write("\n// C ABI exports — `koruc lib`\n");
+        for (items) |item| {
+            if (item != .event_decl) continue;
+            const ev = item.event_decl;
+            if (!ev.is_public) continue;
+            const mq = ev.path.module_qualifier orelse continue;
+            if (!std.mem.eql(u8, mq, entry)) continue;
+            if (ev.path.segments.len == 0) continue;
+            const raw = ev.path.segments[ev.path.segments.len - 1];
+
+            var unsupported: ?[]const u8 = null;
+            for (ev.input.fields) |f| {
+                if (!isCAbiScalar(f.type)) unsupported = f.type;
+            }
+            if (unsupported) |t| {
+                const note = try std.fmt.allocPrint(self.allocator, "// `{s}` is not exported: parameter type `{s}` has no single C representation\n", .{ raw, t });
+                defer self.allocator.free(note);
+                try self.code_emitter.write(note);
+                continue;
+            }
+
+            const name = try self.allocator.alloc(u8, raw.len);
+            defer self.allocator.free(name);
+            for (raw, 0..) |c, i| name[i] = if (c == '-') '_' else c;
+
+            var line: std.ArrayList(u8) = .empty;
+            defer line.deinit(self.allocator);
+            const w = line.writer(self.allocator);
+            try w.print("export fn {s}(", .{name});
+            for (ev.input.fields, 0..) |f, i| {
+                if (i > 0) try w.writeAll(", ");
+                try w.print("{s}: {s}", .{ f.name, f.type });
+            }
+            const ret = ev.return_type orelse "void";
+            try w.print(") {s} {{\n", .{ret});
+            try w.writeAll(if (std.mem.eql(u8, ret, "void")) "    " else "    return ");
+            try w.print("main_module.{s}_event.handler(.{{", .{name});
+            for (ev.input.fields, 0..) |f, i| {
+                if (i > 0) try w.writeAll(",");
+                try w.print(" .{s} = {s}", .{ f.name, f.name });
+            }
+            try w.writeAll(" });\n}\n");
+            try self.code_emitter.write(line.items);
+        }
+    }
+
+    fn isCAbiScalar(t: []const u8) bool {
+        const ok = [_][]const u8{ "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "f64", "f32", "bool", "usize", "isize" };
+        for (ok) |k| {
+            if (std.mem.eql(u8, t, k)) return true;
+        }
+        return false;
     }
 
     fn emitModuleHierarchy(
