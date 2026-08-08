@@ -4028,24 +4028,66 @@ pub const VisitorEmitter = struct {
     /// package whose index and sibling both use the host language could not
     /// compile at all.
     ///
-    /// Only a single-line `const <name> = @import(...)` qualifies. Such a line
-    /// binds nothing but a module alias, so a byte-identical one in an ancestor
-    /// names the identical thing and letting the reference resolve outward is a
-    /// no-op. Nothing else is safe to drop:
+    /// Only a single-line `const <name> = <path>;` qualifies, where <path> is a
+    /// pure navigation expression — `@import("std")`, `std.posix`,
+    /// `@import("std").mem` — and nothing else. Such a line binds a name to a
+    /// namespace, so a byte-identical one in an ancestor names the identical
+    /// thing and letting the reference resolve outward is a no-op. Nothing else
+    /// is safe to drop:
     ///   - `var` — two same-named `var`s are two distinct pieces of state, and
     ///     collapsing them would silently make the modules share storage.
-    ///   - any other `const` — the initializer can be an arbitrary expression.
+    ///   - a `const` with any other initializer — a call, an operator, a literal
+    ///     can all mean something different in the inner scope.
     ///   - a multi-line blob — a proc body reaches the emitter as one host line
     ///     and can legitimately repeat verbatim, so matching on it would delete
     ///     real code (measured: two identical `const cloned = …` statements in
     ///     one stdlib body, the second one dropped).
     /// Everything else still collides, loudly, which is the right outcome until
     /// the emitter mangles per-module names.
+    ///
+    /// The head of the path resolving differently in the inner scope is the one
+    /// way this could lie, and it cannot happen here: that would require the
+    /// inner module to redeclare the head itself, and a redeclaration that is
+    /// NOT byte-identical is never dropped — it still collides, loudly.
     fn hostLineIsShadowable(content: []const u8) bool {
         const trimmed = std.mem.trim(u8, content, " \t\r\n");
         if (!std.mem.startsWith(u8, trimmed, "const ")) return false;
         if (std.mem.indexOfScalar(u8, trimmed, '\n') != null) return false;
-        return std.mem.indexOf(u8, trimmed, "@import(") != null;
+        if (!std.mem.endsWith(u8, trimmed, ";")) return false;
+
+        const eq = std.mem.indexOfScalar(u8, trimmed, '=') orelse return false;
+        // A declared type (`const x: T = …`) means the author cared about more
+        // than the alias; leave it alone.
+        if (std.mem.indexOfScalar(u8, trimmed["const ".len..eq], ':') != null) return false;
+
+        var rhs = std.mem.trim(u8, trimmed[eq + 1 .. trimmed.len - 1], " \t");
+        if (std.mem.startsWith(u8, rhs, "@import(")) {
+            const close = std.mem.indexOfScalar(u8, rhs, ')') orelse return false;
+            rhs = rhs[close + 1 ..];
+        } else {
+            const head_len = identifierLen(rhs);
+            if (head_len == 0) return false;
+            rhs = rhs[head_len..];
+        }
+        // Whatever remains must be a chain of `.field` and nothing else.
+        while (rhs.len > 0) {
+            if (rhs[0] != '.') return false;
+            const seg = identifierLen(rhs[1..]);
+            if (seg == 0) return false;
+            rhs = rhs[1 + seg ..];
+        }
+        return true;
+    }
+
+    fn identifierLen(s: []const u8) usize {
+        var i: usize = 0;
+        while (i < s.len) : (i += 1) {
+            const c = s[i];
+            const ok = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_' or
+                (i > 0 and c >= '0' and c <= '9');
+            if (!ok) break;
+        }
+        return i;
     }
 
     fn emitModuleNode(

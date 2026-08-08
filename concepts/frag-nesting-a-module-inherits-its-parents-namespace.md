@@ -28,14 +28,26 @@ Any lowering that maps a flat namespace onto a nested one owes an answer for wha
 happens when the same name appears at two levels, and "the inner one wins" is
 only available if the host says so.
 
-The fix here is deliberately narrow: an inner `const <name> = @import(...)` that
-is byte-identical to an ancestor's is dropped, and the reference resolves
-outward to the same thing. That is sound for an import alias and for nothing
-else — a `var` is distinct storage, and any other `const` has an arbitrary
-initializer. So the general case is still refused, loudly, which is correct until
-the emitter mangles per-module names. **Naming what a fix does NOT cover is part
-of the fix**; the alternative is a reader assuming the shadowing problem is
-solved and meeting it again at a `var`.
+The fix here is deliberately narrow: an inner byte-identical
+`const <name> = <path>;` is dropped and the reference resolves outward to the
+same thing, where `<path>` is a pure navigation expression — `@import("std")`,
+`std.posix`, `@import("std").mem`. A `var` is distinct storage; a `const` with a
+call, an operator or a literal in it can mean something different inside. So the
+general case is still refused, loudly, which is correct until the emitter mangles
+per-module names. **Naming what a fix does NOT cover is part of the fix**; the
+alternative is a reader assuming the shadowing problem is solved and meeting it
+again at a `var`.
+
+The boundary moved once already, and how it moved is the lesson. The first cut
+allowed only `@import(...)` — which felt like the principled line, since an
+import alias is obviously the same thing everywhere. Orisha's pump answered
+within the hour with `const posix = std.posix;`, a second-order alias that is
+every bit as safe and did not match. **A rule drawn around the one example that
+provoked it fits that example, not the class.** The class here is "binds a name
+to a namespace by navigation", and `@import` is one member of it, not its
+definition. The head of such a path resolving differently inside is the only way
+the widening could lie, and it cannot: that needs the inner module to redeclare
+the head, and a redeclaration that is not byte-identical is never dropped.
 
 Getting the boundary wrong the first time is instructive. The first attempt let
 any identical `const` be dropped, which also matched a whole proc body reaching
