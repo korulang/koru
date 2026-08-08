@@ -277,31 +277,60 @@ fn generatePipelineCode(
                 // Terminal step - nothing to generate
             },
             .branch_constructor => |bc| {
-                // Generate return statement for branch constructor
-                // Output: return .{ .branch_name = .{ .field1 = value1, ... } };
+                // Output: `return .{ .branch = .{ .f = v, … } };`
+                //
+                // UNLESS THERE IS NO BRANCH. A tor with a bare return has no
+                // branch to name, so the produced record IS the return value.
+                // Wrapping it anyway wrote `return .{ . = .{ } };` — a field
+                // access with an empty name, and every field dropped, because
+                // the payload arrived as a plain value this path never read.
+                //
+                // It reached every arm of every router built on orisha, whose
+                // `handler` became bare-return when a single named outcome
+                // stopped being expressible. Twin of the same fix in
+                // emitter_helpers.emitProducedConstructor; this is the copy the
+                // transform-driven path uses.
+                const bare = bc.branch_name.len == 0;
                 const ind = try indent(allocator, indent_level);
                 defer allocator.free(ind);
                 try buf.appendSlice(allocator, ind);
-                try buf.appendSlice(allocator, "return .{ .");
+                try buf.appendSlice(allocator, "return ");
 
-                // Use escaped branch name if it's a keyword
-                try codegen_utils.appendEscapedIdentifier(&buf, allocator, bc.branch_name);
-
-                try buf.appendSlice(allocator, " = .{");
-
-                for (bc.fields, 0..) |field, field_idx| {
-                    if (field_idx > 0) {
-                        try buf.appendSlice(allocator, ",");
-                    }
-                    try buf.appendSlice(allocator, " .");
-                    try buf.appendSlice(allocator, field.name);
+                if (!bare) {
+                    try buf.appendSlice(allocator, ".{ .");
+                    try codegen_utils.appendEscapedIdentifier(&buf, allocator, bc.branch_name);
                     try buf.appendSlice(allocator, " = ");
-                    // Use expression_str if available, otherwise fall back to type (for simple values)
-                    const value = if (field.expression_str) |expr| expr else field.type;
-                    try buf.appendSlice(allocator, value);
                 }
 
-                try buf.appendSlice(allocator, " } };\n");
+                if (bc.plain_value) |pv| {
+                    // A bare produce carries its whole value here, in Koru
+                    // spelling — `{ status: 200, … }` — so it needs lowering,
+                    // not pasting.
+                    const trimmed_pv = std.mem.trim(u8, pv, " \t");
+                    if (trimmed_pv.len > 0 and trimmed_pv[0] == '{') {
+                        const lowered = codegen_utils.koruStructToZig(allocator, trimmed_pv) catch trimmed_pv;
+                        try buf.appendSlice(allocator, lowered);
+                    } else {
+                        try buf.appendSlice(allocator, trimmed_pv);
+                    }
+                } else {
+                    try buf.appendSlice(allocator, ".{");
+                    for (bc.fields, 0..) |field, field_idx| {
+                        if (field_idx > 0) {
+                            try buf.appendSlice(allocator, ",");
+                        }
+                        try buf.appendSlice(allocator, " .");
+                        try buf.appendSlice(allocator, field.name);
+                        try buf.appendSlice(allocator, " = ");
+                        // Use expression_str if available, otherwise fall back to type (for simple values)
+                        const value = if (field.expression_str) |expr| expr else field.type;
+                        try buf.appendSlice(allocator, value);
+                    }
+                    try buf.appendSlice(allocator, " }");
+                }
+
+                if (!bare) try buf.appendSlice(allocator, " }");
+                try buf.appendSlice(allocator, ";\n");
             },
             .inline_code => |code| {
                 // Same distinction as the invocation path above: only a body

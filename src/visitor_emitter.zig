@@ -3447,7 +3447,16 @@ pub const VisitorEmitter = struct {
                                     // A head with no continuations has no switch to
                                     // consume `result` — discard-guard it (same hygiene
                                     // as nested_result_N in arm emission).
-                                    if (flow.body.continuations.len == 0 and flow.inv().return_binding == null) {
+                                    //
+                                    // Unless a transform replaced the head with its own
+                                    // inline body: then no `const result` was written and
+                                    // the guard names something that does not exist. It
+                                    // is unreachable code after the dispatch's returns,
+                                    // so Zig's only complaint is the undeclared name —
+                                    // which lands AFTER a correct router and reads as if
+                                    // the router were at fault.
+                                    const head_was_replaced = flow.inline_body != null or flow.inv().inline_body != null;
+                                    if (flow.body.continuations.len == 0 and flow.inv().return_binding == null and !head_was_replaced) {
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("_ = &result;\n");
                                     }

@@ -3580,28 +3580,7 @@ fn emitSubflowContinuationsWithDepth(
                 if (cont.node) |step| {
                     switch (step) {
                         .branch_constructor => |bc2| {
-                            try emitter.write(".{ .");
-                            try writeBranchName(emitter, bc2.branch_name);
-                            try emitter.write(" = ");
-                            // Check for plain value (identity branch constructor)
-                            if (bc2.plain_value) |pv| {
-                                try emitter.write(pv);
-                            } else {
-                                try emitter.write(".{");
-                                for (bc2.fields, 0..) |field2, idx| {
-                                    if (idx > 0) try emitter.write(", ");
-                                    try emitter.write(" .");
-                                    try emitter.write(field2.name);
-                                    try emitter.write(" = ");
-                                    if (field2.expression_str) |expr| {
-                                        try emitter.write(expr);
-                                    } else {
-                                        try emitter.write(field2.type);
-                                    }
-                                }
-                                try emitter.write(" }");
-                            }
-                            try emitter.write(" }");
+                            try emitProducedConstructor(emitter, main_module_name, &bc2);
                         },
                         // A terminal (or any node this expression path can't
                         // lower) must still be a Zig expression — an empty
@@ -9563,6 +9542,63 @@ fn emitPipelineStep(
 /// Zig, and the reason a flow could only ever implement a bare-return event.
 ///
 /// Returns true when it emitted the tagged return, false to fall through.
+/// Emit what an arm PRODUCES, as a Zig expression.
+///
+/// A branch constructor with a name wraps its payload in that branch:
+/// `-> finished d` becomes `.{ .finished = d }`. **A constructor with NO name is
+/// the whole value**, because the tor it implements has a bare return and there
+/// is no branch to name — `-> { label: "high", code: 1 }` is that record and
+/// nothing more.
+///
+/// Emitting the named form regardless produced `.{ . = { label: "high" } }`:
+/// a field access with an empty name, AND the Koru record pasted through
+/// untranslated because the wrapper had swallowed the one path that lowers it.
+/// Two errors on one line, from one missing question. It reached every arm of
+/// every router in orisha, whose `handler` is bare-return.
+///
+/// Mirror of `emitBranchProduce` (350_017), which fixed the same blind spot from
+/// the other side: there a NAMED produce was lowered as if it were bare.
+fn emitProducedConstructor(
+    emitter: *CodeEmitter,
+    main_module_name: ?[]const u8,
+    bc: *const ast.BranchConstructor,
+) EmitError!void {
+    var ctx = EmissionContext{
+        .allocator = emitter.allocator orelse std.heap.page_allocator,
+        .main_module_name = main_module_name,
+    };
+    const bare = bc.branch_name.len == 0;
+
+    if (!bare) {
+        try emitter.write(".{ .");
+        try writeBranchName(emitter, bc.branch_name);
+        try emitter.write(" = ");
+    }
+
+    if (bc.plain_value) |pv| {
+        // `emitValue` is what turns a Koru record into a Zig one; the old code
+        // wrote `pv` verbatim, which only ever worked because a NAMED branch's
+        // payload happens to be a bare expression.
+        try emitValue(emitter, &ctx, pv);
+    } else {
+        try emitter.write(".{");
+        for (bc.fields, 0..) |field, idx| {
+            if (idx > 0) try emitter.write(", ");
+            try emitter.write(" .");
+            try emitter.write(field.name);
+            try emitter.write(" = ");
+            if (field.expression_str) |expr| {
+                try emitValue(emitter, &ctx, expr);
+            } else {
+                try emitter.write(field.type);
+            }
+        }
+        try emitter.write(" }");
+    }
+
+    if (!bare) try emitter.write(" }");
+}
+
 fn emitBranchProduce(emitter: *CodeEmitter, ctx: *EmissionContext, code: []const u8) !bool {
     const decl = ctx.produce_event orelse ctx.impl_event_decl orelse return false;
     if (decl.branches.len == 0) return false;
