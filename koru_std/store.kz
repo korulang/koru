@@ -2774,28 +2774,49 @@ fn storeLowerText(
             var tmpl_seq: usize = 0;
             fn templateValues(alloc: std.mem.Allocator, text: []const u8, inv: *ast.Invocation, fields: []const []const u8, char_caps: []const ?usize, host_js: bool) []const u8 {
                 if (std.mem.indexOf(u8, text, "{{") == null) return text;
-                const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{text}) catch unreachable;
-                const struct_literal3 = @import("struct_literal");
-                const pairs = struct_literal3.parseFields(alloc, braced) catch return text;
+                // SURGICAL, not parse-and-rebuild. The block's targets carry
+                // the indexed lvalue form (`rows[<cursor>].label`), and running
+                // that back through a field parser and reassembling it loses
+                // the head — the stored transform then consumes the site and
+                // emits no write at all, silently. So only the quoted spans
+                // that actually hold a template are replaced; every other byte
+                // of the block is passed through untouched.
                 var pre = std.ArrayList(u8).initCapacity(alloc, 256) catch unreachable;
                 if (inv.preamble_code) |existing| pre.appendSlice(alloc, existing) catch unreachable;
                 var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
-                for (pairs, 0..) |pr, pi| {
-                    if (pi > 0) out.appendSlice(alloc, ", ") catch unreachable;
-                    out.appendSlice(alloc, pr.name) catch unreachable;
-                    out.appendSlice(alloc, ": ") catch unreachable;
-                    const r = renderTemplate(alloc, pr.value, host_js) orelse {
-                        out.appendSlice(alloc, pr.value) catch unreachable;
+                var i: usize = 0;
+                var wrote_any = false;
+                while (i < text.len) {
+                    if (text[i] != '"') {
+                        out.append(alloc, text[i]) catch unreachable;
+                        i += 1;
+                        continue;
+                    }
+                    // A quoted span. Find its end, honouring escapes.
+                    var j = i + 1;
+                    while (j < text.len) : (j += 1) {
+                        if (text[j] == '\\') { j += 1; continue; }
+                        if (text[j] == '"') break;
+                    }
+                    if (j >= text.len) { out.appendSlice(alloc, text[i..]) catch unreachable; break; }
+                    const span = text[i .. j + 1];
+                    const r = renderTemplate(alloc, span, host_js) orelse {
+                        out.appendSlice(alloc, span) catch unreachable;
+                        i = j + 1;
                         continue;
                     };
-                    // Size the buffer from the column this pair targets. The
-                    // target reads `<store>[<cur>].<field>`, so the field name
-                    // is whatever follows the last dot.
+                    // Size the buffer from the column this value is written to:
+                    // scan back over `<target>: ` to the head of this pair.
                     var cap: usize = 256;
-                    if (std.mem.lastIndexOfScalar(u8, pr.name, '.')) |dot| {
-                        const tf = pr.name[dot + 1 ..];
+                    {
+                        var k = out.items.len;
+                        while (k > 0 and (out.items[k - 1] == ' ' or out.items[k - 1] == ':')) k -= 1;
+                        const nend = k;
+                        while (k > 0 and (H.isIdentChar(out.items[k - 1]) or out.items[k - 1] == '.')) k -= 1;
+                        const tname = out.items[k..nend];
+                        const fname = if (std.mem.lastIndexOfScalar(u8, tname, '.')) |d| tname[d + 1 ..] else tname;
                         for (fields, 0..) |f, fi| {
-                            if (std.mem.eql(u8, f, tf)) {
+                            if (std.mem.eql(u8, f, fname)) {
                                 if (char_caps[fi]) |cc| cap = cc;
                             }
                         }
@@ -2806,18 +2827,21 @@ fn storeLowerText(
                         const line = std.fmt.allocPrint(alloc, "const {s} = \"{s}\";\n", .{ nm, r.fmt }) catch unreachable;
                         pre.appendSlice(alloc, line) catch unreachable;
                     } else {
-                        // Formatting into a buffer sized to the column means an
-                        // over-long result is TRUNCATED, which is exactly what
-                        // the column write already does to an over-long literal.
-                        // Consistent, and both deserve a `| full`-shaped answer
-                        // rather than silence — noted, not invented here.
+                        // Formatting into a column-sized buffer TRUNCATES an
+                        // over-long result — exactly what the column write
+                        // already does to an over-long literal. Consistent, and
+                        // both want a `| full`-shaped answer rather than
+                        // silence. Noted, not invented here.
                         const line = std.fmt.allocPrint(alloc,
                             "var __koru_tb_{d}: [{d}]u8 = undefined;\nconst {s} = @import(\"std\").fmt.bufPrint(&__koru_tb_{d}, \"{s}\", .{{{s}}}) catch __koru_tb_{d}[0..0];\n",
                             .{ tmpl_seq, cap, nm, tmpl_seq, r.fmt, r.args, tmpl_seq }) catch unreachable;
                         pre.appendSlice(alloc, line) catch unreachable;
                     }
                     out.appendSlice(alloc, nm) catch unreachable;
+                    wrote_any = true;
+                    i = j + 1;
                 }
+                if (!wrote_any) return text;
                 inv.preamble_code = pre.toOwnedSlice(alloc) catch unreachable;
                 return out.toOwnedSlice(alloc) catch unreachable;
             }
@@ -2841,6 +2865,13 @@ fn storeLowerText(
                                     // the copy a dangling slice. It goes in the
                                     // invocation's preamble, which outlives the
                                     // statement by construction.
+                                    // ONE lowering, shared by both carriers. The
+                                    // arg's `value` and its `source_value.text`
+                                    // are two views of the same written block —
+                                    // downstream reads the Source — so lowering
+                                    // each independently mints two buffers and
+                                    // leaves whichever one is not read dangling
+                                    // as an unused local.
                                     @constCast(a).value = templateValues(alloc, a.value, @constCast(inv), fields, char_caps, host_js_w);
                                     if (a.source_value) |sv| {
                                         const fresh = alloc.create(ast.Source) catch unreachable;
@@ -7240,7 +7271,7 @@ fn storeLowerText(
             .impl_of = flow.impl_of,
             .super_shape = null,
             .inline_body = null,
-            .preamble_code = null,
+            .preamble_code = invocation.preamble_code,
             .is_pure = false,
             .is_transitively_pure = false,
             .location = flow.location,
@@ -7456,7 +7487,7 @@ fn storeLowerText(
             .impl_of = flow.impl_of,
             .super_shape = null,
             .inline_body = null,
-            .preamble_code = null,
+            .preamble_code = invocation.preamble_code,
             .is_pure = false,
             .is_transitively_pure = false,
             .location = flow.location,
@@ -7588,7 +7619,7 @@ fn storeLowerText(
         .impl_of = flow.impl_of, // preserved: the site may BE an impl flow's head (e.g. a query body)
         .super_shape = null,
         .inline_body = null,
-        .preamble_code = null,
+        .preamble_code = invocation.preamble_code,
         .is_pure = false,
         .is_transitively_pure = false,
         .location = flow.location,
@@ -7664,7 +7695,7 @@ fn storeLowerText(
         .impl_of = flow.impl_of,
         .super_shape = null,
         .inline_body = null,
-        .preamble_code = null,
+        .preamble_code = invocation.preamble_code,
         .is_pure = false,
         .is_transitively_pure = false,
         .location = flow.location,
