@@ -4075,12 +4075,23 @@ pub const VisitorEmitter = struct {
             if (ev.path.segments.len == 0) continue;
             const raw = ev.path.segments[ev.path.segments.len - 1];
 
+            // Text crosses as POINTER AND LENGTH — two C parameters for one
+            // Koru one. It is the only shape C has for a run of bytes it does
+            // not own: a bare pointer would demand a NUL that Koru never
+            // promises, and a struct-by-value would be an ABI of our own
+            // invention no caller could write a header for by hand.
+            //
+            // A RETURN of text has no such answer — one return slot cannot
+            // carry two values — so it is refused BY NAME rather than given an
+            // out-parameter convention nobody agreed to.
             var unsupported: ?[]const u8 = null;
             for (ev.input.fields) |f| {
-                if (!isCAbiScalar(f.type)) unsupported = f.type;
+                if (!isCAbiScalar(f.type) and !isCAbiText(f.type)) unsupported = f.type;
             }
+            const ret = ev.return_type orelse "void";
+            if (unsupported == null and !std.mem.eql(u8, ret, "void") and !isCAbiScalar(ret)) unsupported = ret;
             if (unsupported) |t| {
-                const note = try std.fmt.allocPrint(self.allocator, "// `{s}` is not exported: parameter type `{s}` has no single C representation\n", .{ raw, t });
+                const note = try std.fmt.allocPrint(self.allocator, "// `{s}` is not exported: type `{s}` has no single C representation\n", .{ raw, t });
                 defer self.allocator.free(note);
                 try self.code_emitter.write(note);
                 continue;
@@ -4094,21 +4105,35 @@ pub const VisitorEmitter = struct {
             defer line.deinit(self.allocator);
             const w = line.writer(self.allocator);
             try w.print("export fn {s}(", .{name});
-            for (ev.input.fields, 0..) |f, i| {
-                if (i > 0) try w.writeAll(", ");
-                try w.print("{s}: {s}", .{ f.name, f.type });
+            var first = true;
+            for (ev.input.fields) |f| {
+                if (!first) try w.writeAll(", ");
+                first = false;
+                if (isCAbiText(f.type)) {
+                    try w.print("{s}_ptr: [*]const u8, {s}_len: usize", .{ f.name, f.name });
+                } else {
+                    try w.print("{s}: {s}", .{ f.name, f.type });
+                }
             }
-            const ret = ev.return_type orelse "void";
             try w.print(") {s} {{\n", .{ret});
             try w.writeAll(if (std.mem.eql(u8, ret, "void")) "    " else "    return ");
             try w.print("main_module.{s}_event.handler(.{{", .{name});
             for (ev.input.fields, 0..) |f, i| {
                 if (i > 0) try w.writeAll(",");
-                try w.print(" .{s} = {s}", .{ f.name, f.name });
+                if (isCAbiText(f.type)) {
+                    try w.print(" .{s} = {s}_ptr[0..{s}_len]", .{ f.name, f.name, f.name });
+                } else {
+                    try w.print(" .{s} = {s}", .{ f.name, f.name });
+                }
             }
             try w.writeAll(" });\n}\n");
             try self.code_emitter.write(line.items);
         }
+    }
+
+    /// Koru's surface text type. A slice, so C sees it as two values.
+    fn isCAbiText(t: []const u8) bool {
+        return std.mem.eql(u8, t, "string");
     }
 
     fn isCAbiScalar(t: []const u8) bool {
