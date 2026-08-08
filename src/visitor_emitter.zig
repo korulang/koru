@@ -2168,6 +2168,11 @@ pub const VisitorEmitter = struct {
                                     try self.code_emitter.writeIndent();
                                     try self.code_emitter.write("_ = &__koru_event_input;\n");
 
+                                    // A statement-shaped transform body binds NOTHING —
+                                    // the discard-guard below must not name a const that
+                                    // was never emitted.
+                                    var head_bound_root = true;
+
                                     // Generate the flow invocation and continuations
                                     if (flow.inline_body) |inline_code_raw| {
                                         // Transform set inline_body -- emit inline instead of handler call
@@ -2180,6 +2185,7 @@ pub const VisitorEmitter = struct {
                                         }
 
                                         if (is_inline_stmt) {
+                                            head_bound_root = false;
                                             const has_named_branches = blk: {
                                                 for (flow.body.continuations) |cont| {
                                                     if (cont.branch.len > 0) break :blk true;
@@ -2256,8 +2262,10 @@ pub const VisitorEmitter = struct {
                                     // A head with no continuations has no switch to
                                     // consume the root const — discard-guard it
                                     // (same hygiene as nested_result_N in arm
-                                    // emission).
-                                    if (flow.body.continuations.len == 0) {
+                                    // emission). Only when a const actually exists:
+                                    // an inline-stmt head emitted raw statements and
+                                    // bound no name.
+                                    if (flow.body.continuations.len == 0 and head_bound_root) {
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("_ = &");
                                         try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
@@ -2551,6 +2559,11 @@ pub const VisitorEmitter = struct {
                                                 try self.code_emitter.writeIndent();
                                                 try self.code_emitter.write("_ = &__koru_event_input;\n");
 
+                                                // A statement-shaped transform body binds
+                                                // NOTHING — the discard-guard below must not
+                                                // name a const that was never emitted.
+                                                var head_bound_root = true;
+
                                                 // Generate the invocation (or inline_body if transform set it)
                                                 if (flow.inline_body) |inline_code_raw| {
                                                     // Transform set inline_body -- emit inline instead of handler call
@@ -2563,6 +2576,7 @@ pub const VisitorEmitter = struct {
                                                     }
 
                                                     if (is_inline_stmt) {
+                                                        head_bound_root = false;
                                                         const has_named_branches = blk: {
                                                             for (flow.body.continuations) |cont| {
                                                                 if (cont.branch.len > 0) break :blk true;
@@ -2656,7 +2670,9 @@ pub const VisitorEmitter = struct {
 
                                                 // A head with no continuations has no switch to
                                                 // consume the root const — discard-guard it.
-                                                if (flow.body.continuations.len == 0) {
+                                                // Only when a const actually exists: an
+                                                // inline-stmt head bound no name.
+                                                if (flow.body.continuations.len == 0 and head_bound_root) {
                                                     try self.code_emitter.writeIndent();
                                                     try self.code_emitter.write("_ = &");
                                                     try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
@@ -3260,8 +3276,16 @@ pub const VisitorEmitter = struct {
                                     };
                                     try emitter.emitFlow(self.code_emitter, &label_fold_ctx, &flow);
                                 } else {
-                                    // Check if the invoked event has mutable branches
-                                    const invoked_event = self.findEventDeclInItems(items_to_search, &flow.inv().path);
+                                    // Check if the invoked event has mutable branches.
+                                    // items_to_search is the ENCLOSING MODULE's own items, so a
+                                    // call into a SIBLING module (`orisha:serve` implemented as a
+                                    // flow over `orisha/pump:run`) resolved to null here — and a
+                                    // null invoked_event silently disabled both the effect-arm
+                                    // partition below and the mutable check. Fall back to the
+                                    // program-wide, module-qualifier-aware lookup the top-level
+                                    // invocation path already uses.
+                                    const invoked_event = self.findEventDeclInItems(items_to_search, &flow.inv().path) orelse
+                                        emitter.findEventDeclByPath(self.all_items, &flow.inv().path);
 
                                     // Effect-branches phase 3b, at a SUBFLOW head. An event
                                     // with `!` branches lowers to
@@ -3365,7 +3389,24 @@ pub const VisitorEmitter = struct {
                                             if (idx > 0) try self.code_emitter.write("_");
                                             try writeMangledSegment(self.code_emitter, seg);
                                         }
-                                        try self.code_emitter.write("_event.handler(.{");
+                                        // VARIANT SELECTION AT A SUBFLOW HEAD. Only the
+                                        // top-level invocation path consulted the registry, so a
+                                        // `~[build(x)]std/build:variants` selection was dropped on
+                                        // the floor for any call written inside a flow that
+                                        // implements another event. Build the canonical key the
+                                        // SAME way emitInvocationWithBinding does — module
+                                        // qualifier, ':', segments joined by '.', and NO
+                                        // main-module fallback, because that is the spelling
+                                        // build:variants registers under. A second spelling of
+                                        // this key is the bug, not a fix for it.
+                                        try self.code_emitter.write("_event.");
+                                        const sf_variant: ?[]const u8 = if (flow.inv().variant) |v| v else blk: {
+                                            const key = emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, null) catch break :blk null;
+                                            defer self.allocator.free(key);
+                                            break :blk emitter.getVariant(key);
+                                        };
+                                        try emitter.writeHandlerName(self.code_emitter, self.allocator, sf_variant);
+                                        try self.code_emitter.write("(.{");
                                     }
 
                                     // Write arguments, mapping from input parameters

@@ -1,0 +1,83 @@
+// ============================================================================
+// REGRESSION TEST
+// ============================================================================
+// Pins: a `[comptime|transform]` that replaces a flow's head with a bare
+// STATEMENT body (`//@koru:inline_stmt`) binds NO name. The head with no
+// continuations is normally followed by a `_ = &result;` discard-guard that
+// consumes the `const result = <call>;` the emitter would otherwise have
+// written — but on the inline-stmt path there is no such const, so the guard
+// must not be emitted. This is the shape `orisha:router` produces.
+//
+// Guards: emitEventDecl's impl-flow paths in visitor_emitter.zig.
+// ============================================================================
+
+const std = @import("std");
+
+// The library-style event the transformed flow implements.
+~[abstract]pub tor pick { n: i32 } -> i32
+
+~proc pick|zig {
+    return -1;
+}
+
+// The transform: swaps the whole flow's head for raw statements.
+~[comptime|transform]pub tor bake {
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~proc bake|zig {
+    const ast_mod = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    const flow = if (item.* == .flow) &item.flow else return .{};
+
+    // Idempotence: the transform pass may revisit an already-rewritten site.
+    for (flow.inv().annotations) |ann| {
+        if (std.mem.startsWith(u8, ann, "@pass_ran")) return .{};
+    }
+
+    const new_annotations = allocator.alloc([]const u8, flow.inv().annotations.len + 1) catch unreachable;
+    for (flow.inv().annotations, 0..) |ann, j| new_annotations[j] = ann;
+    new_annotations[flow.inv().annotations.len] =
+        allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_invocation = ast_mod.Invocation{
+        .path = flow.inv().path,
+        .args = flow.inv().args,
+        .annotations = new_annotations,
+    };
+
+    const empty_conts = allocator.alloc(ast_mod.Continuation, 0) catch unreachable;
+
+    var transformed_flow = flow.*;
+    transformed_flow.body = ast_mod.rootSite(new_invocation, empty_conts, flow.location);
+    transformed_flow.inline_body =
+        "//@koru:inline_stmt\n    if (n > 0) {\n        return 7;\n    } else {\n        return 0;\n    }\n";
+
+    const new_item = ast_mod.Item{ .flow = transformed_flow };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+    if (maybe_new_program) |new_program_val| {
+        const out = allocator.create(ast_mod.Program) catch unreachable;
+        out.* = new_program_val;
+        return .{ .whole_program = out };
+    }
+    return .{};
+}
+
+// The impl whose head the transform replaces. No continuations — this is what
+// puts the discard-guard directly after a head that bound nothing.
+~input:pick = bake()
+
+~tor show { v: i32 }
+
+~proc show|zig {
+    std.debug.print("{}\n", .{v});
+}
+
+~pick(n: 3): a |> show(v: a)
+
+~pick(n: -3): b |> show(v: b)
