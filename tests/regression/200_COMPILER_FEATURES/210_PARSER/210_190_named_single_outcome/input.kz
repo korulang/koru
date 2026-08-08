@@ -1,48 +1,29 @@
-// ASPIRATIONAL RED — a single outcome may keep its NAME.
+// A single outcome keeps its NAME, and the name builds it.
 //
-// `| verdict { label, code }` as a tor's only terminal branch used to be
-// refused: one variant is a wasteful REPRESENTATION, and the advice was to
-// declare a bare return instead. Correct about the machinery, and it deleted the
-// author's label with it. Orisha declared `| response { status, body,
-// content-type }`, lost the name, and every doc line, example and router arm
-// went on using a spelling the compiler no longer had.
+// `| verdict { label, code }` as a tor's only terminal branch lowers to a bare
+// return of that record — no tag, no union, nothing at runtime — and the branch
+// survives so that `verdict { … }` is the way to construct it. A framework is
+// its nouns; before this, declaring one named result was refused outright and
+// the only way out deleted the author's word for it.
 //
-// The declaration is now accepted and lowers to a bare return of that record —
-// no tag, no union, no runtime cost — and the branch survives only so its name
-// is a CONSTRUCTOR for it. Verified in the emitted Zig: every constructor site
-// writes `.{ .label = …, .code = … }` and not `.{ .verdict = … }`.
+// Two separate mechanisms had to agree for this to work, and each was its own
+// defect:
 //
-// WHAT IS STILL RED, and it is not this feature:
+//   THE PARSER. `-> verdict { … }` in a branch arm read as an INVOCATION,
+//   because `name { … }` is also how you call something with a Source block and
+//   `looksLikeInvocation` was asked first. A constructor was parsed as a call to
+//   a tor nobody declared. This was never about named outcomes — a braced
+//   produce had never worked on ANY event; the same arm on an ordinary
+//   two-branch tor failed identically. The produce position now prefers the
+//   constructor reading, which is safe because nothing in the corpus or
+//   koru_std ever invokes with a Source block after `->`.
 //
-//   1. `-> verdict { … }` in a branch ARM parses as an INVOCATION, so it is
-//      refused with KORU040 `unknown tor 'input:verdict'`. That is the shape
-//      orisha's router arms use.
+//   THE EMITTERS. Six of them write a branch constructor, and every one had to
+//   learn that this name means NO WRAPPER — the record IS the return value, and
+//   `.{ .verdict = … }` names a field the Output type does not have.
 //
-//      DIAGNOSED 2026-08-08, and it is NOT about named outcomes — a braced
-//      produce has never worked on ANY event. `-> hit { a: 1, b: 2 }` on a
-//      two-branch event fails identically. The cause: `name { … }` is ALSO how
-//      you invoke something with a Source block, and the invocation reading wins.
-//      The arm reaches parser.zig's `else if (uses_implicit_source)` branch,
-//      whose registry lookup misses because `verdict` is not an event, and it
-//      falls through to createImplicitSourceInvocationDefault — a path whose own
-//      comment says it exists for module-import-time unknowns.
-//
-//      The produce position is FREE for the constructor reading: across the
-//      whole corpus and koru_std, `-> name {` occurs only as a comprehension row
-//      (`-> v{i}`, a different construct in a different parse path) and inside
-//      raw MLIR text in two proc bodies. Nobody invokes with a Source block
-//      after `->`.
-//
-//      Three produce paths already build the node correctly
-//      (parseConstructString handles both `name value` and `name { … }`); the
-//      arm form takes a fourth that resolves as an invocation first. The fix is
-//      to decide the reading BEFORE the invocation parse, in produce position.
-//   2. An immediate impl of a bare-return event cannot be BOUND at the call
-//      site. Pre-existing and unrelated: the same program written with an
-//      anonymous `~plain = { x: 1, y: 2 }` crashes koruc outright, inside
-//      tap_transformer.transformAst.
-//
-// Either one alone would make this green.
+// The arm below produces through both paths at once, so it fails if either
+// forgets.
 
 ~import std/io
 

@@ -3580,7 +3580,7 @@ fn emitSubflowContinuationsWithDepth(
                 if (cont.node) |step| {
                     switch (step) {
                         .branch_constructor => |bc2| {
-                            try emitProducedConstructor(emitter, main_module_name, &bc2);
+                            try emitProducedConstructor(emitter, main_module_name, enclosing_event, &bc2);
                         },
                         // A terminal (or any node this expression path can't
                         // lower) must still be a Zig expression — an empty
@@ -9561,13 +9561,18 @@ fn emitPipelineStep(
 fn emitProducedConstructor(
     emitter: *CodeEmitter,
     main_module_name: ?[]const u8,
+    enclosing_event: ?*const ast.EventDecl,
     bc: *const ast.BranchConstructor,
 ) EmitError!void {
     var ctx = EmissionContext{
         .allocator = emitter.allocator orelse std.heap.page_allocator,
         .main_module_name = main_module_name,
     };
-    const bare = bc.branch_name.len == 0;
+    // No name at all, OR a name that IS the bare return — a tor whose single
+    // terminal outcome is `verdict` returns the record, and `verdict { … }` is
+    // how you build it. Wrapping it would name a field the Output does not have.
+    const bare = bc.branch_name.len == 0 or
+        (if (enclosing_event) |ed| isNamedSingleOutcome(ed, bc.branch_name) else false);
 
     if (!bare) {
         try emitter.write(".{ .");

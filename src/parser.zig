@@ -181,6 +181,39 @@ fn findTopLevelEquals(s: []const u8) ?usize {
     return null;
 }
 
+
+/// `-> name { field: value, … }` — a NAMED record produce, the twin of the
+/// anonymous `-> { … }` beside it. Returns the brace index, or null.
+///
+/// Without this the produce reads as an INVOCATION, because `name { … }` is also
+/// how you call something with a Source block and `looksLikeInvocation` is asked
+/// first. A constructor was then parsed as a call to a tor nobody declared, and
+/// the diagnostic said exactly that (`unknown tor 'x' in pipeline`) about a line
+/// that constructs. A braced produce had therefore never worked on ANY event —
+/// named single outcome or ordinary multi-branch alike.
+///
+/// The reading is safe to take here: measured across the whole corpus and
+/// koru_std, `-> name {` occurs only as a comprehension row (`-> v{i}`, a
+/// different construct in a different parse path) and inside raw MLIR text.
+/// Nobody invokes with a Source block after `->`. The record check narrows it
+/// further — free text in the braces is still a call.
+fn namedRecordProduceBrace(text: []const u8) ?usize {
+    if (text.len < 3) return null;
+    if (text[text.len - 1] != '}') return null;
+    const brace = std.mem.indexOfScalar(u8, text, '{') orelse return null;
+    if (brace == 0) return null; // anonymous record produce — handled below
+    const name = lexer.trim(text[0..brace]);
+    if (name.len == 0) return null;
+    if (!(std.ascii.isAlphabetic(name[0]) or name[0] == '_')) return null;
+    for (name) |c| {
+        if (!(std.ascii.isAlphanumeric(c) or c == '_' or c == '-')) return null;
+    }
+    const braces = lexer.trim(text[brace..]);
+    if (!struct_literal.isKoruStructLiteral(braces) and
+        !struct_literal.isFieldPunningLiteral(braces)) return null;
+    return brace;
+}
+
 fn indexOfTopLevelArrow(s: []const u8) ?usize {
     var paren_depth: i32 = 0;
     var brace_depth: i32 = 0;
@@ -7069,7 +7102,12 @@ pub const Parser = struct {
                         // the single payload produced by the event call. Parse it
                         // as an invocation so the emitter emits the handler call
                         // and returns its value; otherwise it's a Zig expression.
-                        if (looksLikeInvocation(produced)) {
+                        if (namedRecordProduceBrace(produced) != null) {
+                            // `-> response { status: 200, … }` NAMES the outcome
+                            // it produces. Must be asked BEFORE looksLikeInvocation,
+                            // which claims the same spelling for a Source-block call.
+                            step = ast.Step{ .branch_constructor = try self.parseBranchConstructorWithContext(produced) };
+                        } else if (looksLikeInvocation(produced)) {
                             step = ast.Step{ .invocation = try self.parseEventInvocation(produced) };
                         } else if (struct_literal.isKoruStructLiteral(produced) or
                             struct_literal.isFieldPunningLiteral(produced))
