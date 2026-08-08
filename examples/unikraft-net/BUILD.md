@@ -71,10 +71,20 @@ qemu-system-x86_64 -kernel .unikraft/build/ukserve_qemu-x86_64 \
 | bootable unikernel image | 555,560 B |
 | the same image without networking (`examples/unikraft`) | 164,544 B |
 | what lwip + posix-socket + virtio-net cost | ~391,016 B |
+| RAM floor (boots and serves) | 6 MB |
+| RAM floor (fails) | 5 MB |
 
-RAM floor is **not** measured here — 64 MB was given and not probed downward.
-The print-only image's floor was 2 MB; do not assume this one's without booting
-it.
+**The floor is set by the network stack, not by Koru.** At 5 MB the virtio
+driver cannot allocate its virtqueue (`-12`, ENOMEM), lwIP then fails to attach
+the device, and the program's own `failed` arm reports `FAILED at socket` —
+correctly, because with no interface there is no socket to open. Nothing crashes
+and nothing lies; the error names the first call that could not be satisfied.
+
+For contrast the print-only image (`examples/unikraft`) floors at 2 MB. So
+networking costs about 4 MB of RAM on top of its ~391 KB of image.
+
+Measured by bisection at 64/32/16/8/6/5/4/3 MB, each boot serving a real request
+over the host-forwarded port; 6 MB confirmed twice.
 
 ## Traps
 
