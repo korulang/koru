@@ -171,3 +171,44 @@ The tell is the diagnostic — a refusal that talks about the wrong thing
 entirely (`'h' is not a field`) means the code never modelled the request as a
 possibility, rather than having considered and rejected it. A refusal that
 names what it refuses is a decision; one that misfiles the question is a gap.
+
+## Evolved 2026-08-08b: a removal VERB is only worth adding with its own ARM
+
+The section above priced growth along two axes — new arm names, and what an
+existing arm can ask for. `clear` is the first case where the two are not
+separable, and it sharpens what a lifecycle arm is FOR.
+
+The obvious reading of a bulk-removal verb is store-side: emptying a thousand
+rows one at a time must be doing redundant work, so give it a fast path. That
+reading is wrong by an order of magnitude. Measured in the DOM gauntlet, the
+store's own per-row removal — the sweep, a thousand `take`s, the handle
+bookkeeping — is **2 ms of a 78 ms gap**. Substantially all of the rest is the
+OBSERVER: `! removed` firing a thousand times, each firing going off to find
+the thing it had once been handed.
+
+So the verb is not the optimisation. **The arm is.** `std/store:clear` without
+`! cleared` would empty the store faster and change nothing that mattered,
+because the observer would still be paying per row — or, worse, would be
+silently skipped and stop being told at all. That is why `clear` REFUSES a
+store carrying a `! removed` arm and no `! cleared` arm rather than doing the
+defensible-looking thing.
+
+Which gives a rule for the next verb that removes rows, and there will be one:
+**a removal verb and its arm are one unit of design.** Adding the verb alone
+produces something that looks like a speedup, benchmarks as a speedup on a
+store nobody observes, and does nothing for the case that motivated it.
+
+The corollary is about what an aggregate arm can carry, and it is a constraint
+rather than a shortcoming. `! cleared` binds a COUNT and nothing else, because
+it fires after the store is empty and no row survives to read. An arm that
+could still see rows would be describing a half-done operation. Past-tense
+name, past-tense payload.
+
+One implementation fact worth keeping next to the belief, because it is the
+kind of thing that reads as correct and is not: invalidating outstanding
+handles across a bulk removal is NOT a brand bump. The brand is a compile-time
+constant naming WHICH STORE issued a handle; bumping it breaks cross-store
+discrimination and invalidates nothing. The per-slot generation is the mutable
+identity, so a clear bumps every live slot's generation — one pass over a small
+array, which is affordable precisely because it is the part that was never
+expensive.

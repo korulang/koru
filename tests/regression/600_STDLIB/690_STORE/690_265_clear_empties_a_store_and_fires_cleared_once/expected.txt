@@ -1,0 +1,4 @@
+live 3
+after first clear: gone 3 live 0
+refilled to 1
+after second clear: gone 4 live 0
