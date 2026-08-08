@@ -48,8 +48,5 @@ std/store:insert(rows) { label: "pony" }
 
 std/store:rule(rows)
 ! row e |> if(flag.on == 1)
-    | then |> std/store:stored { e.label: "{{ e.label:s }} !!!" }
+    | then |> std/store:stored { e.label: "{{ e.label:s }} !!!" } |> std/io:print.ln("{{ e.label:s }}")
     | else |> _
-
-std/store:query(rows)
-! query e2 |> std/io:print.ln("{{ e2.label:s }}")

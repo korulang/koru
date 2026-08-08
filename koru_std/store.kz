@@ -2862,7 +2862,13 @@ fn storeLowerText(
                                     // each independently mints two buffers and
                                     // leaves whichever one is not read dangling
                                     // as an unused local.
-                                    @constCast(a).value = templateValues(alloc, a.value, @constCast(inv), fields, char_caps, host_js_w);
+                                    // Mutate through the NODE pointer, never the switch capture: switching
+                                    // on a dereferenced node makes `inv` a TEMPORARY, so a field set on
+                                    // it is discarded (the 690_074 trap this walk already documents for
+                                    // inline_body). `a.value` survives only because args is a slice whose
+                                    // data is shared — which is exactly why the value substituted while
+                                    // its buffer declaration vanished.
+                                    @constCast(a).value = templateValues(alloc, a.value, &n.invocation, fields, char_caps, host_js_w);
                                     if (a.source_value) |sv| {
                                         const fresh = alloc.create(ast.Source) catch unreachable;
                                         fresh.* = sv.*;
