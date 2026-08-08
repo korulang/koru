@@ -137,6 +137,27 @@ pub fn generateHandlerCallWithResult(
 /// Error type for codegen operations
 pub const CodegenError = std.mem.Allocator.Error || error{FormatError};
 
+/// The placeholder an inline body writes where its own block label goes. Its
+/// presence is what makes the body an EXPRESSION rather than a STATEMENT.
+const INLINE_LABEL_PLACEHOLDER = "__KORU_INLINE__";
+
+/// Whether an inline body hands a value back through its block label.
+///
+/// A transform that sets `inline_body` may produce either kind of code. A body
+/// that computes something writes `break :__KORU_INLINE__ <value>` and must be
+/// wrapped as `const result_N = __koru_inline_N: { … }`. A body that merely DOES
+/// something — a print arm in a router's pattern dispatch, say — writes a plain
+/// call and never mentions the placeholder.
+///
+/// Emitting the labelled form for the second kind produced
+/// `const result_0 = __koru_inline_1: (struct { … }).__kw("…", .{});;`, which
+/// Zig rejects: a label may prefix a block or a loop, never a call expression.
+/// So an effect arm inside a pattern-branch router could not compile at all,
+/// and the emitted line even carried the two semicolons that give it away.
+fn inlineBodyYieldsValue(body: []const u8) bool {
+    return std.mem.indexOf(u8, body, INLINE_LABEL_PLACEHOLDER) != null;
+}
+
 /// Generate code for a single continuation's pipeline (the steps after |>)
 /// This handles invoking events and recursively processing nested continuations.
 fn generatePipelineCode(
@@ -154,6 +175,18 @@ fn generatePipelineCode(
         switch (step) {
             .invocation => |inv| {
                 if (inv.inline_body) |ib| {
+                    // A body that never breaks with a value is a STATEMENT: emit
+                    // it as one. No label, no result variable, and nothing for a
+                    // continuation switch to switch on. See inlineBodyYieldsValue.
+                    if (!inlineBodyYieldsValue(ib)) {
+                        const ind_stmt = try indent(allocator, indent_level);
+                        defer allocator.free(ind_stmt);
+                        try buf.appendSlice(allocator, ind_stmt);
+                        try buf.appendSlice(allocator, ib);
+                        try buf.appendSlice(allocator, "\n");
+                        continue;
+                    }
+
                     // Transform set inline_body — emit inline code instead of handler call
                     const result_var = try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
                     defer allocator.free(result_var);
@@ -271,7 +304,9 @@ fn generatePipelineCode(
                 try buf.appendSlice(allocator, " } };\n");
             },
             .inline_code => |code| {
-                if (nested.len > 0) {
+                // Same distinction as the invocation path above: only a body
+                // that breaks with a value may be wrapped in a labelled block.
+                if (nested.len > 0 and inlineBodyYieldsValue(code)) {
                     // Inline code produces a result value — wrap in labeled block,
                     // assign to result variable, and generate switch on nested continuations.
                     // Convention: inline code uses break :__KORU_INLINE__ to produce its result.
