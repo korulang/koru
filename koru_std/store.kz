@@ -2565,7 +2565,18 @@ fn storeLowerText(
                 var i: usize = 0;
                 while (i < text.len) {
                     const at_boundary = ast.identBoundaryBefore(text, i);
-                    if (at_boundary and std.mem.startsWith(u8, text[i..], prefix)) {
+                    // `expr_ctx[i]` is what keeps this OUT OF STRING LITERALS.
+                    // The mask was computed here from the start and consulted
+                    // only by the bare-identity branch below, so a bare `e` was
+                    // safe while `e.<column>` — the common case — rewrote
+                    // wherever it appeared, text included. A rule arm storing
+                    // the literal "e.label is a column" shipped a Zig cell read
+                    // in its place: compiled, ran, wrong, silent on the JS lane
+                    // and an unreadable Zig error on the other. Same disease as
+                    // the visitor emitter's literal corruption (230_016), a
+                    // different site, and the reason both are worth a mask
+                    // rather than a special case.
+                    if (at_boundary and expr_ctx[i] and std.mem.startsWith(u8, text[i..], prefix)) {
                         const fstart = i + prefix.len;
                         var fend = fstart;
                         while (fend < text.len and H.isIdentChar(text[fend])) fend += 1;
