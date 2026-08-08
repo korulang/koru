@@ -1,0 +1,41 @@
+// Pins a call that is BOTH cross-module and effect-bearing, written at a
+// SUBFLOW head — inside a flow that implements another event, in a module that
+// is not the one declaring the target.
+//
+// `mylib:drive` is implemented as a flow over `mylib/pump:run`, a SIBLING
+// submodule's event that declares an effect (`!`) branch. Two things have to
+// happen on that one call line:
+//
+//   - the `! tick` arm must ride in as a synthesized Handlers struct passed
+//     second, because an effect-bearing event lowers to
+//     `handler(input, comptime __H: type)`;
+//   - the registered variant must select the handler, so the call names
+//     `handler__alt`.
+//
+// The subflow head resolved its target only within the ENCLOSING MODULE's own
+// items, so a sibling-module event came back null; that null silently disabled
+// the effect partition, and the `! tick` arm was lowered as an ordinary
+// terminal switch case against a call still written `handler(...)`. The emitted
+// Zig then refused it: "expected 2 argument(s), found 1".
+//
+// The two variant bodies differ in BOTH what they hand the arm and what they
+// return, so the output names which one ran.
+//
+// The twin of 370_011 (same shape, one module) and 370_013 (submodule variant
+// key, no effect branch). This is the intersection, and it is the shape Orisha's
+// `serve` over `orisha/pump:run` is written in.
+
+~import std/io
+~import std/build
+~import mylib
+
+~std/build:variants {
+    "mylib/pump:run": "alt"
+}
+| configured _ |> _
+| skipped _ |> _
+| invalid-event _ |> _
+
+~mylib:drive(n: 3)
+| finished f |> std/io:print.ln(f)
+| blank |> std/io:print.ln("blank")

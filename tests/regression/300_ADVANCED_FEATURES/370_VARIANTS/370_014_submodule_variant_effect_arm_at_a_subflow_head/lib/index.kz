@@ -1,0 +1,23 @@
+// `drive` is implemented as a flow over a SIBLING submodule's effect-bearing
+// event. Living inside the package (rather than in the program that imports it)
+// is the whole point: the subflow head resolves its target against the
+// ENCLOSING MODULE's items, and `mylib/pump` is not among them.
+
+~import mylib/pump
+
+const std = @import("std");
+
+~pub tor drive { n: i32 }
+| finished string
+| blank
+
+~tor show { value: i32 }
+
+~proc show|zig {
+    std.debug.print("{}\n", .{value});
+}
+
+~drive =
+    mylib/pump:run(n)
+    ! tick t |> show(value: t)
+    | done d -> finished d

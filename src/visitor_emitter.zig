@@ -3276,8 +3276,16 @@ pub const VisitorEmitter = struct {
                                     };
                                     try emitter.emitFlow(self.code_emitter, &label_fold_ctx, &flow);
                                 } else {
-                                    // Check if the invoked event has mutable branches
-                                    const invoked_event = self.findEventDeclInItems(items_to_search, &flow.inv().path);
+                                    // Check if the invoked event has mutable branches.
+                                    // items_to_search is the ENCLOSING MODULE's own items, so a
+                                    // call into a SIBLING module (`orisha:serve` implemented as a
+                                    // flow over `orisha/pump:run`) resolved to null here — and a
+                                    // null invoked_event silently disabled both the effect-arm
+                                    // partition below and the mutable check. Fall back to the
+                                    // program-wide, module-qualifier-aware lookup the top-level
+                                    // invocation path already uses.
+                                    const invoked_event = self.findEventDeclInItems(items_to_search, &flow.inv().path) orelse
+                                        emitter.findEventDeclByPath(self.all_items, &flow.inv().path);
 
                                     // Effect-branches phase 3b, at a SUBFLOW head. An event
                                     // with `!` branches lowers to
@@ -3381,7 +3389,24 @@ pub const VisitorEmitter = struct {
                                             if (idx > 0) try self.code_emitter.write("_");
                                             try writeMangledSegment(self.code_emitter, seg);
                                         }
-                                        try self.code_emitter.write("_event.handler(.{");
+                                        // VARIANT SELECTION AT A SUBFLOW HEAD. Only the
+                                        // top-level invocation path consulted the registry, so a
+                                        // `~[build(x)]std/build:variants` selection was dropped on
+                                        // the floor for any call written inside a flow that
+                                        // implements another event. Build the canonical key the
+                                        // SAME way emitInvocationWithBinding does — module
+                                        // qualifier, ':', segments joined by '.', and NO
+                                        // main-module fallback, because that is the spelling
+                                        // build:variants registers under. A second spelling of
+                                        // this key is the bug, not a fix for it.
+                                        try self.code_emitter.write("_event.");
+                                        const sf_variant: ?[]const u8 = if (flow.inv().variant) |v| v else blk: {
+                                            const key = emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, null) catch break :blk null;
+                                            defer self.allocator.free(key);
+                                            break :blk emitter.getVariant(key);
+                                        };
+                                        try emitter.writeHandlerName(self.code_emitter, self.allocator, sf_variant);
+                                        try self.code_emitter.write("(.{");
                                     }
 
                                     // Write arguments, mapping from input parameters
