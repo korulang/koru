@@ -1782,6 +1782,12 @@ fn storeLowerText(
         // plural rows stay a later slice.
         const LifecycleArm = struct {
             fields: []const []const u8,
+            // `[id]<name>` entries: what the SITE synthesizes rather than what
+            // the row stores. Kept apart from `fields` because every column
+            // path (colTypes/colOwned) resolves against `field_names` and a
+            // request has no column to resolve to. Demand-driven, the same
+            // rule the sweep and rule arms carry (690_246/690_247).
+            id_requests: []const []const u8 = &.{},
             body: ast.Continuation,
         };
         var inserted_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
@@ -1947,9 +1953,29 @@ fn storeLowerText(
                 continue;
             }
             var dnames = std.ArrayList([]const u8).initCapacity(allocator, ic.destructure.len) catch unreachable;
+            var dids = std.ArrayList([]const u8).initCapacity(allocator, 1) catch unreachable;
             for (ic.destructure) |df| {
                 if (df.type_text != null) {
                     return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `! {s}` projects row fields by pun (`{{ {s} }}`); renames are a later slice", .{ store_name, bname, df.name }) } };
+                }
+                // An ANNOTATED entry is a request on the site, never a column.
+                // A lifecycle arm's block mixes the two — unlike a query/rule
+                // block, which is requests only because its columns arrive
+                // through the row binding. Here there is no row binding, so
+                // the payload puns columns and requests ride alongside.
+                if (df.annotations.len > 0) {
+                    for (df.annotations) |a| {
+                        if (std.mem.eql(u8, a, "id")) {
+                            dids.append(allocator, allocator.dupe(u8, df.name) catch unreachable) catch unreachable;
+                        } else if (std.mem.eql(u8, a, "row")) {
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `[row]{s}` on a `! {s}` arm - the arm already IS about one row and puns its columns by name (`! {s} {{ {s} }}`); binding the row to address OTHER columns is not built this rung. `[id]` is, and names this row's handle", .{ store_name, df.name, bname, bname, if (field_names.len > 0) field_names[0] else "field" }) } };
+                        } else if (std.mem.eql(u8, a, "ordinal")) {
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `[ordinal]{s}` on a `! {s}` arm - a lifecycle arm fires on ONE row's birth or death and has no traversal, so there is no position in a walk to name (this is not unimplemented; it is meaningless here). `[ordinal]` is a sweep request: `! query {{ [row]r, [ordinal]n }}`", .{ store_name, df.name, bname }) } };
+                        } else {
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): unknown request `[{s}]` on '{s}' - a `! {s}` arm understands [id]", .{ store_name, a, df.name, bname }) } };
+                        }
+                    }
+                    continue;
                 }
                 const known = blk: {
                     for (field_names) |fn3| {
@@ -1958,9 +1984,24 @@ fn storeLowerText(
                     break :blk false;
                 };
                 if (!known) {
-                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `! {s}` payload field '{s}' is not a field of store '{s}'", .{ store_name, bname, df.name, store_name }) } };
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `! {s}` payload field '{s}' is not a field of store '{s}' - the payload puns COLUMNS; to name what the site synthesizes, annotate it (`[id]{s}` is this row's handle)", .{ store_name, bname, df.name, store_name, df.name }) } };
                 }
                 dnames.append(allocator, allocator.dupe(u8, df.name) catch unreachable) catch unreachable;
+            }
+            // A request never takes the name of a COLUMN OF THIS STORE — not
+            // just of a column this arm happens to bind. Against a bound one
+            // it would mint two event inputs of one name and emit a duplicate
+            // struct field rather than a diagnostic (the collision 690_247
+            // refuses on a rule arm); against an unbound one it compiles and
+            // silently reads as the column to anyone who knows the store. One
+            // rule covers both, and the narrower rule would have admitted the
+            // case that misleads without erroring.
+            for (dids.items) |idn| {
+                for (field_names) |cn| {
+                    if (std.mem.eql(u8, idn, cn)) {
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `[id]{s}` takes the name of column '{s}' - the column and the row's handle are two values and need two names, and a reader cannot tell which '{s}' the body means", .{ store_name, idn, idn, idn }) } };
+                    }
+                }
             }
             const bnode = ic.node orelse {
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): the `! {s}` interceptor needs a body (`|> std/store:stored {{ ... }}`)", .{ store_name, bname }) } };
@@ -1979,8 +2020,16 @@ fn storeLowerText(
                     return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `! {s}` binds '{s}' but never uses it — discard the payload (`! {s} _`), or use the field in the body", .{ store_name, bname, fnm, bname }) } };
                 }
             }
+            // A request is demand-driven, so an unused one is a request that
+            // should not have been made — the same standard the columns hold to.
+            for (dids.items) |idn| {
+                if (!Usage.inCont(ic, idn, program)) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `! {s}` requests `[id]{s}` but never uses it — a request is synthesized only where it is named, so drop it", .{ store_name, bname, idn }) } };
+                }
+            }
             const arm = LifecycleArm{
                 .fields = dnames.toOwnedSlice(allocator) catch unreachable,
+                .id_requests = dids.toOwnedSlice(allocator) catch unreachable,
                 .body = ast_functional.cloneContinuation(allocator, ic) catch unreachable,
             };
             if (is_inserted) {
@@ -3113,6 +3162,13 @@ fn storeLowerText(
                         std.fmt.allocPrint(allocator, "{s}: {s}", .{ fnm, fnm }) catch unreachable;
                     ap.appendSlice(allocator, p) catch unreachable;
                 }
+                // The slot is allocated and mapped above, so the row's handle
+                // is already the one `| row` hands the insert's own branch.
+                for (arm.id_requests, 0..) |idn, ii| {
+                    if (arm.fields.len + ii > 0) ap.appendSlice(allocator, ", ") catch unreachable;
+                    const p = std.fmt.allocPrint(allocator, "{s}: __koru_store_{s}.__koru_handle_of(__koru_new_row)", .{ idn, store_name }) catch unreachable;
+                    ap.appendSlice(allocator, p) catch unreachable;
+                }
                 ap.appendSlice(allocator, " });\n") catch unreachable;
             }
             for (qsites.items) |qs| {
@@ -3200,6 +3256,11 @@ fn storeLowerText(
                         std.fmt.allocPrint(allocator, ".{s} = __koru_store_{s}.{s}[__koru_new_row]", .{ fnm, store_name, fnm }) catch unreachable
                     else
                         std.fmt.allocPrint(allocator, ".{s} = {s}", .{ fnm, fnm }) catch unreachable;
+                    ap.appendSlice(allocator, p) catch unreachable;
+                }
+                for (arm.id_requests, 0..) |idn, ii| {
+                    if (arm.fields.len + ii > 0) ap.appendSlice(allocator, ", ") catch unreachable;
+                    const p = std.fmt.allocPrint(allocator, ".{s} = __koru_store_{s}.__koru_handle_of(__koru_new_row)", .{ idn, store_name }) catch unreachable;
                     ap.appendSlice(allocator, p) catch unreachable;
                 }
                 ap.appendSlice(allocator, " });\n") catch unreachable;
@@ -4682,6 +4743,16 @@ fn storeLowerText(
                         HS.recField(allocator, host_target, fnm, std.fmt.allocPrint(allocator, "__koru_out_{s}", .{fnm}) catch unreachable);
                     tb.appendSlice(allocator, p) catch unreachable;
                 }
+                // The arm fires BEFORE the swap-remove and the generation bump,
+                // so the dying row still resolves and its handle is the one the
+                // observer was handed at insert. It goes stale immediately
+                // after — which is the point: this is the last moment anything
+                // keyed on that row can find its own entry to let go of.
+                for (arm.id_requests, 0..) |idn, ii| {
+                    if (arm.fields.len + ii > 0) tb.appendSlice(allocator, ", ") catch unreachable;
+                    const p = HS.recField(allocator, host_target, idn, std.fmt.allocPrint(allocator, "__koru_store_{s}.__koru_handle_of(__koru_r)", .{store_name}) catch unreachable);
+                    tb.appendSlice(allocator, p) catch unreachable;
+                }
                 tb.appendSlice(allocator, " });\n") catch unreachable;
             }
             const swap = std.fmt.allocPrint(allocator, "const __koru_last = __koru_store_{s}.len - 1;\nif (__koru_r != __koru_last) {{\n", .{store_name}) catch unreachable;
@@ -4877,13 +4948,37 @@ fn storeLowerText(
                     return out;
                 }
             }.call;
+            // A `[id]` request rides the arm's input as one more field. It has
+            // no column to resolve against, so its type is stated here (a
+            // handle is i64, the type `| row` mints) and its ownedness is
+            // null — a handle is a value, never a resource the arm borrows.
+            const withIds = struct {
+                fn names(alloc: std.mem.Allocator, cols: []const []const u8, ids: []const []const u8) []const []const u8 {
+                    const out = alloc.alloc([]const u8, cols.len + ids.len) catch unreachable;
+                    for (cols, 0..) |c, i| out[i] = c;
+                    for (ids, 0..) |d, i| out[cols.len + i] = d;
+                    return out;
+                }
+                fn types(alloc: std.mem.Allocator, cols: []const []const u8, n_ids: usize) []const []const u8 {
+                    const out = alloc.alloc([]const u8, cols.len + n_ids) catch unreachable;
+                    for (cols, 0..) |c, i| out[i] = c;
+                    for (0..n_ids) |i| out[cols.len + i] = "i64";
+                    return out;
+                }
+                fn owned(alloc: std.mem.Allocator, cols: []const ?OwnedCol, n_ids: usize) []const ?OwnedCol {
+                    const out = alloc.alloc(?OwnedCol, cols.len + n_ids) catch unreachable;
+                    for (cols, 0..) |c, i| out[i] = c;
+                    for (0..n_ids) |i| out[cols.len + i] = null;
+                    return out;
+                }
+            };
             for (inserted_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_inserted_{s}_{d}", .{ store_name, ai }) catch unreachable;
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, program, pstore_names.items, pstore_identity.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, withIds.names(allocator, arm.fields, arm.id_requests), withIds.types(allocator, colTypes(allocator, field_names, field_types, arm.fields), arm.id_requests.len), withIds.owned(allocator, colOwned(allocator, field_names, field_owned_info, arm.fields), arm.id_requests.len), &arm.body, program, pstore_names.items, pstore_identity.items);
             }
             for (removed_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_removed_{s}_{d}", .{ store_name, ai }) catch unreachable;
-                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, arm.fields, colTypes(allocator, field_names, field_types, arm.fields), colOwned(allocator, field_names, field_owned_info, arm.fields), &arm.body, program, pstore_names.items, pstore_identity.items);
+                LC.emit(allocator, &appended_items, flow.module, flow.location, ev_name, withIds.names(allocator, arm.fields, arm.id_requests), withIds.types(allocator, colTypes(allocator, field_names, field_types, arm.fields), arm.id_requests.len), withIds.owned(allocator, colOwned(allocator, field_names, field_owned_info, arm.fields), arm.id_requests.len), &arm.body, program, pstore_names.items, pstore_identity.items);
             }
             for (updated_arms.items, 0..) |*arm, ai| {
                 const ev_name = std.fmt.allocPrint(allocator, "__store_updated_{s}_{d}", .{ store_name, ai }) catch unreachable;

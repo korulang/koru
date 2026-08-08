@@ -1,0 +1,6 @@
+born v=10 h=33554432
+born v=20 h=33554433
+born v=30 h=33554434
+died v=20 h=33554433
+died v=30 h=33554434
+c handle at birth and at death agree: 33554434 33554434

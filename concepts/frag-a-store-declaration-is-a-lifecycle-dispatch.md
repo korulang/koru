@@ -125,3 +125,49 @@ lanes on the same day.
 This sharpens the load-bearing claim rather than softening it. A fifth
 interceptor is still born into this lowering; it is now born into a lowering
 with a branch, and a new arm has to be correct on both sides of it.
+
+## Evolved 2026-08-08: the site grows in TWO dimensions, and the second one was free
+
+The belief above says the declaration site is designed to grow, and prices that
+growth in *new arm names*. That is one axis. There is a second, and it went
+unnoticed because nothing had asked for it: what an arm ALREADY THERE can ask
+the site to hand it.
+
+A query, rule or preorder arm has a **request block** — `{ [row]e, [id]h,
+[ordinal]n }`, synthesized only where named (690_246, 690_247, 695_005). The
+lifecycle arms never got one. They parsed their braces as columns and never
+looked at annotations, so `! inserted { [id]h }` was refused with *"payload
+field 'h' is not a field of store 'rows'"* — a diagnostic about columns, for
+something never meant to be one. The two forms were exactly inverted: on a rule
+an *unannotated* entry is refused, on a lifecycle arm an *annotated* one was.
+
+The consequence was not a missing convenience. It was that **an observer
+outside the store had nothing stable to key on.** A lifecycle arm could name
+only the row's columns, which are data and may repeat, so anything minting a
+thing per row — an element, a handle, an index entry — had to re-derive the
+correspondence later by searching. Measured in the DOM gauntlet: 92% of a
+thousand-row clear, 71.6 ms of 77.8, was that search. The store's own per-row
+removal machinery was 2 ms of it.
+
+So the correction to the price above: growth along this axis cost **no new
+spelling and no parser change** — the annotations already parsed, and `[id]`
+already meant "this row's handle" everywhere else. It cost a branch where the
+block is read and an expression where the payload is built. The vocabulary was
+not missing; its *reach* was short, and nothing in the design said where it was
+supposed to stop.
+
+Which sharpens the open question this file ends on. It asks what governs the
+growth of arm NAMES. The same gap exists one level down and is easier to state:
+**a request is meaningful wherever the site can synthesize it**, and the site
+knew the row's identity at both ends all along — `__koru_new_row` sits in scope
+at the insert payload site, unused, and removal arms fire before the swap and
+the generation bump precisely so the dying row still resolves. Nothing decided
+those arms should not offer it; no one had needed it.
+
+The general shape, and the reason this is worth a paragraph rather than a
+changelog line: **when a facility exists in one position and not another, the
+absence is usually not a ruling.** It is the shape of what was asked for first.
+The tell is the diagnostic — a refusal that talks about the wrong thing
+entirely (`'h' is not a field`) means the code never modelled the request as a
+possibility, rather than having considered and rejected it. A refusal that
+names what it refuses is a decision; one that misfiles the question is a gap.
