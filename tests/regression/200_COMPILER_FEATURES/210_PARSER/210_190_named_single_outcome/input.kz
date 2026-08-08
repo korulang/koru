@@ -1,0 +1,46 @@
+// ASPIRATIONAL RED — a single outcome may keep its NAME.
+//
+// `| verdict { label, code }` as a tor's only terminal branch used to be
+// refused: one variant is a wasteful REPRESENTATION, and the advice was to
+// declare a bare return instead. Correct about the machinery, and it deleted the
+// author's label with it. Orisha declared `| response { status, body,
+// content-type }`, lost the name, and every doc line, example and router arm
+// went on using a spelling the compiler no longer had.
+//
+// The declaration is now accepted and lowers to a bare return of that record —
+// no tag, no union, no runtime cost — and the branch survives only so its name
+// is a CONSTRUCTOR for it. Verified in the emitted Zig: every constructor site
+// writes `.{ .label = …, .code = … }` and not `.{ .verdict = … }`.
+//
+// WHAT IS STILL RED, and it is not this feature:
+//
+//   1. `-> verdict { … }` in a branch ARM parses as an INVOCATION, so it is
+//      refused with KORU040 `unknown tor 'input:verdict'`. The produce position
+//      needs to recognise the enclosing event's outcome name. That is the shape
+//      orisha's router arms use.
+//   2. An immediate impl of a bare-return event cannot be BOUND at the call
+//      site. Pre-existing and unrelated: the same program written with an
+//      anonymous `~plain = { x: 1, y: 2 }` crashes koruc outright, inside
+//      tap_transformer.transformAst.
+//
+// Either one alone would make this green.
+
+~import std/io
+
+~tor pick { n: i32 }
+| high
+| low
+
+~proc pick|zig {
+    return if (n > 5) .high else .low;
+}
+
+~tor classify { n: i32 }
+| verdict { label: string, code: i32 }
+
+~classify =
+    pick(n)
+    | high -> verdict { label: "high", code: 1 }
+    | low -> verdict { label: "low", code: 0 }
+
+~classify(n: 9): a |> std/io:print.ln("{{ a.label:s }}/{{ a.code:d }}")

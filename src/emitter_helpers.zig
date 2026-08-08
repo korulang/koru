@@ -11479,9 +11479,21 @@ fn emitBranchConstructorWithEventType(
         }
         return;
     }
-    try emitter.write(".{ .");
-    try writeBranchName(emitter, bc.branch_name);
-    try emitter.write(" = ");
+    // The registry's twin of isNamedSingleOutcome. BranchType carries no kind,
+    // so terminal-ness is inferred from `has_effect_branches` being false —
+    // conservative: an event with BOTH a named single outcome and effect arms
+    // still takes the wrapped path here. No such event exists yet; when one
+    // does, BranchType needs the kind.
+    const named_single = event_type.return_type != null and
+        !event_type.has_effect_branches and
+        event_type.branches.len == 1 and
+        bc.branch_name.len > 0 and
+        std.mem.eql(u8, event_type.branches[0].name, bc.branch_name);
+    if (!named_single) {
+        try emitter.write(".{ .");
+        try writeBranchName(emitter, bc.branch_name);
+        try emitter.write(" = ");
+    }
 
     if (bc.plain_value) |pv| {
         const trimmed = std.mem.trim(u8, pv, " \t");
@@ -11517,7 +11529,32 @@ fn emitBranchConstructorWithEventType(
         }
         try emitter.write(" }");
     }
-    try emitter.write(" }");
+    if (!named_single) try emitter.write(" }");
+}
+
+/// A NAMED SINGLE OUTCOME IS THE RETURN VALUE.
+///
+/// `| response { status, body, content-type }` as a tor's only terminal branch
+/// lowers to a bare return of that record (see the PARSE003 site in parser.zig);
+/// the branch survives ONLY so its name can be a constructor for it. So
+/// `response { … }` must emit the record itself — wrapping it in
+/// `.{ .response = … }` builds a tag the Output type does not have, and Zig
+/// rejects it as a missing field on a struct.
+///
+/// This is what lets a framework keep its vocabulary. The rule that a
+/// one-variant union is the wrong REPRESENTATION stands; the label it used to
+/// delete is now free.
+pub fn isNamedSingleOutcome(event: *const ast.EventDecl, name: []const u8) bool {
+    if (name.len == 0) return false;
+    if (event.return_type == null) return false;
+    var sole: ?*const ast.Branch = null;
+    for (event.branches) |*b| {
+        if (b.kind != .terminal) continue;
+        if (sole != null) return false; // two or more: a real union, names matter
+        sole = b;
+    }
+    const s = sole orelse return false;
+    return std.mem.eql(u8, s.name, name);
 }
 
 fn emitBranchConstructorWithEvent(
@@ -11534,9 +11571,13 @@ fn emitBranchConstructorWithEvent(
         }
         return;
     }
-    try emitter.write(".{ .");
-    try writeBranchName(emitter, bc.branch_name);
-    try emitter.write(" = ");
+    // The branch NAME is a constructor for the bare return, not a tag.
+    const named_single = isNamedSingleOutcome(event, bc.branch_name);
+    if (!named_single) {
+        try emitter.write(".{ .");
+        try writeBranchName(emitter, bc.branch_name);
+        try emitter.write(" = ");
+    }
 
     if (bc.plain_value) |pv| {
         const trimmed = std.mem.trim(u8, pv, " \t");
@@ -11572,7 +11613,7 @@ fn emitBranchConstructorWithEvent(
         }
         try emitter.write(" }");
     }
-    try emitter.write(" }");
+    if (!named_single) try emitter.write(" }");
 }
 
 /// Emit a branch constructor (.branch = .{ fields })
@@ -11592,9 +11633,17 @@ pub fn emitBranchConstructor(
         }
         return;
     }
-    try emitter.write(".{ .");
-    try writeBranchName(emitter, bc.branch_name);
-    try emitter.write(" = ");
+    // A named single outcome IS the return — see isNamedSingleOutcome. The event
+    // is whichever one this constructor is producing into.
+    const named_single = if (ctx.produce_event orelse ctx.impl_event_decl) |ed|
+        isNamedSingleOutcome(ed, bc.branch_name)
+    else
+        false;
+    if (!named_single) {
+        try emitter.write(".{ .");
+        try writeBranchName(emitter, bc.branch_name);
+        try emitter.write(" = ");
+    }
 
     // Check for plain value (non-struct branch)
     if (bc.plain_value) |pv| {
@@ -11614,7 +11663,7 @@ pub fn emitBranchConstructor(
         }
         try emitter.write(" }");
     }
-    try emitter.write(" }");
+    if (!named_single) try emitter.write(" }");
 }
 
 /// Check if a continuation uses a binding variable in its body
