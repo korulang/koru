@@ -46,6 +46,25 @@ Each test's backend build compiles its emitted Zig against the **live** `src/`
 tree, so a half-written file there turns into reds that name your own edit —
 33 of them in one measured case, all reported as `backend`, none real.
 
+**A worktree isolates the tests, never the compiler sources.**
+`/usr/local/lib/koru/src` is a symlink to `~/src/koru/src` — the main checkout —
+and a worktree's backend builds resolve their compiler modules through it
+(`-Mkoru_parser=/usr/local/lib/koru/src/parser.zig`). So the rule above is not
+scoped to your own checkout: an edit to main's `src/` lands inside a board
+running in `.claude/worktrees/<name>/`, and the reds it produces name a file
+that session never touched.
+
+Which makes "while a suite is live" a question `git status` cannot answer — the
+suite may be another session's, in a worktree, invisible from here. Check before
+the first build, every time:
+
+    pgrep -fl "run_regression|zig build"
+
+Measured 2026-08-08: a full `--no-cache` board was running in
+`.claude/worktrees/store-clear` while this checkout rebuilt five times for a
+filtered run. Nothing under `src/` was edited, so nothing broke — but that was
+luck, and the check was run afterwards instead of first.
+
 **A board run from a worktree under-reports, and says nothing about it.** Tests
 that reach outside the repo do it by *relative depth* — `350_013`'s `koru.json`
 names `../../../../../../orisha/lib`, six levels up. From the main checkout that
