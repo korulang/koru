@@ -2168,6 +2168,11 @@ pub const VisitorEmitter = struct {
                                     try self.code_emitter.writeIndent();
                                     try self.code_emitter.write("_ = &__koru_event_input;\n");
 
+                                    // A statement-shaped transform body binds NOTHING —
+                                    // the discard-guard below must not name a const that
+                                    // was never emitted.
+                                    var head_bound_root = true;
+
                                     // Generate the flow invocation and continuations
                                     if (flow.inline_body) |inline_code_raw| {
                                         // Transform set inline_body -- emit inline instead of handler call
@@ -2180,6 +2185,7 @@ pub const VisitorEmitter = struct {
                                         }
 
                                         if (is_inline_stmt) {
+                                            head_bound_root = false;
                                             const has_named_branches = blk: {
                                                 for (flow.body.continuations) |cont| {
                                                     if (cont.branch.len > 0) break :blk true;
@@ -2256,8 +2262,10 @@ pub const VisitorEmitter = struct {
                                     // A head with no continuations has no switch to
                                     // consume the root const — discard-guard it
                                     // (same hygiene as nested_result_N in arm
-                                    // emission).
-                                    if (flow.body.continuations.len == 0) {
+                                    // emission). Only when a const actually exists:
+                                    // an inline-stmt head emitted raw statements and
+                                    // bound no name.
+                                    if (flow.body.continuations.len == 0 and head_bound_root) {
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("_ = &");
                                         try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
@@ -2546,6 +2554,11 @@ pub const VisitorEmitter = struct {
                                                 try self.code_emitter.writeIndent();
                                                 try self.code_emitter.write("_ = &__koru_event_input;\n");
 
+                                                // A statement-shaped transform body binds
+                                                // NOTHING — the discard-guard below must not
+                                                // name a const that was never emitted.
+                                                var head_bound_root = true;
+
                                                 // Generate the invocation (or inline_body if transform set it)
                                                 if (flow.inline_body) |inline_code_raw| {
                                                     // Transform set inline_body -- emit inline instead of handler call
@@ -2558,6 +2571,7 @@ pub const VisitorEmitter = struct {
                                                     }
 
                                                     if (is_inline_stmt) {
+                                                        head_bound_root = false;
                                                         const has_named_branches = blk: {
                                                             for (flow.body.continuations) |cont| {
                                                                 if (cont.branch.len > 0) break :blk true;
@@ -2651,7 +2665,9 @@ pub const VisitorEmitter = struct {
 
                                                 // A head with no continuations has no switch to
                                                 // consume the root const — discard-guard it.
-                                                if (flow.body.continuations.len == 0) {
+                                                // Only when a const actually exists: an
+                                                // inline-stmt head bound no name.
+                                                if (flow.body.continuations.len == 0 and head_bound_root) {
                                                     try self.code_emitter.writeIndent();
                                                     try self.code_emitter.write("_ = &");
                                                     try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
