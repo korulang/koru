@@ -1,0 +1,17 @@
+// A SUBMODULE event carrying an effect (`!`) branch, with two proc variants.
+// The two bodies differ in BOTH what they hand the effect arm and what they
+// return as the terminal payload, so the output names which body ran.
+
+~pub tor run { n: i32 }
+! tick i32
+| done string
+
+~proc run|zig {
+    tick(n * 10);
+    return .{ .done = "zig-done" };
+}
+
+~proc run|alt {
+    tick(n * 100);
+    return .{ .done = "alt-done" };
+}
