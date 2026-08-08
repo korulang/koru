@@ -2396,14 +2396,58 @@ pub const Parser = struct {
             !branches.items[0].is_panic and
             branches.items[0].payload.fields.len > 0)
         {
-            try self.reporter.addError(
-                .PARSE003,
-                event_line_index + 1,
-                1,
-                "single continuation branch '{s}' carrying a payload is a one-variant tag union — declare the single output as a bare return instead: `-> <type>`",
-                .{branches.items[0].name},
-            );
-            return error.ParseError;
+            // A SINGLE OUTCOME MAY STILL HAVE A NAME.
+            //
+            // The union objection is about REPRESENTATION and it is correct: one
+            // variant is a tag plus double data movement for a value with exactly
+            // one shape. But the fix used to delete the author's LABEL too, and a
+            // label is what a library's vocabulary is made of. Orisha declared
+            // `| response { status, body, content-type }`, lost the name to this
+            // rule, and every doc line, example and router arm went on using a
+            // spelling the compiler no longer had.
+            //
+            // So: lower a 2+-field payload to a bare return of that record — the
+            // representation the rule wants — and KEEP the branch, whose name is
+            // then a constructor for it (see isBareReturnConstructor in
+            // emitter_helpers). No tag, no union, no runtime cost, and
+            // `response { … }` means something again.
+            //
+            // A ONE-field payload is still refused: `-> T` is the whole value
+            // there, `{ … }` is not a record at all by 210_149's rule, and
+            // `response 200` is not a vocabulary anyone wants.
+            if (branches.items[0].payload.fields.len == 1) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    event_line_index + 1,
+                    1,
+                    "single continuation branch '{s}' carrying one field is a one-variant tag union — declare the single output as a bare return instead: `-> <type>`",
+                    .{branches.items[0].name},
+                );
+                return error.ParseError;
+            }
+
+            if (return_type != null) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    event_line_index + 1,
+                    1,
+                    "'{s}' declares both a bare return and a single named outcome — a named outcome IS the return; drop one",
+                    .{branches.items[0].name},
+                );
+                return error.ParseError;
+            }
+
+            var shape: std.ArrayList(u8) = .empty;
+            errdefer shape.deinit(self.allocator);
+            try shape.appendSlice(self.allocator, "{ ");
+            for (branches.items[0].payload.fields, 0..) |f, i| {
+                if (i > 0) try shape.appendSlice(self.allocator, ", ");
+                try shape.appendSlice(self.allocator, f.name);
+                try shape.appendSlice(self.allocator, ": ");
+                try shape.appendSlice(self.allocator, f.type);
+            }
+            try shape.appendSlice(self.allocator, " }");
+            return_type = try shape.toOwnedSlice(self.allocator);
         }
 
         // Braced single-field payload (`| ok { c: i32 }`) → collapse the redundant

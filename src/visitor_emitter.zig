@@ -2462,10 +2462,14 @@ pub const VisitorEmitter = struct {
                                                 found_impl = true;
                                                 break;
                                             }
+                                            const named_single_b = emitter.isNamedSingleOutcome(event, bc.branch_name);
                                             try self.code_emitter.writeIndent();
-                                            try self.code_emitter.write("return .{ .");
-                                            try emitter.writeBranchName(self.code_emitter, bc.branch_name);
-                                            try self.code_emitter.write(" = ");
+                                            try self.code_emitter.write("return ");
+                                            if (!named_single_b) {
+                                                try self.code_emitter.write(".{ .");
+                                                try emitter.writeBranchName(self.code_emitter, bc.branch_name);
+                                                try self.code_emitter.write(" = ");
+                                            }
                                             if (bc.plain_value) |pv| {
                                                 const trimmed = std.mem.trim(u8, pv, " \t");
                                                 if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
@@ -2498,7 +2502,8 @@ pub const VisitorEmitter = struct {
                                                 }
                                                 try self.code_emitter.write(" }");
                                             }
-                                            try self.code_emitter.write(" };\n");
+                                            if (!named_single_b) try self.code_emitter.write(" }");
+                                            try self.code_emitter.write(";\n");
                                             found_impl = true;
                                         }
                                     }
@@ -2905,10 +2910,16 @@ pub const VisitorEmitter = struct {
                                 found_impl = true;
                                 break;
                             }
+                            // A named single outcome IS the return; see
+                            // emitter_helpers.isNamedSingleOutcome.
+                            const named_single_a = emitter.isNamedSingleOutcome(event, bc.branch_name);
                             try self.code_emitter.writeIndent();
-                            try self.code_emitter.write("return .{ .");
-                            try emitter.writeBranchName(self.code_emitter, bc.branch_name);
-                            try self.code_emitter.write(" = ");
+                            try self.code_emitter.write("return ");
+                            if (!named_single_a) {
+                                try self.code_emitter.write(".{ .");
+                                try emitter.writeBranchName(self.code_emitter, bc.branch_name);
+                                try self.code_emitter.write(" = ");
+                            }
                             // Check for plain value (non-struct branch)
                             if (bc.plain_value) |pv| {
                                 const trimmed = std.mem.trim(u8, pv, " \t");
@@ -2943,7 +2954,8 @@ pub const VisitorEmitter = struct {
                                 }
                                 try self.code_emitter.write(" }");
                             }
-                            try self.code_emitter.write(" };\n");
+                            if (!named_single_a) try self.code_emitter.write(" }");
+                            try self.code_emitter.write(";\n");
                             found_impl = true;
                             break;
                         }
