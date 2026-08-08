@@ -1,0 +1,4 @@
+FRONTEND_COMPILE_ERROR
+CONTAINS error[KORU003]
+CONTAINS inline flows are not supported inside
+CONTAINS lift this into a top-level subflow

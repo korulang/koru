@@ -1,0 +1,40 @@
+// An inline flow inside a `~proc` body is refused at the parser boundary.
+//
+// A proc body is host code the compiler cannot read, so a proc is a LEAF: the
+// only structure Koru can see lives in the flows and events outside it. An
+// inline flow would place Koru structure on the far side of the host boundary
+// — the one direction that boundary must not be permeable — and the compiler
+// could no longer rely on "an impure implementation calls nothing".
+//
+// That property is load-bearing well past parsing. Everything that reasons
+// about what a call can reach depends on it: purity propagation treats a proc
+// with no visible dispatches as a leaf whose transitive purity IS its local
+// purity (src/purity_checker.zig), obligation lifetimes are bounded by it, and
+// any pass that wraps an effectful call in setup/teardown needs impure
+// implementations to be leaves rather than interior nodes — otherwise the
+// wrapper nests inside itself.
+//
+// The refusal lives in the parser as a feature gate (the KORU003 rejection in
+// `extractInlineFlows`, src/parser.zig) and stood enforced but untested. Two
+// things behind it make that dangerous rather than merely untidy: the
+// extraction and codegen path is still present, just unreachable from user
+// code, and the gate's own comment describes removing the rejection as the way
+// to re-enable the feature. Nothing was red if someone did. This test is.
+//
+// The gate is positional: it fires on a line inside a proc body opening with
+// `~` that is not a host keyword (`~struct`, `~if`, `~for`, ...), and on
+// `return ~...` and `const x = ~...`.
+
+~import std/io
+
+~pub tor greet { name: string } -> string
+
+~greet -> name
+
+~pub tor shout { name: string }
+
+~proc shout|zig {
+    ~greet(name)
+}
+
+shout(name: "unreachable — the proc body above is refused first")
