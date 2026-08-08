@@ -2773,76 +2773,66 @@ fn storeLowerText(
             /// destination to measure; a column write does.
             var tmpl_seq: usize = 0;
             fn templateValues(alloc: std.mem.Allocator, text: []const u8, inv: *ast.Invocation, fields: []const []const u8, char_caps: []const ?usize, host_js: bool) []const u8 {
-                if (std.mem.indexOf(u8, text, "{{") == null) return text;
-                // SURGICAL, not parse-and-rebuild. The block's targets carry
-                // the indexed lvalue form (`rows[<cursor>].label`), and running
-                // that back through a field parser and reassembling it loses
-                // the head — the stored transform then consumes the site and
-                // emits no write at all, silently. So only the quoted spans
-                // that actually hold a template are replaced; every other byte
-                // of the block is passed through untouched.
-                var pre = std.ArrayList(u8).initCapacity(alloc, 256) catch unreachable;
-                if (inv.preamble_code) |existing| pre.appendSlice(alloc, existing) catch unreachable;
-                var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
-                var i: usize = 0;
-                var wrote_any = false;
-                while (i < text.len) {
-                    if (text[i] != '"') {
-                        out.append(alloc, text[i]) catch unreachable;
-                        i += 1;
-                        continue;
-                    }
-                    // A quoted span. Find its end, honouring escapes.
-                    var j = i + 1;
-                    while (j < text.len) : (j += 1) {
-                        if (text[j] == '\\') { j += 1; continue; }
-                        if (text[j] == '"') break;
-                    }
-                    if (j >= text.len) { out.appendSlice(alloc, text[i..]) catch unreachable; break; }
-                    const span = text[i .. j + 1];
-                    const r = renderTemplate(alloc, span, host_js) orelse {
-                        out.appendSlice(alloc, span) catch unreachable;
-                        i = j + 1;
-                        continue;
-                    };
-                    // Size the buffer from the column this value is written to:
-                    // scan back over `<target>: ` to the head of this pair.
-                    var cap: usize = 256;
-                    {
-                        var k = out.items.len;
-                        while (k > 0 and (out.items[k - 1] == ' ' or out.items[k - 1] == ':')) k -= 1;
-                        const nend = k;
-                        while (k > 0 and (H.isIdentChar(out.items[k - 1]) or out.items[k - 1] == '.')) k -= 1;
-                        const tname = out.items[k..nend];
-                        const fname = if (std.mem.lastIndexOfScalar(u8, tname, '.')) |d| tname[d + 1 ..] else tname;
-                        for (fields, 0..) |f, fi| {
-                            if (std.mem.eql(u8, f, fname)) {
-                                if (char_caps[fi]) |cc| cap = cc;
-                            }
+                const first = std.mem.indexOf(u8, text, "{{") orelse return text;
+                // The value's extent is found from the TEMPLATE outward, never
+                // by scanning quotes. After the row rewrite a hole holds host
+                // code that carries its own string literals — `@import("std")`
+                // — so the value is no longer a well-formed quoted literal, and
+                // a quote scanner starts a span in the middle of one. This is
+                // why print's own scanner keys on `{{`/`}}` and never on
+                // quotes; same reason here.
+                //
+                // One templated write per block this rung. A block mixing a
+                // templated value with others would need the pair boundaries,
+                // and those are exactly what the rewritten text no longer
+                // reliably shows.
+                if (std.mem.indexOfPos(u8, text, first + 2, "{{") != null and std.mem.count(u8, text, "{{") > std.mem.count(u8, text, "}}")) return text;
+                const vstart = std.mem.lastIndexOfScalar(u8, text[0..first], '"') orelse return text;
+                const last_close = std.mem.lastIndexOf(u8, text, "}}") orelse return text;
+                const vend = std.mem.indexOfScalarPos(u8, text, last_close + 2, '"') orelse return text;
+                const span = text[vstart .. vend + 1];
+                const r = renderTemplate(alloc, span, host_js) orelse return text;
+
+                // Size the buffer from the column being written: the target is
+                // whatever identifier precedes the `:` before the value.
+                var cap: usize = 256;
+                {
+                    var k = vstart;
+                    while (k > 0 and (text[k - 1] == ' ' or text[k - 1] == ':')) k -= 1;
+                    const nend = k;
+                    while (k > 0 and (H.isIdentChar(text[k - 1]) or text[k - 1] == '.')) k -= 1;
+                    const tname = text[k..nend];
+                    const fname = if (std.mem.lastIndexOfScalar(u8, tname, '.')) |d| tname[d + 1 ..] else tname;
+                    for (fields, 0..) |f, fi| {
+                        if (std.mem.eql(u8, f, fname)) {
+                            if (char_caps[fi]) |cc| cap = cc;
                         }
                     }
-                    tmpl_seq += 1;
-                    const nm = std.fmt.allocPrint(alloc, "__koru_tmpl_{d}", .{tmpl_seq}) catch unreachable;
-                    if (host_js) {
-                        const line = std.fmt.allocPrint(alloc, "const {s} = \"{s}\";\n", .{ nm, r.fmt }) catch unreachable;
-                        pre.appendSlice(alloc, line) catch unreachable;
-                    } else {
-                        // Formatting into a column-sized buffer TRUNCATES an
-                        // over-long result — exactly what the column write
-                        // already does to an over-long literal. Consistent, and
-                        // both want a `| full`-shaped answer rather than
-                        // silence. Noted, not invented here.
-                        const line = std.fmt.allocPrint(alloc,
-                            "var __koru_tb_{d}: [{d}]u8 = undefined;\nconst {s} = @import(\"std\").fmt.bufPrint(&__koru_tb_{d}, \"{s}\", .{{{s}}}) catch __koru_tb_{d}[0..0];\n",
-                            .{ tmpl_seq, cap, nm, tmpl_seq, r.fmt, r.args, tmpl_seq }) catch unreachable;
-                        pre.appendSlice(alloc, line) catch unreachable;
-                    }
-                    out.appendSlice(alloc, nm) catch unreachable;
-                    wrote_any = true;
-                    i = j + 1;
                 }
-                if (!wrote_any) return text;
+
+                tmpl_seq += 1;
+                const nm = std.fmt.allocPrint(alloc, "__koru_tmpl_{d}", .{tmpl_seq}) catch unreachable;
+                var pre = std.ArrayList(u8).initCapacity(alloc, 256) catch unreachable;
+                if (inv.preamble_code) |existing| pre.appendSlice(alloc, existing) catch unreachable;
+                if (host_js) {
+                    const line = std.fmt.allocPrint(alloc, "const {s} = \"{s}\";\n", .{ nm, r.fmt }) catch unreachable;
+                    pre.appendSlice(alloc, line) catch unreachable;
+                } else {
+                    // A column-sized buffer TRUNCATES an over-long result —
+                    // exactly what the column write already does to an
+                    // over-long literal. Consistent, and both want a
+                    // `| full`-shaped answer rather than silence.
+                    const line = std.fmt.allocPrint(alloc,
+                        "var __koru_tb_{d}: [{d}]u8 = undefined;\nconst {s} = @import(\"std\").fmt.bufPrint(&__koru_tb_{d}, \"{s}\", .{{{s}}}) catch __koru_tb_{d}[0..0];\n",
+                        .{ tmpl_seq, cap, nm, tmpl_seq, r.fmt, r.args, tmpl_seq }) catch unreachable;
+                    pre.appendSlice(alloc, line) catch unreachable;
+                }
                 inv.preamble_code = pre.toOwnedSlice(alloc) catch unreachable;
+
+                var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
+                out.appendSlice(alloc, text[0..vstart]) catch unreachable;
+                out.appendSlice(alloc, nm) catch unreachable;
+                out.appendSlice(alloc, text[vend + 1 ..]) catch unreachable;
                 return out.toOwnedSlice(alloc) catch unreachable;
             }
             fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, bind: []const u8, used: []bool, cur: []const u8, dense: bool, host_js_w: bool) void {
@@ -6802,6 +6792,27 @@ fn storeLowerText(
 
 ~[transform]proc stored|zig {
     const ast = @import("ast");
+    // A written value that BUILT text left its buffer declaration on the
+    // original invocation. Carrying that preamble onto a replacement flow is
+    // not enough on its own: the pass runner treats a preamble-bearing
+    // replacement as the `~capture`/`~const` contract — the preamble REPLACES
+    // the call — and DROPS the invocation, so the write silently disappears
+    // (transform_pass_runner.zig:104, and the comment there says exactly this).
+    //
+    // `@preamble_then_call` is the annotation for the other contract, and it is
+    // the one this needs: the preamble declares caller-frame stack storage and
+    // the routed call still happens. Same shape as the escape-driven stack
+    // alloc it was built for.
+    const preambleAnn = struct {
+        fn call(alloc: std.mem.Allocator, inv: *const ast.Invocation, base: []const []const u8) []const []const u8 {
+            if (inv.preamble_code == null) return base;
+            const out = alloc.alloc([]const u8, base.len + 1) catch unreachable;
+            for (base, 0..) |b, i| out[i] = b;
+            out[base.len] = alloc.dupe(u8, "@preamble_then_call") catch unreachable;
+            return out;
+        }
+    }.call;
+
     const ast_functional = @import("ast_functional");
     const struct_literal = @import("struct_literal");
 
@@ -7606,6 +7617,7 @@ fn storeLowerText(
             .segments = segs,
         },
         .args = call_args,
+        .annotations = preambleAnn(allocator, invocation, &[_][]const u8{}),
     };
 
     return .{ .transformed = .{ .replacement = ast.Item{ .flow = ast.Flow{
