@@ -1934,6 +1934,7 @@ const emitFlowWithMocks = struct {
         &type_registry,
         .runtime_only
     );
+    visitor_emitter.library = CompilerEnv.library;
 
     // Emit using visitor pattern!
     visitor_emitter.emit(ctx.ast) catch unreachable;
@@ -1952,7 +1953,7 @@ const emitFlowWithMocks = struct {
     const final_code = if (@import("std").mem.eql(u8, CompilerEnv.lang, "js")) blk: {
         const js_emitter = @import("js_emitter");
         // Fail loud: a JS-emit failure must surface, not silently fall back to Zig.
-        break :blk js_emitter.emit(ctx.allocator, ctx.ast) catch |err| {
+        break :blk js_emitter.emit(ctx.allocator, ctx.ast, CompilerEnv.library) catch |err| {
             std.debug.panic("js_emitter.emit failed: {s}", .{@errorName(err)});
         };
     } else visitor_code;
@@ -3070,6 +3071,10 @@ const joinPathAlloc = struct {
 
     var pass = dead_strip.DeadStripPass.init(std.heap.page_allocator);
     defer pass.deinit();
+    // A library keeps its exports; a program keeps what it calls. The flag
+    // rides CompilerEnv for the same reason `lang` does — this pass runs
+    // across the metacircular boundary and sees per-user state only there.
+    pass.library_roots = CompilerEnv.library;
 
     const new_ast = pass.run(mutable_ctx.ast) catch {
         return mutable_ctx;

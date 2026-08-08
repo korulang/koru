@@ -61,7 +61,11 @@ const INPUT_PARAM = "__koru_input";
 
 /// Emit JS for the given program. Returns a heap-allocated string owned by the
 /// caller's allocator.
-pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitError![]const u8 {
+/// `library` selects the LIBRARY shape: the entry module's `pub` events are
+/// re-exported as named ESM exports, so an importer can reach them. A program
+/// emits a closed object and runs its flows; a library emits the same object
+/// plus a door into it.
+pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program, library: bool) JsEmitError![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(allocator);
 
@@ -211,8 +215,37 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
     try em.write("};\n");
 
     // Invoke every emitted flow at the end (mirrors the Zig emitter's main()).
+    // A LIBRARY has no top-level flows to run — its entry points are its
+    // exports — but any it does have still run at import, which is what a
+    // module's top level means in JS too.
     for (0..flow_num) |i| {
         try em.writeFmt("main_module.flow{d}();\n", .{i});
+    }
+
+    // The export surface. Without it the module is a closed object and a kept
+    // symbol is still unreachable — dead-strip keeping an export and nobody
+    // being able to import it are two different problems, and this is the
+    // second one.
+    //
+    // One named export per entry-module `pub` event, wrapping the handler so
+    // the caller passes an ordinary object and never sees `_event`. Hyphens
+    // become underscores because a Koru name may contain them and a JS
+    // identifier may not — the same mangling the handler keys already use.
+    if (library) {
+        try em.write("\n");
+        for (program.items) |*item| {
+            if (item.* != .event_decl) continue;
+            const ev = item.event_decl;
+            if (!ev.is_public) continue;
+            const mq = ev.path.module_qualifier orelse continue;
+            if (program.main_module_name.len == 0 or !std.mem.eql(u8, mq, program.main_module_name)) continue;
+            if (ev.path.segments.len == 0) continue;
+            const raw = ev.path.segments[ev.path.segments.len - 1];
+            const js_name = try allocator.alloc(u8, raw.len);
+            defer allocator.free(js_name);
+            for (raw, 0..) |c, i| js_name[i] = if (c == '-') '_' else c;
+            try em.writeFmt("export const {s} = (input) => main_module.{s}_event.handler(input);\n", .{ js_name, js_name });
+        }
     }
 
     return buf.toOwnedSlice(allocator);
