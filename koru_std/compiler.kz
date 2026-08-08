@@ -1952,7 +1952,7 @@ const emitFlowWithMocks = struct {
     const final_code = if (@import("std").mem.eql(u8, CompilerEnv.lang, "js")) blk: {
         const js_emitter = @import("js_emitter");
         // Fail loud: a JS-emit failure must surface, not silently fall back to Zig.
-        break :blk js_emitter.emit(ctx.allocator, ctx.ast) catch |err| {
+        break :blk js_emitter.emit(ctx.allocator, ctx.ast, CompilerEnv.library) catch |err| {
             std.debug.panic("js_emitter.emit failed: {s}", .{@errorName(err)});
         };
     } else visitor_code;
