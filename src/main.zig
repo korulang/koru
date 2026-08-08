@@ -6150,7 +6150,10 @@ pub fn main() !void {
         // module — so a library needs no new marker, only a compilation that
         // treats the entry module's `pub` items as the things to keep.
         build_library = true;
-        build_executable = false;
+        // Still EMIT — a library has output, it just is not an executable.
+        // Linking is a later question and a per-target one; what  decides
+        // here is the root rule: a library keeps its exports.
+        build_executable = true;
         arg_offset = 2;
     }
 
