@@ -1224,6 +1224,31 @@ pub const AutoDischargeInserter = struct {
         // Synthesize continuations for unhandled optional branches
         // This ensures all optional branches get switch cases and auto-discharge can handle them
         if (mode == .full) {
+            // NESTED CALLS FIRST. synthesizeOptionalBranches below reads THIS
+            // FLOW'S OWN continuations and never descends into them, so a call
+            // written inside an arm — which is where consumers write calls —
+            // got no synthesized arm at all. Its terminal count then stayed at
+            // one and both emitters took their documented "a lone branch always
+            // fires, so no guard is needed" path: the written arm ran against
+            // whatever the callee actually returned. Silent on the Zig lane,
+            // and silent on the JS lane too unless the arm's body happened to
+            // dereference the payload. Pinned at 355_012.
+            if (try self.synthesizeNestedPanicArms(flow.body.continuations, flow.module)) |new_conts| {
+                const nested_flow = try self.allocator.create(ast.Flow);
+                nested_flow.* = flow.*;
+                nested_flow.body.continuations = new_conts;
+                const new_program = try ast_functional.replaceFlowRecursive(
+                    self.allocator,
+                    program,
+                    flow,
+                    .{ .flow = nested_flow.* },
+                ) orelse {
+                    return .{ .transformed = false, .program = program };
+                };
+                const result_ptr = try self.allocator.create(ast.Program);
+                result_ptr.* = new_program;
+                return .{ .transformed = true, .program = result_ptr };
+            }
             if (try self.synthesizeOptionalBranches(flow, event_info.decl)) |new_flow| {
                 // Replace the flow in the program with the synthesized version
                 const new_program = try ast_functional.replaceFlowRecursive(
@@ -4183,6 +4208,126 @@ pub const AutoDischargeInserter = struct {
             }
         }
         return new_cont;
+    }
+
+    /// Install the loud arm for a declined `| ?!` on calls nested INSIDE arms.
+    ///
+    /// `synthesizeOptionalBranches` covers a flow's head and nothing else. This
+    /// walks the arms and does the one thing that is unsafe to leave undone:
+    /// a panic branch means "the path must not silently proceed", and without a
+    /// synthesized arm the path proceeds silently — see the note at the call
+    /// site, and 355_012.
+    ///
+    /// Deliberately narrower than the head-level pass. It installs ONLY the
+    /// loud arms:
+    ///   - a plain `| ?` optional is silent by design when unhandled (355_009),
+    ///     so padding one in here would change nothing and risk everything;
+    ///   - `~[prototype]` holes are a separate opt-in feature with their own
+    ///     reporting, and belong with the pass that reports them.
+    /// Returns null when nothing changed, so an untouched program keeps its
+    /// existing AST identity and the caller does no work.
+    fn synthesizeNestedPanicArms(
+        self: *AutoDischargeInserter,
+        conts: []const ast.Continuation,
+        module: []const u8,
+    ) !?[]ast.Continuation {
+        var changed = false;
+        const out = try self.allocator.alloc(ast.Continuation, conts.len);
+        errdefer self.allocator.free(out);
+
+        for (conts, 0..) |*cont, i| {
+            out[i] = cont.*;
+
+            // Depth first: a call inside a call inside an arm is the same
+            // defect one level further down.
+            if (cont.continuations.len > 0) {
+                if (try self.synthesizeNestedPanicArms(cont.continuations, module)) |kids| {
+                    out[i].continuations = kids;
+                    changed = true;
+                }
+            }
+
+            // Then this continuation's own node. The arms it already carries
+            // are whatever the recursion above left.
+            if (cont.node) |node| switch (node) {
+                .invocation => |inv| {
+                    if (try self.loudArmsFor(&inv, module, out[i].continuations, cont.location)) |extended| {
+                        out[i].continuations = extended;
+                        changed = true;
+                    }
+                },
+                else => {},
+            };
+        }
+
+        if (!changed) {
+            self.allocator.free(out);
+            return null;
+        }
+        return out;
+    }
+
+    /// The arms `inv`'s callee declares as `| ?!` that `existing` does not
+    /// write, rendered as loud terminals. Null when there are none, when the
+    /// callee is not a known event, or when a catchall already answers
+    /// everything.
+    fn loudArmsFor(
+        self: *AutoDischargeInserter,
+        inv: *const ast.Invocation,
+        module: []const u8,
+        existing: []const ast.Continuation,
+        location: errors.SourceLocation,
+    ) !?[]ast.Continuation {
+        const event_name = try self.pathToString(inv.path);
+        defer self.allocator.free(event_name);
+        const module_name = inv.path.module_qualifier orelse module;
+        const qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ module_name, event_name });
+        defer self.allocator.free(qualified);
+        const info = self.event_map.get(qualified) orelse return null;
+
+        var handled = std.StringHashMap(void).init(self.allocator);
+        defer handled.deinit();
+        for (existing) |*c| {
+            if (c.is_catchall) return null; // answers whatever is left
+            try handled.put(c.branch, {});
+        }
+
+        var missing = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
+        defer missing.deinit(self.allocator);
+        for (info.decl.branches) |branch| {
+            // Effect branches lower to handler fns, not switch arms — the same
+            // reason the head-level pass skips them.
+            if (branch.kind == .effect) continue;
+            if (!branch.is_panic) continue;
+            if (handled.contains(branch.name)) continue;
+            try missing.append(self.allocator, branch.name);
+        }
+        if (missing.items.len == 0) return null;
+
+        const out = try self.allocator.alloc(ast.Continuation, existing.len + missing.items.len);
+        @memcpy(out[0..existing.len], existing);
+        for (missing.items, 0..) |branch_name, i| {
+            const panic_msg = try std.fmt.allocPrint(
+                self.allocator,
+                "@panic(\"unhandled panic branch '{s}' fired at runtime\");",
+                .{branch_name},
+            );
+            out[existing.len + i] = ast.Continuation{
+                .branch = try self.allocator.dupe(u8, branch_name),
+                .binding = try self.allocator.dupe(u8, "_"),
+                .binding_annotations = &[_][]const u8{},
+                .binding_type = .branch_payload,
+                .is_catchall = false,
+                .catchall_metatype = null,
+                .condition = null,
+                .condition_expr = null,
+                .node = .{ .inline_code = panic_msg },
+                .indent = 0,
+                .continuations = &[_]ast.Continuation{},
+                .location = location,
+            };
+        }
+        return out;
     }
 
     /// Synthesize continuations for unhandled optional branches

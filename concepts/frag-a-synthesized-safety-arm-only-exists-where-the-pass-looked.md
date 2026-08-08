@@ -41,11 +41,21 @@ body happens to touch the payload. That makes the bug's visibility a property
 of the *consumer's* code rather than of the defect, which is why one lane
 looked broken and the other looked fine while both were equally wrong.
 
-**Open.** The fix is to descend — synthesize for every invocation reachable
-through continuations, not just a flow's head. Not yet built; 355_012 is red
-and pins the shape. Whether the same blind spot affects the other things this
-pass installs (auto-discharge of obligations inside nested arms, the
-`~[prototype]` hole arms) is unmeasured and is the first thing to check.
+**Fixed by descending.** The pass now walks the arms depth-first and installs
+the loud arm wherever a nested call declines one, before the head-level pass
+runs. Deliberately narrower than the head-level synthesis: only the loud arms.
+A plain `| ?` is silent by design when unhandled (355_009), so padding one in
+would change nothing and risk everything; `~[prototype]` holes are a separate
+opt-in with their own reporting and belong with the pass that reports them.
+355_012 is green on both lanes, and a full no-cache board moved 1433 → 1442
+passing with **zero newly failing** across 1,580 in-scope tests.
+
+**Still open, and it is the same question one door along.** This pass installs
+more than loud arms — auto-discharge of obligations, and the `~[prototype]`
+hole arms — from the same head-only view. Whether those have the identical
+blind spot at the identical positions is unmeasured. The cheap check is to take
+355_012's shape and swap the declined `?!` for an obligation that should be
+discharged inside a nested arm.
 
 Relates to [[frag-a-fix-lands-in-one-lowering-path]] and
 [[frag-two-lowerings-share-one-contract]] — same family, different axis. Those
