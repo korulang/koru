@@ -1692,6 +1692,14 @@ const Emitter = struct {
         const node = cont.node orelse return; // empty branch (`| else |> _`) — nothing to emit
         switch (node) {
             .invocation => |*inv| {
+                // A nested invocation carrying preamble_code declares
+                // caller-frame storage the call then reads — the
+                // `@preamble_then_call` contract. The Zig emitter does this in
+                // emitContinuationBody (emitter_helpers.zig); without the same
+                // step here a value built inside an `if`/`for` arm emits a name
+                // nothing declares, and JS finds out at RUNTIME with a
+                // ReferenceError rather than at compile time (690_269).
+                if (inv.preamble_code) |preamble| try self.emitPreamble(preamble, indent);
                 try self.emitInvocationWithContinuations(inv, cont.continuations, indent);
             },
             .terminal => {}, // `_` — the arm does nothing.
