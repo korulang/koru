@@ -3070,6 +3070,10 @@ const joinPathAlloc = struct {
 
     var pass = dead_strip.DeadStripPass.init(std.heap.page_allocator);
     defer pass.deinit();
+    // A library keeps its exports; a program keeps what it calls. The flag
+    // rides CompilerEnv for the same reason `lang` does — this pass runs
+    // across the metacircular boundary and sees per-user state only there.
+    pass.library_roots = CompilerEnv.library;
 
     const new_ast = pass.run(mutable_ctx.ast) catch {
         return mutable_ctx;

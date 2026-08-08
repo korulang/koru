@@ -57,6 +57,10 @@ const CompilerConfig = struct {
     /// variant-tag namespace ("zig", "js", "gpu", ...) so `--lang=js` selects
     /// the `~proc foo|js` variant. Set via `--lang=<name>` on the koruc CLI.
     lang: []const u8 = "zig",
+    /// True for `koruc lib`: this compilation is a LIBRARY, so the entry
+    /// module's `pub` items are roots and survive with no caller here. A
+    /// program's roots are its flows and an uncalled item is dead.
+    library: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) !CompilerConfig {
         return .{
@@ -283,6 +287,14 @@ fn generateCompilerEnvCode(allocator: std.mem.Allocator, config: *const Compiler
     // across the metacircular boundary and only sees per-user state via this module.
     try writer.print("    /// Default emission target language (--lang=<name>)\n", .{});
     try writer.print("    pub const lang: []const u8 = \"{s}\";\n\n", .{config.lang});
+
+    // Whether this compilation is a LIBRARY (`koruc lib`) rather than a
+    // program. It rides here for the same reason `lang` does: the passes that
+    // need it run across the metacircular boundary and see per-user state only
+    // through this module. What it changes is what counts as a ROOT — a
+    // library's are its exports, a program's are its flows.
+    try writer.print("    /// True when built with `koruc lib` — exports are roots\n", .{});
+    try writer.print("    pub const library: bool = {s};\n\n", .{if (config.library) "true" else "false"});
 
     try writer.writeAll("    /// All compiler flags (for runtime checking)\n");
     try writer.writeAll("    pub const flags = &[_][]const u8{\n");
@@ -6117,6 +6129,7 @@ pub fn main() !void {
     // Check for build or run command
     var run_after_build = false;
     var build_executable = true;
+    var build_library = false;
     var arg_offset: usize = 1;
 
     if (std.mem.eql(u8, args[1], "build")) {
@@ -6125,6 +6138,19 @@ pub fn main() !void {
     } else if (std.mem.eql(u8, args[1], "run")) {
         build_executable = true;
         run_after_build = true;
+        arg_offset = 2;
+    } else if (std.mem.eql(u8, args[1], "lib")) {
+        // A LIBRARY, not a program. The difference is not the output format —
+        // it is what counts as a ROOT. Compiling a program, the roots are its
+        // flows and anything nobody calls does not exist; compiling a library,
+        // the roots are what it EXPORTS, and "nobody calls it here" is the
+        // normal case rather than evidence it is dead.
+        //
+        // `pub` already carries exactly that meaning — visible outside this
+        // module — so a library needs no new marker, only a compilation that
+        // treats the entry module's `pub` items as the things to keep.
+        build_library = true;
+        build_executable = false;
         arg_offset = 2;
     }
 
@@ -6148,6 +6174,9 @@ pub fn main() !void {
     // Initialize compiler configuration
     var compiler_config = try CompilerConfig.init(allocator);
     defer compiler_config.deinit();
+    // `koruc lib` is a compilation MODE, decided before any flag parsing: it
+    // changes what counts as a root, not how anything is spelled.
+    compiler_config.library = build_library;
 
     var i: usize = arg_offset;
     while (i < args.len) : (i += 1) {

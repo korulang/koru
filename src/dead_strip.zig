@@ -8,9 +8,17 @@ const ast = @import("ast");
 /// An event is "reachable" if its path appears as an invocation anywhere in the
 /// program — in flows, continuation nodes, or tap references.
 ///
-/// Koru compiles to a single binary with full program visibility. There is no
-/// separate compilation, no dynamic linking, no C ABI to honor. If nobody calls
-/// it, it doesn't exist in the output.
+/// Compiling a PROGRAM, the roots are its flows: Koru has full visibility, and
+/// if nobody calls it, it doesn't exist in the output.
+///
+/// Compiling a LIBRARY, that premise inverts. The roots are what the entry
+/// module EXPORTS, and "nobody here calls it" is the normal case rather than
+/// evidence the thing is dead — the caller has not been written yet, and may
+/// never be in this language.
+///
+/// `pub` already means exactly that: visible outside this module. So a library
+/// needs no new marker; it needs a compilation in which "outside" exists.
+/// `library_roots` switches which of the two is in force.
 
 pub const DeadStripPass = struct {
     allocator: std.mem.Allocator,
@@ -18,6 +26,9 @@ pub const DeadStripPass = struct {
     used: std.StringHashMap(void),
     /// Count of stripped items (for diagnostics)
     stripped_count: usize = 0,
+    /// When true, the entry module's `pub` items are roots and survive with no
+    /// caller. Set for `koruc lib`; a program build leaves it false.
+    library_roots: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) DeadStripPass {
         return .{
@@ -38,6 +49,12 @@ pub const DeadStripPass = struct {
         // Phase 1: Collect all invoked event paths
         try self.collectUsedPaths(program.items);
 
+        // A library's exports are roots. Seeding them BEFORE the walk means
+        // everything they reach is reachable too — an exported entry point
+        // drags its whole call graph in, which is the only reading that makes
+        // a library usable rather than a shell of empty names.
+        if (self.library_roots) try self.seedExportedRoots(program.items, program.main_module_name);
+
         // Phase 2: Filter items, removing unreferenced event_decl and proc_decl
         const new_items = try self.filterItems(program.items);
 
@@ -49,6 +66,34 @@ pub const DeadStripPass = struct {
         log.debug("[DEAD-STRIP] Stripped {d} unreachable items\n", .{self.stripped_count});
 
         return new_program;
+    }
+
+    /// Mark every `pub` event in the entry module as used, then walk what each
+    /// one reaches. Only the ENTRY module's exports count: a `pub` inside an
+    /// imported library is that library's export surface, not this one's, and
+    /// treating it as a root here would keep the whole of every dependency.
+    fn seedExportedRoots(self: *DeadStripPass, items: []const ast.Item, entry_module: []const u8) !void {
+        var roots: usize = 0;
+        for (items) |item| {
+            if (item != .event_decl) continue;
+            const ev = item.event_decl;
+            if (!ev.is_public) continue;
+            // Entry-module exports only, matched BY NAME rather than by an
+            // absent qualifier: the entry module carries its own name here
+            // (`lib.k` → "lib"), so "no qualifier" selects nothing at all.
+            const mq = ev.path.module_qualifier orelse continue;
+            if (entry_module.len == 0 or !std.mem.eql(u8, mq, entry_module)) continue;
+            const path = try self.pathToString(&ev.path);
+            defer self.allocator.free(path);
+            if (!self.used.contains(path)) {
+                try self.used.put(try self.allocator.dupe(u8, path), {});
+                roots += 1;
+            }
+        }
+        log.debug("[DEAD-STRIP] library mode: {d} exported root(s)\n", .{roots});
+        // A root's callees are reachable through it. The collect walk keys on
+        // INVOCATIONS, so a flow implementing an exported event was already
+        // counted; what this adds is the export itself, which nothing invokes.
     }
 
     // ========================================================================
