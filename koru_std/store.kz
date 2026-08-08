@@ -4967,11 +4967,31 @@ fn storeLowerText(
             // generation bump) and returns to the freelist.
             const mvfix = std.fmt.allocPrint(allocator, "    const __koru_mv_slot = __koru_store_{s}.__koru_row_hslot[__koru_last];\n    __koru_store_{s}.__koru_hslot_row[__koru_mv_slot] = __koru_r;\n    __koru_store_{s}.__koru_row_hslot[__koru_r] = __koru_mv_slot;\n", .{ store_name, store_name, store_name }) catch unreachable;
             tb.appendSlice(allocator, mvfix) catch unreachable;
-            // The generation bump WRAPS — Zig spells that `+%=`, and a plain
-            // `+=` there is a compile error on the sized integer. JS has one
-            // number type and no wrapping operator; the counter is compared for
-            // equality only, so `+ 1` is the same guarantee.
-            const genbump = if (host_is_js) "+= 1" else "+%= 1";
+            // The generation bump WRAPS, and the two lanes wrap at DIFFERENT
+            // PLACES for a reason that is not stylistic.
+            //
+            // Zig spells it `+%=` on a u32, so it wraps at 2^32 and the packed
+            // handle stays exact at every value.
+            //
+            // JS has one number type, and a handle is assembled by ARITHMETIC
+            // rather than by bit operations (see the note at the JS store's
+            // decoder — `<< 32` is a no-op there). `gen * 4294967296` is exact
+            // only while the product stays inside the double's exact-integer
+            // range, and 2^21 * 2^32 IS 2^53. One generation past that, the
+            // slot and brand in the low bits are ROUNDED AWAY: two different
+            // LIVE rows encode to the same handle and resolve to whichever the
+            // rounding picked. No brand mismatch, no generation mismatch, no
+            // trap — the exact silent-wrong-row corruption the generation
+            // counter exists to make impossible.
+            //
+            // So the JS counter wraps at 2^21. The aliasing that wrap admits
+            // after 2^21 reuses of one slot is the same aliasing Zig already
+            // admits at 2^32; what it removes is the window where the encoding
+            // itself stopped being a bijection. Pinned at 690_270.
+            const genbump: []const u8 = if (host_is_js)
+                std.fmt.allocPrint(allocator, "= (__koru_store_{s}.__koru_hslot_gen[__koru_gone_slot] + 1) % 2097152", .{store_name}) catch unreachable
+            else
+                "+%= 1";
             const tail = std.fmt.allocPrint(allocator, "}}\n__koru_store_{s}.len = __koru_last;\n__koru_store_{s}.__koru_hslot_gen[__koru_gone_slot] {s};\n__koru_store_{s}.__koru_hslot_free[__koru_store_{s}.__koru_hslot_free_len] = __koru_gone_slot;\n__koru_store_{s}.__koru_hslot_free_len += 1;\n", .{ store_name, store_name, genbump, store_name, store_name, store_name }) catch unreachable;
             tb.appendSlice(allocator, tail) catch unreachable;
             if (item_identity_owned) {
@@ -5267,10 +5287,10 @@ fn storeLowerText(
                 const genloop = if (host_is_js)
                     std.fmt.allocPrint(allocator,
                         \\for (let __koru_i = 0; __koru_i < __koru_store_{s}.__koru_hslot_next; __koru_i++) {{
-                        \\  __koru_store_{s}.__koru_hslot_gen[__koru_i] += 1;
+                        \\  __koru_store_{s}.__koru_hslot_gen[__koru_i] = (__koru_store_{s}.__koru_hslot_gen[__koru_i] + 1) % 2097152;
                         \\}}
                         \\
-                    , .{ store_name, store_name }) catch unreachable
+                    , .{ store_name, store_name, store_name }) catch unreachable
                 else
                     std.fmt.allocPrint(allocator,
                         \\for (0..__koru_store_{s}.__koru_hslot_next) |__koru_i| {{

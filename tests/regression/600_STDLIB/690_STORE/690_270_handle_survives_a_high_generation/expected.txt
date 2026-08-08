@@ -1,0 +1,3 @@
+live after recycling one slot past the boundary: 1
+a -> 100
+c -> 300
