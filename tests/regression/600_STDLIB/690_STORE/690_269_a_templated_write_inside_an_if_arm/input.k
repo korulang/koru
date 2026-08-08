@@ -1,26 +1,32 @@
-// PINS A HOLE, RED BY DESIGN. A templated write nested inside an `if` arm is
-// NOT lowered, and ships the raw template as the row's text — the same silent
-// corruption class 690_267 closed for plain literals, reappearing one level in.
+// PINS A HOLE, RED BY DESIGN: a templated write inside an `if` arm emits its
+// value but loses the buffer that value names.
 //
-// 690_268's write sits directly in the rule arm and lowers correctly. This one
-// differs only by the `if`, and that is the whole cause: `if`/`for` are
-// template procs that FREEZE their rendered body into `inline_body` before the
-// store's walk runs (the freeze 690_074 pins). The walk rewrites row
-// references inside that frozen text, but the template lowering only ever sees
-// a stored invocation's own argument — so the write inside the arm keeps its
-// `{{ … }}` and the emitted output carries a host cell read spliced into what
-// the program stores.
+// 690_268's write sits directly in a rule arm and works. This one differs ONLY
+// by the `if`. The lowering DOES fire here — the emitted write reads
+// `value_0: __koru_tmpl_1`, correctly substituted — but nothing declares
+// `__koru_tmpl_1`, so JS throws ReferenceError and Zig refuses the call.
 //
-// Found by the DOM gauntlet's conformance check rather than by any test here:
-// the vehicle marks a row inside `if(op.code == 4)`, and the row's text came
-// back reading `{{ (&__koru_store_rows.label)[…`. Worth stating because it is
-// the second time a check outside this suite has caught a text-substitution
-// defect this suite could not see.
+// ⚠ THE FIRST VERSION OF THIS HEADER HAD THE MECHANISM WRONG. It said the
+// lowering never reached a frozen body and the raw template shipped as text.
+// That reads plausibly and is false: the value is substituted, and what is
+// lost is the DECLARATION. Corrected after reading the emitted output on both
+// lanes rather than reasoning from where the code sits.
 //
-// GOES GREEN when the lowering reaches frozen bodies, or — the floor, and
-// correct on its own — when the store REFUSES a `{{ … }}` that survives into
-// an emitted write, rather than shipping it. Corruption is never the right
-// answer to "not implemented here".
+// THE CAUSE: a built value's buffer is declared in the invocation's preamble,
+// which is how it outlives the copy the write makes. `if`/`for` are template
+// procs that FREEZE their rendered arm into text (the freeze 690_074 pins), so
+// the stored invocation becomes rendered text and the preamble riding on it
+// has nothing left to ride. The write survives the freeze because it is part
+// of the text; its declaration does not, because it was never in the text.
+//
+// GOES GREEN when a template lowered inside a frozen body puts its declaration
+// INTO that text rather than on the invocation. The floor, correct on its own
+// and not waiting for that: REFUSE a `{{ … }}` write the lowering cannot place,
+// rather than emitting a name nothing declares.
+//
+// Found by the DOM gauntlet's conformance check, not by this suite — the
+// second time a check outside the suite has caught a text-substitution defect
+// this suite could not see.
 import std/io
 import std/store
 

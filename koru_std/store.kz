@@ -7200,7 +7200,7 @@ fn storeLowerText(
                         .value = slot,
                     };
                 }
-                invs[0] = ast.Invocation{ .path = H.mkPathH2(allocator, env_home, spec_name), .args = a1 };
+                invs[0] = ast.Invocation{ .path = H.mkPathH2(allocator, env_home, spec_name), .args = a1, .annotations = preambleAnn(allocator, invocation, &[_][]const u8{}) };
             } else {
                 const a1 = allocator.alloc(ast.Arg, env_col_types.len + 2) catch unreachable;
                 a1[0] = ast.Arg{ .name = allocator.dupe(u8, "row") catch unreachable, .value = allocator.dupe(u8, env_row_arg) catch unreachable };
@@ -7217,7 +7217,7 @@ fn storeLowerText(
                         .value = slot,
                     };
                 }
-                invs[0] = ast.Invocation{ .path = H.mkPathH2(allocator, env_home, envw_name), .args = a1 };
+                invs[0] = ast.Invocation{ .path = H.mkPathH2(allocator, env_home, envw_name), .args = a1, .annotations = preambleAnn(allocator, invocation, &[_][]const u8{}) };
             }
             for (writes, 0..) |_, wi| {
                 const a2 = allocator.alloc(ast.Arg, 2) catch unreachable;
