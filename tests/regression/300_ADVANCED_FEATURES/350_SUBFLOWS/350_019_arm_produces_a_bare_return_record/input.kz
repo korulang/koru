@@ -1,0 +1,35 @@
+// Pins that an arm producing into a BARE-RETURN tor emits the value itself.
+//
+// A produce inside an arm was always lowered as a named-branch constructor:
+// `-> finished d` becomes `.{ .finished = d }`. A bare-return tor has no branch
+// to name, and the emitter wrote the wrapper anyway — `.{ . = { label: "high",
+// code: 1 } }`. A field access with an empty name, AND the Koru record pasted
+// through untranslated, because the wrapper had swallowed the one path that
+// lowers it. Two errors from one missing question.
+//
+// Mirror of 350_017, which fixed the same blind spot from the other side: there
+// a NAMED produce was lowered as if it were bare. Every wall guards one
+// direction of a symmetry.
+//
+// This is the shape every route handler in orisha has — its `handler` returns a
+// bare record and its router arms produce one.
+
+~import std/io
+
+~tor pick { n: i32 }
+| high
+| low
+
+~proc pick|zig {
+    return if (n > 5) .high else .low;
+}
+
+~tor classify { n: i32 } -> { label: string, code: i32 }
+
+~classify =
+    pick(n)
+    | high -> { label: "high", code: 1 }
+    | low -> { label: "low", code: 0 }
+
+~classify(n: 9): a |> std/io:print.ln("{{ a.label:s }}/{{ a.code:d }}")
+~classify(n: 2): b |> std/io:print.ln("{{ b.label:s }}/{{ b.code:d }}")

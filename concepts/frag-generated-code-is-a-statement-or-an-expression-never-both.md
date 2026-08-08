@@ -33,10 +33,24 @@ added another; and `result_N` was bound but never read. Either would have said
 "this text is a statement" to anyone reading the artifact rather than the error.
 
 The general rule: **when a generator wraps generated text, the wrapper is a claim
-about that text's grammatical category, and the category must be derived from the
-text, not assumed from the call site.** The same applies to any splice — a value
-into a statement slot, a statement into an expression slot, a block where a single
-expression is expected.
+about that text, and every dimension of that claim must be derived from the text
+rather than assumed from the call site.** Grammatical category is one dimension.
+
+**It is not the only one, and the second showed up within hours.** A produce
+inside an arm was wrapped in a named-branch constructor — `-> finished d` becomes
+`.{ .finished = d }` — regardless of whether there *was* a branch to name. A tor
+with a bare return has none, so the emitter wrote `.{ . = { label: "high" } }`:
+a field access with an empty name, and the payload pasted through untranslated
+because the wrapper had swallowed the one path that lowers a Koru record. Same
+shape, different axis. The wrapper asserted *there is a name here* as
+confidently as the other asserted *this yields a value*.
+
+So the rule generalizes past grammar: **a wrapper encodes assumptions, plural,
+and each one is a question the generator can usually answer by looking.** Both
+of these were one `if` away from correct, and both had a tell sitting in the
+emitted artifact — two semicolons in the first case, `.{ . = ` in the second.
+Pinned as 350_019, which is itself the mirror of 350_017: there a NAMED produce
+was lowered as if it were bare. Every wall guards one direction of a symmetry.
 
 Related: [[frag-a-diagnostics-hint-is-a-claim-not-a-tested-path]] — also a claim
 about the language that nothing exercised. Here the untested claim was made by the

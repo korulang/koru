@@ -1,0 +1,52 @@
+// Pins that a REGISTERED variant wins over the inline splice.
+//
+// An effect-bearing event whose invocation sits at the top of a flow takes the
+// INLINE LOWERING: the proc body is pasted into the caller as a labelled block
+// rather than called. That lowering asked `findDefaultZigProc` for the body and
+// nothing else, so a variant selected through `std/build:variants` was ignored
+// and THE DEFAULT BODY RAN. Nothing failed — the wrong platform's code simply
+// executed, and on a target where the default cannot compile it surfaced as a
+// libc error naming a call the program does not make.
+//
+// The two bodies here differ in BOTH observable ways: the effect arm's argument
+// and the terminal payload. So the test says which body ran, not merely that
+// something ran.
+//
+// Sibling of 370_011, which pins the same selection through the handler-CALL
+// path (its invocation is inside an impl, so it never reached the splice).
+
+~import std/io
+~import std/build
+
+const std = @import("std");
+
+~tor pump { n: i32 }
+! tick i32
+| done string
+
+~proc pump|zig {
+    tick(n);
+    return .{ .done = "default" };
+}
+
+~proc pump|alt {
+    tick(n * 2);
+    return .{ .done = "alt" };
+}
+
+~std/build:variants {
+    "input:pump": "alt"
+}
+| configured _ |> _
+| skipped _ |> _
+| invalid-event _ |> _
+
+~tor show { value: i32 }
+
+~proc show|zig {
+    std.debug.print("{}\n", .{value});
+}
+
+~pump(n: 21)
+! tick t |> show(value: t)
+| done d |> std/io:print.ln(d)

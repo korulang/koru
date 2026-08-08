@@ -1849,6 +1849,19 @@ fn addFlowReturnTerminus(
 
     const step = table.getEventInfo(node.invocation.path) orelse return;
 
+    // A step that IS a `[transform]` declares `-> SiteResult`, and a SiteResult
+    // is a compile-time rewrite instruction, not the value the site leaves
+    // behind at runtime. The invocation is replaced before emission, so the
+    // chain's real terminus is whatever the replacement produces — and no
+    // declaration anywhere states that. Reading `SiteResult` as the runtime type
+    // refused `~orisha:handler = orisha:router(req)`, the documented shape of
+    // every Orisha server, with a sentence about a type the program never has.
+    //
+    // The `want` side is already exempted for exactly this reason, four lines
+    // up. This is the same fact on the other side of the comparison, and
+    // EventInfo.return_type's own comment has said it all along.
+    if (isTransformResultReturn(step.return_type)) return;
+
     // A step with declared TERMINAL branches produces no bare value, and the
     // branch-coverage wall already has the better sentence for that shape.
     // Effect branches do not count: an event has EITHER `-> T` OR terminal

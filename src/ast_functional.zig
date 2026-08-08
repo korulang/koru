@@ -2217,6 +2217,19 @@ pub fn findEventByPath(
 /// Find an event declaration by its canonical name string
 /// Canonical format: "module.path:event.name" or just "event.name"
 /// Examples: "std.graphics:blur", "std.io:print.ln", "my_event"
+/// A module path written with `/` (the import spelling) and the same path
+/// written with `.` (the logical spelling) name the same module. Koru has no
+/// pair of distinct modules these could confuse, so one comparison covers both.
+fn modulePathEql(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |ca, cb| {
+        const na = if (ca == '/') @as(u8, '.') else ca;
+        const nb = if (cb == '/') @as(u8, '.') else cb;
+        if (na != nb) return false;
+    }
+    return true;
+}
+
 pub fn findEventByCanonicalName(
     source: *const ast.Program,
     canonical_name: []const u8,
@@ -2240,9 +2253,23 @@ pub fn findEventByCanonicalName(
                 }
             },
             .module_decl => |*module| {
-                // Check if module matches the qualifier
+                // Check if module matches the qualifier.
+                //
+                // A CALLER SPELLS THIS THE WAY THE PROGRAM IMPORTS IT. Every
+                // canonical name a user writes by hand — a `build:variants`
+                // key, most of all — is copied off an import line, so it reads
+                // `mylib/pump`, while `logical_name` is the dotted
+                // `mylib.pump`. An exact compare therefore refused every
+                // SUBMODULE event: `variants` took its `invalid-event` branch,
+                // which the documented idiom discards with `_`, so the
+                // registration silently did not happen and every call site kept
+                // the default handler. Orisha's `~[build(linux)]` epoll line had
+                // never once taken effect.
+                //
+                // Top-level events hid it: `input:pump` has no separator to
+                // disagree about, and every variant test in the suite used one.
                 const module_matches = if (module_qualifier) |mq|
-                    std.mem.eql(u8, module.logical_name, mq)
+                    modulePathEql(module.logical_name, mq)
                 else
                     true; // No qualifier means search all modules
 

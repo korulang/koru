@@ -3580,28 +3580,7 @@ fn emitSubflowContinuationsWithDepth(
                 if (cont.node) |step| {
                     switch (step) {
                         .branch_constructor => |bc2| {
-                            try emitter.write(".{ .");
-                            try writeBranchName(emitter, bc2.branch_name);
-                            try emitter.write(" = ");
-                            // Check for plain value (identity branch constructor)
-                            if (bc2.plain_value) |pv| {
-                                try emitter.write(pv);
-                            } else {
-                                try emitter.write(".{");
-                                for (bc2.fields, 0..) |field2, idx| {
-                                    if (idx > 0) try emitter.write(", ");
-                                    try emitter.write(" .");
-                                    try emitter.write(field2.name);
-                                    try emitter.write(" = ");
-                                    if (field2.expression_str) |expr| {
-                                        try emitter.write(expr);
-                                    } else {
-                                        try emitter.write(field2.type);
-                                    }
-                                }
-                                try emitter.write(" }");
-                            }
-                            try emitter.write(" }");
+                            try emitProducedConstructor(emitter, main_module_name, &bc2);
                         },
                         // A terminal (or any node this expression path can't
                         // lower) must still be a Zig expression — an empty
@@ -5479,6 +5458,50 @@ const InlineEligibility = struct {
     flow: ?*const ast.Flow,
 };
 
+/// Whether `build:variants` selected a variant for this invocation AND a
+/// `~proc <event>|<variant>` exists to satisfy it.
+///
+/// The canonical key is built exactly as the call path builds it (see
+/// `getVariant` in emitInvocationWithBinding) — `module:seg.seg`. Two spellings
+/// of one key would put the two paths back out of step, which is the whole
+/// defect this answers.
+fn registeredVariantProcExists(
+    items: []const ast.Item,
+    event_decl: *const ast.EventDecl,
+    path: *const ast.DottedPath,
+) bool {
+    var canonical_buf: [256]u8 = undefined;
+    var canonical_len: usize = 0;
+
+    if (path.module_qualifier) |mq| {
+        if (canonical_len + mq.len + 1 > canonical_buf.len) return false;
+        @memcpy(canonical_buf[canonical_len .. canonical_len + mq.len], mq);
+        canonical_len += mq.len;
+        canonical_buf[canonical_len] = ':';
+        canonical_len += 1;
+    }
+    for (path.segments, 0..) |segment, i| {
+        if (i > 0) {
+            if (canonical_len + 1 > canonical_buf.len) return false;
+            canonical_buf[canonical_len] = '.';
+            canonical_len += 1;
+        }
+        if (canonical_len + segment.len > canonical_buf.len) return false;
+        @memcpy(canonical_buf[canonical_len .. canonical_len + segment.len], segment);
+        canonical_len += segment.len;
+    }
+
+    const selected = getVariant(canonical_buf[0..canonical_len]) orelse return false;
+
+    const variant_procs = findVariantProcsByPath(std.heap.page_allocator, items, &event_decl.path) catch return false;
+    defer std.heap.page_allocator.free(variant_procs);
+    for (variant_procs) |vp| {
+        const target = vp.target orelse continue;
+        if (std.mem.eql(u8, target, selected)) return true;
+    }
+    return false;
+}
+
 /// Decide whether this flow's invocation takes the inline lowering.
 /// Returning null means: legacy call path, exactly today's behavior.
 fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation, conts: []const ast.Continuation) ?InlineEligibility {
@@ -5510,6 +5533,23 @@ fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation,
         }
         if (n > 1) return null;
     }
+
+    // A REGISTERED VARIANT MUST NOT BE SPLICED AWAY. The inline lowering pastes
+    // `findDefaultZigProc`'s body straight into the caller — it has no way to
+    // say "but a different body was selected". So an effect-bearing event with
+    // `~proc run|zig` and `~proc run|unikraft`, with `unikraft` registered
+    // through `std/build:variants`, silently emitted the `|zig` body at the call
+    // site and never called the selected one. Not a wrong-code-shape bug: the
+    // WRONG PLATFORM'S LOOP ran, and on a target where the default body cannot
+    // even compile it surfaced as a libc error naming a call the program does
+    // not make. (`inv.variant != null` above already handles the explicit
+    // call-site spelling; this is the registry's.)
+    //
+    // These take the handler-call path, which mangles to `handler__<variant>`
+    // and threads the effect arms into it. Only when the selected variant's proc
+    // actually exists — otherwise nothing changes and the existing behaviour,
+    // right or wrong, is preserved rather than traded for a missing symbol.
+    if (registeredVariantProcExists(items, event_decl, &inv.path)) return null;
 
     if (findDefaultZigProc(items, &event_decl.path)) |proc| {
         // A nested fn makes token rewriting unsound; a terminal-bearing event
@@ -9502,6 +9542,63 @@ fn emitPipelineStep(
 /// Zig, and the reason a flow could only ever implement a bare-return event.
 ///
 /// Returns true when it emitted the tagged return, false to fall through.
+/// Emit what an arm PRODUCES, as a Zig expression.
+///
+/// A branch constructor with a name wraps its payload in that branch:
+/// `-> finished d` becomes `.{ .finished = d }`. **A constructor with NO name is
+/// the whole value**, because the tor it implements has a bare return and there
+/// is no branch to name — `-> { label: "high", code: 1 }` is that record and
+/// nothing more.
+///
+/// Emitting the named form regardless produced `.{ . = { label: "high" } }`:
+/// a field access with an empty name, AND the Koru record pasted through
+/// untranslated because the wrapper had swallowed the one path that lowers it.
+/// Two errors on one line, from one missing question. It reached every arm of
+/// every router in orisha, whose `handler` is bare-return.
+///
+/// Mirror of `emitBranchProduce` (350_017), which fixed the same blind spot from
+/// the other side: there a NAMED produce was lowered as if it were bare.
+fn emitProducedConstructor(
+    emitter: *CodeEmitter,
+    main_module_name: ?[]const u8,
+    bc: *const ast.BranchConstructor,
+) EmitError!void {
+    var ctx = EmissionContext{
+        .allocator = emitter.allocator orelse std.heap.page_allocator,
+        .main_module_name = main_module_name,
+    };
+    const bare = bc.branch_name.len == 0;
+
+    if (!bare) {
+        try emitter.write(".{ .");
+        try writeBranchName(emitter, bc.branch_name);
+        try emitter.write(" = ");
+    }
+
+    if (bc.plain_value) |pv| {
+        // `emitValue` is what turns a Koru record into a Zig one; the old code
+        // wrote `pv` verbatim, which only ever worked because a NAMED branch's
+        // payload happens to be a bare expression.
+        try emitValue(emitter, &ctx, pv);
+    } else {
+        try emitter.write(".{");
+        for (bc.fields, 0..) |field, idx| {
+            if (idx > 0) try emitter.write(", ");
+            try emitter.write(" .");
+            try emitter.write(field.name);
+            try emitter.write(" = ");
+            if (field.expression_str) |expr| {
+                try emitValue(emitter, &ctx, expr);
+            } else {
+                try emitter.write(field.type);
+            }
+        }
+        try emitter.write(" }");
+    }
+
+    if (!bare) try emitter.write(" }");
+}
+
 fn emitBranchProduce(emitter: *CodeEmitter, ctx: *EmissionContext, code: []const u8) !bool {
     const decl = ctx.produce_event orelse ctx.impl_event_decl orelse return false;
     if (decl.branches.len == 0) return false;
