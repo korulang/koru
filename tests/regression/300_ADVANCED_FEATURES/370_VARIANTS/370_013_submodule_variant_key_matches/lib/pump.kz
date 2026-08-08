@@ -1,0 +1,16 @@
+// A SUBMODULE event with two proc variants. The variant is selected by a key
+// the author spells the way the import reads — `mylib/pump:run`.
+
+const std = @import("std");
+
+~pub tor run { n: i32 } -> string
+
+~proc run|zig {
+    _ = &n;
+    return "default";
+}
+
+~proc run|alt {
+    _ = &n;
+    return "alt";
+}

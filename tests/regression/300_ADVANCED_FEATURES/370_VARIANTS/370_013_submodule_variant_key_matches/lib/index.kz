@@ -1,0 +1,3 @@
+// The package index exists so `mylib` resolves as a directory.
+~pub tor unused-marker { } -> i32
+~unused-marker -> 0
