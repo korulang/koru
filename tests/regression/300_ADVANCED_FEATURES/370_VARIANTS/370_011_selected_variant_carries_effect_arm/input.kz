@@ -1,0 +1,57 @@
+// Pins that a SELECTED proc variant on an effect-bearing tor receives the
+// caller's effect arms.
+//
+// The twin of 370_010, which pins the UNSELECTED side. A variant handler is a
+// standalone function, not an inline splice, so it only sees `tick` if it takes
+// the same `comptime __H: type` parameter the bare handler takes and binds the
+// same aliases. Here `|alt` is the registered variant, so the arm must fire
+// from inside it and reach the caller's continuation.
+//
+// `$mod.factor` also rides the selected path, so the module rewrite is pinned
+// on both sides.
+
+~import std/io
+~import std/build
+
+const std = @import("std");
+const factor: i32 = 10;
+
+~tor pump { n: i32 }
+! tick i32
+| done string
+
+~proc pump|zig {
+    tick(n * $mod.factor);
+    return .{ .done = "zig" };
+}
+
+~proc pump|alt {
+    tick(n * $mod.factor * 2);
+    return .{ .done = "alt" };
+}
+
+~std/build:variants {
+    "input:pump": "alt"
+}
+| configured _ |> _
+| skipped _ |> _
+| invalid-event _ |> _
+
+~tor show { value: i32 }
+
+~proc show|zig {
+    std.debug.print("{}\n", .{value});
+}
+
+~tor drive { n: i32 }
+| finished string
+| blank
+
+~drive =
+    pump(n)
+    ! tick t |> show(value: t)
+    | done d -> finished d
+
+~drive(n: 3)
+| finished f |> std/io:print.ln(f)
+| blank |> std/io:print.ln("blank")

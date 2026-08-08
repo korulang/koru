@@ -12591,7 +12591,16 @@ fn emitEventDeclForModule(
         try code_emitter.writeIndent();
         try code_emitter.write("pub fn handler__");
         try code_emitter.write(mangled);
-        try code_emitter.write("(__koru_event_input: Input) Output {\n");
+        // A variant handler must carry the SAME signature as the bare handler:
+        // an effect-bearing event's body calls its `!` arms by bare name, and a
+        // standalone variant function has no inline-splice site to inherit them
+        // from. Without `comptime __H: type` the arm is an undeclared identifier
+        // in every variant body. (370_010)
+        if (has_effect) {
+            try code_emitter.write("(__koru_event_input: Input, comptime __H: type) Output {\n");
+        } else {
+            try code_emitter.write("(__koru_event_input: Input) Output {\n");
+        }
         code_emitter.indent_level += 1;
 
         for (event.input.fields) |field| {
@@ -12602,6 +12611,29 @@ fn emitEventDeclForModule(
             try writeBranchName(code_emitter, field.name);
             try code_emitter.write(";\n");
         }
+
+        // Same yielding-branch aliases the bare handler binds, so `tick(...)`
+        // resolves identically in a variant body.
+        if (has_effect) {
+            for (event.branches) |*b| {
+                if (b.kind != .effect) continue;
+                if (b.is_optional) {
+                    try emitOptionalArmNullableAlias(code_emitter, b, ctx.main_module_name);
+                    continue;
+                }
+                try code_emitter.writeIndent();
+                try code_emitter.write("const ");
+                try writeBranchName(code_emitter, b.name);
+                try code_emitter.write(" = __H.");
+                try writeBranchName(code_emitter, b.name);
+                try code_emitter.write(";\n");
+                try code_emitter.writeIndent();
+                try code_emitter.write("_ = &");
+                try writeBranchName(code_emitter, b.name);
+                try code_emitter.write(";\n");
+            }
+        }
+
         for (event.input.fields) |field| {
             try code_emitter.writeIndent();
             try code_emitter.write("_ = &");

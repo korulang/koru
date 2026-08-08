@@ -3743,11 +3743,21 @@ pub const VisitorEmitter = struct {
                             try self.code_emitter.write(extern_decl);
                         }
 
-                        // Emit variant handler
+                        // Emit variant handler. An effect-bearing event's arms are
+                        // in scope by bare name inside the body, so a variant
+                        // handler needs the SAME `comptime __H: type` parameter and
+                        // the same aliases the bare handler binds — it is a
+                        // standalone function with no inline-splice site to inherit
+                        // them from. Without this an effect arm and a proc variant
+                        // could not coexist at all. (370_010)
                         try self.code_emitter.writeIndent();
                         try self.code_emitter.write("pub fn ");
                         try emitter.writeHandlerName(self.code_emitter, self.allocator, target);
-                        try self.code_emitter.write("(__koru_event_input: Input) Output {");
+                        if (has_effect) {
+                            try self.code_emitter.write("(__koru_event_input: Input, comptime __H: type) Output {");
+                        } else {
+                            try self.code_emitter.write("(__koru_event_input: Input) Output {");
+                        }
                         try emitter.writeVariantComment(self.code_emitter, target);
                         try self.code_emitter.write("\n");
                         self.code_emitter.indent_level += 1;
@@ -3760,6 +3770,26 @@ pub const VisitorEmitter = struct {
                             try self.code_emitter.write(" = __koru_event_input.");
                             try emitter.writeBranchName(self.code_emitter, field.name);
                             try self.code_emitter.write(";\n");
+                        }
+                        // Yielding-branch aliases, identical to the bare handler's.
+                        if (has_effect) {
+                            for (event.branches) |*b| {
+                                if (b.kind != .effect) continue;
+                                if (b.is_optional) {
+                                    try emitter.emitOptionalArmNullableAlias(self.code_emitter, b, self.main_module_name);
+                                    continue;
+                                }
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("const ");
+                                try emitter.writeBranchName(self.code_emitter, b.name);
+                                try self.code_emitter.write(" = __H.");
+                                try emitter.writeBranchName(self.code_emitter, b.name);
+                                try self.code_emitter.write(";\n");
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("_ = &");
+                                try emitter.writeBranchName(self.code_emitter, b.name);
+                                try self.code_emitter.write(";\n");
+                            }
                         }
                         // Suppress unused variable warnings
                         for (event.input.fields) |field| {
