@@ -15,28 +15,9 @@
 // WHAT IS STILL RED, and it is not this feature:
 //
 //   1. `-> verdict { … }` in a branch ARM parses as an INVOCATION, so it is
-//      refused with KORU040 `unknown tor 'input:verdict'`. That is the shape
+//      refused with KORU040 `unknown tor 'input:verdict'`. The produce position
+//      needs to recognise the enclosing event's outcome name. That is the shape
 //      orisha's router arms use.
-//
-//      DIAGNOSED 2026-08-08, and it is NOT about named outcomes — a braced
-//      produce has never worked on ANY event. `-> hit { a: 1, b: 2 }` on a
-//      two-branch event fails identically. The cause: `name { … }` is ALSO how
-//      you invoke something with a Source block, and the invocation reading wins.
-//      The arm reaches parser.zig's `else if (uses_implicit_source)` branch,
-//      whose registry lookup misses because `verdict` is not an event, and it
-//      falls through to createImplicitSourceInvocationDefault — a path whose own
-//      comment says it exists for module-import-time unknowns.
-//
-//      The produce position is FREE for the constructor reading: across the
-//      whole corpus and koru_std, `-> name {` occurs only as a comprehension row
-//      (`-> v{i}`, a different construct in a different parse path) and inside
-//      raw MLIR text in two proc bodies. Nobody invokes with a Source block
-//      after `->`.
-//
-//      Three produce paths already build the node correctly
-//      (parseConstructString handles both `name value` and `name { … }`); the
-//      arm form takes a fourth that resolves as an invocation first. The fix is
-//      to decide the reading BEFORE the invocation parse, in produce position.
 //   2. An immediate impl of a bare-return event cannot be BOUND at the call
 //      site. Pre-existing and unrelated: the same program written with an
 //      anonymous `~plain = { x: 1, y: 2 }` crashes koruc outright, inside
