@@ -243,6 +243,29 @@ fn queueIndexImport(
     });
 }
 
+/// Dedup identity for an imported module.
+///
+/// A directory import (`~import mylib`) and a file import of that directory's
+/// `index.<ext>` (`~import mylib/index`, which `queueIndexImport` synthesizes
+/// for every `~import mylib/<submodule>`) ARE THE SAME MODULE reached two ways
+/// — the directory load parses that exact file as its own `source_file`. Their
+/// `canonical_path`s differ though: one is `<dir>`, the other `<dir>/index.kz`.
+///
+/// Keying dedup on the raw path let both through, and since they also share a
+/// `logical_name`, `emitModuleNode` concatenated them into ONE Zig struct: every
+/// declaration in the index file emitted twice. It surfaced as `duplicate struct
+/// member name 'std'` — reading like a submodule's `const std` colliding with
+/// its parent's — and as duplicate top-level transform wrappers. Normalizing a
+/// directory to its index file makes the two spellings one key.
+fn moduleIdentity(allocator: std.mem.Allocator, module: *const ImportedModule) ![]u8 {
+    if (module.is_directory) {
+        if (try module_resolver_mod.resolveKoruFileIn(allocator, module.canonical_path, "index")) |index_path| {
+            return index_path;
+        }
+    }
+    return allocator.dupe(u8, module.canonical_path);
+}
+
 fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocator, resolver: *ModuleResolver, import_decl: ast.ImportDecl, base_file: []const u8, entry_file: []const u8) !ImportedModule {
     // Use ModuleResolver to find BOTH file and directory (if they exist)
     var resolved = try resolver.resolveBoth(import_decl.path, base_file);
@@ -639,7 +662,10 @@ pub fn combineImports(
         imported_modules.deinit(gpa);
     }
 
-    var imported_paths_map = std.StringHashMap(void).init(gpa);
+    // Key is the module IDENTITY (see moduleIdentity), not the raw canonical
+    // path; the value is the index into `imported_modules` so a directory load
+    // can supersede a bare index-file load of the same module.
+    var imported_paths_map = std.StringHashMap(usize).init(gpa);
     defer {
         var it = imported_paths_map.keyIterator();
         while (it.next()) |key| {
@@ -682,16 +708,33 @@ pub fn combineImports(
 
         const module = try processImport(gpa, parse_allocator, resolver, work_item.import_decl, work_item.base_file, entry_file_absolute);
 
-        if (imported_paths_map.contains(module.canonical_path)) {
-            log.debug("DEDUPLICATION: Skipping duplicate import of '{s}' (canonical: {s})\n", .{ module.logical_name, module.canonical_path });
-            var mut_module = module;
-            mut_module.deinit(gpa);
-            continue;
-        }
+        const identity = try moduleIdentity(gpa, &module);
+        var identity_owned = true;
+        defer if (identity_owned) gpa.free(identity);
 
-        const path_copy = try gpa.dupe(u8, module.canonical_path);
-        try imported_paths_map.put(path_copy, {});
-        log.debug("IMPORT: Added '{s}' (canonical: {s})\n", .{ module.logical_name, module.canonical_path });
+        // Slot this module occupies in `imported_modules`, or null if it was a
+        // duplicate that lost. A directory load carries the index file's
+        // content PLUS the sibling submodules, so it is a strict superset of a
+        // bare index-file load and supersedes one already in the list.
+        var slot: ?usize = null;
+        if (imported_paths_map.get(identity)) |existing_idx| {
+            const existing = &imported_modules.items[existing_idx];
+            if (module.is_directory and !existing.is_directory) {
+                log.debug("DEDUPLICATION: Directory import of '{s}' supersedes its index file (identity: {s})\n", .{ module.logical_name, identity });
+                existing.deinit(gpa);
+                imported_modules.items[existing_idx] = module;
+                slot = existing_idx;
+            } else {
+                log.debug("DEDUPLICATION: Skipping duplicate import of '{s}' (identity: {s})\n", .{ module.logical_name, identity });
+                var mut_module = module;
+                mut_module.deinit(gpa);
+                continue;
+            }
+        } else {
+            try imported_paths_map.put(identity, imported_modules.items.len);
+            identity_owned = false; // the map owns it now
+            log.debug("IMPORT: Added '{s}' (canonical: {s})\n", .{ module.logical_name, module.canonical_path });
+        }
 
         try queueParentImports(gpa, &work_queue, resolver, work_item.import_decl, work_item.base_file);
         try queueIndexImport(gpa, &work_queue, resolver, work_item.import_decl, work_item.base_file, entry_file_absolute);
@@ -718,7 +761,11 @@ pub fn combineImports(
             }
         }
 
-        try imported_modules.append(gpa, module);
+        // Already written into its slot when a directory superseded an index
+        // file; only a genuinely new module extends the list.
+        if (slot == null) {
+            try imported_modules.append(gpa, module);
+        }
     }
 
     var combined_items = try std.ArrayList(ast.Item).initCapacity(parse_allocator, source_file.items.len);
@@ -727,11 +774,29 @@ pub fn combineImports(
     const addModuleToAST = struct {
         fn add(
             alloc: std.mem.Allocator,
+            set_alloc: std.mem.Allocator,
+            seen: *std.StringHashMap(void),
             items: *std.ArrayList(ast.Item),
             module: *ImportedModule,
             res: *ModuleResolver,
         ) !void {
-            const has_source = module.source_file.items.len > 0 or module.source_file.module_annotations.len > 0;
+            // ONE ModuleDecl PER SOURCE FILE — the invariant the emitter needs.
+            // `emitModuleNode` groups ModuleDecls by logical_name and emits every
+            // one of them into a single Zig struct, so a file reached twice puts
+            // its whole declaration surface in twice. The queue-level dedup above
+            // catches a module imported twice by name, but a file can ALSO arrive
+            // as a directory's submodule and again as an explicit
+            // `~import <pkg>/<file>` — two different ImportedModules, one file.
+            const claim = struct {
+                fn f(sa: std.mem.Allocator, s: *std.StringHashMap(void), path: []const u8) !bool {
+                    if (s.contains(path)) return false;
+                    try s.put(try sa.dupe(u8, path), {});
+                    return true;
+                }
+            }.f;
+
+            const has_source = (module.source_file.items.len > 0 or module.source_file.module_annotations.len > 0) and
+                try claim(set_alloc, seen, module.canonical_path);
             if (has_source) {
                 const is_system = res.isSystemModule(module.canonical_path);
                 const annotations = try alloc.alloc([]const u8, module.source_file.module_annotations.len);
@@ -754,6 +819,7 @@ pub fn combineImports(
 
             if (module.is_directory and module.submodules.len > 0) {
                 for (module.submodules) |*submod| {
+                    if (!try claim(set_alloc, seen, submod.canonical_path)) continue;
                     const is_system = res.isSystemModule(submod.canonical_path);
 
                     const dotted_name = if (std.mem.eql(u8, submod.logical_name, "index"))
@@ -784,8 +850,15 @@ pub fn combineImports(
 
     rewriteDefaultEventCalls(parse_allocator, source_file.items);
 
+    var emitted_files = std.StringHashMap(void).init(gpa);
+    defer {
+        var seen_it = emitted_files.keyIterator();
+        while (seen_it.next()) |k| gpa.free(k.*);
+        emitted_files.deinit();
+    }
+
     for (imported_modules.items) |*module| {
-        try addModuleToAST(parse_allocator, &combined_items, module, resolver);
+        try addModuleToAST(parse_allocator, gpa, &emitted_files, &combined_items, module, resolver);
     }
 
     for (source_file.items) |item| {

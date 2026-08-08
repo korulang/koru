@@ -4007,9 +4007,45 @@ pub const VisitorEmitter = struct {
             try current.modules.append(current.allocator, module);
         }
 
+        // Host lines an ANCESTOR module already emitted, as a stack pushed on
+        // the way down and truncated on the way out. See `hostLineIsShadowable`.
+        var ancestor_host_lines: std.ArrayList([]const u8) = .empty;
+        defer ancestor_host_lines.deinit(self.allocator);
+
         for (root.children.items) |child| {
-            try self.emitModuleNode(child, 1, module_annotations);
+            try self.emitModuleNode(child, 1, module_annotations, &ancestor_host_lines);
         }
+    }
+
+    /// Whether a host line an ancestor module already emitted may be dropped
+    /// from a nested module rather than emitted again.
+    ///
+    /// ZIG CONTAINERS DO NOT SHADOW. A declaration in a nested struct that an
+    /// enclosing struct also declares is not an override — referencing the name
+    /// from inside is `error: ambiguous reference`. But every Koru file writes
+    /// its own `const std = @import("std")`, and a submodule is emitted INSIDE
+    /// its parent's struct (`mylib.helper` → `koru_mylib.koru_helper`), so a
+    /// package whose index and sibling both use the host language could not
+    /// compile at all.
+    ///
+    /// Only a single-line `const <name> = @import(...)` qualifies. Such a line
+    /// binds nothing but a module alias, so a byte-identical one in an ancestor
+    /// names the identical thing and letting the reference resolve outward is a
+    /// no-op. Nothing else is safe to drop:
+    ///   - `var` — two same-named `var`s are two distinct pieces of state, and
+    ///     collapsing them would silently make the modules share storage.
+    ///   - any other `const` — the initializer can be an arbitrary expression.
+    ///   - a multi-line blob — a proc body reaches the emitter as one host line
+    ///     and can legitimately repeat verbatim, so matching on it would delete
+    ///     real code (measured: two identical `const cloned = …` statements in
+    ///     one stdlib body, the second one dropped).
+    /// Everything else still collides, loudly, which is the right outcome until
+    /// the emitter mangles per-module names.
+    fn hostLineIsShadowable(content: []const u8) bool {
+        const trimmed = std.mem.trim(u8, content, " \t\r\n");
+        if (!std.mem.startsWith(u8, trimmed, "const ")) return false;
+        if (std.mem.indexOfScalar(u8, trimmed, '\n') != null) return false;
+        return std.mem.indexOf(u8, trimmed, "@import(") != null;
     }
 
     fn emitModuleNode(
@@ -4017,6 +4053,7 @@ pub const VisitorEmitter = struct {
         node: *ModuleNode,
         depth: usize,
         module_annotations: []const []const u8,
+        ancestor_host_lines: *std.ArrayList([]const u8),
     ) !void {
         // Top-level modules (depth==1) are siblings to main_module, so no indent
         // Nested modules (depth>1) get indented
@@ -4047,6 +4084,13 @@ pub const VisitorEmitter = struct {
         // Emit module's own imports and host lines first
         // CRITICAL: If we're emitting this module at all, emit ALL its contents
         // Don't filter individual host lines - the module itself was already filtered
+        // This node's own alias lines, staged here and pushed onto the ancestor
+        // stack only AFTER the loop: a module may legitimately repeat a line and
+        // must not suppress itself — only a STRICT ancestor suppresses.
+        const ancestor_mark = ancestor_host_lines.items.len;
+        var own_aliases: std.ArrayList([]const u8) = .empty;
+        defer own_aliases.deinit(self.allocator);
+
         for (node.modules.items) |module| {
             for (module.items) |*module_item| {
                 // Only emit host lines (including imports) at module level
@@ -4056,12 +4100,27 @@ pub const VisitorEmitter = struct {
                     // (e.g. a `.kjs` facet of a contract-split module).
                     // Synthesized lines (`file == "generated"`) pass through.
                     if (!hostLineRoutesToZig(line.location.file)) continue;
+                    // An enclosing module already declared exactly this — see
+                    // hostLineIsShadowable for why re-emitting it is a Zig
+                    // compile error and why dropping it is not.
+                    if (hostLineIsShadowable(line.content)) {
+                        var shadowed = false;
+                        for (ancestor_host_lines.items) |seen| {
+                            if (std.mem.eql(u8, seen, line.content)) {
+                                shadowed = true;
+                                break;
+                            }
+                        }
+                        if (shadowed) continue;
+                        try own_aliases.append(self.allocator, line.content);
+                    }
                     // Emit ALL remaining host lines from the module without filtering
                     // If the module shouldn't be emitted, it wouldn't be in the tree at all
                     try emitter.emitHostLine(self.code_emitter, line.content);
                 }
             }
         }
+        try ancestor_host_lines.appendSlice(self.allocator, own_aliases.items);
 
         // Then emit other items (events, procs, etc)
         for (node.modules.items) |module| {
@@ -4092,8 +4151,12 @@ pub const VisitorEmitter = struct {
         }
 
         for (node.children.items) |child| {
-            try self.emitModuleNode(child, depth + 1, module_annotations);
+            try self.emitModuleNode(child, depth + 1, module_annotations, ancestor_host_lines);
         }
+
+        // Leaving this module: its own host lines stop being ancestors, so a
+        // SIBLING module further along still emits its own `const std`.
+        ancestor_host_lines.shrinkRetainingCapacity(ancestor_mark);
 
         // Note: Tap functions are emitted at main_module level, not inside modules
         // (even if defined in a module file, they're universal observers)

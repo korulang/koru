@@ -1,0 +1,10 @@
+// A sibling of the package index. Importing it from index.kz is what used to
+// make the whole package arrive twice.
+
+const std = @import("std");
+
+~pub tor helper-say { n: i32 }
+
+~proc helper-say|zig {
+    std.debug.print("helper {}\n", .{n});
+}

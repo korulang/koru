@@ -1,0 +1,22 @@
+// Pins that a package reached as a DIRECTORY and as its own `index` FILE is
+// ONE module, not two.
+//
+// `~import mylib` resolves to the directory; `~import mylib/helper` inside that
+// directory's index makes the compiler synthesize an `mylib/index` import,
+// which resolves to the FILE. Both name the same module, and dedup keyed on the
+// resolved path, so the two spellings never matched and the package was
+// imported twice.
+//
+// Module declarations are grouped by logical name and emitted into one Zig
+// struct, so everything in index.kz was emitted twice: `duplicate struct member
+// name 'std'` from the two copies of its host line — which reads like a
+// submodule colliding with its parent and is nothing of the sort — plus a
+// duplicate of every declaration under it.
+//
+// The sibling itself is reached twice too (as a directory submodule and as the
+// explicit file import), so it pins the same property one level down.
+
+~import mylib
+
+~mylib:greet(n: 1)
+~mylib/helper:helper-say(n: 2)

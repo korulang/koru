@@ -1,0 +1,13 @@
+// The package index, which imports its own sibling by qualified name. That
+// import synthesizes an `mylib/index` file import behind the scenes — the same
+// module the entry already reached as a directory.
+
+~import mylib/helper
+
+const std = @import("std");
+
+~pub tor greet { n: i32 }
+
+~proc greet|zig {
+    std.debug.print("greet {}\n", .{n});
+}
