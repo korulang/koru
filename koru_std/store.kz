@@ -2641,6 +2641,72 @@ fn storeLowerText(
                 }
                 return out.toOwnedSlice(alloc) catch unreachable;
             }
+            /// Split an already-rewritten template into a host format string and
+            /// its argument list. By the time a stored value reaches here the
+            /// `{{ … }}` holes hold HOST code — the row rewrite treats a hole as
+            /// expression context, which is why `print.ln("{{ e.v:d }}")` has
+            /// always worked — so this only has to separate the literal text
+            /// from the holes and carry each hole's format specifier across.
+            ///
+            /// Returns null when the text holds no hole, which is the ordinary
+            /// case: a plain literal is written as-is.
+            const Rendered = struct { fmt: []const u8, args: []const u8 };
+            fn renderTemplate(alloc: std.mem.Allocator, text: []const u8, host_js: bool) ?Rendered {
+                if (std.mem.indexOf(u8, text, "{{") == null) return null;
+                // The surrounding quotes are part of the literal's text.
+                var body = text;
+                if (body.len >= 2 and body[0] == '"' and body[body.len - 1] == '"') body = body[1 .. body.len - 1];
+                var fmt = std.ArrayList(u8).initCapacity(alloc, body.len + 16) catch unreachable;
+                var args = std.ArrayList(u8).initCapacity(alloc, 64) catch unreachable;
+                var n_args: usize = 0;
+                var i: usize = 0;
+                while (i < body.len) {
+                    if (i + 1 < body.len and body[i] == '{' and body[i + 1] == '{') {
+                        const close = std.mem.indexOfPos(u8, body, i + 2, "}}") orelse break;
+                        const hole = std.mem.trim(u8, body[i + 2 .. close], " \t");
+                        // The specifier is the LAST colon outside any bracket —
+                        // a hole's expression may itself contain colons (a
+                        // module-qualified call, an indexed cell read).
+                        var spec: []const u8 = "any";
+                        var expr = hole;
+                        var depth: i32 = 0;
+                        var k: usize = hole.len;
+                        while (k > 0) {
+                            k -= 1;
+                            const c = hole[k];
+                            if (c == ')' or c == ']') depth += 1;
+                            if (c == '(' or c == '[') depth -= 1;
+                            if (c == ':' and depth == 0) {
+                                spec = hole[k + 1 ..];
+                                expr = hole[0..k];
+                                break;
+                            }
+                        }
+                        if (host_js) {
+                            fmt.appendSlice(alloc, "\" + (") catch unreachable;
+                            fmt.appendSlice(alloc, expr) catch unreachable;
+                            fmt.appendSlice(alloc, ") + \"") catch unreachable;
+                        } else {
+                            fmt.append(alloc, '{') catch unreachable;
+                            // `:f` is Koru's spelling for "a float, rendered
+                            // plainly"; Zig spells that as no specifier at all.
+                            if (!std.mem.eql(u8, spec, "f")) fmt.appendSlice(alloc, spec) catch unreachable;
+                            fmt.append(alloc, '}') catch unreachable;
+                            if (n_args > 0) args.appendSlice(alloc, ", ") catch unreachable;
+                            // A char column reads as a fixed array; `{s}` needs
+                            // the NUL-trimmed slice, which is what the read path
+                            // hands every other consumer.
+                            args.appendSlice(alloc, expr) catch unreachable;
+                        }
+                        n_args += 1;
+                        i = close + 2;
+                        continue;
+                    }
+                    fmt.append(alloc, body[i]) catch unreachable;
+                    i += 1;
+                }
+                return .{ .fmt = fmt.toOwnedSlice(alloc) catch unreachable, .args = args.toOwnedSlice(alloc) catch unreachable };
+            }
             // A stored block is `target: value` pairs — target keys keep the
             // indexed-lvalue form, values read columns directly. Values never
             // take the owned projection: the write path reads the cell at write
@@ -2697,7 +2763,65 @@ fn storeLowerText(
                 }
                 return out.toOwnedSlice(alloc) catch unreachable;
             }
-            fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, bind: []const u8, used: []bool, cur: []const u8, dense: bool) void {
+            /// Lower every `{{ … }}`-carrying value in a stored block into a
+            /// built string, declaring the buffer in the invocation's preamble.
+            ///
+            /// The buffer is sized to the TARGET COLUMN, which is the whole
+            /// reason this is cheap: the destination width is known at compile
+            /// time, so the text is formatted straight into a stack array of
+            /// exactly that size. `print` uses a blanket 64KB because it has no
+            /// destination to measure; a column write does.
+            var tmpl_seq: usize = 0;
+            fn templateValues(alloc: std.mem.Allocator, text: []const u8, inv: *ast.Invocation, fields: []const []const u8, char_caps: []const ?usize, host_js: bool) []const u8 {
+                if (std.mem.indexOf(u8, text, "{{") == null) return text;
+                const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{text}) catch unreachable;
+                const struct_literal3 = @import("struct_literal");
+                const pairs = struct_literal3.parseFields(alloc, braced) catch return text;
+                var pre = std.ArrayList(u8).initCapacity(alloc, 256) catch unreachable;
+                if (inv.preamble_code) |existing| pre.appendSlice(alloc, existing) catch unreachable;
+                var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
+                for (pairs, 0..) |pr, pi| {
+                    if (pi > 0) out.appendSlice(alloc, ", ") catch unreachable;
+                    out.appendSlice(alloc, pr.name) catch unreachable;
+                    out.appendSlice(alloc, ": ") catch unreachable;
+                    const r = renderTemplate(alloc, pr.value, host_js) orelse {
+                        out.appendSlice(alloc, pr.value) catch unreachable;
+                        continue;
+                    };
+                    // Size the buffer from the column this pair targets. The
+                    // target reads `<store>[<cur>].<field>`, so the field name
+                    // is whatever follows the last dot.
+                    var cap: usize = 256;
+                    if (std.mem.lastIndexOfScalar(u8, pr.name, '.')) |dot| {
+                        const tf = pr.name[dot + 1 ..];
+                        for (fields, 0..) |f, fi| {
+                            if (std.mem.eql(u8, f, tf)) {
+                                if (char_caps[fi]) |cc| cap = cc;
+                            }
+                        }
+                    }
+                    tmpl_seq += 1;
+                    const nm = std.fmt.allocPrint(alloc, "__koru_tmpl_{d}", .{tmpl_seq}) catch unreachable;
+                    if (host_js) {
+                        const line = std.fmt.allocPrint(alloc, "const {s} = \"{s}\";\n", .{ nm, r.fmt }) catch unreachable;
+                        pre.appendSlice(alloc, line) catch unreachable;
+                    } else {
+                        // Formatting into a buffer sized to the column means an
+                        // over-long result is TRUNCATED, which is exactly what
+                        // the column write already does to an over-long literal.
+                        // Consistent, and both deserve a `| full`-shaped answer
+                        // rather than silence — noted, not invented here.
+                        const line = std.fmt.allocPrint(alloc,
+                            "var __koru_tb_{d}: [{d}]u8 = undefined;\nconst {s} = @import(\"std\").fmt.bufPrint(&__koru_tb_{d}, \"{s}\", .{{{s}}}) catch __koru_tb_{d}[0..0];\n",
+                            .{ tmpl_seq, cap, nm, tmpl_seq, r.fmt, r.args, tmpl_seq }) catch unreachable;
+                        pre.appendSlice(alloc, line) catch unreachable;
+                    }
+                    out.appendSlice(alloc, nm) catch unreachable;
+                }
+                inv.preamble_code = pre.toOwnedSlice(alloc) catch unreachable;
+                return out.toOwnedSlice(alloc) catch unreachable;
+            }
+            fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, bind: []const u8, used: []bool, cur: []const u8, dense: bool, host_js_w: bool) void {
                 if (cont.node) |*n| {
                     switch (@constCast(n).*) {
                         .invocation => |*inv| {
@@ -2710,6 +2834,14 @@ fn storeLowerText(
                             for (inv.args) |*a| {
                                 if (is_stored and std.mem.eql(u8, a.name, "source")) {
                                     @constCast(a).value = storedBlock(alloc, a.value, store, fields, char_caps, owned, bind, used, cur, dense);
+                                    // A written value carrying `{{ … }}` builds
+                                    // text. The buffer it builds into CANNOT be
+                                    // an expression-local: the write memcpys out
+                                    // of it, so a `blk:` temporary would hand
+                                    // the copy a dangling slice. It goes in the
+                                    // invocation's preamble, which outlives the
+                                    // statement by construction.
+                                    @constCast(a).value = templateValues(alloc, a.value, @constCast(inv), fields, char_caps, host_js_w);
                                     if (a.source_value) |sv| {
                                         const fresh = alloc.create(ast.Source) catch unreachable;
                                         fresh.* = sv.*;
@@ -2746,7 +2878,7 @@ fn storeLowerText(
                         else => {},
                     }
                 }
-                for (cont.continuations) |*c| walkCont(alloc, @constCast(c), store, fields, char_caps, owned, bind, used, cur, dense);
+                for (cont.continuations) |*c| walkCont(alloc, @constCast(c), store, fields, char_caps, owned, bind, used, cur, dense, host_js_w);
             }
         };
         for (qsites.items) |*qs| {
@@ -2778,7 +2910,7 @@ fn storeLowerText(
             const cursor_dense = !qs.may_remove;
             qs.cursor = cursor;
             qs.cursor_dense = cursor_dense;
-            PRewrite.walkCont(allocator, &qs.body, store_name, field_names, field_char_caps, owned_flags, qs.row_bind, used, cursor, cursor_dense);
+            PRewrite.walkCont(allocator, &qs.body, store_name, field_names, field_char_caps, owned_flags, qs.row_bind, used, cursor, cursor_dense, host_is_js);
             // The `when` guard is held beside the body, not inside it, so the
             // body walk never reached it. It sees the row through the binding
             // like everything else does.
