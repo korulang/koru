@@ -1,0 +1,1 @@
+bare return instead: `-> { status: i32, body: string }`

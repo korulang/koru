@@ -3580,7 +3580,7 @@ fn emitSubflowContinuationsWithDepth(
                 if (cont.node) |step| {
                     switch (step) {
                         .branch_constructor => |bc2| {
-                            try emitProducedConstructor(emitter, main_module_name, enclosing_event, &bc2);
+                            try emitProducedConstructor(emitter, main_module_name, &bc2);
                         },
                         // A terminal (or any node this expression path can't
                         // lower) must still be a Zig expression — an empty
@@ -9561,18 +9561,16 @@ fn emitPipelineStep(
 fn emitProducedConstructor(
     emitter: *CodeEmitter,
     main_module_name: ?[]const u8,
-    enclosing_event: ?*const ast.EventDecl,
     bc: *const ast.BranchConstructor,
 ) EmitError!void {
     var ctx = EmissionContext{
         .allocator = emitter.allocator orelse std.heap.page_allocator,
         .main_module_name = main_module_name,
     };
-    // No name at all, OR a name that IS the bare return — a tor whose single
-    // terminal outcome is `verdict` returns the record, and `verdict { … }` is
-    // how you build it. Wrapping it would name a field the Output does not have.
-    const bare = bc.branch_name.len == 0 or
-        (if (enclosing_event) |ed| isNamedSingleOutcome(ed, bc.branch_name) else false);
+    // No name at all: the arm produced straight into a bare-return tor, so the
+    // record IS the value. Wrapping it would name a field the Output type does
+    // not have.
+    const bare = bc.branch_name.len == 0;
 
     if (!bare) {
         try emitter.write(".{ .");
@@ -11484,21 +11482,9 @@ fn emitBranchConstructorWithEventType(
         }
         return;
     }
-    // The registry's twin of isNamedSingleOutcome. BranchType carries no kind,
-    // so terminal-ness is inferred from `has_effect_branches` being false —
-    // conservative: an event with BOTH a named single outcome and effect arms
-    // still takes the wrapped path here. No such event exists yet; when one
-    // does, BranchType needs the kind.
-    const named_single = event_type.return_type != null and
-        !event_type.has_effect_branches and
-        event_type.branches.len == 1 and
-        bc.branch_name.len > 0 and
-        std.mem.eql(u8, event_type.branches[0].name, bc.branch_name);
-    if (!named_single) {
-        try emitter.write(".{ .");
-        try writeBranchName(emitter, bc.branch_name);
-        try emitter.write(" = ");
-    }
+    try emitter.write(".{ .");
+    try writeBranchName(emitter, bc.branch_name);
+    try emitter.write(" = ");
 
     if (bc.plain_value) |pv| {
         const trimmed = std.mem.trim(u8, pv, " \t");
@@ -11534,32 +11520,7 @@ fn emitBranchConstructorWithEventType(
         }
         try emitter.write(" }");
     }
-    if (!named_single) try emitter.write(" }");
-}
-
-/// A NAMED SINGLE OUTCOME IS THE RETURN VALUE.
-///
-/// `| response { status, body, content-type }` as a tor's only terminal branch
-/// lowers to a bare return of that record (see the PARSE003 site in parser.zig);
-/// the branch survives ONLY so its name can be a constructor for it. So
-/// `response { … }` must emit the record itself — wrapping it in
-/// `.{ .response = … }` builds a tag the Output type does not have, and Zig
-/// rejects it as a missing field on a struct.
-///
-/// This is what lets a framework keep its vocabulary. The rule that a
-/// one-variant union is the wrong REPRESENTATION stands; the label it used to
-/// delete is now free.
-pub fn isNamedSingleOutcome(event: *const ast.EventDecl, name: []const u8) bool {
-    if (name.len == 0) return false;
-    if (event.return_type == null) return false;
-    var sole: ?*const ast.Branch = null;
-    for (event.branches) |*b| {
-        if (b.kind != .terminal) continue;
-        if (sole != null) return false; // two or more: a real union, names matter
-        sole = b;
-    }
-    const s = sole orelse return false;
-    return std.mem.eql(u8, s.name, name);
+    try emitter.write(" }");
 }
 
 fn emitBranchConstructorWithEvent(
@@ -11576,13 +11537,9 @@ fn emitBranchConstructorWithEvent(
         }
         return;
     }
-    // The branch NAME is a constructor for the bare return, not a tag.
-    const named_single = isNamedSingleOutcome(event, bc.branch_name);
-    if (!named_single) {
-        try emitter.write(".{ .");
-        try writeBranchName(emitter, bc.branch_name);
-        try emitter.write(" = ");
-    }
+    try emitter.write(".{ .");
+    try writeBranchName(emitter, bc.branch_name);
+    try emitter.write(" = ");
 
     if (bc.plain_value) |pv| {
         const trimmed = std.mem.trim(u8, pv, " \t");
@@ -11618,7 +11575,7 @@ fn emitBranchConstructorWithEvent(
         }
         try emitter.write(" }");
     }
-    if (!named_single) try emitter.write(" }");
+    try emitter.write(" }");
 }
 
 /// Emit a branch constructor (.branch = .{ fields })
@@ -11638,17 +11595,9 @@ pub fn emitBranchConstructor(
         }
         return;
     }
-    // A named single outcome IS the return — see isNamedSingleOutcome. The event
-    // is whichever one this constructor is producing into.
-    const named_single = if (ctx.produce_event orelse ctx.impl_event_decl) |ed|
-        isNamedSingleOutcome(ed, bc.branch_name)
-    else
-        false;
-    if (!named_single) {
-        try emitter.write(".{ .");
-        try writeBranchName(emitter, bc.branch_name);
-        try emitter.write(" = ");
-    }
+    try emitter.write(".{ .");
+    try writeBranchName(emitter, bc.branch_name);
+    try emitter.write(" = ");
 
     // Check for plain value (non-struct branch)
     if (bc.plain_value) |pv| {
@@ -11668,7 +11617,7 @@ pub fn emitBranchConstructor(
         }
         try emitter.write(" }");
     }
-    if (!named_single) try emitter.write(" }");
+    try emitter.write(" }");
 }
 
 /// Check if a continuation uses a binding variable in its body

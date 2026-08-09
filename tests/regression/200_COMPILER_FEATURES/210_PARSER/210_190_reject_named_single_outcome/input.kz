@@ -1,0 +1,23 @@
+// A single outcome does not get a NAME — it gets a bare record return.
+//
+// `| response { status, body }` as a tor's only terminal branch is a
+// one-variant tag union: a tag plus double data movement for a value that has
+// exactly one shape. The refusal is the same rule 210_131 pins for a one-field
+// payload; this test holds the MULTI-field case, where the replacement is an
+// anonymous record return rather than a named type.
+//
+// The refusal spells the replacement out — `-> { status: i32, body: string }`,
+// the tor's own fields in the tor's own order — so the one-hop fix is on the
+// screen and does not have to be reconstructed from `-> <type>`.
+//
+// A brief window (b8570de5, reverted) accepted this shape and rewrote it into
+// exactly that bare return, keeping the branch so its name was a constructor.
+// Two spellings for one shape, a second construction path through five
+// emitters, and a word that has to stay in agreement with nothing — the tor's
+// own name already says what it produces.
+//
+// The positive twin is 350_019: an arm producing an anonymous record into a
+// bare-return tor.
+
+~tor handle { path: string }
+| response { status: i32, body: string }
