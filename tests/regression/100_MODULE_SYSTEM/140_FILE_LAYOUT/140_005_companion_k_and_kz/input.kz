@@ -1,10 +1,14 @@
-// Phase 2.1: prove .k + .kz companions both load.
+// A `.k` contract and its `.kz` implementation are ONE module.
 //
-// The event `compute` is declared ONLY in contract.k. The proc `compute|zig`
-// lives ONLY in contract.kz. For this call site to resolve, the resolver
-// must load both files into the `app.contract` module. Today contract.kz
-// wins the probe-order race and contract.k is silently dropped, so this
-// call site fails. Once the companion-loading fix lands, prints 142.
+// `compute` is declared ONLY in contract.k. The proc implementing it lives
+// ONLY in contract.kz. For this call site to resolve, the resolver must load
+// every companion sharing the stem `contract`, not stop at the first hit its
+// extension probe order reaches.
+//
+// That matters beyond this test: a program whose Koru and Zig share one file
+// must write `~` on every Koru line, because the parser really is sitting in
+// the host language. Split along this seam and the declarative half has no
+// host language in it, so the character is not needed anywhere in it.
 
 const std = @import("std");
 

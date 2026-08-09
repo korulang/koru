@@ -1,10 +1,9 @@
-// Phase 2.1: the contract lives in a .k file — public event signature only,
-// no host body. The implementation companion is contract.kz alongside.
+// The contract facet: a public event signature and no host body, in a `.k`.
+// Its implementation lives in the sibling `contract.kz`, and the two files —
+// same stem, different Koru extension — are ONE module named `contract`.
 //
-// Today's resolver loses this file: probe order is .kgpu, .kjs, .kz, .kc, .k,
-// so when contract.kz exists as a sibling it wins and contract.k is never
-// opened. The event below never makes it into the registry, and the proc in
-// contract.kz has nothing to attach to. This test fails until the loader
-// learns to load every companion file sharing a stem.
+// This is the layout that keeps `~` out of the code a reader reads: everything
+// declarative here, with no host language to switch away from, and the Zig
+// confined to the companion.
 
 pub tor compute { x: u32 } -> u32

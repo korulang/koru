@@ -1,9 +1,14 @@
-// Zig implementation facet + the driving flow. Events are declared in the
-// input.k companion; the flow references them UNQUALIFIED because the merge
-// puts every facet in one module.
+// The entry itself merges its companions. `koruc input.kz` must pull in the
+// sibling input.k (same stem) so the events declared there are in scope for
+// both the procs below and the flow — referenced UNQUALIFIED, because the
+// merge puts every facet in one module rather than two.
+//
+// `compute` has a bare return, so its procs return the value itself on both
+// targets; a branch constructor would name an outcome the signature in
+// input.k does not declare.
 const std = @import("std");
 
-~proc compute|zig { return .{ .done = x + 100 }; }
+~proc compute|zig { return x + 100; }
 ~proc show|zig { std.debug.print("{d}\n", .{v}); }
 
 ~compute(x: 42): r |> show(v: r)

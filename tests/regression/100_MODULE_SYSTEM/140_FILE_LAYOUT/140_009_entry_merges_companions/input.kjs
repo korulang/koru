@@ -1,5 +1,5 @@
 // JavaScript implementation facet. Unused on the Zig target (the harness only
 // emits Zig), but it must coexist in the merged module without breaking it —
 // its |js procs attach to the same events as the |zig variants.
-~proc compute|js { return { tag: "done", done: x + 100 }; }
+~proc compute|js { return x + 100; }
 ~proc show|js { console.log(v); }

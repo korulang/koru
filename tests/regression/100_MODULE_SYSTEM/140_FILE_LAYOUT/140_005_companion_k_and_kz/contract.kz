@@ -1,9 +1,13 @@
-// Phase 2.1: implementation companion to contract.k. Carries the proc body
-// only — the event declaration lives in the sibling .k file. The two files
-// merge into one module named `contract`.
+// The implementation facet: the proc body only. The event it implements is
+// declared in the sibling contract.k, and the resolver must load BOTH files
+// into the module for this proc to have anything to attach to.
+//
+// `compute` has a bare return (`-> u32`), so the proc returns the value
+// itself — a branch constructor would name an outcome the signature does not
+// declare.
 
 const std = @import("std");
 
 ~proc compute|zig {
-    return .{ .done = x + 100 };
+    return x + 100;
 }

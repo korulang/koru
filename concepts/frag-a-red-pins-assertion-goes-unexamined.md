@@ -47,6 +47,32 @@ Where this bites hardest is a test that has been red long enough to become
 furniture. A recently-written pin still carries its author's reasoning; an old
 one carries only its assertion, and the assertion is the part nobody re-reads.
 
+## Third instance, 2026-08-09 — the comment does the explaining away
+
+`140_005` and `140_009` pinned a `.k` contract merging with its `.kz` companion.
+Both were red, and both opened with a comment stating the cause: the loader
+stops at the first extension its probe order reaches and never opens the
+sibling. That was accurate the day it was written.
+
+By this session the merge worked. The failure was a Zig type error *inside* the
+proc body — the fixtures returned a branch constructor for a signature with a
+bare return, a shape the corpus stopped using months ago. Reaching that error at
+all proves the merge: an unmerged module fails as an unknown event, several
+stages earlier.
+
+The refinement this adds: **the danger is not only the unexamined assertion, it
+is a comment that supplies a CAUSE.** A bare red invites the question "why?"; a
+red with a stated cause answers it in advance, and the answer keeps being read
+long after it stopped being true. Two capabilities were believed unbuilt because
+their own pins said so, and the sentence outlived the defect it described. This
+is why a test comment says what the test PINS and never why it fails today —
+that rule is usually argued as tidiness, and it is not: a why-it-fails comment
+is a claim about the compiler with no mechanism keeping it honest.
+
+Corollary for triage: when a red test's stated cause names a mechanism, check
+the mechanism before believing the sentence. Here the check was thirty seconds —
+read which stage the error came from.
+
 ## Not an argument against red pins
 
 Pinning a bug as a failing test first is correct and stays. The discipline this
