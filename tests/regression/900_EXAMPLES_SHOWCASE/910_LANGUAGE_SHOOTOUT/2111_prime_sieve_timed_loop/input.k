@@ -1,4 +1,4 @@
-// GREEN (2026-06-28): the PURE-KORU drag-race harness shape. A `#L`/`@L`
+// The PURE-KORU drag-race harness shape. A `#L`/`@L`
 // label-fold loop whose `| live` arm runs a FULL allocating sieve pass
 // (std/field:new -> for/`! each` with the compiler-GENERATED mark-multiples
 // transform -> std/field:free) and THEN tail-recurses via `@L` with an
@@ -17,6 +17,13 @@
 //
 // The validation sieve after the loop confirms the marker is correct: 78,498
 // primes <= 1,000,000 (odds-only storage, 500,000 bits).
+//
+// A branching call is handled by its ARMS, never by an inline `: binding` —
+// `std/field:new(bits: N)` then `| field f` / `| err _`, which is what every
+// other call site of it spells. The bind form reaches a branch payload nowhere
+// in the language (a plain two-outcome tor refuses it identically); it parsed
+// here until the single-return work closed it, which is a tightening, not a
+// loss of surface.
 import std/io
 import std/field
 import std/control
@@ -40,8 +47,9 @@ run = #L tick(limit, passes: 0)
     | err _ |> _
 | expired e -> e
 
-run(limit: 5): n |> std/field:new(bits: 500000): f |> for(1..500)
-        ! each i |> std/field:test(f, i): pv |> if(pv == 0)
-            | then |> std/field:mark-multiples(f, from: 2 * i * (i + 1), stride: 2 * i + 1, limit: 499999)
-        | done |> std/field:count-zeros(f, lo: 1, hi: 500000): c |> std/io:print.ln("passes: {{ n:d }}") |> std/io:print.ln("validated primes: {{ c + 1:d }}") |> std/field:free(f)
-    | err _ |> _
+run(limit: 5): n |> std/field:new(bits: 500000)
+| field f |> for(1..500)
+    ! each i |> std/field:test(f, i): pv |> if(pv == 0)
+        | then |> std/field:mark-multiples(f, from: 2 * i * (i + 1), stride: 2 * i + 1, limit: 499999)
+    | done |> std/field:count-zeros(f, lo: 1, hi: 500000): c |> std/io:print.ln("passes: {{ n:d }}") |> std/io:print.ln("validated primes: {{ c + 1:d }}") |> std/field:free(f)
+| err _ |> _
