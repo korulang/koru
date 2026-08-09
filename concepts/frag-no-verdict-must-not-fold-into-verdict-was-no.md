@@ -30,6 +30,19 @@ at all, and the reason the earlier belief that this backlog was "mechanically
 mined out" has to be qualified: part of that conclusion rested on candidates
 nobody had tried.
 
+**And the dropped rows are not a random sample of the set they fell out of.**
+When the five were finally judged, all five converted — against 15 of 33 in the
+population the gate could reach. The rate in the invisible subset was double the
+rate in the visible one, and that is not luck: they were dropped by the *shape of
+their names*, the naming convention tracks roughly when a test was written, and
+when a test was written is exactly what predicts whether it was authored as pure
+Koru. The filter selected on something correlated with the answer.
+
+So the cost of a silent drop is worse than its size suggests. "Five of thirty-eight
+went unjudged" invites the estimate that half of five would have converted; the
+truth was all of them. Any correction that assumes the missing rows behave like
+the measured ones is guessing with the same bias that produced the gap.
+
 Sibling to [[frag-a-check-that-cannot-match-reports-clean]], which is about a
 check whose *pattern* cannot match and therefore reports nothing. This one is
 about a check whose pattern is fine but whose *worklist* silently loses rows
