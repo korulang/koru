@@ -71,10 +71,48 @@ qemu-system-x86_64 -kernel .unikraft/build/ukserve_qemu-x86_64 \
 | bootable unikernel image | 555,560 B |
 | the same image without networking (`examples/unikraft`) | 164,544 B |
 | what lwip + posix-socket + virtio-net cost | ~391,016 B |
+| RAM floor (boots and serves) | 6 MB |
+| RAM floor (fails) | 5 MB |
 
-RAM floor is **not** measured here — 64 MB was given and not probed downward.
-The print-only image's floor was 2 MB; do not assume this one's without booting
-it.
+**The floor is set by the network stack, not by Koru.** At 5 MB the virtio
+driver cannot allocate its virtqueue (`-12`, ENOMEM), lwIP then fails to attach
+the device, and the program's own `failed` arm reports `FAILED at socket` —
+correctly, because with no interface there is no socket to open. Nothing crashes
+and nothing lies; the error names the first call that could not be satisfied.
+
+For contrast the print-only image (`examples/unikraft`) floors at 2 MB. So
+networking costs about 4 MB of RAM on top of its ~391 KB of image.
+
+Measured by bisection at 64/32/16/8/6/5/4/3 MB, each boot serving a real request
+over the host-forwarded port; 6 MB confirmed twice.
+
+**Reproduced independently 2026-08-09**, from a clean rebuild on this machine —
+`koruc serve.kz`, `zig build-lib wrapper.zig -target x86_64-freestanding`,
+`kraft build`. The archive came out at 5,736 B and the image at 555,560 B, both
+byte-exact against the table above. Boots serving `hello from koru` at 64M, 8M
+and 6M; at 5M the console reads
+
+```
+ERR: [libvirtio_net] <virtio_net.c @ 879> Failed to set up virtqueue 0: -12
+ERR: [liblwip] <init.c @ 337> Failed to attach network device 0 to lwIP
+koru unikernel FAILED at socket
+```
+
+and at 4M it does not get that far — `libukallocstack` cannot allocate the
+0x40000 stack. So the floor, the mechanism, and the program's own error arm all
+reproduce.
+
+⚠️ **THIS IMAGE IS 555,560 B, NOT 164,544 B.** The 164 KB figure in the table is
+the PRINT-ONLY image one directory over, and its floor is 2 MB. "A 164 KB image
+that boots in 6 MB" describes nothing that exists, and has already been said out
+loud — the two builds' numbers are three lines apart in this table and get welded
+together.
+
+⚠️ **AND THIS IS NOT ORISHA.** `serve.kz` here is a hand-written Koru program
+whose proc answers a hardcoded 18-byte string and stops after three requests
+(`while (served < 3)`). Orisha does not link freestanding at all — see
+orisha/examples/unikernel/main.kz for the two errors. Nothing in this directory
+can be load-tested, and nothing in it is the framework.
 
 ## Traps
 
