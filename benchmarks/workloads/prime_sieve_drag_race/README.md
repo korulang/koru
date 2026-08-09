@@ -21,6 +21,29 @@ read (`std/time:now`) is a Zig effect — how Koru does every effect.
 Both emit `validated primes: 78498` on stderr, then the official line on stdout:
 `korulang;<passes>;<seconds>;1;algorithm=base,faithful=<yes|no>,bits=1`.
 
+## Where the submission actually landed
+
+Submitted 2026-06-30 as `PlummersSoftwareLLC/Primes#1077`; **closed the same day,
+not merged.** The maintainer closed it on *language eligibility* — the submission
+prompted him to write that section of CONTRIBUTING, which now requires a mature
+language with independent users, public documentation and non-benchmark usage —
+and explicitly not on the sieve, the numbers, or good faith. He invited a future
+resubmission once Koru has a public identity and users.
+
+Four technical asks were listed as "would still need fixing anyway":
+
+1. Pin the toolchain to an immutable full commit SHA, not a movable tag.
+2. Remove the hidden/bidirectional Unicode characters GitHub flagged.
+3. Reconsider `faithful=yes` — the stack placement fires only for a
+   compile-time-constant sieve size, and the rules want a runtime-sized
+   allocation. **This is the only one that is real work**: a runtime-sized
+   field that is still allocation-free.
+4. Show generated-code excerpts proving `mark-multiples` is a general transform
+   and not benchmark-specific backend logic.
+
+Nothing here is pending review. Treat the entries as our own benchmark until
+that eligibility bar is met.
+
 ## Run
 
 ```
