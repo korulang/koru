@@ -19,12 +19,12 @@
 // bare-token predicate and requires a __mock_result_N token in bare code.
 // See BUG.md.
 
-~import std/compiler
-~import std/optimizer
-~import std/testing
-~import std/io
+import std/compiler
+import std/optimizer
+import std/testing
+import std/io
 
-~std/compiler:coordinate = std/compiler:context-create(program_ast, allocator): c0 |> std/compiler:test-generation(ctx: c0): c1 |> std/compiler:elaborate(ctx: c1): c2 |> std/compiler:transform-taps(ctx: c2): c3 |> std/compiler:analysis(ctx: c3)
+std/compiler:coordinate = std/compiler:context-create(program_ast, allocator): c0 |> std/compiler:test-generation(ctx: c0): c1 |> std/compiler:elaborate(ctx: c1): c2 |> std/compiler:transform-taps(ctx: c2): c3 |> std/compiler:analysis(ctx: c3)
 | ctx c4 |> std/optimizer:optimize(ctx: c4): c5 |> std/compiler:emission(ctx: c5): c6 => coordinated {
     c6.ctx.ast,
     c6.code,
@@ -32,14 +32,14 @@
   }
 | failed f => error f.message
 
-~tor withdraw { amount: u32 }
+tor withdraw { amount: u32 }
 | success u32
 | insufficient-funds
 
-~test(mock substitution binds the mocked branch) {
-    ~withdraw => success 50
-    ~withdraw(amount: 100)
+test(mock substitution binds the mocked branch) {
+    withdraw => success 50
+    withdraw(amount: 100)
     | success s |> _
 }
 
-~std/io:print.ln("test-generation pass ran")
+std/io:print.ln("test-generation pass ran")

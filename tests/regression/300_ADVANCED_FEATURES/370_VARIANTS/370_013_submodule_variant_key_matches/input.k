@@ -11,15 +11,15 @@
 // in the suite used one. Orisha's own `~[build(linux)]` line, selecting its
 // epoll pump, had never taken effect either.
 
-~import std/io
-~import std/build
-~import mylib/pump
+import std/io
+import std/build
+import mylib/pump
 
-~std/build:variants {
+std/build:variants {
     "mylib/pump:run": "alt"
 }
 | configured _ |> _
 | skipped _ |> _
 | invalid-event _ |> _
 
-~mylib/pump:run(n: 1): r |> std/io:print.ln(r)
+mylib/pump:run(n: 1): r |> std/io:print.ln(r)

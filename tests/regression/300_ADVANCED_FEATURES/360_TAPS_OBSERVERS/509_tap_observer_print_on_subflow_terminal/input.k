@@ -5,15 +5,15 @@
 // terminal context it lowers to the stub `print_impl_event.handler` (returns
 // undefined, no output). This test guards that the observer's print reaches
 // stdout. Sibling: 508 (mid-flow bare-return tap, green).
-~import std/io
-~import std/taps
+import std/io
+import std/taps
 
-~tor inc { n: i32 } -> i32
-~inc -> n + 1
+tor inc { n: i32 } -> i32
+inc -> n + 1
 
-~tor run { n: i32 } -> i32
-~run = inc(n): r -> r
+tor run { n: i32 } -> i32
+run = inc(n): r -> r
 
-~tap(inc -> *): v |> std/io:print.ln("tapped")
+tap(inc -> *): v |> std/io:print.ln("tapped")
 
-~run(n: 10): r |> std/io:print.ln("result: {{ r:d }}")
+run(n: 10): r |> std/io:print.ln("result: {{ r:d }}")

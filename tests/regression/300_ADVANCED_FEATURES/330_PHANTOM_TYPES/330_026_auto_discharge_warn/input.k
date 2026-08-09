@@ -1,2 +1,2 @@
-~import app/fs
-~app/fs:open(path: "test.txt")
+import app/fs
+app/fs:open(path: "test.txt")

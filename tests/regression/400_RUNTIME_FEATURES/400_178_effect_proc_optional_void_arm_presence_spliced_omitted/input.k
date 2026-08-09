@@ -5,8 +5,8 @@
 // site (the 400_145 ruling), and the proc's own presence probe must agree
 // with it.
 
-~import std/io
-~import app/lib/streamer
+import std/io
+import app/lib/streamer
 
-~app/lib/streamer:drip(n: 3)
+app/lib/streamer:drip(n: 3)
 | done t |> std/io:print.ln("done {{ t:d }}")

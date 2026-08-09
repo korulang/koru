@@ -13,10 +13,10 @@
 // So there is no ambiguity to report. `owned` leaves both the `| ok` and the
 // `| err` arm in `<instance!>`, auto-discharge inserts `free` on each, and the
 // read below happens before either.
-~import std/string
-~import std/io
+import std/string
+import std/io
 
-~std/string:from-page(text: "hello")
+std/string:from-page(text: "hello")
 | ok s |> std/string:take(s): owned |> std/string:append(s: owned, text: " world")
         | ok |> std/string:read(s: owned): text |> std/io:print.ln(text)
         | err _ |> _

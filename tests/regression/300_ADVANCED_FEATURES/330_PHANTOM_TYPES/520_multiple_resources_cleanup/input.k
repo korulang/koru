@@ -1,2 +1,2 @@
-~import app/fs
-~app/fs:open-two(path1: "test1.txt", path2: "test2.txt"): f |> app/fs:close(file: f.file1) |> app/fs:close(file: f.file2)  // Close both files
+import app/fs
+app/fs:open-two(path1: "test1.txt", path2: "test2.txt"): f |> app/fs:close(file: f.file1) |> app/fs:close(file: f.file2)  // Close both files

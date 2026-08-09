@@ -13,9 +13,9 @@
 // It is not one — the compiler closes it — so the pin was inverted rather than
 // left claiming a refusal that never comes.)
 
-~import app/db
+import app/db
 
-~app/db:connect(host: "localhost")
+app/db:connect(host: "localhost")
 | ok c |> app/db:begin(conn: c)
     | ok t |> app/db:exec(tx: t, sql: "INSERT INTO users VALUES (1, 'alice')")
         | ok r |> app/db:commit(tx: r)

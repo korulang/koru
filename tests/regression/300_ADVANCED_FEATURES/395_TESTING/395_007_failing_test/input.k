@@ -5,17 +5,17 @@
 // the exit code: a non-zero zig-test exit means the deliberately
 // failing test was correctly detected.
 
-~import std/testing
+import std/testing
 
-~tor do-thing {} -> u32
+tor do-thing {} -> u32
 
-~test(This test passes) {
-    ~do-thing -> 1
-    ~do-thing(): _ |> assert(true)
+test(This test passes) {
+    do-thing -> 1
+    do-thing(): _ |> assert(true)
 }
 
-~test(This test should fail) {
-    ~do-thing -> 1
-    ~do-thing(): _ |> assert(false)
+test(This test should fail) {
+    do-thing -> 1
+    do-thing(): _ |> assert(false)
 }
 
