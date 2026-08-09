@@ -33,6 +33,20 @@ Auto-Disposing Monadic Event Continuation Language"* — a pile of everything. T
 north star is what gives that pile a spine: it isn't "look how much we crammed
 in," it's "we refused to give any of it up."
 
+## The ideal user — 🌱 SEED, NOT SETTLED
+
+> **Planted by a bettermaker pass on 2026-08-09, not by Lars and not on a walk.**
+> The garden held a north star, three beds and two refusals, but never named the
+> person. This is a placeholder so passes have a seat to sit in; it is explicitly
+> **unratified**. Replace it on the next walk — or delete it. Do not cite it as
+> something the human chose.
+
+A working systems programmer with a mature C or Zig codebase who has been handed
+the choice they resent: rewrite it in Rust for the safety, or keep the libraries
+that already work. They are sceptical by default and they will check your numbers
+before they believe a word — which is why *no unearned claim* is the refusal that
+matters most to them.
+
 ## The beds — one garden, three stretches of "no compromise"
 
 ### Worthy — great on every axis at once
@@ -119,3 +133,8 @@ modes:
   and the wire: budgeted interpreter + resource bridge (`koru_std/bridge.kz`)
   = conversations over the wire under obligations. Same walk: bracket-phantom
   context-poison eradicated repo-wide (the scene itself was a source). — walk (Muse)
+- 2026-08-09 — 🌱 planted an ideal user as an UNRATIFIED seed (the garden had
+  none, so passes had no seat to test against). Not co-derived, not on a walk —
+  written by a bettermaker pass over the benchmark harness, where the missing
+  person made "does this pull toward the scene?" unanswerable. Ratify, rewrite or
+  pull it. — bettermaker pass
