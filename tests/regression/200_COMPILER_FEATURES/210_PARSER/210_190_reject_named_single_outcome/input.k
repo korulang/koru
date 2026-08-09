@@ -19,5 +19,5 @@
 // The positive twin is 350_019: an arm producing an anonymous record into a
 // bare-return tor.
 
-~tor handle { path: string }
+tor handle { path: string }
 | response { status: i32, body: string }
