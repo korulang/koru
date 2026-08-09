@@ -101,8 +101,13 @@ for d in "${CAND[@]}"; do
   [ -f "$wdir/input.kz" ] || continue
   mv "$wdir/input.kz" "$wdir/input.k"
   sed -i '' -E 's/^([[:space:]]*)~/\1/' "$wdir/input.k" 2>/dev/null || sed -i -E 's/^([[:space:]]*)~/\1/' "$wdir/input.k"
-  id=$(basename "$d" | grep -oE '^[0-9]+_[0-9]+' || true)
-  [ -n "$id" ] && IDS+=("$id")
+  # Filter by the FULL directory name, not the leading NNN_NNN. Five candidates
+  # under 330_PHANTOM_TYPES and 360_TAPS_OBSERVERS are named `520_multiple_…`,
+  # `509_tap_observer_…` — one number, not two — so the id regex matched nothing,
+  # they were never added here, and the gate reported them as "never ran". The
+  # three-state check below caught it rather than miscounting them as "stays
+  # .kz", which is the only reason the backlog was not quietly understated.
+  IDS+=("$(basename "$d")")
 done
 
 # Run ONLY the candidate tests (the first invocation builds koruc; the rest reuse
