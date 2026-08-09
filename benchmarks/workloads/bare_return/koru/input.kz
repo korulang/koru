@@ -4,7 +4,7 @@ const std = @import("std");
 
 var input_n: u64 = 0;
 
-~pub event read-n {}
+~pub tor read-n {}
 
 ~proc read-n|zig {
     var args = std.process.args();
@@ -18,7 +18,7 @@ var input_n: u64 = 0;
 
 // The single-payload event under test. NEW bare-return form: `-> u64`.
 // One non-foldable LCG step (Knuth MMIX constants) per call.
-~pub event mix { x: u64 } -> u64
+~pub tor mix { x: u64 } -> u64
 
 ~proc mix|zig {
     return x *% 6364136223846793005 +% 1442695040888963407;
@@ -27,7 +27,7 @@ var input_n: u64 = 0;
 // Driver: a native loop fires the `step` effect N times; each firing's arm
 // calls `mix` (the single-payload event), binds the result, and resumes with
 // it. So the bare-return event sits on the hot path, threaded data-dependently.
-~pub event driver { n: u64 }
+~pub tor driver { n: u64 }
 ! step u64 -> u64
 | done u64
 

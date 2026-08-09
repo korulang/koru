@@ -20,7 +20,7 @@ var total: u64 = 0;
 
 const INPUTS = [_][]const u8{ "2x3x4", "20x3x11", "hello world!" };
 
-~pub event read-n {}
+~pub tor read-n {}
 
 ~proc read-n|zig {
     var args = std.process.args();
@@ -32,13 +32,13 @@ const INPUTS = [_][]const u8{ "2x3x4", "20x3x11", "hello world!" };
     }
 }
 
-~pub event bump-dims { l: i64, w: i64, h: i64 }
+~pub tor bump-dims { l: i64, w: i64, h: i64 }
 ~proc bump-dims|zig {
     count_matched += 1;
     total += @as(u64, @intCast(l)) * @as(u64, @intCast(w)) * @as(u64, @intCast(h));
 }
 
-~pub event bump-none {}
+~pub tor bump-none {}
 ~proc bump-none|zig { count_none += 1; }
 
 ~read-n()

@@ -15,7 +15,7 @@ var total_len: u64 = 0;
 
 const INPUTS = [_][]const u8{ "foo@bar", "12345", "hello world!" };
 
-~pub event read-n {}
+~pub tor read-n {}
 
 ~proc read-n|zig {
     var args = std.process.args();
@@ -27,13 +27,13 @@ const INPUTS = [_][]const u8{ "foo@bar", "12345", "hello world!" };
     }
 }
 
-~pub event bump-email { m: []const u8 }
+~pub tor bump-email { m: string }
 ~proc bump-email|zig { count_email += 1; total_len += m.len; }
 
-~pub event bump-number { m: []const u8 }
+~pub tor bump-number { m: string }
 ~proc bump-number|zig { count_number += 1; total_len += m.len; }
 
-~pub event bump-none {}
+~pub tor bump-none {}
 ~proc bump-none|zig { count_none += 1; }
 
 ~read-n()

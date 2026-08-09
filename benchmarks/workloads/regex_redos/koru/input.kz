@@ -10,7 +10,7 @@ const std = @import("std");
 var input_n: u64 = 0;
 var run_buf: []u8 = &[_]u8{};
 
-~pub event build-input {}
+~pub tor build-input {}
 
 ~proc build-input|zig {
     var args = std.process.args();

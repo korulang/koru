@@ -14,7 +14,7 @@ var count_none: u64 = 0;
 
 const INPUTS = [_][]const u8{ "foo@bar", "12345", "hello world!" };
 
-~pub event read-n {}
+~pub tor read-n {}
 
 ~proc read-n|zig {
     var args = std.process.args();
@@ -26,13 +26,13 @@ const INPUTS = [_][]const u8{ "foo@bar", "12345", "hello world!" };
     }
 }
 
-~pub event bump-email {}
+~pub tor bump-email {}
 ~proc bump-email|zig { count_email += 1; }
 
-~pub event bump-number {}
+~pub tor bump-number {}
 ~proc bump-number|zig { count_number += 1; }
 
-~pub event bump-none {}
+~pub tor bump-none {}
 ~proc bump-none|zig { count_none += 1; }
 
 ~read-n()

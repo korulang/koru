@@ -5,7 +5,7 @@ const std = @import("std");
 var input_n: u64 = 0;
 var counter: u64 = 0;
 
-~pub event read-n {}
+~pub tor read-n {}
 
 ~proc read-n|zig {
     var args = std.process.args();
@@ -17,34 +17,34 @@ var counter: u64 = 0;
     }
 }
 
-~pub event leaf { n: u64 }
+~pub tor leaf { n: u64 }
 ! v u64
 
 ~proc leaf|zig {
     for (0..n) |i| v(i);
 }
 
-~pub event mid { n: u64 }
+~pub tor mid { n: u64 }
 ! v u64
 
 ~proc mid|zig {
     for (0..n) |i| v(i);
 }
 
-~pub event outer { n: u64 }
+~pub tor outer { n: u64 }
 ! v u64
 
 ~proc outer|zig {
     for (0..n) |i| v(i);
 }
 
-~pub event inc {}
+~pub tor inc {}
 
 ~proc inc|zig {
     counter +%= 1;
 }
 
-~pub event print-counter {}
+~pub tor print-counter {}
 
 ~proc print-counter|zig {
     std.debug.print("counter = {d}\n", .{counter});
