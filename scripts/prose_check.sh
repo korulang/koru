@@ -299,9 +299,48 @@ else
   fail=1
 fi
 
+# --- F: no `.k` carries a tilde (blocking) ----------------------------------
+# `~` is the switch that tells a HOST-language file where Koru starts. A `.k`
+# has no host language, so there is nothing to switch away from and the
+# character is refused — which is what 210_203_reject_tilde_in_dot_k pins, one
+# file at a time. This is the same rule asked of the whole corpus.
+#
+# It exists because of a real push: twenty `.kz` tests were renamed with
+# `git mv` (which STAGES) and de-tilded with `sed -i` (which does not), so the
+# commit carried twenty `.k` files still full of tildes while every test run
+# reported green — the runs read the working tree, the push shipped the index.
+# See concepts/frag-a-green-run-is-evidence-about-the-tree-not-the-commit.md.
+# Reading HEAD rather than the working tree is the whole point of this check.
+#
+# BLIND SPOTS, stated rather than discovered later: it matches a tilde only at
+# the START of a line, and only under tests/regression/**/input.k and
+# koru_std/**/*.k. A `~` mid-line — inside a string, inside a comment — is not
+# looked at, deliberately, because those are the false positives. A `.k` living
+# anywhere else in the repo is not looked at either.
+#
+# Calibrated by sabotage 2026-08-09, three ways: it names 210_203 when the
+# exception is lifted (the pattern really matches); it names a freshly committed
+# tilde in a file it had never seen (a scratch worktree, 010_000); and it stays
+# GREEN when the same tilde is only in the working tree, which is the property
+# that makes it worth having.
+TILDE_K=$(git grep -l '^[[:space:]]*~' HEAD -- 'tests/regression/**/input.k' 'koru_std/**/*.k' 2>/dev/null \
+          | sed 's#^HEAD:##' | grep -v '210_203_reject_tilde_in_dot_k' || true)
+n=$(printf '%s' "$TILDE_K" | grep -c . || true)
+if [ "$n" -eq 0 ]; then
+  echo -e "  ${GREEN}✓ F${NC} no committed \`.k\` carries a tilde (210_203 excepted — refusing one is what it pins)"
+else
+  echo -e "  ${RED}✗ F${NC} ${n} committed \`.k\` file(s) carry a tilde:"
+  printf '%s\n' "$TILDE_K" | sed 's/^/      /'
+  echo "      A \`.k\` is pure Koru: no host language, so no parser switch to write."
+  echo "      If the file genuinely has host content it is a \`.kz\`; if not, strip the \`~\`."
+  echo "      Checked against HEAD, not the working tree — a green test run proves"
+  echo "      nothing about what was staged."
+  fail=1
+fi
+
 echo ""
 if [ "$fail" -ne 0 ]; then
   echo -e "${RED}prose-check FAILED${NC}"
   exit 1
 fi
-echo -e "${GREEN}prose-check OK${NC} (A/B/C/D/E all green — generated==regen, no prose fields, unique test ids, mirror wall current, ruling markers live)"
+echo -e "${GREEN}prose-check OK${NC} (A/B/C/D/E/F all green — generated==regen, no prose fields, unique test ids, mirror wall current, ruling markers live, no tilde in a .k)"
