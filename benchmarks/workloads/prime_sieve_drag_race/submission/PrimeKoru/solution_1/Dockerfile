@@ -22,7 +22,11 @@ FROM debian:bookworm-slim AS build
 
 ARG ZIG_VERSION=0.15.2
 ARG KORU_REPO=https://github.com/korulang/koru.git
-ARG KORU_REF=drag-race-v1
+# An immutable full commit SHA, never a branch or tag. A movable tag let the
+# pinned compiler and this directory's source drift into different eras: the tag
+# pointed at 4232d004 (2026-06-30), where `tor` is not yet a keyword, while
+# faithful.k below declares `pub tor` — so `docker build` could not have worked.
+ARG KORU_REF=d371963e9f105b956ff4fdd9f57f9883e2a01a2e
 
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -50,8 +54,13 @@ ENV PATH=/opt/zig:$PATH
 
 # Build koruc from source at the pinned ref. koru_std/ lives beside the binary;
 # koruc resolves it at compile time via KORU_HOME (the dir above zig-out/bin).
-RUN git clone --depth 1 --branch "${KORU_REF}" "${KORU_REPO}" /koru
+# `--branch` takes a branch or tag only, which is what forced the movable tag.
+# Fetching the SHA directly keeps the shallow clone and the immutable pin.
 WORKDIR /koru
+RUN git init -q . \
+    && git remote add origin "${KORU_REPO}" \
+    && git fetch --depth 1 origin "${KORU_REF}" \
+    && git checkout -q --detach FETCH_HEAD
 RUN zig build
 
 # Compile the sieve through Koru's full metacircular pipeline. koruc clobbers CWD
