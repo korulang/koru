@@ -36,8 +36,29 @@ const import_pipeline = @import("import_pipeline.zig");
 
 const version = "0.1.7";
 
-/// Write a branch name, escaping Zig keywords with @"..."
+/// Write a branch name as a Zig identifier: kebab `-` mangled to `_`, otherwise
+/// escaped if it collides with a Zig keyword.
+///
+/// THE MANGLE IS NOT OPTIONAL, AND THIS COPY DID NOT HAVE IT. The union that
+/// declares these branches is written by `emitter_helpers.writeBranchName`,
+/// which mangles — so `| parse-error` becomes the field `parse_error`. This
+/// site writes the switch ARM that matches it, and without the mangle it wrote
+/// `.@"parse-error"`: a legal Zig identifier naming a field that does not
+/// exist. The two spellings only ever meet when a program switches on a
+/// hyphenated branch of a tor declared in ANOTHER module, which is why it
+/// stayed invisible. No minimal test distinguishes it yet — see the note on
+/// `codegen_utils.appendBranchName` for what was tried and what was measured.
+///
+/// Both writers answer one question. If you change how a branch name is spelled,
+/// change it in `emitter_helpers.writeBranchName` too, or the union and its
+/// switch arms drift apart again.
 fn writeBranchName(writer: anytype, name: []const u8) !void {
+    for (name) |c| {
+        if (c == '-') {
+            for (name) |ch| try writer.writeAll(&[_]u8{if (ch == '-') '_' else ch});
+            return;
+        }
+    }
     if (codegen_utils.needsEscaping(name)) {
         try writer.writeAll("@\"");
         try writer.writeAll(name);

@@ -1,0 +1,30 @@
+// A kebab branch name survives a module boundary.
+//
+// `| parse-error` is a legal Koru name and an illegal Zig identifier. It has
+// exactly one correct Zig spelling — the MANGLE, `parse_error` — and never the
+// escape, `@"parse-error"`. Both are legal Zig, so a union declaring the field
+// one way and a switch arm matching it the other each compile alone and
+// disagree only where they meet.
+//
+// Here the union is emitted for `app/lib` and the switch arm for this consumer,
+// by different code paths, which is the cheapest place that disagreement can
+// show.
+//
+// ⚠️ THIS TEST DOES NOT HOLD THE DEFECT IT WAS WRITTEN FOR. It was written to
+// pin the kebab mismatch found in orisha (six kebab branches of
+// `std/runtime:run`, switched on from inside a router-transform body), and it
+// passes with OR without the emitter fix — verified by reverting the fix,
+// rebuilding, and re-running. Three shapes were tried: this one, the same
+// nested under a subflow arm, and the same as an event implementation body.
+// None distinguish. Whatever reaches the escaped spelling lives on the
+// transform-generated path, which nothing here exercises. Do not read a green
+// here as cover for that.
+
+const std = @import("std");
+
+~import std/io
+~import app/lib
+
+~app/lib:classify(n: -1)
+| parse-error e |> std/io:print.ln("{{ e.message:s }}@{{ e.line:d }}")
+| ok s |> std/io:print.ln(s)

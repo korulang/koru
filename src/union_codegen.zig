@@ -41,7 +41,7 @@ pub const UnionCodegen = struct {
         // Generate each branch variant
         for (super_shape.branches) |branch| {
             try result.appendSlice(self.allocator, "    ");
-            try codegen_utils.appendEscapedIdentifier(&result, self.allocator, branch.name);
+            try codegen_utils.appendBranchName(&result, self.allocator, branch.name);
             try result.appendSlice(self.allocator, ": ");
             
             // Generate struct for branch payload
@@ -100,7 +100,7 @@ pub const UnionCodegen = struct {
         // Start with union type
         try result.appendSlice(self.allocator, union_type);
         try result.appendSlice(self.allocator, "{ .");
-        try codegen_utils.appendEscapedIdentifier(&result, self.allocator, branch_constructor.branch_name);
+        try codegen_utils.appendBranchName(&result, self.allocator, branch_constructor.branch_name);
         try result.appendSlice(self.allocator, " = ");
         
         if (branch_constructor.fields.len == 0) {
@@ -172,7 +172,7 @@ pub const UnionCodegen = struct {
         
         for (flow.body.continuations) |cont| {
             try result.appendSlice(self.allocator, "        .");
-            try codegen_utils.appendEscapedIdentifier(&result, self.allocator, cont.branch);
+            try codegen_utils.appendBranchName(&result, self.allocator, cont.branch);
             try result.appendSlice(self.allocator, " => |");
             if (cont.binding) |binding| {
                 try codegen_utils.appendEscapedIdentifier(&result, self.allocator, binding);

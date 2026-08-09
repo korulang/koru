@@ -127,6 +127,54 @@ pub fn needsEscaping(name: []const u8) bool {
     return false;
 }
 
+/// True when a name carries a kebab `-`, which is legal in Koru and illegal in
+/// a Zig identifier.
+///
+/// A kebab name has exactly one correct Zig spelling and it is the MANGLE, not
+/// the escape: `parse-error` becomes `parse_error`, never `@"parse-error"`.
+/// Both are legal Zig, which is what makes this dangerous — a union declaring
+/// the field one way and a switch arm naming it the other both compile in
+/// isolation and disagree only when they meet.
+pub fn hasKebab(name: []const u8) bool {
+    for (name) |c| {
+        if (c == '-') return true;
+    }
+    return false;
+}
+
+/// Append a name mangled for Zig: kebab `-` → `_`. The result is always a
+/// valid identifier, so it never needs `@"…"` on top.
+pub fn appendMangled(list: *std.ArrayList(u8), allocator: std.mem.Allocator, name: []const u8) !void {
+    for (name) |c| {
+        try list.append(allocator, if (c == '-') '_' else c);
+    }
+}
+
+/// Append a BRANCH NAME as Zig: mangled when kebab, escaped when it collides
+/// with a keyword, verbatim otherwise.
+///
+/// Every site that writes a branch name — the union's field, a switch arm, a
+/// constructor — must go through one spelling, and this is it. They used not
+/// to: `emitter_helpers.writeBranchName` mangled, and the escaper family here
+/// did not, so a union written by one and switched on by the other disagreed.
+///
+/// NOT PINNED BY A MINIMAL TEST, and that is stated rather than implied. The
+/// mismatch was found in orisha, whose router transform switches on six kebab
+/// branches of `std/runtime:run`; routing these sites through one spelling
+/// removed that error, and a full --no-cache board with the change moved
+/// nothing (1442 -> 1445, every flip attributable elsewhere). Three minimal
+/// shapes were tried and all pass with AND without the change — see
+/// 020_062_kebab_branch_across_a_module_boundary, which says so in its own
+/// header. The distinguishing case is on the transform-generated path and has
+/// not been isolated.
+pub fn appendBranchName(list: *std.ArrayList(u8), allocator: std.mem.Allocator, name: []const u8) !void {
+    if (hasKebab(name)) {
+        try appendMangled(list, allocator, name);
+        return;
+    }
+    try appendEscapedIdentifier(list, allocator, name);
+}
+
 /// Escape a Zig identifier if needed (keyword, @-prefix, special chars)
 /// Caller owns the returned memory
 pub fn escapeZigIdentifier(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {

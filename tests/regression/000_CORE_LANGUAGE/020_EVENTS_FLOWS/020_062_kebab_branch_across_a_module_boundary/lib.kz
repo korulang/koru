@@ -1,0 +1,6 @@
+const std = @import("std");
+
+~proc classify|zig {
+    if (n < 0) return .{ .parse_error = .{ .message = "negative", .line = 3 } };
+    return .{ .ok = "fine" };
+}

@@ -298,7 +298,7 @@ fn generatePipelineCode(
 
                 if (!bare) {
                     try buf.appendSlice(allocator, ".{ .");
-                    try codegen_utils.appendEscapedIdentifier(&buf, allocator, bc.branch_name);
+                    try codegen_utils.appendBranchName(&buf, allocator, bc.branch_name);
                     try buf.appendSlice(allocator, " = ");
                 }
 
@@ -547,7 +547,7 @@ fn generateBranchSwitch(
         try buf.append(allocator, '.');
 
         // Escape branch name if it's a keyword
-        try codegen_utils.appendEscapedIdentifier(&buf, allocator, cont.branch);
+        try codegen_utils.appendBranchName(&buf, allocator, cont.branch);
 
         try buf.appendSlice(allocator, " => ");
 
