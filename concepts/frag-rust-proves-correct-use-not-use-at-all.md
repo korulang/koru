@@ -27,6 +27,39 @@ draws.** A table showing Rust losing 23 out of 23 is dismissed on sight; a table
 where Rust wins a class outright and loses exactly one is one people argue
 *with* rather than *about*.
 
+## Two of those draws are losses, and the first summary dropped them
+
+The verdict files mark **seven** cases as differing, not five. The two extra —
+`2104_12` and `2104_13` — differ *against* Koru, and were silently absent from
+the first report of this work. Both compilers refuse the program, so the outcome
+is a draw; the architecture behind the refusal is not.
+
+With `--strict-base-types` off — which is those tests' setting — Koru's own
+front-end phantom checker compares state tags only, sees two that match, and
+passes a wrong-base-type call straight through to code generation. The gate that
+actually catches it is the emitted Zig, and the message the author reads is
+Zig's, naming Koru's internal generated module paths. Rust has one gate and it is
+always on; reaching Koru's default posture there requires a deliberate `unsafe`
+transmute, which the probe in `2104_12`'s verdict demonstrates.
+
+**A Koru mistake reported in Zig's voice is a defect, not a fallback**, and the
+default posture depending on a backend it does not control is the part worth
+fixing. Filed here as a belief because the corpus proves it and nothing pins it.
+
+Rust's single strongest row is `2104_15`: Koru needed dedicated compiler
+behaviour to insert a `close()` on a dropped obligation, where `Drop` hands Rust
+the identical guarantee as an ordinary consequence of ownership.
+
+## The strongest form of the thesis is the one that is unpinned
+
+`2104_unused_resources` states it in its own comment — acquiring a resource
+creates an obligation to use it *meaningfully*, and automatic cleanup does not
+satisfy that — and contains no program compiling against it. The Rust side
+established that this is the one property plain typestate genuinely cannot
+express at compile time without dependent or session types; it degrades to a
+hand-written flag checked at runtime. If Koru enforces it statically, that is the
+best result in the whole corpus and no test claims it.
+
 ## The one class that breaks
 
 A **forgotten** obligation. A value constructed, matched, and dropped without
