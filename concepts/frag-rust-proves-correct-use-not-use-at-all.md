@@ -42,9 +42,22 @@ Zig's, naming Koru's internal generated module paths. Rust has one gate and it i
 always on; reaching Koru's default posture there requires a deliberate `unsafe`
 transmute, which the probe in `2104_12`'s verdict demonstrates.
 
-**A Koru mistake reported in Zig's voice is a defect, not a fallback**, and the
-default posture depending on a backend it does not control is the part worth
-fixing. Filed here as a belief because the corpus proves it and nothing pins it.
+**A Koru mistake reported in Zig's voice is a defect, not a fallback.** Fixed
+2026-08-10: the check is unconditional now and the flag is deleted. The reason
+it had been off was recorded in the source as an accuracy trade — defer to Zig,
+which handles type aliases and module qualification properly. Forcing the old
+comparison on for a full board falsified that: 5 false positives, all one
+defect, none about aliases. It compared MODULE-QUALIFIED forms, and no
+type-to-declaring-module map exists anywhere in the checker, so the qualifier is
+stamped on with whichever module happens to be writing. Both sides named the
+identical type and disagreed on its prefix; three of the five qualified a
+primitive, where a prefix is meaningless outright.
+
+**The transferable lesson is about the shape of the excuse.** A guard switched
+off "for accuracy" had one narrow bug behind it, and turning the whole guard off
+was cheaper to write than finding the bug — so the reason in the comment
+outlived the reason in fact, and became the thing everyone read instead of
+measuring. The measurement took one board.
 
 Rust's single strongest row is `2104_15`: Koru needed dedicated compiler
 behaviour to insert a `close()` on a dropped obligation, where `Drop` hands Rust

@@ -28,3 +28,17 @@ Did not run (compilation failed).
 **Koru:** without `--strict-base-types` (this test's setting), Koru's phantom checker again only sees matching state tags and lets the call through; the emitted Zig code's real, distinct struct types are what actually refuse it: `expected type '*output_emitted.koru_app.koru_db.Transaction', found '*output_emitted.koru_app.koru_db.Connection'`.
 
 **DIFFERS: yes**, for the same architectural reason as 2104_12: Koru's default mode depends on the Zig backend as a second gate and leaks its internal type paths in the diagnostic when that gate is what fires; Rust never needed a second gate because its single front end already does full nominal typing on every call, unconditionally — see 2104_12's verdict for the `unsafe`-transmute probe that shows exactly what it would take to make Rust behave like Koru's default here.
+
+## UPDATE 2026-08-10 — the Koru side of this row changed
+
+Writing this comparison is what surfaced the defect described above, and it is
+fixed. Base-type checking no longer sits behind `--strict-base-types`; the flag
+is deleted and the check is unconditional. Koru now refuses this program in its
+own front end with its own diagnostic:
+
+```
+error[KORU030]: Type mismatch: expected 'app.db:*Transaction<!active>' but got 'app.db:*Connection<app.db:active!>' for argument 'tx'
+```
+
+The verdict text above is preserved as written — it records what was true when
+measured, and the Rust-side probes in it are unaffected.

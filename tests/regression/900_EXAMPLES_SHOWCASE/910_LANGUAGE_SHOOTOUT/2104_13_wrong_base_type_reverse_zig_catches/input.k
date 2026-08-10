@@ -1,14 +1,15 @@
-// TEST: Pass a Connection where Transaction is expected (WITHOUT --strict-base-types)
+// TEST: pass a Connection where a Transaction is expected — the reverse of
+// 2104_12, refused by Koru's own front end, with no flag.
 //
-// Reverse of 2104_12: commit() expects *Transaction, we pass *Connection
+// commit() expects: *Transaction<!active>
+// this passes:      *Connection<active!>
 //
-// Without --strict-base-types, Zig catches this during compilation.
+// Same shape as 2104_12: the phantom state agrees, the type name does not.
 
 import app/db
 
-// BUG: the `| ok c |> app/db:commit(tx: c)` handler below passes c
-// (*Connection) to commit() which expects *Transaction. Koru won't catch
-// this without --strict-base-types, but Zig WILL during compilation.
+// The handler below passes c (*Connection) to commit(), which takes a
+// *Transaction.
 app/db:connect(host: "localhost")
 | ok c |> app/db:commit(tx: c)
 | err _ |> _
