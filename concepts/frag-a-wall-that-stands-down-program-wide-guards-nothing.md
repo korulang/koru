@@ -56,12 +56,28 @@ disabled the check that would have caught their empty box.
   is missing. Then the wall standing down costs a compile-time error, not a
   silent wrong answer, and the failure keeps its volume in every configuration.
 
+## Settled by building it
+
+The loud failure **backs up** the refusal rather than replacing it, and the two
+turn out not to compete. The refusal still rejects at compile time wherever it
+can see the whole picture; the emitted panic covers where it cannot. Scaffolding
+— a whole application written as flow with its boxes still empty, run before
+anything fills them — survives because the stand-down still permits the build; it
+stops being dangerous because the empty box now announces itself.
+
+The predicate the two readers share is the **shape** question only: would an
+empty body have to invent its answer? Everything about *reachability* stayed with
+the refusal, and measurement forced one more separation that reading would not
+have found. `[abstract]` looks like it belongs in the shared question — an
+abstract event with no implementation is exactly the thing the refusal rejects —
+and putting it there breaks a working program (030_016), because an abstract
+event's emitted body is a live dispatch stub resolved elsewhere, not a fabricated
+answer. **"Has no implementation here" and "would lie if reached" are different
+questions about the same event**, and only the second one belongs to the emitter.
+
 ## Open
 
-Whether the emitted loud failure should then *replace* the compile-time refusal
-rather than back it up. Refusing to compile is the stronger guarantee and the
-one Koru's reputation rests on; a program that compiles and dies at the hole is
-the weaker guarantee and the one that makes scaffolding — a whole application
-written as flow with its boxes still empty, run before anything is filled in —
-possible at all. The two are not obviously reconcilable by ranking, and the
-answer likely depends on whether the compilation was asked for as a scaffold.
+Whether the loud panic should carry the *reason the box is empty* — a scaffold
+compiled on purpose reads differently from an implementation someone forgot — and
+whether that distinction should exist at compile time at all, as a mode the build
+was asked for, rather than being inferred from what happens to be missing.

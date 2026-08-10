@@ -3573,6 +3573,41 @@ pub const VisitorEmitter = struct {
 
         // NOTE: Special case for compiler.coordinate removed - abstract/impl handles it
 
+        // THE LOUD HOLE. Nothing implements this event, and an empty body here
+        // would have to invent the answer — a value out of nothing, or a choice
+        // between outcomes made by taking the first arm. The program is allowed
+        // to be built in this state (a scaffold: the whole application written
+        // as flow with its boxes still empty, run before anything fills them),
+        // but reaching an empty box must be unmissable. Announce and die.
+        //
+        // The refusal (KORU047) still rejects this at compile time wherever it
+        // can see the whole picture; this is what happens where it cannot —
+        // most of all in a program carrying test blocks, which stands that
+        // refusal down for everything (395_012).
+        // `[abstract]` is exempt: its emitted body is a dispatch stub that is
+        // genuinely on the call path and gets resolved elsewhere (030_016 calls
+        // one during comptime evaluation). Panicking there kills a working
+        // program. The refusal still rejects an abstract event invoked with no
+        // implementation anywhere.
+        if (!found_impl and !event.hasAnnotation("abstract") and ast.stubWouldFabricate(event)) {
+            const hole_name = try std.mem.join(self.allocator, ".", event.path.segments);
+            defer self.allocator.free(hole_name);
+            const msg = try std.fmt.allocPrint(
+                self.allocator,
+                "koru: reached `{s}`, which nothing implements — this program was built with the box still empty",
+                .{hole_name},
+            );
+            defer self.allocator.free(msg);
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("_ = &__koru_event_input;\n");
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("@panic(");
+            try self.code_emitter.writeZigStringLiteral(msg);
+            try self.code_emitter.write(");\n");
+            // A body WAS written; suppress the fabricating placeholder below.
+            found_impl = true;
+        }
+
         if (!found_impl) {
             // Add unused parameter suppression
             // Use & to suppress regardless of whether parameter is accessed

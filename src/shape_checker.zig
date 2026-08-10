@@ -797,50 +797,20 @@ pub const ShapeChecker = struct {
         defer self.allocator.free(decl_path);
         if (std.mem.indexOfScalar(u8, decl_path, '*') != null) return;
 
-        // Does this event NEED an implementation? Mirror the emitter's stub
-        // arms: `-> T` stubs `return undefined` (UB); >=2 terminal arms stub
-        // the FIRST arm unconditionally (lies about the choice); one payload-
-        // carrying terminal arm stubs zero-defaults (lies about the data) —
-        // unless auto-proc passthrough can synthesize it from the input.
-        const needs_impl = blk: {
-            // [abstract] is an explicit contract that an implementation exists
-            // somewhere — invoking one with neither default nor override is an
-            // error regardless of output shape (resolve_abstract_impl's own
-            // doctrine: "Neither default nor override: error if invoked").
-            if (event.hasAnnotation("abstract")) break :blk true;
-            if (event.return_type != null) break :blk true;
-            var terminal_count: usize = 0;
-            var first_terminal: ?*const ast.Branch = null;
-            for (event.branches) |*b| {
-                if (b.kind == .effect) continue;
-                terminal_count += 1;
-                if (first_terminal == null) first_terminal = b;
-            }
-            // Void or effect-only event: the stub is a no-op, not a lie.
-            const first = first_terminal orelse break :blk false;
-            // `*` payload: shape-validation-only event (parser/transform vehicle).
-            if (first.payload.is_wildcard) break :blk false;
-            if (terminal_count >= 2) break :blk true;
-            // Single bare signal arm: no data to fabricate.
-            if (first.payload.fields.len == 0) break :blk false;
-            // Auto-proc passthrough: every output field has a matching input
-            // field (name + base type) — the synthesized identity is real
-            // behavior (350_AUTO_PROC), not a stub.
-            for (first.payload.fields) |out_field| {
-                var matched = false;
-                for (event.input.fields) |in_field| {
-                    if (std.mem.eql(u8, out_field.name, in_field.name) and
-                        std.mem.eql(u8, stripPhantomSuffix(out_field.type), stripPhantomSuffix(in_field.type)))
-                    {
-                        matched = true;
-                        break;
-                    }
-                }
-                if (!matched) break :blk true;
-            }
-            break :blk false;
-        };
-        if (!needs_impl) return;
+        // Does this event NEED an implementation? Two questions, and only the
+        // second is shared with the emitter.
+        //
+        // `[abstract]` is a contract that an implementation exists SOMEWHERE —
+        // invoking one with neither default nor override is an error whatever
+        // its output shape (resolve_abstract_impl's own doctrine: "Neither
+        // default nor override: error if invoked"). That is about where code
+        // lives, not about what an empty body would return, so it stays here.
+        //
+        // The rest is the shape question — would the empty body have to INVENT
+        // an answer — and the emitter asks it identically when deciding what to
+        // write. One predicate serves both; this used to be a hand-kept copy of
+        // the emitter's synthesis conditions.
+        if (!event.hasAnnotation("abstract") and !ast.stubWouldFabricate(event)) return;
 
         const inv_name = try self.pathToString(inv.path);
         defer self.allocator.free(inv_name);
@@ -2720,28 +2690,4 @@ test "for shape: each plus single done - valid" {
 
     const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc, null, false);
     try std.testing.expect(covered);
-}
-
-/// Strip a trailing phantom annotation from a type string: `*R<active!>` → `*R`.
-/// Twin of visitor_emitter.stripPhantom — the KORU047 passthrough exemption
-/// must match base types exactly the way the emitter's auto-proc check does.
-fn stripPhantomSuffix(type_str: []const u8) []const u8 {
-    if (type_str.len > 0 and type_str[type_str.len - 1] == '>') {
-        var angle_depth: i32 = 0;
-        var i = type_str.len - 1;
-        while (i > 0) : (i -= 1) {
-            if (type_str[i] == '>') {
-                angle_depth += 1;
-            } else if (type_str[i] == '<') {
-                angle_depth -= 1;
-                if (angle_depth == 0) {
-                    if (i > 0) {
-                        return type_str[0..i];
-                    }
-                    break;
-                }
-            }
-        }
-    }
-    return type_str;
 }

@@ -2275,3 +2275,93 @@ pub const ASTNode = union(enum) {
         return false;
     }
 };
+
+/// Strip a trailing phantom annotation from a type string: `*R<active!>` → `*R`.
+///
+/// Single home for what were byte-identical twins in `shape_checker` and
+/// `visitor_emitter`. They had to agree — the refusal below and the emitter's
+/// auto-proc passthrough answer the same question about the same types — and
+/// keeping two copies in step was a promise nobody could check.
+pub fn stripPhantomSuffix(type_str: []const u8) []const u8 {
+    if (type_str.len > 0 and type_str[type_str.len - 1] == '>') {
+        var angle_depth: i32 = 0;
+        var i = type_str.len - 1;
+        while (i > 0) : (i -= 1) {
+            if (type_str[i] == '>') {
+                angle_depth += 1;
+            } else if (type_str[i] == '<') {
+                angle_depth -= 1;
+                if (angle_depth == 0) {
+                    if (i > 0) return type_str[0..i];
+                    break;
+                }
+            }
+        }
+    }
+    return type_str;
+}
+
+/// Would the no-implementation stub for this event FABRICATE an answer it was
+/// never given?
+///
+/// Two readers ask this, and before this function they asked it separately: the
+/// invoked-but-unimplemented refusal (KORU047), deciding whether to reject the
+/// program, and the emitter, deciding what to put in an empty event's body. They
+/// were hand-written to agree — the refusal's own comment says it is "mirroring
+/// the emitter's own synthesis conditions" — which is a duplicate maintained by
+/// care rather than by construction.
+///
+/// True means the stub has to invent something: a value out of nothing for a
+/// `-> T` event, or a choice between outcomes made by taking the first arm.
+/// False means the empty body is honest — an event that produces nothing is a
+/// no-op when empty, a wildcard payload is a shape-validation vehicle, and an
+/// output every field of which is already present in the input gets real
+/// passthrough synthesised rather than a stub.
+///
+/// Only the SHAPE is asked here. Whether an event is marked never-run, is
+/// comptime-only, is declared through a glob, or carries `[abstract]` decides
+/// whether the *refusal* fires; none of it says whether the body would lie.
+/// Those all stay with the refusal, where a reader can check each against the
+/// event in front of them.
+///
+/// `[abstract]` in particular must NOT be answered here: an abstract event's
+/// emitted body is a dispatch stub that is genuinely on the call path and gets
+/// resolved elsewhere (030_016 calls one during comptime evaluation). It is a
+/// contract about where the implementation lives, not a fabricated answer.
+pub fn stubWouldFabricate(event: *const EventDecl) bool {
+    if (event.return_type != null) return true;
+
+    var terminal_count: usize = 0;
+    var first_terminal: ?*const Branch = null;
+    for (event.branches) |*b| {
+        if (b.kind == .effect) continue;
+        terminal_count += 1;
+        if (first_terminal == null) first_terminal = b;
+    }
+
+    // Void or effect-only: the empty body is a no-op, not a lie.
+    const first = first_terminal orelse return false;
+    // `*` payload: shape-validation-only event (parser/transform vehicle).
+    if (first.payload.is_wildcard) return false;
+    // Two or more outcomes: picking the first one lies about the choice.
+    if (terminal_count >= 2) return true;
+    // A single bare signal arm carries no data to fabricate.
+    if (first.payload.fields.len == 0) return false;
+
+    // Auto-proc passthrough: every output field has a matching input field
+    // (name + base type), so the synthesised identity is real behaviour
+    // (350_AUTO_PROC), not a stub.
+    for (first.payload.fields) |out_field| {
+        var matched = false;
+        for (event.input.fields) |in_field| {
+            if (std.mem.eql(u8, out_field.name, in_field.name) and
+                std.mem.eql(u8, stripPhantomSuffix(out_field.type), stripPhantomSuffix(in_field.type)))
+            {
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) return true;
+    }
+    return false;
+}

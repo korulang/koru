@@ -12633,6 +12633,29 @@ fn emitEventDeclForModule(
         }
     }
 
+    // THE LOUD HOLE. Nothing implements this event, and the placeholder below
+    // would have to invent its answer. Building the program is allowed — that
+    // is what makes a scaffold runnable, an application written as flow with
+    // its boxes still empty — but reaching an empty box may not be quiet.
+    // Twin of the same guard in visitor_emitter; both read one predicate.
+    // `[abstract]` is exempt — its body is a dispatch stub resolved elsewhere.
+    if (!found_impl and !event.hasAnnotation("abstract") and ast.stubWouldFabricate(event)) {
+        const hole_name = try std.mem.join(ctx.allocator, ".", event.path.segments);
+        defer ctx.allocator.free(hole_name);
+        const msg = try std.fmt.allocPrint(
+            ctx.allocator,
+            "koru: reached `{s}`, which nothing implements — this program was built with the box still empty",
+            .{hole_name},
+        );
+        defer ctx.allocator.free(msg);
+        try code_emitter.writeIndent();
+        try code_emitter.write("@panic(");
+        try code_emitter.writeZigStringLiteral(msg);
+        try code_emitter.write(");\n");
+        // A body WAS written; suppress the fabricating placeholder below.
+        found_impl = true;
+    }
+
     // If no implementation found, emit a placeholder return
     if (!found_impl) {
         if (log.level == .debug) {
