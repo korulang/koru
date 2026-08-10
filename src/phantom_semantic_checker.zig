@@ -10,7 +10,6 @@ const phantom_parser = @import("phantom_parser");
 const root = @import("root");
 const CompilerEnv = if (@hasDecl(root, "CompilerEnv")) root.CompilerEnv else struct {
     // Fallback for unit tests where CompilerEnv doesn't exist
-    // Returns false - strict-base-types is off by default
     pub fn hasFlag(_: []const u8) bool {
         return false;
     }
@@ -613,6 +612,30 @@ pub const PhantomSemanticChecker = struct {
             "{s}:{s}",
             .{ canonical_module, base_type },
         );
+    }
+
+    /// The type's own name, with every module qualifier and pointer marker
+    /// removed. `app.db:*Connection` -> `Connection`, `*app/lib/db:Transaction`
+    /// -> `Transaction`, `string` -> `string`. The qualifier can sit on either
+    /// side of the `*` depending on whether the form was canonicalized here or
+    /// written that way in source, so the last `:` is the only reliable seam.
+    fn bareTypeName(base_type: []const u8) []const u8 {
+        const after_module = if (std.mem.lastIndexOfScalar(u8, base_type, ':')) |c|
+            base_type[c + 1 ..]
+        else
+            base_type;
+        var i: usize = 0;
+        while (i < after_module.len and after_module[i] == '*') i += 1;
+        return after_module[i..];
+    }
+
+    /// Two base types name the same type when their bare names agree AND they
+    /// carry the same pointer depth. The module qualifier is deliberately not
+    /// compared — see the long note at the base-type check for why it cannot be
+    /// trusted, and what that costs.
+    fn baseTypesMatch(a: []const u8, b: []const u8) bool {
+        if (!std.mem.eql(u8, bareTypeName(a), bareTypeName(b))) return false;
+        return std.mem.count(u8, a, "*") == std.mem.count(u8, b, "*");
     }
 
     /// Canonicalize a phantom state to its fully-qualified form
@@ -3277,22 +3300,48 @@ pub const PhantomSemanticChecker = struct {
 
         log.debug("[PHANTOM-FLOW]   Provided type: '{s}[{s}]'\n", .{ provided_base_type, provided_phantom });
 
-        // Base type checking (when --strict-base-types flag is set)
-        // Without this flag, we rely on Zig's type system to catch mismatches lazily,
-        // which is more accurate than our string-based comparison (handles type aliases, etc.)
-        // With this flag, we check eagerly but may have false positives/negatives.
-        if (comptime CompilerEnv.hasFlag("strict-base-types")) {
-            if (provided_base_type.len > 0 and !std.mem.eql(u8, expected_base_type, provided_base_type)) {
-                log.debug("[PHANTOM-FLOW] ❌ BASE TYPE MISMATCH!\n", .{});
-                try self.reporter.addError(
-                    .KORU030,
-                    location.line,
-                    location.column,
-                    "Type mismatch: expected '{s}<{s}>' but got '{s}<{s}>' for argument '{s}'",
-                    .{ expected_base_type, expected_phantom.?, provided_base_type, provided_phantom, arg.name },
-                );
-                return false;
-            }
+        // Base type checking. Unconditional since 2026-08-10; it used to sit
+        // behind `--strict-base-types`, off by default, because it compared the
+        // MODULE-QUALIFIED forms and the qualifier is not reliable: there is no
+        // type -> declaring-module map anywhere in this checker, so
+        // canonicalizeBaseType stamps a bare type name with whichever module
+        // happened to be WRITING it. The two sides then disagree on the prefix
+        // while naming the identical type.
+        //
+        // Measured 2026-08-10 by forcing the old comparison on for a full board:
+        // 5 false positives, every one of that exact shape, and zero of any
+        // other shape --
+        //   expected 'input:*File'          got 'app.lib.mipmap:*File'
+        //   expected 'input:string'         got 'app.lib.store:string'
+        //   expected 'app.lib.taint:string' got 'input:string'
+        //   expected 'std.field:*Field'     got 'input:*Field'
+        // Three of those qualify a PRIMITIVE, where a module prefix is
+        // meaningless outright; baseTypeModule below already knows that and
+        // returns null for one, but this comparison never got the same
+        // treatment. So the flag was not guarding against imprecision in
+        // general -- it was guarding against one defect, and hiding the check's
+        // whole value to do it.
+        //
+        // Comparing the unqualified names refuses every genuine mismatch the
+        // old form did (2104_10..13: `Connection` vs `Transaction`, same
+        // prefix) with none of the false positives.
+        //
+        // BLIND SPOT, stated rather than discovered later: two DIFFERENT types
+        // sharing one bare name across modules (`a:*Handle` vs `b:*Handle`)
+        // compare equal here and reach the backend, where Zig's nominal typing
+        // refuses them. Closing that needs the type -> declaring-module map
+        // that does not exist yet; until it does, the qualifier carries no
+        // information and comparing it only invents disagreements.
+        if (provided_base_type.len > 0 and !baseTypesMatch(expected_base_type, provided_base_type)) {
+            log.debug("[PHANTOM-FLOW] ❌ BASE TYPE MISMATCH!\n", .{});
+            try self.reporter.addError(
+                .KORU030,
+                location.line,
+                location.column,
+                "Type mismatch: expected '{s}<{s}>' but got '{s}<{s}>' for argument '{s}'",
+                .{ expected_base_type, expected_phantom.?, provided_base_type, provided_phantom, arg.name },
+            );
+            return false;
         }
 
         // Canonicalize both phantom states for proper comparison.

@@ -9,23 +9,22 @@ const errors = @import("errors");
 // =============================================================================
 //
 // NOTE ON BASE TYPE CHECKING:
-// By default, Koru does NOT check base types eagerly. It only validates phantom
-// state compatibility. The actual base type checking is delegated to Zig's type
-// system, which catches mismatches lazily during compilation.
+// Koru checks base types eagerly, in this checker, unconditionally. A call that
+// passes the wrong type is refused with a Koru diagnostic naming Koru types.
 //
-// This design is MORE CORRECT than eager string-based checking because:
-// - Zig handles type aliases correctly (const Conn = Connection)
-// - Zig handles module-qualified types correctly
-// - No false positives from string comparison mismatches
+// It did not always. Until 2026-08-10 this sat behind `--strict-base-types`,
+// off by default, with a comment claiming deferral to Zig was MORE CORRECT
+// because Zig handles type aliases and module qualification and string
+// comparison would false-positive. Forcing the old comparison on for a full
+// board produced exactly 5 false positives and they were all one defect —
+// comparing MODULE-QUALIFIED forms where the qualifier is synthesized from
+// whichever module is writing, so both sides named the same type and disagreed
+// on its prefix. Nothing about aliases. The comparison now runs on unqualified
+// names; see the long note at the check itself for what that costs.
 //
-// To enable eager base type checking (less accurate but earlier errors), use:
-//   koruc --strict-base-types input.kz
-//
-// Base type checking with --strict-base-types is tested in:
+// Refusal of a wrong base type is pinned in:
 //   tests/regression/900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT/2104_10_wrong_base_type/
 //   tests/regression/900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT/2104_11_wrong_base_type_reverse/
-//
-// Lazy Zig type checking (default behavior) is tested in:
 //   tests/regression/900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT/2104_12_wrong_base_type_zig_catches/
 //   tests/regression/900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT/2104_13_wrong_base_type_reverse_zig_catches/
 // =============================================================================

@@ -71,26 +71,34 @@ the ones where cleanup happens without being written out. Both sides produce the
 same trace. In five of these the Koru side's recorded output was diffed against
 the Rust program's actual output byte for byte.
 
-## Two rows that do not flatter us, and should be read
+## What this comparison found, and what it closed
 
-**`12` and `13` are draws in outcome and losses in architecture.** Both
-compilers refuse the program. But Koru's own front end does not: with the
-base-type check off — which is this test's setting, and the default — the
-phantom checker sees two matching state tags and lets the wrong call through to
-code generation. The thing that actually refuses it is the Zig the compiler
-emitted, and the message the author reads is Zig's, naming Koru's internal
-generated module paths:
+**`12` and `13` were losses when this page was first written, and the writing of
+it is what surfaced them.** Both compilers refused the program, so the outcome
+was a draw — but Koru's own front end did not do the refusing. Base-type
+checking sat behind an opt-in flag, off by default, so the phantom checker saw
+two matching state tags and passed the wrong call to code generation. What
+actually refused it was the emitted Zig, and the message the author read was
+Zig's, naming Koru's internal generated module paths. Both tests pinned that Zig
+text as their expected diagnostic — the fallback promoted to a specification.
 
-```
-expected type '*output_emitted.koru_app.koru_db.Connection',
-   found '*output_emitted.koru_app.koru_db.Transaction'
-```
+**Fixed 2026-08-10.** The check runs unconditionally now and the flag is gone;
+both tests pin a Koru diagnostic naming Koru types. The reason the flag existed
+turned out not to be the stated one (deferring to Zig for accuracy on type
+aliases). Forcing the old comparison on for a full board produced 5 false
+positives and every one was a single defect: it compared *module-qualified*
+forms, and the qualifier is stamped on with whichever module happens to be
+writing, so both sides named the identical type and disagreed on its prefix.
+Three of the five qualified a primitive, where a module prefix is meaningless
+outright. Comparing unqualified names refuses every genuine mismatch with none
+of the false positives.
 
-Rust has one gate and it is always on. Getting Rust to behave the way Koru
-behaves by default takes a deliberate `unsafe { transmute }` — that probe is in
-`2104_12`'s file.
+Rust still has the cleaner story here in one respect worth keeping: one gate,
+always on, no flag ever existed. Getting Rust to reach the exposure window Koru
+used to have by default takes a deliberate `unsafe { transmute }` — that probe
+is in `2104_12`'s file and is still the sharpest thing in it.
 
-**`15` is Rust's strongest row.** Koru needed dedicated compiler behaviour to
+**`15` is Rust's strongest row, and it stands.** Koru needed dedicated compiler behaviour to
 insert a `close()` on a dropped obligation. Rust's `Drop` gives the identical
 guarantee as an ordinary consequence of ownership, with no feature built for the
 purpose.
