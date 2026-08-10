@@ -1,0 +1,37 @@
+// Pins: an event that is declared, wired, and never implemented ANYWHERE must
+// announce itself and die when reached — it may not fabricate an answer.
+//
+// A program carrying `~test` blocks stands the invoked-but-unimplemented wall
+// (KORU047) down wholesale, because an implementation may be sitting in an
+// unparsed test body that no walk of this AST can see. That stand-down covers
+// application flows too, so the emitter's no-implementation path synthesizes
+// its silent stub — first branch, zero-defaults — and `fetch` below hands back
+// `found 0` without a word. The application believes it and takes the success
+// arm.
+//
+// This is the scaffold shape the swarm workflow depends on: the whole program
+// as high-level flow, boxes left empty, running before anything is filled in.
+// Running is right; running silently is not.
+~import std/testing
+~import std/io
+
+~tor fetch { id: u32 }
+| found u32
+| missing
+
+~tor run-it { id: u32 }
+| ok u32
+| gone
+
+~run-it = fetch(id)
+| found f => ok f
+| missing => gone
+
+// A test block exists — this alone stands the wall down — and it mocks nothing.
+~test(a test block exists, and mocks nothing) {
+    ~assert.ok()
+}
+
+~run-it(id: 1)
+| ok v |> std/io:print.ln("value = {{ v:d }}")
+| gone |> std/io:print.ln("nothing there")
