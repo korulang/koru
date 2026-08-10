@@ -95,17 +95,42 @@ insert a `close()` on a dropped obligation. Rust's `Drop` gives the identical
 guarantee as an ordinary consequence of ownership, with no feature built for the
 purpose.
 
-## The one thing that was never tested
+## The strongest claim in the corpus, and how it is held
 
-`2104_unused_resources` contains a module and no program. Its own comment states
-the strongest version of the whole thesis — *acquiring a resource creates an
-obligation to use it meaningfully, and automatic cleanup does not satisfy that* —
-and there is no Koru file compiling against it, so the claim is unpinned. The
-Rust side established that this property is the one thing plain typestate
-genuinely cannot express at compile time in any language without dependent or
-session types; it degrades to a hand-written `bool used` flag checked at runtime.
-If Koru enforces it statically, that is a distinct result and it needs a test
-that does not exist yet.
+*Acquiring a resource obliges you to use it meaningfully; automatic cleanup does
+not satisfy that.* This is the one property the Rust side established that plain
+typestate genuinely cannot express at compile time in any language without
+dependent or session types — it degrades to a hand-written `bool used` flag
+checked at runtime.
+
+Koru enforces it statically, and the mechanism is an **asymmetry deliberately
+built into the state chain**: there is no path from creating a resource to
+releasing it that does not pass through using it.
+
+```
+tx.begin  { conn: *Connection<!connected|!active> } -> *Transaction<started!>
+tx.exec   { tx: *Transaction<!started|!active>, … } -> *Transaction<active!>
+tx.commit { tx: *Transaction<!active> }             -> *Connection<active!>
+```
+
+`begin` hands back `started!`. `commit` demands `active!`. Only `exec` turns one
+into the other. So a transaction that was opened and closed without any work in
+between is not a lint, a warning, or a runtime check — it is a state that cannot
+be spelled.
+
+Two tests hold it, both `MUST_ERROR` on `Phantom state mismatch`:
+`2104_09_empty_transaction` and `2104_18_open_tx_empty_commit`. On the Rust side,
+`18` is the one place typestate keeps up — two structs, `commit()` implemented
+only on the second — and it is in the draws table above.
+
+### `2104_unused_resources` is the exception, and it is dead weight
+
+That directory holds a module and no program. Its `db.kz` is an older, weaker
+shape: `begin()` returns `Transaction<active!>` directly, with no `started!`
+phase, so `commit()` is legally callable the instant the transaction exists. The
+asymmetry above is simply absent. It cannot express the claim its own doc comment
+makes, and nothing compiles against it — so it demonstrates nothing and should
+either be brought up to the split shape or removed.
 
 ## The line the whole thing reduces to
 

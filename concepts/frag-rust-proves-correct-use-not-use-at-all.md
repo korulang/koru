@@ -50,15 +50,29 @@ Rust's single strongest row is `2104_15`: Koru needed dedicated compiler
 behaviour to insert a `close()` on a dropped obligation, where `Drop` hands Rust
 the identical guarantee as an ordinary consequence of ownership.
 
-## The strongest form of the thesis is the one that is unpinned
+## The strongest form of the thesis is held by an ASYMMETRY, and it is pinned
 
-`2104_unused_resources` states it in its own comment — acquiring a resource
-creates an obligation to use it *meaningfully*, and automatic cleanup does not
-satisfy that — and contains no program compiling against it. The Rust side
-established that this is the one property plain typestate genuinely cannot
-express at compile time without dependent or session types; it degrades to a
-hand-written flag checked at runtime. If Koru enforces it statically, that is the
-best result in the whole corpus and no test claims it.
+Acquiring a resource obliges you to use it *meaningfully*; automatic cleanup does
+not satisfy that. The Rust side established this is the one property plain
+typestate genuinely cannot express at compile time without dependent or session
+types — it degrades to a hand-written flag checked at runtime.
+
+Koru holds it, and the mechanism is worth naming because it is reusable design
+rather than a checker feature: **the state a resource is born in is not a state
+it may be released from.** `tx.begin` yields `started!`; `tx.commit` demands
+`!active`; only `tx.exec` bridges them. There is no path from create to free that
+does not pass through use, so "opened it and closed it without doing anything" is
+not a diagnostic — it is a program that cannot be written. Pinned by
+`2104_09_empty_transaction` and `2104_18_open_tx_empty_commit`, both `MUST_ERROR`
+on `Phantom state mismatch`.
+
+A resource whose lifecycle *is* symmetric — one state, create and release both
+legal against it — silently loses the guarantee, and nothing announces that.
+`2104_unused_resources`'s `db.kz` is exactly that shape: `begin()` returns
+`Transaction<active!>` with no `started!` phase, so `commit()` is callable the
+instant it exists. **The guarantee lives in how the states were drawn, not in the
+checker**, which means it is a design obligation on whoever writes the module and
+there is nothing today that warns when a lifecycle is drawn without it.
 
 ## The one class that breaks
 
