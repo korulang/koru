@@ -230,6 +230,48 @@ pub fn appendEscapedIdentifier(list: *std.ArrayList(u8), allocator: std.mem.Allo
 /// depth past zero — is an integer-overflow panic on user input.
 const ExprParseError = std.mem.Allocator.Error || error{UnbalancedExpression};
 
+/// Copy a `"…"` string literal through VERBATIM, honouring backslash escapes,
+/// and return the index just past its closing quote.
+///
+/// Every delimiter this lowering reacts to — `{ } , ( ) [ ]` — is also ordinary
+/// text inside a string, and the walk below cannot tell the two apart on its
+/// own. It did not try until 2026-08-10, so `body: "{\"status\":\"ok\"}"` came
+/// out of the emitter as `".{\"status\":\"ok\"}"`: the brace opening the JSON
+/// was read as a struct literal opening and collected the `.` that Zig's
+/// anonymous-struct syntax needs. The program compiled and served a response
+/// body with a stray leading dot in it — wrong output, no diagnostic anywhere.
+/// A JSON body is the ordinary case for a web handler, so this was reachable
+/// from the first API route anyone writes.
+///
+/// An unterminated literal copies to the end rather than running off it; the
+/// host compiler is the one that gets to complain about that.
+fn copyStringLiteral(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    start: usize,
+    result: *std.ArrayList(u8),
+) std.mem.Allocator.Error!usize {
+    var i = start;
+    try result.append(allocator, input[i]); // opening quote
+    i += 1;
+    while (i < input.len) {
+        const c = input[i];
+        try result.append(allocator, c);
+        i += 1;
+        if (c == '\\') {
+            // Escaped character is part of the literal whatever it is — including
+            // an escaped quote, which must not end the scan.
+            if (i < input.len) {
+                try result.append(allocator, input[i]);
+                i += 1;
+            }
+        } else if (c == '"') {
+            break;
+        }
+    }
+    return i;
+}
+
 /// Convert a Koru struct literal to Zig anonymous struct syntax
 /// Input:  "{ field: value, other: value2 }"
 /// Output: ".{ .field = value, .other = value2 }"
@@ -277,6 +319,9 @@ pub fn koruStructToZig(allocator: std.mem.Allocator, koru_struct: []const u8) Ex
             // Closing brace - just output it
             try result.append(allocator, '}');
             i += 1;
+        } else if (c == '"') {
+            // A string literal is opaque text — no delimiter inside it is one.
+            i = try copyStringLiteral(allocator, input, i, &result);
         } else {
             // Other characters (shouldn't happen at top level, but pass through)
             try result.append(allocator, c);
@@ -367,7 +412,13 @@ fn parseValue(
             }
         }
 
-        if (c == '{') {
+        if (c == '"') {
+            // A string literal is opaque text. Every branch below reacts to a
+            // delimiter, and a string may contain all of them — a JSON body
+            // being the case that made this reachable. Copy it through whole,
+            // so nothing inside it opens a brace, closes one, or ends a value.
+            i = try copyStringLiteral(allocator, input, i, result);
+        } else if (c == '{') {
             // Check what precedes the '{':
             // Array literals: [3]i32{ 0, 0, 0 } - no '.', no field parsing
             // Typed struct literals: IntConfig{ value: 42 } - no '.', YES field parsing  
@@ -474,6 +525,35 @@ test "koruStructToZig nested struct" {
     const result = try koruStructToZig(allocator, "{ outer: { inner: 1 } }");
     defer allocator.free(result);
     try std.testing.expectEqualStrings(".{ .outer = .{ .inner = 1 } }", result);
+}
+
+// A string field's contents are text, not syntax. Every delimiter this lowering
+// reacts to can appear inside one, and a JSON body carries most of them at once —
+// which is how an ordinary web handler reached it: `{"status":"ok"}` came out as
+// `.{"status":"ok"}`, because the brace opening the JSON was read as a struct
+// literal and collected the `.` Zig's anonymous-struct syntax needs. It compiled
+// and served the wrong bytes.
+test "koruStructToZig leaves braces inside a string literal alone" {
+    const allocator = std.testing.allocator;
+    const result = try koruStructToZig(allocator, "{ body: \"{\\\"status\\\":\\\"ok\\\"}\" }");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings(".{ .body = \"{\\\"status\\\":\\\"ok\\\"}\" }", result);
+}
+
+test "koruStructToZig leaves commas and brackets inside a string literal alone" {
+    const allocator = std.testing.allocator;
+    const result = try koruStructToZig(allocator, "{ body: \"a,b[c](d)\", n: 1 }");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings(".{ .body = \"a,b[c](d)\", .n = 1 }", result);
+}
+
+// An escaped quote must not end the literal — otherwise the scan resumes inside
+// what is still string text and starts reacting to its delimiters again.
+test "koruStructToZig respects an escaped quote inside a string literal" {
+    const allocator = std.testing.allocator;
+    const result = try koruStructToZig(allocator, "{ body: \"say \\\" then {x}\", n: 2 }");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings(".{ .body = \"say \\\" then {x}\", .n = 2 }", result);
 }
 
 // Regression: a stray closing delimiter inside a value used to underflow the
