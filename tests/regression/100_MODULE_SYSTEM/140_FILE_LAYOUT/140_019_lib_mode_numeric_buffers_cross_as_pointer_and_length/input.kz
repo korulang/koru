@@ -1,0 +1,42 @@
+// PINS: how a run of NUMBERS crosses the C boundary under `koruc lib`.
+//
+// Text already crosses as a pointer and a length (140_018). A numeric buffer
+// is the same move, because C has exactly one way to hand over a run of values
+// it does not own:
+//
+//     ~pub tor apply-gain { input: []const f32, output: []f32, gain: f32 }
+//     export fn apply_gain(input_ptr: [*]const f32, input_len: usize,
+//                          output_ptr: [*]f32, output_len: usize, gain: f32) void
+//
+// The MUTABLE side is the load-bearing half: `[]f32` becomes `[*]f32`, and the
+// callee writes back through it. That is the entire calling convention of every
+// audio and signal-processing C API — a host owns both buffers, hands over
+// borrowed views, and reads the result out afterwards.
+//
+// `u8` is deliberately NOT a buffer element here: a run of bytes is text, it is
+// spelled `string`, and two Koru spellings reaching one C shape would leave an
+// exported header ambiguous about which one a caller is looking at.
+//
+// This runs as a PROGRAM, pinning the shapes still work normally. `post.sh`
+// then builds the SAME file as a library, links hand-written C against it, and
+// checks the samples — the C boundary is checked at the boundary, not by
+// reading the emitted source.
+~import std/io
+
+~pub tor apply-gain { input: []const f32, output: []f32, gain: f32 }
+
+~proc apply-gain|zig {
+    for (input, output) |s, *o| {
+        o.* = s * gain;
+    }
+}
+
+~pub tor sum-buffer { values: []const f32 } -> f32
+
+~proc sum-buffer|zig {
+    var total: f32 = 0;
+    for (values) |v| total += v;
+    return total;
+}
+
+~sum-buffer(values: [0.5, 0.25, 0.25]): t |> std/io:print.ln("sum is {{ t:f }}")

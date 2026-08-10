@@ -4080,10 +4080,16 @@ pub const VisitorEmitter = struct {
     /// linkage. The wrapper unpacks C parameters into the event's input record
     /// and calls the handler, so a C caller never sees Koru's shapes.
     ///
-    /// SCALARS ONLY this rung, and the skip is LOUD rather than silent: a
-    /// parameter Koru passes as a slice (`string`) has no single C
-    /// representation — it is a pointer and a length — and choosing that
-    /// spelling is a decision, not an omission. An event carrying one gets a
+    /// Three parameter shapes cross: SCALARS as themselves, TEXT as a pointer
+    /// and a length, and a NUMERIC BUFFER as a pointer and a length. The last
+    /// two are the same move — C has exactly one way to hand over a run of
+    /// values it does not own — and a mutable buffer (`[]f32`) is how the
+    /// callee writes back, which is the entire calling convention of every
+    /// audio and signal-processing C API.
+    ///
+    /// Everything else is skipped LOUDLY rather than silently: an event
+    /// carrying an unrepresentable parameter, or RETURNING text or a buffer
+    /// (one return slot cannot carry both a pointer and a length), gets a
     /// comment in the output naming itself, so a caller who cannot find the
     /// symbol reads why instead of guessing.
     fn emitCAbiExports(self: *VisitorEmitter, items: []const ast.Item) !void {
@@ -4109,7 +4115,9 @@ pub const VisitorEmitter = struct {
             // out-parameter convention nobody agreed to.
             var unsupported: ?[]const u8 = null;
             for (ev.input.fields) |f| {
-                if (!isCAbiScalar(f.type) and !isCAbiText(f.type)) unsupported = f.type;
+                if (!isCAbiScalar(f.type) and !isCAbiText(f.type) and asCAbiBuffer(f.type) == null) {
+                    unsupported = f.type;
+                }
             }
             const ret = ev.return_type orelse "void";
             if (unsupported == null and !std.mem.eql(u8, ret, "void") and !isCAbiScalar(ret)) unsupported = ret;
@@ -4134,6 +4142,13 @@ pub const VisitorEmitter = struct {
                 first = false;
                 if (isCAbiText(f.type)) {
                     try w.print("{s}_ptr: [*]const u8, {s}_len: usize", .{ f.name, f.name });
+                } else if (asCAbiBuffer(f.type)) |b| {
+                    try w.print("{s}_ptr: [*]{s}{s}, {s}_len: usize", .{
+                        f.name,
+                        if (b.is_const) "const " else "",
+                        b.elem,
+                        f.name,
+                    });
                 } else {
                     try w.print("{s}: {s}", .{ f.name, f.type });
                 }
@@ -4143,7 +4158,7 @@ pub const VisitorEmitter = struct {
             try w.print("main_module.{s}_event.handler(.{{", .{name});
             for (ev.input.fields, 0..) |f, i| {
                 if (i > 0) try w.writeAll(",");
-                if (isCAbiText(f.type)) {
+                if (isCAbiText(f.type) or asCAbiBuffer(f.type) != null) {
                     try w.print(" .{s} = {s}_ptr[0..{s}_len]", .{ f.name, f.name, f.name });
                 } else {
                     try w.print(" .{s} = {s}", .{ f.name, f.name });
@@ -4157,6 +4172,36 @@ pub const VisitorEmitter = struct {
     /// Koru's surface text type. A slice, so C sees it as two values.
     fn isCAbiText(t: []const u8) bool {
         return std.mem.eql(u8, t, "string");
+    }
+
+    const CAbiBuffer = struct { elem: []const u8, is_const: bool };
+
+    /// A run of NUMBERS crosses C exactly the way a run of bytes does: a
+    /// pointer and a length. `[]const f32` becomes `[*]const f32` plus a
+    /// `usize`; `[]f32` becomes `[*]f32` plus a `usize` and the callee writes
+    /// through it. This is the shape every audio and signal-processing C API
+    /// in existence already speaks, so it is not a convention of our own — it
+    /// is the one C has.
+    ///
+    /// `u8` is excluded on purpose: a run of bytes is TEXT, it is spelled
+    /// `string` in the surface, and `[]const u8` is refused there outright.
+    /// Two spellings reaching one C shape would make the exported header
+    /// ambiguous about which one a caller was looking at.
+    ///
+    /// A buffer RETURN is still refused, for the reason text is: one return
+    /// slot cannot carry both a pointer and a length, and inventing an
+    /// out-parameter convention nobody agreed to is worse than saying no.
+    fn asCAbiBuffer(t: []const u8) ?CAbiBuffer {
+        if (!std.mem.startsWith(u8, t, "[]")) return null;
+        var rest = t[2..];
+        var is_const = false;
+        if (std.mem.startsWith(u8, rest, "const ")) {
+            is_const = true;
+            rest = rest[6..];
+        }
+        if (std.mem.eql(u8, rest, "u8")) return null;
+        if (!isCAbiScalar(rest)) return null;
+        return .{ .elem = rest, .is_const = is_const };
     }
 
     fn isCAbiScalar(t: []const u8) bool {
