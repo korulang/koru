@@ -1,0 +1,33 @@
+// Pins: an abstract tor with exactly ONE implementation and no `~proc` default
+// runs that implementation.
+//
+// The pairing pass looks for a default and an override separately. After
+// canonicalization stamps the enclosing module onto an unqualified impl, both
+// searches match the SAME declaration — so a lone implementation was read as a
+// default/override pair and renamed to `greet.default`, leaving the tor with no
+// handler at all. The emitter then fabricated a zero value for it, so the
+// program compiled, exited 0, and printed nothing.
+//
+// Both spellings of the implementation are pinned: unqualified, and qualified
+// with the file's own module.
+~import std/io
+
+~[abstract] tor greet { name: string }
+| greeted string
+| skipped
+
+~greet => greeted name
+
+~[abstract] tor shout { name: string }
+| shouted string
+| skipped
+
+~input:shout => shouted name
+
+~greet(name: "world")
+| greeted g |> std/io:print.ln(g)
+| skipped |> std/io:print.ln("greet was skipped")
+
+~shout(name: "WORLD")
+| shouted s |> std/io:print.ln(s)
+| skipped |> std/io:print.ln("shout was skipped")

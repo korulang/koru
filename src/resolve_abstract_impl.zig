@@ -85,11 +85,18 @@ fn resolveAbstractEvent(
 ) Error!void {
     const event_name = if (event.path.segments.len > 0) event.path.segments[0] else return;
 
-    // Find default implementation (same module)
-    const default_impl = findDefaultImpl(module_items, event_name, current_module);
+    // Find the override implementation first, by identity rather than by a
+    // yes/no answer. Canonicalization stamps the enclosing module onto an
+    // unqualified impl, so after it runs a same-module impl and an override
+    // are indistinguishable by qualifier — both predicates below match the
+    // SAME item. Taking the override as a pointer lets the default search
+    // exclude it, so a lone implementation is never mistaken for a
+    // default/override pair and renamed out from under its own tor.
+    const override_impl = findOverrideImpl(ctx.all_items, event, current_module);
 
-    // Find override implementation (cross-module, in top-level items)
-    const has_override = hasOverrideImpl(ctx.all_items, event, current_module);
+    // Find default implementation (same module), never the override itself
+    const default_impl = findDefaultImpl(module_items, event_name, current_module, override_impl);
+    const has_override = override_impl != null;
 
     // Apply resolution rules
     if (default_impl == null and !has_override) {
@@ -118,8 +125,18 @@ fn resolveAbstractEvent(
 /// - No module_qualifier (local reference in source)
 /// - Module_qualifier matches current_module (canonicalized to same module)
 /// Returns pointer to the Item (proc_decl, flow with impl_of, or immediate_impl)
-fn findDefaultImpl(items: []const ast.Item, event_name: []const u8, current_module: ?[]const u8) ?*ast.Item {
+/// `exclude` is the item already claimed as the override — the same declaration
+/// must never be counted as both halves of the pair.
+fn findDefaultImpl(
+    items: []const ast.Item,
+    event_name: []const u8,
+    current_module: ?[]const u8,
+    exclude: ?*const ast.Item,
+) ?*ast.Item {
     for (@constCast(items)) |*item| {
+        if (exclude) |ex| {
+            if (item == ex) continue;
+        }
         switch (item.*) {
             .proc_decl => |proc| {
                 if (proc.path.segments.len > 0 and std.mem.eql(u8, proc.path.segments[0], event_name)) {
@@ -164,14 +181,16 @@ fn findDefaultImpl(items: []const ast.Item, event_name: []const u8, current_modu
     return null;
 }
 
-/// Check if an override implementation exists (cross-module)
-fn hasOverrideImpl(
+/// Find the override implementation (cross-module), by identity.
+/// A `~proc` is never an override — only a flow or an immediate impl can be one,
+/// so the default search can still find a same-file proc after excluding this.
+fn findOverrideImpl(
     all_items: []const ast.Item,
     event: *const ast.EventDecl,
     current_module: ?[]const u8,
-) bool {
-    const target_module = current_module orelse event.path.module_qualifier orelse return false;
-    const event_name = if (event.path.segments.len > 0) event.path.segments[0] else return false;
+) ?*ast.Item {
+    const target_module = current_module orelse event.path.module_qualifier orelse return null;
+    const event_name = if (event.path.segments.len > 0) event.path.segments[0] else return null;
 
     for (@constCast(all_items)) |*item| {
         switch (item.*) {
@@ -183,7 +202,7 @@ fn hasOverrideImpl(
                             impl_path.segments.len > 0 and
                             std.mem.eql(u8, impl_path.segments[0], event_name))
                         {
-                            return true;
+                            return item;
                         }
                     }
                 }
@@ -195,14 +214,14 @@ fn hasOverrideImpl(
                         ii.event_path.segments.len > 0 and
                         std.mem.eql(u8, ii.event_path.segments[0], event_name))
                     {
-                        return true;
+                        return item;
                     }
                 }
             },
             else => {},
         }
     }
-    return false;
+    return null;
 }
 
 /// Rename an implementation to `.default`
