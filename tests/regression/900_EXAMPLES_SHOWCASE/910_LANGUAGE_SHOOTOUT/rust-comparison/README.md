@@ -54,7 +54,7 @@ any experienced Rust developer already reaches for.
 | `09_empty_transaction` | committing a transaction nothing ran in |
 | `10_wrong_base_type` | passing a transaction where a connection goes |
 | `11_wrong_base_type_reverse` | the reverse of `10` |
-| `12_wrong_base_type_zig_catches` | `10` again, with Koru's base-type check off |
+| `12_wrong_base_type_zig_catches` | `10` again — the directory name is now stale, see below |
 | `13_wrong_base_type_reverse_zig_catches` | `11` again, same |
 | `18_open_tx_empty_commit` | committing straight after beginning |
 | `19_open_tx_close_early` | closing straight after opening |
