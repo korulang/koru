@@ -409,10 +409,53 @@ pub const VendorLock = struct {
     /// own dependencies — that is a package manager, and building a worse one is
     /// not the job. What Koru adds is the part npm has no answer for: keeping the
     /// source, and remembering what it looked like before you changed it.
-    pub fn npmResolve(alloc: std.mem.Allocator, spec: []const u8) !struct { version: []const u8, integrity: []const u8, tarball: []const u8 } {
+    /// The package name in a spec, with any version or range suffix removed.
+    /// `@scope/pkg` keeps its leading `@` — that one is part of the name.
+    pub fn specName(spec: []const u8) []const u8 {
+        if (spec.len == 0) return spec;
+        const at = std.mem.lastIndexOfScalar(u8, spec[1..], '@') orelse return spec;
+        const cut = at + 1;
+        if (std.mem.indexOfScalar(u8, spec[cut..], '/') != null) return spec;
+        return spec[0..cut];
+    }
+
+    fn npmViewVersion(alloc: std.mem.Allocator, spec: []const u8) ![]const u8 {
         const res = std.process.Child.run(.{
             .allocator = alloc,
-            .argv = &[_][]const u8{ "npm", "view", spec, "version", "dist.integrity", "dist.tarball", "--json" },
+            .argv = &[_][]const u8{ "npm", "view", spec, "version", "--json" },
+        }) catch return AcquireError.NpmMissing;
+        if (res.term != .Exited or res.term.Exited != 0) {
+            std.debug.print("{s}", .{res.stderr});
+            return AcquireError.NpmFailed;
+        }
+        const parsed = std.json.parseFromSlice(std.json.Value, alloc, res.stdout, .{}) catch return AcquireError.NpmFailed;
+        return switch (parsed.value) {
+            // One matching version comes back as a bare string.
+            .string => |s| s,
+            // A RANGE matching several versions comes back as an array, newest
+            // last. Reading that as an object is what crashed the first version
+            // of this — `^3.0.0` against a package with 3.0.0 and 3.0.1.
+            .array => |a| if (a.items.len == 0)
+                AcquireError.NpmFailed
+            else switch (a.items[a.items.len - 1]) {
+                .string => |s| s,
+                else => AcquireError.NpmFailed,
+            },
+            else => AcquireError.NpmFailed,
+        };
+    }
+
+    pub fn npmResolve(alloc: std.mem.Allocator, spec: []const u8) !struct { version: []const u8, integrity: []const u8, tarball: []const u8 } {
+        // TWO calls, and the first one exists to make the second unambiguous.
+        // Asking for several fields at once while the spec is a RANGE returns an
+        // array of objects rather than one object, so the exact version is pinned
+        // down first and everything else is asked of that.
+        const exact = try npmViewVersion(alloc, spec);
+        const pinned = try std.fmt.allocPrint(alloc, "{s}@{s}", .{ specName(spec), exact });
+
+        const res = std.process.Child.run(.{
+            .allocator = alloc,
+            .argv = &[_][]const u8{ "npm", "view", pinned, "version", "dist.integrity", "dist.tarball", "--json" },
         }) catch return AcquireError.NpmMissing;
 
         if (res.term != .Exited or res.term.Exited != 0) {
@@ -421,6 +464,7 @@ pub const VendorLock = struct {
         }
 
         const parsed = std.json.parseFromSlice(std.json.Value, alloc, res.stdout, .{}) catch return AcquireError.NpmFailed;
+        if (parsed.value != .object) return AcquireError.NpmFailed;
         const o = parsed.value.object;
         return .{
             .version = if (o.get("version")) |v| v.string else "",
@@ -782,12 +826,71 @@ pub const VendorLock = struct {
 
     // `add` acquires; it does not need the program's existing bindings, and it
     // runs before the binding it creates could possibly be declared.
-    if (sub == .add) {
-        const spec = add_spec orelse {
-            std.debug.print("✗ vendor add needs a package: `koruc <file> vendor add <npm-package> [--as <module>] [--into <dir>]`\n", .{});
-            std.process.exit(1);
-        };
+    // `allFlows` reaches through `.module_decl`; `program.items` is the entry file
+    // alone. Both the bindings scan below and the requirement scan in `add` need
+    // that reach, so it is computed once here.
+    const ast_pkg = @import("ast");
+    const all_flows = ast_pkg.allFlows(alloc, program);
 
+    if (sub == .add) {
+        // With no package named, vendor what the program ALREADY declares. This
+        // is the connection that makes vendoring part of package management
+        // rather than a mechanism beside it: `std/package:requires.npm` is where
+        // a Koru program says what it depends on, and until now `vendor add`
+        // made you type those names a second time on the command line.
+        var specs = std.ArrayListUnmanaged([]const u8){};
+        if (add_spec) |s| {
+            specs.append(alloc, s) catch return;
+        } else {
+            for (all_flows) |flow| {
+                const mq = flow.inv().path.module_qualifier orelse continue;
+                if (!std.mem.eql(u8, mq, "std.package")) continue;
+                if (flow.inv().path.segments.len != 2) continue;
+                if (!std.mem.eql(u8, flow.inv().path.segments[0], "requires")) continue;
+                if (!std.mem.eql(u8, flow.inv().path.segments[1], "npm")) continue;
+
+                for (flow.inv().args) |arg| {
+                    if (!std.mem.eql(u8, arg.name, "source")) continue;
+                    // The block body is the INNER text of a JSON object —
+                    // `std/package` splices it straight into a package.json — so
+                    // it parses by putting the braces back.
+                    const wrapped = std.fmt.allocPrint(alloc, "{{{s}}}", .{arg.value}) catch return;
+                    const parsed = std.json.parseFromSlice(std.json.Value, alloc, wrapped, .{}) catch {
+                        std.debug.print("✗ {s}: a requires.npm block is not readable as JSON\n", .{flow.location.file});
+                        std.process.exit(1);
+                    };
+                    var it = parsed.value.object.iterator();
+                    while (it.next()) |e| {
+                        const range = e.value_ptr.*.string;
+                        // npm resolves `name@range` itself; Koru does not read
+                        // version ranges and must not start.
+                        const s = std.fmt.allocPrint(alloc, "{s}@{s}", .{ e.key_ptr.*, range }) catch return;
+                        specs.append(alloc, s) catch return;
+                    }
+                }
+            }
+
+            if (specs.items.len == 0) {
+                std.debug.print("✗ nothing to vendor: no package named, and this program declares no ~std/package:requires.npm\n", .{});
+                std.debug.print("   name one — `koruc <file> vendor add <npm-package> [--as <module>] [--into <dir>]`\n", .{});
+                std.debug.print("   or declare it — ~std/package:requires.npm {{ \"pkg\": \"^1.0.0\" }}\n", .{});
+                std.process.exit(1);
+            }
+            std.debug.print("Vendoring {d} declared npm requirement(s)\n", .{specs.items.len});
+        }
+
+        // `--as` and `--into` name ONE destination, so they apply only when one
+        // package was named. Silently applying them to a whole requirement set
+        // would put every package in the same directory, each overwriting the
+        // last.
+        if (specs.items.len > 1 and (add_as != null or add_into != null)) {
+            std.debug.print("✗ --as/--into name one destination, but {d} packages are being vendored — run them one at a time\n", .{specs.items.len});
+            std.process.exit(1);
+        }
+
+        var binding_lines = std.ArrayListUnmanaged([]const u8){};
+
+        for (specs.items) |spec| {
         // A scoped name (@scope/pkg) and a versioned one (pkg@1.2.3) both reduce
         // to a last path segment with any version suffix removed.
         const slash = std.mem.lastIndexOfScalar(u8, spec, '/');
@@ -825,11 +928,16 @@ pub const VendorLock = struct {
 
         // `npm pack` downloads the published tarball WITHOUT installing it or
         // touching package.json — acquisition with no side effect on the project.
+        //
+        // Packed at the RESOLVED version, never at the range. Asking npm to
+        // resolve `^3.0.0` twice invites two answers, and then the integrity hash
+        // checked below would belong to a different tarball than the one on disk.
+        const pinned_spec = std.fmt.allocPrint(alloc, "{s}@{s}", .{ VendorLock.specName(spec), resolved.version }) catch return;
         const pack = std.process.Child.run(.{
             .allocator = alloc,
-            .argv = &[_][]const u8{ "npm", "pack", spec, "--silent" },
+            .argv = &[_][]const u8{ "npm", "pack", pinned_spec, "--silent" },
         }) catch {
-            std.debug.print("✗ `npm pack {s}` could not run\n", .{spec});
+            std.debug.print("✗ `npm pack {s}` could not run\n", .{pinned_spec});
             std.process.exit(1);
         };
         if (pack.term != .Exited or pack.term.Exited != 0) {
@@ -898,8 +1006,15 @@ pub const VendorLock = struct {
         std.fs.cwd().deleteFile(tgz) catch {};
 
         std.debug.print("✓ vendored {s}@{s} → {s}  ({d} files)\n", .{ bare, resolved.version, into, manifest.files.len });
-        std.debug.print("\nDeclare it so the compiler checks it on every build:\n\n", .{});
-        std.debug.print("    std/vendor:bindings {{\n        {s}: {s}\n    }}\n\n", .{ module, into });
+        binding_lines.append(alloc, std.fmt.allocPrint(alloc, "        {s}: {s}", .{ module, into }) catch return) catch return;
+        }
+
+        // One block, printed once, however many packages were acquired — it is
+        // meant to be pasted whole.
+        std.debug.print("\nDeclare them so the compiler checks them on every build:\n\n", .{});
+        std.debug.print("    std/vendor:bindings {{\n", .{});
+        for (binding_lines.items) |l| std.debug.print("{s}\n", .{l});
+        std.debug.print("    }}\n\n", .{});
         return;
     }
 
@@ -908,9 +1023,15 @@ pub const VendorLock = struct {
     var paths = std.ArrayListUnmanaged([]const u8){};
     var declaring_file: []const u8 = "";
 
-    for (program.items) |it| {
-        if (it != .flow) continue;
-        const flow = it.flow;
+    // `allFlows` reaches THROUGH `.module_decl`; `program.items` is the entry
+    // file alone. A binding declared inside an imported module was invisible to
+    // this command while the comptime transform — which walks every module —
+    // still found and enforced it, so `check` reported "nothing declared" and
+    // exited 0 for a program that had vendored code under a live pin. That is a
+    // green for an unchecked report, which is the one thing this module exists to
+    // refuse. `std/package` and `std/deps` both had this same defect and both
+    // fixed it the same way.
+    for (all_flows) |flow| {
         const mq = flow.inv().path.module_qualifier orelse continue;
         if (!std.mem.eql(u8, mq, "std.vendor")) continue;
         if (flow.inv().path.segments.len != 1) continue;
@@ -931,18 +1052,7 @@ pub const VendorLock = struct {
     }
 
     if (names.items.len == 0) {
-        // NOT a clean bill of health, and it must not read like one. `program`
-        // carries the ENTRY file's items only (ast.zig: Program has `items` and
-        // no module list), so a bindings block declared inside an imported module
-        // is invisible here — while the comptime transform, which walks every
-        // module, still finds and enforces it. Pinned by 115_046.
-        //
-        // So the build is checked either way; it is this REPORT that is partial,
-        // and saying "no vendored bindings" would be a green for a program that
-        // has them.
-        std.debug.print("No vendored bindings in this file. Declare one with ~std/vendor:bindings {{ module: ./path }}\n", .{});
-        std.debug.print("  (this command reads the entry file only — a binding declared inside an imported\n", .{});
-        std.debug.print("   module is still pinned and still checked at compile time, but is not listed here)\n", .{});
+        std.debug.print("No vendored bindings declared. Use ~std/vendor:bindings {{ module: ./path }}\n", .{});
         return;
     }
 
