@@ -4590,11 +4590,15 @@ fn emitInlineCodeResolvingSplices(
                 // branched event inside it (e.g. an `if`-arm's `commit`, or a
                 // `for`-`done`'s nested call) doesn't shadow the enclosing scope's
                 // `result_0`. Mirrors the per-branch prefix swap used for loop
-                // branches (search `branch_prefix`). `prefix_buf` lives for the
-                // emit below; restored after.
+                // branches (search `branch_prefix`). NEST under the enclosing
+                // prefix (like the effect splice below): a cascade arm nested
+                // inside another cascade arm's body must not reuse `result_c{idx}_`
+                // while the enclosing arm's same-named constant is still alive
+                // (810_122_day12_part2). `prefix_buf` lives for the emit below;
+                // restored after.
                 const saved_prefix = ctx.result_prefix;
-                var prefix_buf: [64]u8 = undefined;
-                ctx.result_prefix = std.fmt.bufPrint(&prefix_buf, "result_c{d}_", .{idx}) catch "result_";
+                var prefix_buf: [128]u8 = undefined;
+                ctx.result_prefix = std.fmt.bufPrint(&prefix_buf, "{s}c{d}_", .{ saved_prefix, idx }) catch saved_prefix;
                 defer ctx.result_prefix = saved_prefix;
                 var c: usize = 0;
                 try emitContinuationBody(emitter, ctx, cont, &c);
