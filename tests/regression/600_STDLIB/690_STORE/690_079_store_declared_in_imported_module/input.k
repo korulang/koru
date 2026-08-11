@@ -11,10 +11,26 @@
 // reaching a store the ENTRY declared — and holds the other axis: the store
 // exists, and the question is whether another module can name it. Here the
 // question is whether the store exists at all when `new` is not a top-level
-// item of the entry file. The store transform's metadata lookups descend into
-// `module_decl` in some scans and not others (`storeHomeModule`'s new-detection
-// walks top-level `.flow` items only), so the declaring module decides whether
-// any cell, apply tor, or write tor is synthesized.
+// item of the entry file.
+//
+// Mechanism, proven by probe rather than inferred: this is NOT a store bug. The
+// parser's implicit-`expr` remap (parser.zig, the `has_implicit_expr` block)
+// needs the event registry to know the target's input shape, and an imported
+// module is parsed BEFORE the stdlib's declarations are registered — the same
+// invocation reports registry_hit=false on that first parse and true on a later
+// one. So a module's args arrive still punned to their own value
+// (`name=cache value=cache` instead of `name=expr`), and `new` fails its very
+// first argument check.
+//
+// Its diagnostic IS emitted — `comptime { @compileError(...) }` is present in
+// the emitted Zig — but it loses the race: the un-lowered cell reference
+// produces `use of undeclared identifier 'cache'` and that is what the backend
+// surfaces, so what reaches the user is a raw Zig symptom instead of the
+// store's own authored message. The wall is built and standing behind a louder,
+// less useful error.
+//
+// Any transform taking `expr: Expression` is exposed to the same ordering —
+// 62 of the 85 transform declarations in the corpus.
 //
 // The two pins fail independently: 110_022 stays green while a module cannot
 // own a store, and this stays green if reach regresses.
