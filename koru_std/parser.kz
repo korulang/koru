@@ -307,7 +307,17 @@ const std = @import("std");
             const buf = &body;
             const open = std2.fmt.allocPrint(ctx.a, "__p = {s};\n", .{head_end}) catch unreachable;
             buf.appendSlice(ctx.a, open) catch unreachable;
-            bindName(ctx, buf, alt.binding, head_val);
+
+            // KIDS: an alternative's children are exactly the parts it binds —
+            // its head plus every `sub(<rule>)` it consumes, in source order.
+            // No new surface: the parts are already named. The head is
+            // materialized to a temp because head_val may be an ALLOCATING
+            // `__leaf_` expression and is referenced twice (binding + kid).
+            var kids = std2.ArrayList([]const u8){};
+            const head_tmp = std2.fmt.allocPrint(ctx.a, "__h{d}", .{tail_label}) catch unreachable;
+            buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "const {s} = {s}; _ = &{s};\n", .{ head_tmp, head_val, head_tmp }) catch unreachable) catch unreachable;
+            kids.append(ctx.a, head_tmp) catch unreachable;
+            bindName(ctx, buf, alt.binding, head_tmp);
 
             // --- CHAIN: walk the alternative's body — sub / lit steps, then produce ---
             var produced = false;
@@ -315,7 +325,9 @@ const std = @import("std");
             var cont_list: []const ast2.Continuation = alt.continuations;
             while (node_opt) |n| {
                 if (produceOf(n)) |e| {
-                    const ret = std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .node = __wrap_{s}(\"{s}\", input[__start..__p], ({s})) }};\n", .{ ctx.sfx, zigEscape(ctx.a, ctx.cur_rule.*), e }) catch unreachable;
+                    // `-> e` names the rule's value explicitly: exactly one kid,
+                    // whatever e evaluates to. Parts it did not name are not kids.
+                    const ret = std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .node = __wrap_{s}(\"{s}\", input[__start..__p], &.{{ ({s}) }}) }};\n", .{ ctx.sfx, zigEscape(ctx.a, ctx.cur_rule.*), e }) catch unreachable;
                     buf.appendSlice(ctx.a, ret) catch unreachable;
                     produced = true;
                     break;
@@ -341,6 +353,7 @@ const std = @import("std");
                     const step = std2.fmt.allocPrint(ctx.a, "const __s{d} = __koru_pr_{s}_{s}(input, __p, __err) orelse {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :t{d}; }};\n", .{ sk, ctx.sfx, rn, zigEscape(ctx.a, rname), tail_label }) catch unreachable;
                     buf.appendSlice(ctx.a, step) catch unreachable;
                     bindName(ctx, buf, inv.return_binding, std2.fmt.allocPrint(ctx.a, "__s{d}.node", .{sk}) catch unreachable);
+                    kids.append(ctx.a, std2.fmt.allocPrint(ctx.a, "__s{d}.node", .{sk}) catch unreachable) catch unreachable;
                     const adv = std2.fmt.allocPrint(ctx.a, "__p = __s{d}.end;\n", .{sk}) catch unreachable;
                     buf.appendSlice(ctx.a, adv) catch unreachable;
                 } else if (isVerb(inv, "lit")) {
@@ -367,8 +380,18 @@ const std = @import("std");
                 }
             }
             if (!produced) {
-                // No `->`: the alternative's value defaults to its consumed span.
-                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .node = __wrap_{s}(\"{s}\", input[__start..__p], __leaf_{s}(input[__start..__p])) }};\n", .{ ctx.sfx, zigEscape(ctx.a, ctx.cur_rule.*), ctx.sfx }) catch unreachable) catch unreachable;
+                // No `->`: the alternative keeps ALL the parts it bound, in
+                // source order. This is where breadth comes from — a rule like
+                // `string s |> lit(":") |> sub(ws): w |> sub(value): v` now
+                // delivers s, w and v as kids instead of collapsing to a span.
+                var kidlist = std2.ArrayList(u8){};
+                kidlist.appendSlice(ctx.a, "&.{ ") catch unreachable;
+                for (kids.items, 0..) |k, i| {
+                    if (i > 0) kidlist.appendSlice(ctx.a, ", ") catch unreachable;
+                    kidlist.appendSlice(ctx.a, k) catch unreachable;
+                }
+                kidlist.appendSlice(ctx.a, " }") catch unreachable;
+                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .node = __wrap_{s}(\"{s}\", input[__start..__p], {s}) }};\n", .{ ctx.sfx, zigEscape(ctx.a, ctx.cur_rule.*), kidlist.items }) catch unreachable) catch unreachable;
             }
             const needle = std2.fmt.allocPrint(ctx.a, "break :t{d};", .{tail_label}) catch unreachable;
             const labeled = std2.mem.indexOf(u8, body.items, needle) != null;
@@ -591,9 +614,9 @@ const std = @import("std");
     // `depth`/`inner` walk it — proof it is a real graph, not a string.
     matchers.appendSlice(allocator, std.fmt.allocPrint(allocator,
         "fn __leaf_{s}(text: []const u8) *const __N_{s} {{ const s = @import(\"std\"); const n = s.heap.page_allocator.create(__N_{s}) catch unreachable; n.* = .{{ .text = text }}; return n; }}\n" ++
-        "fn __wrap_{s}(tag: []const u8, text: []const u8, kid: *const __N_{s}) *const __N_{s} {{ const s = @import(\"std\"); const ks = s.heap.page_allocator.alloc(*const __N_{s}, 1) catch unreachable; ks[0] = kid; const n = s.heap.page_allocator.create(__N_{s}) catch unreachable; n.* = .{{ .tag = tag, .text = text, .kids = ks }}; return n; }}\n" ++
-        "fn __render_{s}(n: *const __N_{s}) []const u8 {{ const s = @import(\"std\"); if (n.kids.len == 0) return n.text; return s.fmt.allocPrint(s.heap.page_allocator, \"{{s}}({{s}})\", .{{ n.tag, __render_{s}(n.kids[0]) }}) catch unreachable; }}\n" ++
-        "fn __depth_{s}(n: *const __N_{s}) usize {{ if (n.kids.len == 0) return 0; return 1 + __depth_{s}(n.kids[0]); }}\n" ++
+        "fn __wrap_{s}(tag: []const u8, text: []const u8, kids: []const *const __N_{s}) *const __N_{s} {{ const s = @import(\"std\"); const ks = s.heap.page_allocator.alloc(*const __N_{s}, kids.len) catch unreachable; for (kids, 0..) |k, i| ks[i] = k; const n = s.heap.page_allocator.create(__N_{s}) catch unreachable; n.* = .{{ .tag = tag, .text = text, .kids = ks }}; return n; }}\n" ++
+        "fn __render_{s}(n: *const __N_{s}) []const u8 {{ const s = @import(\"std\"); if (n.kids.len == 0) return n.text; var acc: []const u8 = \"\"; for (n.kids, 0..) |k, i| {{ const part = __render_{s}(k); acc = if (i == 0) part else s.fmt.allocPrint(s.heap.page_allocator, \"{{s}},{{s}}\", .{{ acc, part }}) catch unreachable; }} return s.fmt.allocPrint(s.heap.page_allocator, \"{{s}}({{s}})\", .{{ n.tag, acc }}) catch unreachable; }}\n" ++
+        "fn __depth_{s}(n: *const __N_{s}) usize {{ if (n.kids.len == 0) return 0; var m: usize = 0; for (n.kids) |k| {{ const d = __depth_{s}(k); if (d > m) m = d; }} return 1 + m; }}\n" ++
         "fn __inner_{s}(n: *const __N_{s}) []const u8 {{ var c = n; while (c.kids.len > 0) c = c.kids[0]; return c.text; }}\n",
         .{ sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx }) catch unreachable) catch unreachable;
 
