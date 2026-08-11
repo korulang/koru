@@ -1175,7 +1175,16 @@ pub const VisitorEmitter = struct {
                     // a module, which is why the shape had never been exercised —
                     // every other module-declared transform produces a body.
                     // Pinned by 115_047.
+                    // RUNTIME OUTPUT ONLY. A transform can produce its result by
+                    // routes other than an inline body or a preamble, and the
+                    // comptime/backend output is where those results legitimately
+                    // live — orisha's static router is one, and skipping it there
+                    // renamed a binding in the emitted backend and broke
+                    // 350_010/350_013. "Produced no body" is not "produced
+                    // nothing"; it is only sufficient to say the RUNTIME must not
+                    // carry a call to a compile-time handler.
                     if (is_transform and is_transformed and
+                        self.emit_mode == .runtime_only and
                         flow.inline_body == null and flow.preamble_code == null)
                     {
                         return;

@@ -57,3 +57,29 @@ remove the thing that failed. See
 disguise here was publishing hygiene rather than candour.
 
 Pinned by `115_047_vendor_bindings_in_module`.
+
+## The inverse error, made immediately, in the fix for this one
+
+The first fix skipped any `[transform]` flow that had run and left no body — in
+**every emit mode**. That is the same mistake pointing the other way: it reads
+"produced no inline body and no preamble" as "produced nothing anywhere."
+
+A transform can produce its result by other routes, and the comptime/backend
+output is where those results legitimately live. Skipping there dropped orisha's
+static-router transform from the emitted backend, and the damage surfaced as a
+**renamed binding** — Koru source naming a value `profile_text`, emitted Zig
+calling it `log`, colliding with the emitter's own `const log = @import("log")`.
+350_010 and 350_013 went green → red.
+
+So the honest form of the belief is narrower than the heading:
+
+> **A pass marker licenses no claim about what was produced. The absence of a
+> body licenses exactly one claim — that the RUNTIME output must not carry a call
+> to a compile-time-only handler — and none about any other emit mode.**
+
+Worth noting how nearly it hid: those same two tests fail from a worktree for an
+unrelated relative-path reason, and I had written that artifact up twice the same
+day. A real regression landing on exactly the two tests that already have a
+known-innocent explanation is the cheapest possible disguise. What separated them
+was the failure REASON — `backend` here, `frontend` for the artifact — and then
+restoring the previous file, rebuilding, and re-running only those two.
