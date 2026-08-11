@@ -274,6 +274,9 @@ benchmarks/workloads/*/go/bench
 # Regression suite locks (runtime state, never committed)
 .regression-run.lock/
 
+# Per-run compiler snapshots (run_single_test.sh standalone)
+zig-out-run-*
+
 # Koru generated files in the invariants manifest dir (koruc emits its backend
 # next to the entry file)
 invariants/backend.zig

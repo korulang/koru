@@ -743,7 +743,7 @@ echo $$ > "$KORU_RUN_LOCK/pid"
 # Cleanup covers BOTH locks: the per-checkout lock always, the machine lock only
 # if we own it (a concurrent --allow-concurrent run must not delete the holder's).
 # This replaces the machine-lock-only trap set above, so it must handle both.
-trap 'rm -rf "$KORU_RUN_LOCK"; [ "$OWNS_MACHINE_LOCK" = true ] && rm -rf "$KORU_MACHINE_LOCK"' EXIT
+trap 'rm -rf "$KORU_RUN_LOCK"; [ "$OWNS_MACHINE_LOCK" = true ] && rm -rf "$KORU_MACHINE_LOCK"; [ -n "${KORUC_SNAPSHOT_DIR:-}" ] && rm -rf "$KORUC_SNAPSHOT_DIR"' EXIT
 
 # Display what we're running
 if [ "$SMOKE_MODE" = true ]; then
@@ -786,6 +786,47 @@ if [ "$REBUILD_COMPILER" = true ]; then
     fi
     echo ""
 fi
+
+# ════════════════════════════════════════
+# COMPILER SNAPSHOT - freeze the binary this run tests against
+# ════════════════════════════════════════
+# `zig-out/bin/koruc` is a mutable path, and a suite run holds it open for
+# minutes. Anything that writes it mid-run — the unit-test step below, a
+# concurrent `zig build` in this checkout, an agent rebuilding while the suite
+# walks — silently swaps the compiler under a run already in progress, and the
+# resulting board is a blend no single compiler ever produced.
+#
+# So the run tests a COPY, taken once, here. The snapshot is private to this
+# run and removed by the same trap that releases the lock.
+#
+# `cp -p` is load-bearing — the cache salt is an mtime over the compiler
+# sources INCLUDING the binary, so a fresh mtime would invalidate every cached
+# backend on every run.
+#
+# THE NAME AND DEPTH ARE LOAD-BEARING TOO. koruc computes its koru_home from
+# its own exe path (module_resolver.zig): the parent of bin/, and one level up
+# AGAIN only when that parent's basename starts with "zig-out" (the dev
+# checkout layout). A snapshot named anything else resolves koru_home to its
+# own directory and the emitted backend cannot find src/ast.zig. So the
+# snapshot lives at <checkout>/zig-out-run-$$/bin/koruc — the same shape as
+# zig-out/bin, sibling of it, private to this run. (The original rescue put it
+# in the lock dir, which koru_home cannot resolve; measured: the emitted
+# backend referenced <lock>/src/ast.zig and failed the zig cache check.)
+if [ ! -x "./zig-out/bin/koruc" ]; then
+    echo -e "${RED}❌ No compiler at ./zig-out/bin/koruc — cannot snapshot.${NC}"
+    echo "   Build it first, or drop --no-rebuild."
+    exit 1
+fi
+KORUC_SNAPSHOT_DIR="$SCRIPT_DIR/zig-out-run-$$"
+mkdir -p "$KORUC_SNAPSHOT_DIR/bin"
+KORUC="$KORUC_SNAPSHOT_DIR/bin/koruc"
+cp -p "./zig-out/bin/koruc" "$KORUC" || {
+    echo -e "${RED}❌ Could not snapshot the compiler to $KORUC${NC}"
+    exit 1
+}
+export KORUC
+echo "📌 Compiler snapshot: $KORUC"
+echo ""
 
 # ════════════════════════════════════════
 # ZIG CACHE MANAGEMENT - Speed up compilation
@@ -1191,7 +1232,7 @@ while IFS= read -r -d '' test_dir; do
             [ -f "$test_dir/FAILURE" ] && uncached_outcome="fail"
 
             if [ "$cached_outcome" = "$uncached_outcome" ]; then
-                cache_write "$test_dir" "./zig-out/bin/koruc" "$KORU_COMPILER_MTIME"
+                cache_write "$test_dir" "$KORUC" "$KORU_COMPILER_MTIME"
                 echo -e "${GREEN}✓ PARITY${NC}  ${DIM:-}$(basename "$test_dir")${NC} ${DIM:-}(cached+uncached both $cached_outcome)${NC}"
             else
                 echo "cache_said=$cached_outcome uncached_said=$uncached_outcome" > "$test_dir/PARITY_VIOLATION"
@@ -1222,7 +1263,7 @@ while IFS= read -r -d '' test_dir; do
     # Update cache after test ran. Cache_write writes on either outcome and
     # refuses if neither SUCCESS nor FAILURE exists (test didn't complete).
     if [ "${KORU_CACHE_MODE:-off}" = "on" ]; then
-        cache_write "$test_dir" "./zig-out/bin/koruc" "$KORU_COMPILER_MTIME" \
+        cache_write "$test_dir" "$KORUC" "$KORU_COMPILER_MTIME" \
             || cache_invalidate "$test_dir"
     fi
 done < <(

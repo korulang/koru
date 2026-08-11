@@ -322,7 +322,7 @@ regression_check_js_equivalence() {
     # then needs a manual build — unnecessary here since JS skips Stage D.) The
     # backend can die via signal on an unsupported construct, so don't trust the
     # exit code alone — also require the emitted file to exist and be non-empty.
-    if ! ./zig-out/bin/koruc "$(test_entry "$test_dir")" --lang=js $flags \
+    if ! "${KORUC:?KORUC is unset — the harness must snapshot the compiler before running a test}" "$(test_entry "$test_dir")" --lang=js $flags \
             >"$test_dir/compile_js.err" 2>&1; then
         _js_equiv_fail "js-compile" "koruc --lang=js failed (see compile_js.err)"
         return 0
@@ -710,7 +710,7 @@ regression_run_one_test() {
     if [ -f "$test_dir/PARSER_TEST" ]; then
         # Generate AST JSON (allow non-zero exit for lenient parse error tests)
         # Use COMPILER_FLAGS if present (needed for conditional imports)
-        ./zig-out/bin/koruc "$ENTRY" --ast-json $COMPILER_FLAGS > "$test_dir/actual.json" 2>"$test_dir/ast.err"
+        "${KORUC:?KORUC is unset — the harness must snapshot the compiler before running a test}" "$ENTRY" --ast-json $COMPILER_FLAGS > "$test_dir/actual.json" 2>"$test_dir/ast.err"
         AST_GEN_EXIT=$?
 
         # Check if AST JSON was actually generated
@@ -752,7 +752,7 @@ regression_run_one_test() {
 
     # TWO-PASS COMPILATION
     # Pass 1: Frontend - Parse .kz -> backend.zig (serialized AST + code generator)
-    if ./zig-out/bin/koruc "$ENTRY" -o "$test_dir/backend.zig" $COMPILER_FLAGS 2>"$test_dir/compile_kz.err"; then
+    if "${KORUC:?KORUC is unset — the harness must snapshot the compiler before running a test}" "$ENTRY" -o "$test_dir/backend.zig" $COMPILER_FLAGS 2>"$test_dir/compile_kz.err"; then
         COMPILE_KZ_SUCCESS=true
     else
         COMPILE_KZ_SUCCESS=false

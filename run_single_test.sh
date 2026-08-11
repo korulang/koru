@@ -12,6 +12,37 @@ if [ -z "$test_dir" ] || [ ! -d "$test_dir" ]; then
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# The compiler under test is FROZEN, never read live from zig-out: a rebuild
+# during a run would otherwise swap it mid-flight. When the suite drives us it
+# has already snapshotted and exported KORUC, and we reuse that exact binary —
+# every worker in a run must test the same one. A standalone invocation takes
+# its own snapshot and removes it on exit. `cp -p` preserves the mtime the cache
+# salt is computed from.
+if [ -z "${KORUC:-}" ]; then
+    if [ ! -x "$SCRIPT_DIR/zig-out/bin/koruc" ]; then
+        echo "SKIP: no compiler at $SCRIPT_DIR/zig-out/bin/koruc — build it first"
+        exit 0
+    fi
+    # Named zig-out-run-*, NOT a hidden dot-dir, on purpose: koruc computes its
+    # koru_home from its own exe path (module_resolver.zig), stepping up past
+    # bin/ and ONE LEVEL MORE only when that parent's basename starts with
+    # "zig-out" — the dev-checkout layout. <checkout>/zig-out-run-$$/bin/koruc
+    # is the same shape as zig-out/bin, so the snapshot resolves src/ and
+    # koru_std/ to the checkout; a $TMPDIR copy would look for /tmp/src/ast.zig
+    # (measured), and a differently-named in-checkout dir resolves koru_home to
+    # itself. Cleaned by the trap on exit.
+    KORUC_SNAPSHOT_DIR="$SCRIPT_DIR/zig-out-run-$$"
+    mkdir -p "$KORUC_SNAPSHOT_DIR/bin"
+    trap 'rm -rf "$KORUC_SNAPSHOT_DIR"' EXIT
+    KORUC="$KORUC_SNAPSHOT_DIR/bin/koruc"
+    cp -p "$SCRIPT_DIR/zig-out/bin/koruc" "$KORUC" || {
+        echo "SKIP: could not snapshot the compiler"
+        exit 0
+    }
+    export KORUC
+fi
+
 # shellcheck source=./scripts/regression_lib.sh
 source "$SCRIPT_DIR/scripts/regression_lib.sh"
 # shellcheck source=./scripts/regression_cache.sh
@@ -101,7 +132,7 @@ if [ "$CACHE_HIT" = true ]; then
         [ -f "$test_dir/FAILURE" ] && uncached_outcome="fail"
 
         if [ "$cached_outcome" = "$uncached_outcome" ]; then
-            cache_write "$test_dir" "$SCRIPT_DIR/zig-out/bin/koruc" "$KORU_COMPILER_MTIME"
+            cache_write "$test_dir" "$KORUC" "$KORU_COMPILER_MTIME"
             echo -e "${GREEN}✓ PARITY${NC}  ${DIM}$TEST_NAME${NC} ${DIM}(cached+uncached both $cached_outcome)${NC}"
             [ "$cached_outcome" = "pass" ] && exit 0 || exit 1
         else
@@ -132,7 +163,7 @@ fi
 # cache_write internally requires SUCCESS or FAILURE to exist (so a crash
 # mid-run doesn't poison the cache).
 if [ "${KORU_CACHE_MODE:-off}" = "on" ]; then
-    cache_write "$test_dir" "$SCRIPT_DIR/zig-out/bin/koruc" "$KORU_COMPILER_MTIME" \
+    cache_write "$test_dir" "$KORUC" "$KORU_COMPILER_MTIME" \
         || cache_invalidate "$test_dir"
 fi
 
