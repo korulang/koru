@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "bindings": {
+    "koru/vaxis": {
+      "path": "./vendored/vaxis",
+      "tree": "sha256:c9ca26f5a8f84790bd2ef9df48966f18b52034652986942bdef117fd85a41c1e",
+      "files": {
+        "index.kz": "3e518b78893d758c5bd394c5eddab5fbe743a6f0fd41ebfee10441e185be3634"
+      }
+    }
+  }
+}

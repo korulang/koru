@@ -1,0 +1,6 @@
+~pub tor greet {} -> string
+
+~proc greet|zig {
+    // MY PATCH: upstream's greeting was wrong for our locale.
+    return "PATCHED vaxis";
+}

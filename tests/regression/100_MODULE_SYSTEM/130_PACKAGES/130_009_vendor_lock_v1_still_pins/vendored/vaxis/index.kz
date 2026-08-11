@@ -1,0 +1,7 @@
+~pub tor greet {} -> string
+
+~proc greet|zig {
+    return "upstream vaxis";
+}
+
+// MY PATCH

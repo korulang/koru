@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "bindings": {
+    "koru/vaxis": {
+      "path": "./vendored/vaxis",
+      "origin": {
+        "source": "npm",
+        "package": "vaxis",
+        "version": "0.1.0",
+        "integrity": "sha512-TESTFIXTURE"
+      },
+      "as-copied": {
+        "tree": "sha256:ad4355745a4747f37711a66fd57bc38041a0b7f44c35ee63e1d37d3c296274c4",
+        "files": {
+          "index.kz": "701d62fc82325b4cff2542df4337355c76924f1b0b18e989d5d27764211047cb"
+        }
+      },
+      "as-compiled": {
+        "tree": "sha256:6d5afbf705dc09504bc0b19b772f14c40860f4c1dc309711ae399256f057230f",
+        "files": {
+          "index.kz": "7fe9f0de7f15eca8f7b9b7b849a06cef10e9e6acb8d346bd41dc3807fc34c7e5"
+        }
+      }
+    }
+  }
+}
