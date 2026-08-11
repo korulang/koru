@@ -1,0 +1,2 @@
+VENDORED vaxis
+REGISTRY other

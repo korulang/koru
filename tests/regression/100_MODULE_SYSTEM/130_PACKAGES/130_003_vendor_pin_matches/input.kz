@@ -1,0 +1,22 @@
+// Pins that a vendored tree matching its recorded hashes compiles clean and the
+// `bindings` declaration emits nothing — the check is the whole of its runtime
+// contribution.
+//
+// The lock in this directory records a SHA-256 per file plus one tree hash over
+// the sorted manifest. Touch any byte under `vendored/` and this test becomes
+// 130_004.
+
+~import std/vendor
+
+~std/vendor:bindings {
+    koru/vaxis: ./vendored/vaxis
+}
+
+~tor main {}
+
+~proc main|zig {
+    const std = @import("std");
+    std.debug.print("vendored tree matches its pin\n", .{});
+}
+
+~main()

@@ -436,6 +436,31 @@ pub const ModuleResolver = struct {
     }
 
     /// Resolve an import path to BOTH file and directory (if they exist)
+    /// The LONGEST `paths` key that covers `import_path`, matched on segment
+    /// boundaries — `koru/vaxis` beats `koru`, and neither matches `korux`.
+    ///
+    /// A path key used to be read as "everything before the first slash", which
+    /// made it a NAMESPACE rather than a module: `koru/vaxis` was unsayable and
+    /// the finest thing koru.json could express was "send all of `koru/*` here".
+    /// That is too coarse for vendoring, where you redirect the ONE library you
+    /// had to patch and leave its neighbours alone.
+    ///
+    /// Single-segment keys keep their exact old meaning (`std` still covers
+    /// `std/io`), so this is a pure widening of what koru.json can say.
+    fn longestAliasMatch(self: *ModuleResolver, import_path: []const u8) ?[]const u8 {
+        var best: ?[]const u8 = null;
+        var iter = self.config.paths.iterator();
+        while (iter.next()) |entry| {
+            const key = entry.key_ptr.*;
+            if (key.len > import_path.len) continue;
+            if (!std.mem.startsWith(u8, import_path, key)) continue;
+            // Segment boundary: exact match, or the next char is the separator.
+            if (import_path.len != key.len and import_path[key.len] != '/') continue;
+            if (best == null or key.len > best.?.len) best = key;
+        }
+        return best;
+    }
+
     /// This enables importing both foo.kz and foo/ directory simultaneously
     /// Returns ResolveResult with file_path and/or dir_path set
     pub fn resolveBoth(
@@ -459,9 +484,10 @@ pub const ModuleResolver = struct {
         // Handle $alias path prefixes
         const resolved_import_path = import_path;
 
-        const slash_pos = std.mem.indexOf(u8, import_path, "/");
-        const alias_end = slash_pos orelse import_path.len;
-        const alias = import_path[0..alias_end];
+        const alias = self.longestAliasMatch(import_path) orelse blk: {
+            const slash_pos = std.mem.indexOf(u8, import_path, "/");
+            break :blk import_path[0 .. slash_pos orelse import_path.len];
+        };
 
         log.debug("  Resolving alias: {s}\n", .{alias});
 
@@ -478,8 +504,8 @@ pub const ModuleResolver = struct {
                 log.debug("  [FALLBACK {}/{}] Trying: {s}\n", .{ path_idx + 1, alias_paths.len, alias_path });
 
                 // Build the path to check (alias + remainder if any)
-                const path_to_resolve = if (slash_pos) |pos| blk: {
-                    const remainder = import_path[pos + 1..];
+                const path_to_resolve = if (import_path.len != alias.len) blk: {
+                    const remainder = import_path[alias.len + 1 ..];
                     break :blk try std.fs.path.join(
                         self.allocator,
                         &[_][]const u8{ alias_path, remainder }
@@ -628,9 +654,22 @@ pub const ModuleResolver = struct {
         // Handle $alias path prefixes
         const resolved_import_path = import_path;
 
-        const slash_pos = std.mem.indexOf(u8, import_path, "/");
-        const alias_end = slash_pos orelse import_path.len;
-        const alias = import_path[0..alias_end];
+        // LONGEST MATCH over full module paths, on segment boundaries.
+        //
+        // The alias used to be "everything before the first slash", which made a
+        // path key a NAMESPACE, not a module: `koru/vaxis` was unsayable, and the
+        // closest koru.json could get was "send all of `koru/*` somewhere". That
+        // is too coarse for the normal vendoring case — you vendor the ONE library
+        // you had to patch and leave its neighbours on the registry.
+        //
+        // Matching the longest key instead makes a key any prefix of a module path,
+        // so `koru` and `koru/vaxis` coexist and the specific one wins. Every
+        // single-segment key keeps its old meaning exactly (`std` still catches
+        // `std/io`), so this is a pure widening.
+        const alias = self.longestAliasMatch(import_path) orelse blk: {
+            const slash_pos = std.mem.indexOf(u8, import_path, "/");
+            break :blk import_path[0 .. slash_pos orelse import_path.len];
+        };
 
         log.debug("  Resolving alias: {s}\n", .{alias});
 
@@ -648,8 +687,8 @@ pub const ModuleResolver = struct {
                 log.debug("  ✓ Trying fallback: {s}\n", .{alias_path});
 
                 // Build the path to check (alias + remainder if any)
-                const path_to_resolve = if (slash_pos) |pos| blk: {
-                    const remainder = import_path[pos + 1..];
+                const path_to_resolve = if (import_path.len != alias.len) blk: {
+                    const remainder = import_path[alias.len + 1 ..];
                     break :blk try std.fs.path.join(
                         self.allocator,
                         &[_][]const u8{ alias_path, remainder }

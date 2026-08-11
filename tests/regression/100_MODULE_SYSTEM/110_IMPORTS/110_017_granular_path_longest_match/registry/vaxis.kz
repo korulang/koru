@@ -1,0 +1,8 @@
+// The registry copy of `koru/vaxis`. Reachable through the `koru` key alone —
+// so if longest match were not applied, THIS is what the import would find.
+
+~pub tor greet {} -> string
+
+~proc greet|zig {
+    return "REGISTRY vaxis";
+}

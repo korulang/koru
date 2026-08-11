@@ -1,0 +1,20 @@
+// Pins the refusal: a vendored tree whose contents no longer match `vendor.lock`
+// does not compile, and the diagnostic names the FILE that drifted — not just
+// the binding, and not just a hash mismatch.
+//
+// The lock here records a hash for `main.zig` that the file on disk does not
+// have. That is the shape of a supply-chain swap: the source moved under a
+// dependency the program already trusts.
+
+~import std/vendor
+
+~std/vendor:bindings {
+    koru/vaxis: ./vendored/vaxis
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

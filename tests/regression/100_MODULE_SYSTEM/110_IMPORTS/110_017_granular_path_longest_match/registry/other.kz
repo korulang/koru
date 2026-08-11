@@ -1,0 +1,8 @@
+// A neighbour of vaxis inside the same namespace, with no key of its own. It
+// must keep resolving through the shorter `koru` key.
+
+~pub tor greet {} -> string
+
+~proc greet|zig {
+    return "REGISTRY other";
+}

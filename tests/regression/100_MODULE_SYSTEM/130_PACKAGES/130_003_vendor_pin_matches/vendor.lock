@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "bindings": {
+    "koru/vaxis": {
+      "path": "./vendored/vaxis",
+      "tree": "sha256:dd9d7ba90445ff54bd899653cb861c3ced82c4fab430ff0c8baebc7d9d4615ae",
+      "files": {
+        "README.md": "38ffe71173859c406fd866ae1ff95d74892462eeff098f0139a73a982831366e",
+        "main.zig": "4531d2679a5a06dfc599bff91581e2e0d32d6f8fa0c44bef90fc0562f7540939"
+      }
+    }
+  }
+}

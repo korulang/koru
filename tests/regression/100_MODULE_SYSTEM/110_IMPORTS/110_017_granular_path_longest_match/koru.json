@@ -1,0 +1,7 @@
+{
+    "paths": {
+        "std": "../../../../../koru_std",
+        "koru": "./registry",
+        "koru/vaxis": "./vendored/vaxis"
+    }
+}
