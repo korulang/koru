@@ -1696,6 +1696,9 @@ pub const Parser = struct {
             // declared for a later import must land before that import is read.
             // Unlike flag.declare, this cannot wait for a post-parse harvest.
             try self.applyPathsDirective(&flow, directive_line);
+            // Same reason, same moment: a `std/vendor:bindings` block makes the
+            // tree it pins importable, and the import may be the very next line.
+            try self.applyVendorBindings(&flow, directive_line);
             return .{ .flow = flow };
         } else if (findTopLevelEquals(remaining) != null) {
             // Event implementation via subflow: ~event.name = ...
@@ -3536,6 +3539,127 @@ pub const Parser = struct {
             }
 
             try resolver.config.addPath(alias, target);
+        }
+    }
+
+    /// A binding key is a module PREFIX (`koru/vaxis`), not a bare alias, so it
+    /// is every segment of an alias joined by `/`. An empty segment fails, which
+    /// is what rejects a leading, trailing, or doubled slash.
+    fn isUsableModulePrefix(key: []const u8) bool {
+        if (key.len == 0) return false;
+        var segments = std.mem.splitScalar(u8, key, '/');
+        while (segments.next()) |segment| {
+            if (!isUsableAlias(segment)) return false;
+        }
+        return true;
+    }
+
+    /// Do two `paths` values name the same directory on disk? A koru.json value is
+    /// project-root relative and a binding is already absolute by the time it gets
+    /// here, so comparing the strings would call agreement a conflict.
+    fn sameDirectory(self: *const Parser, existing: []const u8, candidate: []const u8, resolver: *module_resolver_mod.ModuleResolver) bool {
+        if (std.mem.eql(u8, existing, candidate)) return true;
+        const anchored = if (std.fs.path.isAbsolute(existing))
+            self.allocator.dupe(u8, existing) catch return false
+        else
+            std.fs.path.join(self.allocator, &[_][]const u8{ resolver.project_root, existing }) catch return false;
+        defer self.allocator.free(anchored);
+        const real = std.fs.cwd().realpathAlloc(self.allocator, anchored) catch return false;
+        defer self.allocator.free(real);
+        return std.mem.eql(u8, real, candidate);
+    }
+
+    /// Apply a `std/vendor:bindings { module: ./path }` declaration to the live
+    /// resolver config, so a tree that was pinned under a name is IMPORTABLE
+    /// under that same name. A no-op for every other invocation.
+    ///
+    /// This sits beside `applyPathsDirective` and is here for the same reason:
+    /// parse and resolve are one pass, so a redirect must land before the import
+    /// that reads it. The hash check does NOT move — it stays a transform in
+    /// koru_std/vendor.kz, because it needs the tree on disk rather than the
+    /// parse. So the declaration says the path once and the two halves take it
+    /// from there: the parser makes the name resolve, the transform makes the
+    /// bytes hold still.
+    fn applyVendorBindings(self: *Parser, flow: *const ast.Flow, directive_line: usize) !void {
+        const path = flow.inv().path;
+        if (path.segments.len != 1 or !std.mem.eql(u8, path.segments[0], "bindings")) return;
+        const qualifier = path.module_qualifier orelse return;
+        // parseQualifiedPath normalizes `/` to `.`, so both spellings arrive here
+        // identically.
+        if (!std.mem.eql(u8, qualifier, "std.vendor")) return;
+
+        var source_text: ?[]const u8 = null;
+        for (flow.inv().args) |arg| {
+            if (std.mem.eql(u8, arg.name, "source")) source_text = arg.value;
+        }
+        // A missing block is the transform's diagnostic to give — it says the same
+        // thing with the tilde the file actually uses. Leaving it alone here keeps
+        // one fault to one message.
+        const body = source_text orelse return;
+
+        const resolver = self.resolver orelse {
+            try self.reporter.addError(.KORU171, directive_line, 1, "std/vendor:bindings makes a pinned tree importable, so it needs a module resolver - this parse was started without one", .{});
+            return error.ParseError;
+        };
+
+        var lines = std.mem.tokenizeAny(u8, body, "\n");
+        while (lines.next()) |raw| {
+            var line = lexer.trim(raw);
+            if (std.mem.indexOf(u8, line, "//")) |c| line = lexer.trim(line[0..c]);
+            if (line.len == 0) continue;
+            if (std.mem.endsWith(u8, line, ",")) line = lexer.trim(line[0 .. line.len - 1]);
+            if (line.len == 0) continue;
+
+            const colon = std.mem.indexOfScalar(u8, line, ':') orelse {
+                try self.reporter.addError(.KORU171, directive_line, 1, "std/vendor:bindings - each line is `module: ./path`, got `{s}`", .{line});
+                return error.ParseError;
+            };
+
+            const module = lexer.trim(line[0..colon]);
+            const target = lexer.trim(line[colon + 1 ..]);
+
+            if (!isUsableModulePrefix(module)) {
+                try self.reporter.addError(.KORU171, directive_line, 1, "std/vendor:bindings - `{s}` cannot be a module name; each segment is a bare identifier (letters, digits, `_`) separated by `/`", .{module});
+                return error.ParseError;
+            }
+            if (target.len == 0) {
+                try self.reporter.addError(.KORU171, directive_line, 1, "std/vendor:bindings - `{s}` has no path", .{module});
+                return error.ParseError;
+            }
+
+            // The path is written relative to the FILE that declares it — the only
+            // anchor its author can see. A koru.json `paths` value is relative to
+            // the PROJECT ROOT instead, so registering the text as written would
+            // resolve it against a different directory the moment a koru.json sits
+            // anywhere above this file. The pin would then hash one tree while the
+            // import read another, which is the split this whole feature exists to
+            // close. Resolving to absolute here makes the two halves name one
+            // directory by construction rather than by coincidence.
+            const declared_in = std.fs.path.dirname(flow.location.file) orelse ".";
+            const anchored = try std.fs.path.join(self.allocator, &[_][]const u8{ declared_in, target });
+            defer self.allocator.free(anchored);
+            const absolute: ?[]const u8 = std.fs.cwd().realpathAlloc(self.allocator, anchored) catch null;
+            defer if (absolute) |a| self.allocator.free(a);
+            // A path that does not exist stays as written, so the missing tree is
+            // reported by the check that knows what a tree is, not as a resolver
+            // miss on a name the author never typed.
+            const effective = absolute orelse target;
+
+            // Two declarations naming the same module and disagreeing about where
+            // it lives is the exact fault this feature exists to remove — pinning
+            // one tree while importing another. Silently preferring either one
+            // hides it, so it is refused and both paths are named. The comparison
+            // is between resolved directories, so koru.json saying the same thing
+            // in its own anchor is agreement, not conflict.
+            if (resolver.config.paths.get(module)) |existing| {
+                if (existing.len != 1 or !self.sameDirectory(existing[0], effective, resolver)) {
+                    try self.reporter.addError(.KORU171, directive_line, 1, "std/vendor:bindings pins `{s}` at `{s}`, but it already resolves to `{s}` - one of the two is importing a tree it is not checking", .{ module, target, existing[0] });
+                    return error.ParseError;
+                }
+                continue;
+            }
+
+            try resolver.config.addPath(module, effective);
         }
     }
 

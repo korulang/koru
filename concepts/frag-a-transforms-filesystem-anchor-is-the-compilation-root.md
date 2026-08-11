@@ -60,3 +60,36 @@ different hashes with neither being wrong. Whether a transform ever legitimately
 needs a path relative to its *declaring* file — a module in a subdirectory
 declaring its own bindings — is unsettled, and would need the compilation root
 passed in rather than inferred from CWD.
+
+## When one declaration is read by two halves, both anchors have to be named
+
+Found 2026-08-11, making `bindings` feed the import resolution so the vendored
+path is written once.
+
+That work put a **second** reader on the same block: the parser registers the
+path so `import koru/vaxis` resolves, while the transform keeps hashing the tree.
+Two readers, two anchors, and neither is the one above — a koru.json `paths`
+value is relative to the **project root**, meaning the nearest koru.json walking
+*up* from the entry file.
+
+Handing the resolver the path as written therefore resolved it against a
+different directory than the transform hashed, the moment any koru.json sat above
+the declaring file. In a bare directory the two agree, so it worked by hand and
+in the scratchpad; inside `tests/regression/` — which has a koru.json of its own,
+as does the repo root — the import failed with `KORU002 module not found`.
+
+The general shape, and it is the same trap this file already describes seen from
+the other side: **an anchor is a property of the reader, not of the declaration.**
+A path in source has as many meanings as it has consumers, and adding a consumer
+silently adds a meaning. The fix is not to pick the better anchor; it is to
+resolve to something with no anchor at all — the parser now resolves the binding
+to an absolute path against its declaring file before registering it, so the two
+halves name one directory by construction.
+
+The refusal that falls out of this is worth more than the fix: two declarations
+naming the same module and disagreeing about where it lives is now `KORU171`,
+because pinning one tree while importing another reads as protection and is not.
+Pinned by `130_007_vendor_binding_conflicts_with_path`, with
+`130_008_vendor_binding_agrees_with_path` guarding the other side — the same tree
+written in both anchors is agreement, so the comparison is between directories on
+disk, never between the two strings.

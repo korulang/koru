@@ -1,0 +1,8 @@
+// The vendored copy. Reachable only because the `bindings` block said where it
+// lives — this directory is named in exactly one place.
+
+~pub tor greet {} -> string
+
+~proc greet|zig {
+    return "VENDORED vaxis";
+}
