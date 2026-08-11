@@ -289,6 +289,19 @@ invariants/zig-out/
 invariants/.zig-cache/
 invariants/checks/__pycache__/
 
+# Same, for the residual manifest dir (todo/todo.kz + todo/selftest.kz)
+todo/backend.zig
+todo/backend_output_emitted.zig
+todo/build.zig
+todo/build_backend.zig
+todo/compiler_env.zig
+todo/program_ast.zig
+todo/program.ast.json
+todo/output_emitted.zig
+todo/a.out
+todo/zig-out/
+todo/.zig-cache/
+
 # A narrowed js-scan run writes here instead of the board (scripts/js-scan.mjs).
 # It is a transient measurement of whatever slice was last looked at, never a claim
 # about the emitter bucket, so it must not accumulate beside the tracked boards.

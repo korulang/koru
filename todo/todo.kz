@@ -1,0 +1,117 @@
+// The repo's declared residuals — the manifest the sweep drives.
+//
+//   koruc todo/todo.kz todo            # list; non-zero if anything is unwitnessed
+//   scripts/todo_sweep.sh              # drive them: run every witness, report what came true
+//
+// koruc emits its backend artifacts next to the entry file; this directory
+// exists so they land here (gitignored) and not in the repo root, which carries
+// a tracked, hand-written build.zig. The reader resolves witnesses relative to
+// this directory, so the corpus is one level up.
+//
+// WHY THIS FILE IS SHORTER THAN THE PROBLEM
+//
+// Measured 2026-08-11: 128 `// TODO:` comments in the tree (88 in src/, 40 in
+// koru_std/) and 66 regression tests parked behind a TODO marker. They are
+// substantially THE SAME RESIDUALS RECORDED TWICE, in two systems that cannot
+// see each other — the comments cannot be driven because they have no body, and
+// the parked tests cannot be found because nothing points at them from the code
+// they describe.
+//
+// This manifest is the join. It is deliberately not a dump of all 128: a
+// residual earns a declaration by naming a test that decides it, and most of
+// those comments cannot yet. That refusal is the point — see koru_std/todo.kz.
+
+~import std/todo
+
+// ============================================================
+// OWED — someone must build these, and a test already decides each one
+// ============================================================
+// Every witness below already exists in the corpus and already asserts
+// something. None of them was written for this manifest; they were parked, in
+// some cases years of sessions ago, with no route back to the code they
+// describe. Naming them here is the route.
+
+~std/todo:owed {
+    "name": "taps-never-reach-emitted-code",
+    "site": "src/emitter_helpers.zig:1165",
+    "owed": "The emitter writes a tap lookup that discards its inputs and does nothing, and the return-switch path has tap support commented out with the note 'currently disabled to avoid breaking all tests'. A program that declares a tap compiles and runs with the tap silently absent.",
+    "witness": "420_008_event_taps_overhead",
+    "tags": ["silent-no-op", "taps"]
+}
+
+~std/todo:owed {
+    "name": "tap-metadata-is-blank",
+    "site": "src/tap_codegen.zig:224",
+    "owed": "Every measurement probe the compiler emits records an empty branch name and a zero duration, with the TODO shipped into the user's generated code as a comment. A probe that reports nothing about which branch was taken cannot measure a branch.",
+    "witness": "506_multi_branch_tap",
+    "tags": ["silent-wrong-output", "taps"]
+}
+
+~std/todo:owed {
+    "name": "transition-metatype-needs-tap-names",
+    "site": "src/tap_codegen.zig:156",
+    "owed": "The transition metatype needs event and branch names from the tap layer, which the probe generator hardcodes to the empty string.",
+    "witness": "330_039_transition_metatype",
+    "tags": ["taps"]
+}
+
+~std/todo:owed {
+    "name": "loop-optimization-never-runs",
+    "site": "src/compiler_coordinator.zig:166",
+    "owed": "The optimization coordinator has nine slots that take a program and return false without looking at it, and the emitter has four sites that write a comment where a fused or inlined event should go. Nested and work-distributed loop optimization are the two the corpus already asks for.",
+    "witness": "420_012_loop_optimization_nested",
+    "tags": ["dead-stub", "optimizer"]
+}
+
+~std/todo:owed {
+    "name": "loop-work-distribution-never-runs",
+    "site": "src/compiler_coordinator.zig:223",
+    "owed": "Branch fusion returns false unconditionally; work distribution across a loop has no implementation behind it.",
+    "witness": "420_013_loop_optimization_work",
+    "tags": ["dead-stub", "optimizer"]
+}
+
+~std/todo:owed {
+    "name": "interceptors-unbuilt",
+    "site": "src/resolve_abstract_impl.zig:42",
+    "owed": "Abstract events that are invoked but never implemented are not reported; the interceptor design they belong to has a spec and four parked tests and no implementation.",
+    "witness": "365_001_basic_intercept",
+    "tags": ["unbuilt"]
+}
+
+// ============================================================
+// DOUBTED — no amount of building closes these; someone must rule
+// ============================================================
+// Each of these is ONE yes/no question standing behind a cluster of residuals.
+// They are the leverage: answer "no" and the whole cluster evicts mechanically,
+// dead stubs and all, in a single commit. Answer "yes" and each member becomes
+// owed and needs a witness. What is NOT allowed is the current state, where the
+// question is unasked and the stubs quietly return false forever.
+
+~std/todo:doubted {
+    "name": "does-an-optimizer-layer-exist",
+    "question": "Does this compiler have an optimizer layer, or is optimization something the Zig backend is trusted to do?",
+    "evicts": "21 residuals and their dead code: nine slots in src/compiler_coordinator.zig that accept a program and return false, four emit sites in src/visitor_emitter.zig writing a comment where a fused or inlined event belongs, the inlining stub in src/ast_transform.zig, and the loop and kernel notes in koru_std/optimizations/.",
+    "tags": ["ruling", "optimizer"]
+}
+
+~std/todo:doubted {
+    "name": "are-measurement-probes-real",
+    "question": "Are taps a real feature of this compiler, or an abandoned experiment?",
+    "evicts": "14 residuals: the probe generator's blank metadata, the collector ignoring universal taps at two sites, cross-module tap resolution, the emitter's disabled tap support, and the tap notes in koru_std/. Four parked tests go with them.",
+    "tags": ["ruling", "taps"]
+}
+
+~std/todo:doubted {
+    "name": "is-the-compiler-control-protocol-alive",
+    "question": "Is the compiler-control protocol — the pass-event stream a driving tool would subscribe to — being built, or is it dead?",
+    "evicts": "6 residuals, four of them in koru_std/compiler_context.kz where every pass-started, pass-completed, error and warning event is a comment. Its own note in koru_std/compiler.kz says the feature is disabled until a piece that was never built lands.",
+    "tags": ["ruling", "ccp"]
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

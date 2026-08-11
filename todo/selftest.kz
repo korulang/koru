@@ -1,0 +1,52 @@
+// SELF-TEST — the three declarations this gate is obliged to refuse.
+//
+// Run by todo/selftest.sh, which asserts a NON-ZERO exit and all three
+// messages. A gate you have only ever watched agree with you is not a gate;
+// the three real bugs in the emitted-while checker were found by feeding it
+// things it had to reject, and this file is the same discipline pointed at
+// the residual surface.
+//
+// Every entry below is DELIBERATELY BROKEN. If this file ever exits zero, the
+// gate has stopped checking and the manifest beside it means nothing.
+
+~import std/todo
+
+// 1. No witness at all — the plain case. A residual with nothing to run is the
+//    exact condition the module exists to refuse.
+~std/todo:owed {
+    "name": "selftest-no-witness",
+    "site": "nowhere.zig:1",
+    "owed": "Deliberately declares no witness.",
+    "tags": ["selftest"]
+}
+
+// 2. A witness that does not exist. Catches the typo and the renamed test —
+//    a manifest pointing at a test that was deleted is a manifest that has
+//    quietly stopped tracking anything.
+~std/todo:owed {
+    "name": "selftest-witness-not-found",
+    "site": "nowhere.zig:2",
+    "owed": "Names a test that is not in the corpus.",
+    "witness": "000_000_this_test_does_not_exist",
+    "tags": ["selftest"]
+}
+
+// 3. A witness that exists and asserts NOTHING. The dangerous one, and the one
+//    measured in the wild: on its first run scripts/todo_sweep.sh found three
+//    parked tests passing and none promotable, because a bare MUST_RUN with no
+//    expected output passes on ANY result. This test is real and really pins
+//    nothing — verified 2026-08-11.
+~std/todo:owed {
+    "name": "selftest-witness-vacuous",
+    "site": "nowhere.zig:3",
+    "owed": "Names a real test that asserts nothing, so it can never decide anything.",
+    "witness": "8207_actual_glsl_compilation",
+    "tags": ["selftest"]
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

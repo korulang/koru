@@ -1,0 +1,25 @@
+// `todo` takes no arguments — its listing and exit code are the whole surface,
+// and a consumer (the sweep, a git gate) is a script over that output, never a
+// subcommand. A caller holding a spelling this command never had must be
+// refused with a non-zero exit: the alternative is a driver that greens while
+// checking nothing, which is the exact failure the residual surface exists to
+// prevent.
+//
+// Run: koruc input.kz todo list   (must refuse)
+
+~import std/todo
+
+~std/todo:owed {
+    "name": "example-owed",
+    "site": "src/example.zig:1",
+    "owed": "Present only so the command has something it could have listed.",
+    "witness": "675_001_invariants_declare_without_executing",
+    "tags": ["example"]
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

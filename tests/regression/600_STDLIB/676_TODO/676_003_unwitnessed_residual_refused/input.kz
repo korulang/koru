@@ -1,0 +1,30 @@
+// An owed residual with no witness is REFUSED.
+//
+// This is the entire safety property of the surface. A residual that names no
+// test cannot be driven by anything: it can only be re-read, which is what a
+// bare `// TODO:` comment already offers and what this module exists to stop
+// being the only option.
+//
+// The refusal was bought with a measured failure, not a preference. The first
+// run of scripts/todo_sweep.sh found three parked tests passing and NONE of
+// them promotable — two asserted only that the program exited zero, and both
+// printed the exact error they were parked on. A driver pointed at residuals
+// with no real assertion does not close them, it manufactures victories.
+//
+// Run: koruc input.kz todo   (must refuse, and must name why)
+
+~import std/todo
+
+~std/todo:owed {
+    "name": "residual-with-no-witness",
+    "site": "src/example.zig:1",
+    "owed": "Deliberately names no test, so nothing can ever decide it.",
+    "tags": ["example"]
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

@@ -50,13 +50,66 @@ CYAN=$'\033[0;36m'; BOLD=$'\033[1m'; NC=$'\033[0m'
 mapfile -t TODO_DIRS < <(find tests/regression -name TODO -not -path '*/node_modules/*' \
     | xargs -n1 dirname | sort)
 
-if [ "${#TODO_DIRS[@]}" -eq 0 ]; then
-    echo "todo-sweep: no TODO-marked tests found."
+# ── Declared residuals ────────────────────────────────────────────────────────
+# The second population, and the reason this sweep is a join rather than a test
+# runner. A `TODO` marker lives in a test directory and describes a feature; a
+# declaration in todo/todo.kz lives beside the CODE and names the test that
+# decides it. Measured 2026-08-11: 128 TODO comments in the tree and 66 parked
+# tests, substantially the same residuals recorded twice in two systems that
+# could not see each other. Driving only one of them drives half the problem.
+#
+# The gate refuses a declaration whose witness is missing, absent from the
+# corpus, or vacuous. A broken manifest stops the sweep instead of being
+# reported as clean — a sweep that greens over an undrivable residual is the
+# failure this whole surface exists to prevent.
+DECLARED_WITNESSES=()
+if [ -f todo/todo.kz ] && [ -x zig-out/bin/koruc ]; then
+    echo "${BOLD}todo-sweep: checking declared residuals${NC}"
+    GATE_OUT=$(cd todo && ../zig-out/bin/koruc todo.kz todo 2>&1)
+    GATE_RC=$?
+    if [ "$GATE_RC" -ne 0 ]; then
+        echo "$GATE_OUT" | sed 's/^/  /'
+        echo
+        echo "${RED}${BOLD}todo-sweep: the residual manifest is broken — refusing to sweep.${NC}"
+        echo "  Fix todo/todo.kz first. A sweep over an undrivable residual reports"
+        echo "  nothing and looks like it reported something."
+        exit 2
+    fi
+    mapfile -t DECLARED_WITNESSES < <(echo "$GATE_OUT" \
+        | sed -n 's/^ *witness  \([0-9A-Za-z_]*\)$/\1/p' | sort -u)
+    # The counts line, not the compiler's own trailer — `tail -1` catches
+    # koruc's "✓ todo" and reports nothing about the manifest.
+    echo "  $(echo "$GATE_OUT" | grep -E '^[0-9]+ owed' | tail -1), ${#DECLARED_WITNESSES[@]} witness(es) to drive"
+    echo
+fi
+
+if [ "${#TODO_DIRS[@]}" -eq 0 ] && [ "${#DECLARED_WITNESSES[@]}" -eq 0 ]; then
+    echo "todo-sweep: no TODO-marked tests and no declared residuals found."
     exit 0
 fi
 
-echo "${BOLD}todo-sweep: executing ${#TODO_DIRS[@]} TODO-marked test(s)${NC}"
-echo "  (they are normally skipped before compiling; KORU_RUN_TODO=1 runs them)"
+# A declared residual's witness is usually NOT TODO-marked — it is an ordinary
+# test that happens to be red. Fold those in so both populations are driven by
+# one run, and remember which dirs came from a declaration: a witness that has
+# come true means the residual is DISCHARGED, and the declaration in
+# todo/todo.kz plus the comment at its site both have to go.
+DECLARED_DIRS=()
+for w in ${DECLARED_WITNESSES+"${DECLARED_WITNESSES[@]}"}; do
+    wd=$(find tests/regression -type d -name "$w" | head -1)
+    [ -z "$wd" ] && continue
+    already=false
+    for d in ${TODO_DIRS+"${TODO_DIRS[@]}"}; do [ "$d" = "$wd" ] && already=true && break; done
+    DECLARED_DIRS+=("$wd")
+    [ "$already" = false ] && TODO_DIRS+=("$wd")
+done
+
+is_declared() {
+    for d in ${DECLARED_DIRS+"${DECLARED_DIRS[@]}"}; do [ "$d" = "$1" ] && return 0; done
+    return 1
+}
+
+echo "${BOLD}todo-sweep: executing ${#TODO_DIRS[@]} test(s)${NC}"
+echo "  (TODO-marked ones are normally skipped before compiling; KORU_RUN_TODO=1 runs them)"
 echo
 
 # Remember which dirs already carried a verdict marker so cleanup restores
@@ -114,8 +167,17 @@ printf '  %s%-11s%s %3d  %s\n' "$CYAN"   "NO VERDICT" "$NC" "${#NO_VERDICT[@]}" 
 echo
 
 if [ "${#PROMOTABLE[@]}" -gt 0 ]; then
-    echo "${GREEN}${BOLD}PROMOTABLE — these assert something and now pass. Drop the TODO marker:${NC}"
-    for n in "${PROMOTABLE[@]}"; do echo "  ✅ $n"; done
+    echo "${GREEN}${BOLD}PROMOTABLE — these assert something and now pass:${NC}"
+    for n in "${PROMOTABLE[@]}"; do
+        d=$(printf '%s\n' "${TODO_DIRS[@]}" | grep -m1 "/$n\$")
+        if is_declared "$d"; then
+            echo "  ✅ $n"
+            echo "     ${BOLD}RESIDUAL DISCHARGED${NC} — the witness came true. Delete its"
+            echo "     declaration from todo/todo.kz AND the comment at the site it names."
+        else
+            echo "  ✅ $n  (drop the TODO marker)"
+        fi
+    done
     echo
 fi
 

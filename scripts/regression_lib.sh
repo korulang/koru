@@ -486,7 +486,8 @@ regression_run_one_test() {
     # KORU_RUN_TODO=1 executes them anyway, which is what `--todo-sweep` uses to
     # answer the one question the marker suppresses: has any of this become true
     # while nobody was looking? A sweep NEVER contributes to the suite's verdict
-    # — see run_todo_sweep in run_regression.sh.
+    # — `run_regression.sh --todo-sweep` execs scripts/todo_sweep.sh and exits
+    # with its code, writing no snapshot.
     if [ -f "$test_dir/TODO" ] && [ "${KORU_RUN_TODO:-0}" != "1" ]; then
         echo -e "${YELLOW}📝 TODO${NC}"
         # Read first line of TODO file as the feature description

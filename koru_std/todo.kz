@@ -1,0 +1,356 @@
+// ============================================================
+// TODO - residuals that drive themselves out
+// ============================================================
+// A `// TODO:` comment is a promise with no way to collect on it. It cannot
+// fail, cannot be counted, cannot be assigned, and cannot tell you it came true
+// while nobody was looking. Measured 2026-08-11: 128 of them in this repo (88
+// in src/, 40 in koru_std/), every one invisible to everything but grep.
+//
+// This module makes a residual DRIVABLE, which is a different and much narrower
+// claim than making it visible. The distinction is the whole design:
+//
+//   WHAT MAKES A RESIDUAL DRIVABLE IS NOT THAT IT IS DECLARED. IT IS THAT
+//   SOMETHING CAN RUN AND DECIDE IT.
+//
+// The proof already sits in this repo. 66 regression tests carry a `TODO`
+// marker file, and scripts/todo_sweep.sh drives every one of them without
+// reading a single word of their prose — it runs them and reads the verdict.
+// That works because a parked test HAS A BODY. A comment does not, so no
+// amount of declaring one makes it drivable; it only makes it tidy.
+//
+// So a declaration here is not a nicer comment. It is the act of GIVING A
+// RESIDUAL A BODY, and the module refuses declarations that fail to.
+//
+// TWO DISPOSITIONS, TWO DIFFERENT CLOSERS. They differ by who can close
+// them, and — as with std/invariants — the NAME carries the bit, because you
+// cannot recover it by re-reading afterwards. "Implement cross-flow
+// optimization" reads like a build task and is actually a ruling; nothing in
+// the text says so, and the person who knew has moved on.
+//
+//   owed     — someone must BUILD this. It names a witness: a regression test
+//              that is red today and green when the residual is discharged.
+//              The sweep drives it with no human in the loop. Growth is debt.
+//
+//   doubted  — someone must RULE on this. No amount of building closes it,
+//              because the open question is whether the thing should exist at
+//              all. It names the question and what evicts if the answer is no.
+//              A machine can only surface it. Growth means unanswered
+//              questions accumulating, which is a different illness from debt
+//              and wants a different medicine.
+//
+// The gradients are opposite in the way that lets a gate judge the pile
+// without understanding any entry in it: `owed` shrinks by writing code,
+// `doubted` shrinks by someone answering. A pile that only ever grows on the
+// `doubted` side is not a backlog, it is a queue of decisions nobody is making.
+//
+// ============================================================
+// A WITNESS IS MANDATORY, AND THIS IS THE POINT OF THE MODULE
+// ============================================================
+// An `owed` residual MUST name a test, and the reader below exits non-zero if
+// that test does not exist or pins nothing. That refusal is not pedantry — it
+// is the entire safety property, and it was bought with a measured failure.
+//
+// The first run of scripts/todo_sweep.sh found three parked tests passing and
+// NONE of them promotable: two asserted only that the program exited zero, and
+// both printed the exact error they were parked on. A driver pointed at
+// residuals with no real assertion does not close them, it manufactures
+// victories — green-by-edit with a work queue attached.
+//
+// So the entry fee is a failing test, and it doubles as an honesty filter: a
+// residual you cannot write a red test for is one you do not yet understand
+// well enough to declare. Leave it a comment until you do.
+//
+// ============================================================
+// EVERY FIELD HERE IS READ BY THE READER BELOW
+// ============================================================
+// Deliberate, and a correction of a live defect in the sibling module: the
+// three rules in invariants/invariants.kz each carry a `"check"` command, the
+// reader never prints it, and nothing runs it. A declared field with no
+// consumer is a residual wearing the costume of a feature. If a field is added
+// here it gets printed or it gets refused.
+//
+// Usage — a JSON block, exactly as flag.declare and std/invariants take one:
+//
+//   std/todo:owed {
+//     "name": "serializer-drops-branches",
+//     "site": "src/ast_serializer.zig:1325",
+//     "owed": "The serializer writes an empty branch list for every
+//              conditional, so a program round-tripped through it comes back
+//              with its branches gone. Silent wrong output, no diagnostic.",
+//     "witness": "395_020_serializer_round_trips_a_conditional",
+//     "tags": ["silent-wrong-output"]
+//   }
+//
+//   std/todo:doubted {
+//     "name": "optimizer-layer",
+//     "question": "Does an optimizer layer exist in this compiler, or not?",
+//     "evicts": "21 residuals and their dead stubs: nine slots in
+//               src/compiler_coordinator.zig that take a program and return
+//               false, four emit sites writing a comment where a fused or
+//               inlined event belongs, and the loop and kernel notes in
+//               koru_std/optimizations/.",
+//     "tags": ["ruling"]
+//   }
+//
+// `name` is the identity — nothing else is. `site` says where the residual
+// physically lives, because unlike an invariant (a claim about the whole
+// program) a residual is always about ONE PLACE. `tags` route it to consumers.
+//
+// In pure `.k` there is no tilde — this is a Koru feature, not a
+// host-embedding one. A host-embedding file writes the same block with `~`.
+//
+// [norun] for the same reason as flag.declare and std/invariants: the
+// declaration never executes. It is data in the AST, harvested after the parse
+// by whoever asks. That is what makes the surface metacircular — a consumer
+// discovers residuals by parsing the program, never from a hardcoded list.
+
+~[comptime|norun]pub tor owed { source: Source }
+
+~[comptime|norun]pub tor doubted { source: Source }
+
+~import std/compiler
+
+~[comptime]
+
+// ============================================================
+// TODO COMMAND - the module ships its own reader, and its own refusal
+// ============================================================
+// `koruc <file> todo` lists every residual the program declares, including
+// those declared by imported libraries (`ast.allFlows` descends through module
+// declarations, so a library's residuals are visible rather than silently
+// dropped).
+//
+// It exits non-zero when an `owed` residual's witness is missing or vacuous.
+// That is what makes this a gate and not a listing: a consumer that greens on
+// an unwitnessed residual checks nothing, which is the failure the sweep hit
+// on its first run.
+
+~std/compiler:command.declare {
+    "name": "todo",
+    "description": "List the residuals a program declares, and refuse unwitnessed ones"
+}
+
+~[comptime|command]pub tor todo {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []const []const u8,
+}
+
+~proc todo|zig {
+    const std = @import("std");
+
+    // `todo` takes no arguments, for the same reason `invariants` takes none:
+    // this command's output and exit code are what a gate consumes, so a caller
+    // holding a spelling this module never had must get a non-zero exit rather
+    // than a listing that looks like agreement.
+    if (argv.len > 0) {
+        std.debug.print("error: `todo` takes no arguments (got `{s}`)\n", .{argv[0]});
+        std.debug.print("A gate is a consumer of the listing, not a subcommand: run\n", .{});
+        std.debug.print("    koruc <file> todo\n", .{});
+        std.debug.print("and act on its output. The surface is specified in koru_std/todo.kz.\n", .{});
+        std.process.exit(1);
+    }
+
+    const helpers = struct {
+        // Pull one `"field": "value"` out of a declaration block. Returns an
+        // empty slice when absent, so a malformed block degrades to a visibly
+        // incomplete row rather than a crash. Same extraction as
+        // koru_std/invariants.kz — deliberately, so the two surfaces cannot
+        // drift into accepting different JSON.
+        fn jsonField(source: []const u8, field: []const u8) []const u8 {
+            var needle_buf: [64]u8 = undefined;
+            const needle = std.fmt.bufPrint(&needle_buf, "\"{s}\"", .{field}) catch return "";
+            const at = std.mem.indexOf(u8, source, needle) orelse return "";
+            var i = at + needle.len;
+            while (i < source.len and (source[i] == ' ' or source[i] == ':')) : (i += 1) {}
+            if (i >= source.len) return "";
+            if (source[i] == '"') {
+                i += 1;
+                const start = i;
+                while (i < source.len and source[i] != '"') : (i += 1) {}
+                return source[start..i];
+            }
+            if (source[i] == '[') {
+                const start = i;
+                while (i < source.len and source[i] != ']') : (i += 1) {}
+                if (i < source.len) i += 1;
+                return source[start..i];
+            }
+            return "";
+        }
+
+        // Find the test corpus by walking UP from the working directory.
+        //
+        // The reader must work from wherever it is invoked: from the directory
+        // the manifest lives in, from a regression test directory six levels
+        // down, and from a consumer project that is not this repo. A path
+        // relative to any one of those is wrong in the other two, and a reader
+        // that silently failed to locate the corpus would report every witness
+        // as NOT FOUND — a red gate that means nothing, which is worse than no
+        // gate at all.
+        //
+        // So: climb until a `tests` directory appears, and if none does, say so
+        // and refuse. A manifest declaring owed residuals with no corpus to
+        // check them against has not been verified, and calling it clean would
+        // be a substitute result standing in for a check that never ran.
+        fn findCorpus(alloc: std.mem.Allocator) ?[]const u8 {
+            var rel = std.ArrayList(u8){ .items = &.{}, .capacity = 0 };
+            defer rel.deinit(alloc);
+            var depth: usize = 0;
+            while (depth < 8) : (depth += 1) {
+                var buf: [std.fs.max_path_bytes]u8 = undefined;
+                const candidate = std.fmt.bufPrint(&buf, "{s}tests", .{rel.items}) catch return null;
+                if (std.fs.cwd().openDir(candidate, .{})) |d| {
+                    var dd = d;
+                    dd.close();
+                    return alloc.dupe(u8, candidate) catch null;
+                } else |_| {}
+                rel.appendSlice(alloc, "../") catch return null;
+            }
+            return null;
+        }
+
+        // Find a regression test directory by name under a root. Returns the
+        // full path, caller frees. Null when no such test exists — which for
+        // an `owed` residual is a refusal, not a warning.
+        fn findTest(alloc: std.mem.Allocator, root: []const u8, name: []const u8) ?[]const u8 {
+            var dir = std.fs.cwd().openDir(root, .{ .iterate = true }) catch return null;
+            defer dir.close();
+            var walker = dir.walk(alloc) catch return null;
+            defer walker.deinit();
+            while (walker.next() catch null) |entry| {
+                if (entry.kind != .directory) continue;
+                if (!std.mem.eql(u8, std.fs.path.basename(entry.path), name)) continue;
+                return std.fs.path.join(alloc, &.{ root, entry.path }) catch null;
+            }
+            return null;
+        }
+
+        // Does this test assert anything? Mirrors pins_something() in
+        // scripts/todo_sweep.sh rather than inventing a second predicate — two
+        // predicates for one question is how a gate starts disagreeing with the
+        // sweep it is supposed to feed.
+        fn pinsSomething(path: []const u8) bool {
+            const files = [_][]const u8{
+                "expected.txt",     "expected_error.txt",
+                "expected_patterns.txt", "expected_comptime.txt",
+                "post.sh",
+            };
+            var buf: [std.fs.max_path_bytes]u8 = undefined;
+            for (files) |f| {
+                const p = std.fmt.bufPrint(&buf, "{s}/{s}", .{ path, f }) catch continue;
+                const st = std.fs.cwd().statFile(p) catch continue;
+                if (st.size > 0) return true;
+            }
+            // An EXPECT file counts only when it carries a real assertion
+            // line; an EXPECT naming just a mode (MUST_RUN with nothing else)
+            // passes on ANY output, which is exactly the vacuous case.
+            const p = std.fmt.bufPrint(&buf, "{s}/EXPECT", .{path}) catch return false;
+            const f = std.fs.cwd().openFile(p, .{}) catch return false;
+            defer f.close();
+            var rbuf: [8192]u8 = undefined;
+            const n = f.readAll(&rbuf) catch return false;
+            const text = rbuf[0..n];
+            for ([_][]const u8{ "CONTAINS ", "NOT_CONTAINS ", "STDOUT_CONTAINS:", "ERROR_AT " }) |marker| {
+                if (std.mem.indexOf(u8, text, marker) != null) return true;
+            }
+            return false;
+        }
+    };
+
+    const ast_todo = @import("ast");
+    const all_flows = ast_todo.allFlows(allocator, program);
+    defer allocator.free(all_flows);
+
+    // Located by climbing, never assumed — see findCorpus. A manifest whose
+    // corpus cannot be found is unverifiable, and unverifiable is refused
+    // rather than reported clean.
+    const tests_root = helpers.findCorpus(allocator) orelse {
+        std.debug.print("error: no test corpus found.\n", .{});
+        std.debug.print("An owed residual is decided by a test, so this command climbs from the\n", .{});
+        std.debug.print("working directory looking for a `tests` directory and found none within\n", .{});
+        std.debug.print("eight levels. Run it from inside the project whose residuals it declares.\n", .{});
+        std.process.exit(1);
+    };
+    defer allocator.free(tests_root);
+
+    var owed_n: usize = 0;
+    var doubted_n: usize = 0;
+    var unwitnessed: usize = 0;
+
+    // Two passes so each disposition prints as a block. They close by
+    // different means and reading them interleaved hides that.
+    for ([_][]const u8{ "owed", "doubted" }) |kind| {
+        var printed_header = false;
+        for (all_flows) |flow| {
+            const mq = flow.inv().path.module_qualifier orelse continue;
+            if (!std.mem.eql(u8, mq, "std.todo")) continue;
+            if (flow.inv().path.segments.len != 1) continue;
+            if (!std.mem.eql(u8, flow.inv().path.segments[0], kind)) continue;
+
+            for (flow.inv().args) |arg| {
+                if (!std.mem.eql(u8, arg.name, "source")) continue;
+                const name = helpers.jsonField(arg.value, "name");
+                const tags = helpers.jsonField(arg.value, "tags");
+
+                if (!printed_header) {
+                    std.debug.print("\n{s}\n", .{kind});
+                    printed_header = true;
+                }
+                std.debug.print("  {s}", .{name});
+                if (tags.len > 0) std.debug.print("  {s}", .{tags});
+                std.debug.print("\n    declared at {s}:{d}\n", .{ flow.location.file, flow.location.line });
+
+                if (std.mem.eql(u8, kind, "owed")) {
+                    owed_n += 1;
+                    const site = helpers.jsonField(arg.value, "site");
+                    const what = helpers.jsonField(arg.value, "owed");
+                    const witness = helpers.jsonField(arg.value, "witness");
+                    if (site.len > 0) std.debug.print("    site     {s}\n", .{site});
+                    if (what.len > 0) std.debug.print("    owed     {s}\n", .{what});
+
+                    // The refusal. An owed residual with no runnable witness is
+                    // a comment with extra steps, and shipping it would rebuild
+                    // the exact problem this module exists to remove.
+                    if (witness.len == 0) {
+                        std.debug.print("    witness  MISSING — no test named; this cannot be driven\n", .{});
+                        unwitnessed += 1;
+                    } else if (helpers.findTest(allocator, tests_root, witness)) |path| {
+                        defer allocator.free(path);
+                        if (helpers.pinsSomething(path)) {
+                            std.debug.print("    witness  {s}\n", .{witness});
+                        } else {
+                            std.debug.print("    witness  VACUOUS — {s} exists but asserts nothing\n", .{witness});
+                            unwitnessed += 1;
+                        }
+                    } else {
+                        std.debug.print("    witness  NOT FOUND — no test named {s}\n", .{witness});
+                        unwitnessed += 1;
+                    }
+                } else {
+                    doubted_n += 1;
+                    const question = helpers.jsonField(arg.value, "question");
+                    const evicts = helpers.jsonField(arg.value, "evicts");
+                    if (question.len > 0) std.debug.print("    asks     {s}\n", .{question});
+                    if (evicts.len > 0) std.debug.print("    evicts   {s}\n", .{evicts});
+                }
+            }
+        }
+    }
+
+    if (owed_n == 0 and doubted_n == 0) {
+        std.debug.print("no residuals declared\n", .{});
+        return;
+    }
+
+    std.debug.print("\n{d} owed, {d} doubted\n", .{ owed_n, doubted_n });
+
+    if (unwitnessed > 0) {
+        std.debug.print("\n{d} owed residual(s) cannot be driven.\n", .{unwitnessed});
+        std.debug.print("An owed residual names a test that is red today and green when it is\n", .{});
+        std.debug.print("discharged. Without one, nothing can ever decide it — which is the\n", .{});
+        std.debug.print("condition this module exists to refuse. Write the failing test, or\n", .{});
+        std.debug.print("leave the residual as a comment until you understand it well enough to.\n", .{});
+        std.process.exit(1);
+    }
+}

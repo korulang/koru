@@ -191,6 +191,12 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  ./run_regression.sh --list             List all tests with their status"
     echo "  ./run_regression.sh --last-run         Show results from last full run"
     echo ""
+    echo -e "${CYAN}RESIDUALS:${NC}"
+    echo "  ./run_regression.sh --todo-sweep       Drive the residuals instead of the board:"
+    echo "                                         run every parked test and every declared"
+    echo "                                         witness, report what became true unnoticed."
+    echo "                                         Writes no snapshot; never moves the board."
+    echo ""
     echo -e "${CYAN}REGRESSION DETECTION & DEBUGGING:${NC}"
     echo "  ./run_regression.sh --diff             Compare current vs last snapshot"
     echo "  ./run_regression.sh --diff OLD NEW     Compare two specific snapshots"
@@ -491,6 +497,19 @@ while [[ $# -gt 0 ]]; do
         --allow-concurrent)
             ALLOW_CONCURRENT=true
             shift
+            ;;
+        --todo-sweep)
+            # Drive the residuals instead of running the board. Two populations,
+            # one verb: the tests parked behind a TODO marker (which the suite
+            # skips before compiling, so they can never flip green on their own)
+            # and the residuals declared in todo/todo.kz against a named witness.
+            #
+            # This never contributes to the suite's verdict — it runs the sweep
+            # and exits with the sweep's own code, writing no snapshot. That
+            # separation is load-bearing: a sweep that could move the published
+            # board would make the board a function of who last remembered to
+            # run one.
+            exec "$SCRIPT_DIR/scripts/todo_sweep.sh" "${@:2}"
             ;;
         --run-units)
             # Backwards compatibility - unit tests now run by default

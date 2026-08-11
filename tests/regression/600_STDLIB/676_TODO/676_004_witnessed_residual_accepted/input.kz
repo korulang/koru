@@ -1,0 +1,33 @@
+// The positive twin of 676_003, and it pins two things at once.
+//
+// FIRST: a gate that refuses everything is as useless as one that refuses
+// nothing. Its sibling proves the refusal fires; this proves it does not fire
+// on a residual that IS drivable. Without both, a gate stuck in one position
+// looks exactly like a gate that works.
+//
+// SECOND, and the reason this test lives six directories deep: the reader finds
+// the test corpus by CLIMBING from wherever it was invoked, never by a path
+// relative to where the manifest happens to sit. A hardcoded relative path
+// would resolve from the manifest's directory and nowhere else, so every
+// witness checked from inside a test — that is, from here — would report NOT
+// FOUND, and the gate would be uniformly red for a reason that has nothing to
+// do with any residual.
+//
+// Run: koruc input.kz todo   (must accept, and must resolve the witness)
+
+~import std/todo
+
+~std/todo:owed {
+    "name": "residual-with-a-real-witness",
+    "site": "src/example.zig:1",
+    "owed": "Names a test that exists and asserts something, so it can be decided.",
+    "witness": "675_001_invariants_declare_without_executing",
+    "tags": ["example"]
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()
