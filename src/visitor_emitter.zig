@@ -1160,6 +1160,26 @@ pub const VisitorEmitter = struct {
                         // BUT if inline_body or preamble_code is set, the transform already ran and produced code!
                         return;
                     }
+
+                    // A transform that RAN and produced NOTHING erased itself, and
+                    // must emit nothing. `is_transformed` is true here on the
+                    // strength of `@pass_ran` alone — that marker says the pass
+                    // visited the flow, not that it left code behind — so without
+                    // it this falls through and emits a runtime call to a
+                    // compile-time-only handler.
+                    //
+                    // Only reachable from a flow inside an IMPORTED module: in the
+                    // entry file an erased flow is dropped from the item list
+                    // before emission, so it never arrives here. `std/vendor:
+                    // bindings` is the first transform to erase itself from inside
+                    // a module, which is why the shape had never been exercised —
+                    // every other module-declared transform produces a body.
+                    // Pinned by 115_047.
+                    if (is_transform and is_transformed and
+                        flow.inline_body == null and flow.preamble_code == null)
+                    {
+                        return;
+                    }
                 }
 
                 if (invokes_comptime_event and !is_transformed) {

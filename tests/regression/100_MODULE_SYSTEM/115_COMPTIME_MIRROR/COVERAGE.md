@@ -57,6 +57,7 @@ because "no mirror" is exactly the state this file exists to make expensive.
 | `store:stripe` | `115_022_store_stripe_in_module` |
 | `store:take` | `115_023_store_take_in_module` |
 | `store:watch` | `115_021_store_watch_in_module` |
+| `vendor:bindings` | `115_047_vendor_bindings_in_module` |
 | `switch:char` | `115_002_switch_char_in_module` |
 | `taps:tap` | `115_033_taps_tap_in_module` |
 | `testing:assert` | no-green-usage |
