@@ -2175,6 +2175,258 @@ fn punContinuationBinding(
     scope.shrinkRetainingCapacity(scope_mark);
 }
 
+// ============================================================================
+// Chain threading by pun (210_172)
+// ============================================================================
+//
+// A chain step that PUNS the chain head's own `: bind` name reads the RUNNING
+// value, not the head's literal — `seed(): n |> bump(n) |> bump(n)` means the
+// batch as it moves down the chain (each `bump(n)` takes the running n and its
+// result is the next n), not "call bump three times, all on the seed value".
+// This is the unnamed twin of the explicit mid-chain thread the corpus already
+// spells with a bind on every step (`: t |> add(tx: t) |> add(tx: t)`) — the
+// ruling (Lars 2026-07-27) is that the explicit binds are noise the language
+// should not require.
+//
+// It desugars to exactly that explicit form, which the emitter already lowers:
+// a producing step that a later step references gets a synthesized holder bind
+// (`__thread_pun{N}`), the punned arg (and any `{{ ... }}` interpolation of the
+// running name) is pointed at the previous holder, and the running value
+// advances. `seed(): n |> bump(n) |> bump(n) |> print("{{ n:d }}")` becomes:
+//
+//   const n = seed();
+//   const __thread_pun0 = bump(.{ .n = n });
+//   const __thread_pun1 = bump(.{ .n = __thread_pun0 });
+//   print("{{ __thread_pun1:d }}");
+//
+// Style of the point-free thread (binds by TYPE): a holder is minted only when
+// a later step actually references the running value, so a thread nobody reads
+// never invents a dead local for the unused-const wall to trip over.
+//
+// Scope: ONLY fires when a step's arg is a genuine PUN of the head bind name
+// (`had_explicit_label == false`, value == the name). A reference like
+// `offset-momentum(bodies: b[0..])` names field `bodies` with an expression —
+// not a pun — so `b` keeps meaning the head bind and the step does not thread
+// (the n-body shootouts rely on that).
+
+/// Entry point: thread chains by pun, in place. Runs after desugarBindingPuns
+/// so the punned args it synthesizes are already materialized.
+pub fn desugarChainPunThreading(
+    allocator: std.mem.Allocator,
+    program: *ast.Program,
+    reporter: *errors_mod.ErrorReporter,
+) !void {
+    var table = try SymbolTable.init(allocator);
+    defer table.deinit();
+    try table.buildFrom(program);
+    var counter: usize = 0;
+    try punThreadItems(allocator, &table, program.items, &counter, reporter);
+}
+
+fn punThreadItems(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    items: []const ast.Item,
+    counter: *usize,
+    reporter: *errors_mod.ErrorReporter,
+) std.mem.Allocator.Error!void {
+    for (@constCast(items)) |*item| {
+        switch (item.*) {
+            .flow => |*flow| try threadFlowChain(allocator, table, flow, counter),
+            .proc_decl => |*proc| {
+                for (@constCast(proc.inline_flows)) |*flow| {
+                    try threadFlowChain(allocator, table, flow, counter);
+                }
+            },
+            .module_decl => |*module| try punThreadItems(allocator, table, module.items, counter, reporter),
+            else => {},
+        }
+    }
+}
+
+/// Whether a chain step's invocation produces a runtime value that can continue
+/// the thread. A `[transform]` (compiler-supplied input, `-> SiteResult`) is a
+/// compile-time rewrite instruction, not a value — mirroring the terminus and
+/// thread passes' `isTransformResultReturn` / `input_is_compiler_supplied`.
+fn stepThreadProduces(table: *SymbolTable, inv: *const ast.Invocation) bool {
+    const info = table.getEventInfo(inv.path) orelse return false;
+    if (info.input_is_compiler_supplied) return false;
+    const rt = info.return_type orelse return false;
+    if (isTransformResultReturn(rt)) return false;
+    return true;
+}
+
+/// True when a step's args genuinely reference `name` as the running value:
+/// a punned arg (unlabelled, name==value==`name`) or a `{{ … }}` interpolation
+/// whose placeholder variable is `name`. Used to decide whether a producing
+/// step needs a minted holder.
+fn stepReferencesRunningName(args: []const ast.Arg, name: []const u8) bool {
+    for (args) |arg| {
+        if (!arg.had_explicit_label and std.mem.eql(u8, arg.name, name) and
+            std.mem.eql(u8, arg.value, name))
+        {
+            return true;
+        }
+        if (interpolationReferences(arg.value, name)) return true;
+    }
+    return false;
+}
+
+/// Does `text` contain a `{{ … }}` interpolation whose placeholder variable is
+/// `name`? Token-bounded: the whole trimmed variable token before any `:`
+/// format specifier must equal `name`, so `{{ n:x }}` matches `n` but
+/// `{{ n_2:x }}` and `{{ length:x }}` do not.
+fn interpolationReferences(text: []const u8, name: []const u8) bool {
+    var i: usize = 0;
+    while (i < text.len) {
+        if (i + 1 < text.len and text[i] == '{' and text[i + 1] == '{') {
+            const inner_start = i + 2;
+            if (std.mem.indexOfPos(u8, text, inner_start, "}}")) |close| {
+                var inner = std.mem.trim(u8, text[inner_start..close], " \t");
+                if (std.mem.indexOfScalar(u8, inner, ':')) |colon| {
+                    inner = std.mem.trim(u8, inner[0..colon], " \t");
+                }
+                if (std.mem.eql(u8, inner, name)) return true;
+                i = close + 2;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    return false;
+}
+
+/// Rewrite every reference to the running name within one step's args to the
+/// current holder: punned arg value → holder, and `{{ name:spec }}` →
+/// `{{ holder:spec }}`. Only runs once threading is confirmed, so `name` here
+/// IS the running value by ruling. Allocates fresh strings (arena); the old
+/// arg strings are left for the parse allocator to reclaim.
+fn rewriteStepReferences(allocator: std.mem.Allocator, args: []const ast.Arg, name: []const u8, running: []const u8) !void {
+    const mut = @constCast(args);
+    for (mut) |*arg| {
+        if (!arg.had_explicit_label and std.mem.eql(u8, arg.name, name) and
+            std.mem.eql(u8, arg.value, name))
+        {
+            arg.value = try allocator.dupe(u8, running);
+        } else if (std.mem.indexOf(u8, arg.value, "{{") != null) {
+            const rewritten = try rewriteInterpolations(allocator, arg.value, name, running);
+            if (rewritten.ptr != arg.value.ptr) arg.value = rewritten;
+            // A comptime transform (std/io print) binds its Expression parameter
+            // from `expression_value.text`, not from `arg.value` — the value is
+            // the sanitized round-trip copy, the expression text is what the
+            // transform actually interpolates. Rewrite both, or the print still
+            // renders the stale `{{ name }}`.
+            if (arg.expression_value) |ev| {
+                const ev_mut = @constCast(ev);
+                const ev_rewritten = try rewriteInterpolations(allocator, ev_mut.text, name, running);
+                if (ev_rewritten.ptr != ev_mut.text.ptr) ev_mut.text = ev_rewritten;
+            }
+        }
+    }
+}
+
+/// Rewrite `{{ name:spec }}` → `{{ running:spec }}` in a string; returns the
+/// input unchanged when nothing matched (same pointer).
+fn rewriteInterpolations(allocator: std.mem.Allocator, text: []const u8, name: []const u8, running: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
+    var i: usize = 0;
+    var changed = false;
+    while (i < text.len) {
+        if (i + 1 < text.len and text[i] == '{' and text[i + 1] == '{') {
+            const inner_start = i + 2;
+            if (std.mem.indexOfPos(u8, text, inner_start, "}}")) |close| {
+                var inner = std.mem.trim(u8, text[inner_start..close], " \t");
+                const spec = if (std.mem.indexOfScalar(u8, inner, ':')) |colon| inner[colon..] else "";
+                if (spec.len > 0) inner = std.mem.trim(u8, inner[0 .. inner.len - spec.len], " \t");
+                if (std.mem.eql(u8, inner, name)) {
+                    try out.appendSlice(allocator, "{{ ");
+                    try out.appendSlice(allocator, running);
+                    try out.appendSlice(allocator, spec);
+                    try out.appendSlice(allocator, " }}");
+                    changed = true;
+                    i = close + 2;
+                    continue;
+                }
+                try out.appendSlice(allocator, text[i .. close + 2]);
+                i = close + 2;
+                continue;
+            }
+        }
+        try out.append(allocator, text[i]);
+        i += 1;
+    }
+    if (!changed) return text;
+    return out.toOwnedSlice(allocator);
+}
+
+fn threadFlowChain(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    flow: *ast.Flow,
+    counter: *usize,
+) std.mem.Allocator.Error!void {
+    // Inline bodies are emitted verbatim; there is no chain to read.
+    if (flow.inline_body != null) return;
+
+    const head_node = flow.body.node orelse return;
+    if (head_node != .invocation) return;
+    const head_inv = flow.body.node.?.invocation;
+    const head_rb = head_inv.return_binding orelse return;
+    // A `_` (or `_`-prefixed synthetic) bind is an explicit discard, not a name.
+    if (head_rb.len == 0 or head_rb[0] == '_') return;
+
+    // Collect the linear chain of unnamed steps.
+    var steps: std.ArrayList(*ast.Invocation) = .empty;
+    defer steps.deinit(allocator);
+    var cur: *ast.Continuation = &flow.body;
+    while (cur.continuations.len == 1 and isUnnamedStep(&cur.continuations[0])) {
+        const sc = @constCast(&cur.continuations[0]);
+        try steps.append(allocator, &sc.node.?.invocation);
+        cur = sc;
+    }
+    if (steps.items.len == 0) return;
+
+    // Fire only when some ANONYMOUS step (no `: bind` of its own) puns the head
+    // bind name — that is what declares the RUNNING-value reading. A step that
+    // carries its own `: n` rebind is the explicit spelling (210_173's shadowing
+    // wall must keep firing, so the pass leaves it and its args untouched).
+    var any_pun = false;
+    for (steps.items) |inv| {
+        if (inv.return_binding == null and stepReferencesRunningName(inv.args, head_rb)) {
+            any_pun = true;
+            break;
+        }
+    }
+    if (!any_pun) return;
+
+    var running = head_rb;
+    for (steps.items, 0..) |inv, i| {
+        // An explicit `: bind` step is the author's own thread — never rewrite
+        // it, never mint over it. It is not the running value this pass owns.
+        if (inv.return_binding != null) continue;
+
+        // 1. This step consumes the CURRENT running value: point every
+        //    reference to the running name at it.
+        try rewriteStepReferences(allocator, inv.args, head_rb, running);
+
+        // 2. If this step produces a value that a LATER step still reads, mint a
+        //    fresh holder and advance the running value to it.
+        if (!stepThreadProduces(table, inv)) continue;
+        var later_ref = false;
+        for (steps.items[i + 1 ..]) |later_inv| {
+            if (later_inv.return_binding == null and stepReferencesRunningName(later_inv.args, head_rb)) {
+                later_ref = true;
+                break;
+            }
+        }
+        if (!later_ref) continue;
+        running = try std.fmt.allocPrint(allocator, "__thread_pun{d}", .{counter.*});
+        counter.* += 1;
+        inv.return_binding = running;
+    }
+}
+
 /// Replace an event invocation with its proc implementation inline
 pub fn inlineEvent(ctx: *TransformContext, invocation: *ast.Invocation, proc: *ast.ProcDecl) !void {
     // This is a complex transformation that would:

@@ -7219,6 +7219,15 @@ pub fn main() !void {
     // and the last step is final.
     try ast_transform.desugarFlowReturnTerminus(parse_allocator, &source_file, &parser.reporter);
 
+    // Chain threading by pun (210_172): a chain step that puns the head's own
+    // `: bind` name reads the RUNNING value, not the head's literal — the
+    // batch as it moves down the chain. Desugars to the explicit mid-chain
+    // binds the emitter already lowers (minted `__thread_pun{N}` holders, args
+    // and interpolations pointed at the previous holder). Runs after the pun
+    // (args are materialized) and after the terminus (so a `-> T` flow's last
+    // step is already final), before any checker sees the rewritten chain.
+    try ast_transform.desugarChainPunThreading(parse_allocator, &source_file, &parser.reporter);
+
     // RULING 3: a bare pun of a formatted-result struct into a scalar param
     // (KORU038) is reported here, at the koru level, before it can reach the
     // emitter and leak a raw Zig type error. KORU092/093 (the thread) and
