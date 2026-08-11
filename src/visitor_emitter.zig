@@ -32,6 +32,43 @@ fn defaultHandlerRootBind(inv: *const ast.Invocation) []const u8 {
     return rb;
 }
 
+/// A named label on a bare-return head is binding sugar for `: r`. The shape
+/// checker already treats it that way — it skips tag rules for a bare-return
+/// head because there are no tags to check — and 210_195 pins the lowering at a
+/// top-level flow head. Returns the label's binding when a subflow head is that
+/// shape, so the caller can alias it to the head result and pass the
+/// continuation on as a void one.
+///
+/// THREE emission sites ask this question (the plain subflow impl, and the two
+/// rooted default-handler paths). None of them may answer it privately: the
+/// first two only ever handled the `: r` spelling, so the label spelling fell
+/// through to a switch on a value carrying no tags at all, and Zig complained
+/// that an enum literal is not an i64 — naming a generated file the author has
+/// never opened. A fourth site will appear; it must call this, not copy it.
+fn headLabelBindOnBareReturn(flow: *const ast.Flow, all_items: []const ast.Item) ?[]const u8 {
+    // The `: r` spelling is already lowered by every caller.
+    if (flow.inv().return_binding != null) return null;
+    if (flow.body.continuations.len != 1) return null;
+    const cont = &flow.body.continuations[0];
+    if (cont.branch.len == 0 or cont.is_catchall) return null;
+    const bind = cont.binding orelse return null;
+    const decl = emitter.findEventDeclByPath(all_items, &flow.inv().path) orelse return null;
+    // Bare return means one untagged outcome: a `-> T` with no branches to name.
+    if (decl.return_type == null or decl.branches.len != 0) return null;
+    return bind;
+}
+
+/// The continuation, restated as the void one the emitters already handle: the
+/// label and its binding have been lifted onto the head, so what is left is
+/// "and then run this".
+fn voidifyHeadLabel(allocator: std.mem.Allocator, continuations: []const ast.Continuation) ![]ast.Continuation {
+    const patched = try allocator.alloc(ast.Continuation, 1);
+    patched[0] = continuations[0];
+    patched[0].branch = "";
+    patched[0].binding = null;
+    return patched;
+}
+
 fn hostLineRoutesToZig(file: []const u8) bool {
     const host = file_types.hostLangOfFile(file) orelse return true;
     return std.mem.eql(u8, host, ZIG_TARGET);
@@ -2336,7 +2373,19 @@ pub const VisitorEmitter = struct {
                                     const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
                                     const compiler_module_name = try codegen_utils.buildKoruModulePath(self.allocator, "std.compiler");
                                     defer self.allocator.free(compiler_module_name);
-                                    try emitter.emitSubflowContinuationsRooted(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, compiler_module_name, event.return_type != null, event, defaultHandlerRootBind(flow.inv()));
+                                    // The other spelling of the same head bind — see
+                                    // headLabelBindOnBareReturn.
+                                    var compiler_rooted_conts: []const ast.Continuation = flow.body.continuations;
+                                    if (headLabelBindOnBareReturn(&flow, items_to_search)) |label_bind| {
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("const ");
+                                        try self.code_emitter.write(label_bind);
+                                        try self.code_emitter.write(" = ");
+                                        try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
+                                        try self.code_emitter.write(";\n");
+                                        compiler_rooted_conts = try voidifyHeadLabel(self.allocator, flow.body.continuations);
+                                    }
+                                    try emitter.emitSubflowContinuationsRooted(self.code_emitter, compiler_rooted_conts, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, compiler_module_name, event.return_type != null, event, defaultHandlerRootBind(flow.inv()));
 
                                     self.code_emitter.indent_level -= 1;
                                     try self.code_emitter.writeIndent();
@@ -2748,7 +2797,19 @@ pub const VisitorEmitter = struct {
                                                 }
 
                                                 const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
-                                                try emitter.emitSubflowContinuationsRooted(self.code_emitter, flow.body.continuations, 0, indent_str, self.all_items, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null, event, defaultHandlerRootBind(flow.inv()));
+                                                // The other spelling of the same head bind — see
+                                                // headLabelBindOnBareReturn.
+                                                var rooted_conts: []const ast.Continuation = flow.body.continuations;
+                                                if (headLabelBindOnBareReturn(&flow, self.all_items)) |label_bind| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("const ");
+                                                    try self.code_emitter.write(label_bind);
+                                                    try self.code_emitter.write(" = ");
+                                                    try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
+                                                    try self.code_emitter.write(";\n");
+                                                    rooted_conts = try voidifyHeadLabel(self.allocator, flow.body.continuations);
+                                                }
+                                                try emitter.emitSubflowContinuationsRooted(self.code_emitter, rooted_conts, 0, indent_str, self.all_items, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null, event, defaultHandlerRootBind(flow.inv()));
 
                                                 found_impl = true;
                                             }
@@ -3565,6 +3626,17 @@ pub const VisitorEmitter = struct {
                                         try self.code_emitter.write(" = result;\n");
                                     }
 
+                                    // The other spelling of the same head bind — see
+                                    // headLabelBindOnBareReturn.
+                                    var sf_head_label_conts: ?[]ast.Continuation = null;
+                                    if (headLabelBindOnBareReturn(&flow, items_to_search)) |label_bind| {
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("const ");
+                                        try self.code_emitter.write(label_bind);
+                                        try self.code_emitter.write(" = result;\n");
+                                        sf_head_label_conts = try voidifyHeadLabel(self.allocator, flow.body.continuations);
+                                    }
+
                                     // Generate switch on result
                                     // Calculate indent string for emitSubflowContinuations
                                     var indent_buf: [64]u8 = undefined;
@@ -3585,6 +3657,8 @@ pub const VisitorEmitter = struct {
                                     // branch Output does not carry.
                                     const sf_switch_conts: []const ast.Continuation = if (sf_handlers_name != null)
                                         sf_terminal_conts.items
+                                    else if (sf_head_label_conts) |patched|
+                                        patched
                                     else
                                         flow.body.continuations;
                                     try emitter.emitSubflowContinuations(self.code_emitter, sf_switch_conts, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null, event);

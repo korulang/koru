@@ -184,3 +184,36 @@ A corollary about vigilance, since three manual restores is what a wall's absenc
 feels like from the inside: catching the same clobber by hand three times is not a
 near-miss record, it is an unbuilt guard reporting itself. The cost of noticing had
 been paid three times over; only the fix had not.
+
+## The same shape in a lowering, not a guard (2026-08-11)
+
+Everything above is about walls. The pattern is not about walls; it is about
+**anything implemented once per place it was needed**, and it reaches emission.
+
+A named label on a call that returns one untagged value is binding sugar — the
+label binds the produced value, because there is no tag to switch on. That
+lowering existed at a top-level flow head, and it existed nested inside another
+continuation. It did not exist at a subflow head. Not refused there, not
+diagnosed there — it fell through to the tag path and emitted a switch on a value
+that has no tags, which is not expressible in the target language at all. So the
+error arrived as raw backend text about an enum literal and an integer, naming a
+generated file the author never opened.
+
+Two positions had been felt. The third had not. The count of positions is the
+thing nobody tracks: each of the first two was implemented by someone who was
+looking at exactly one of them, and neither had a reason to ask how many there
+were in total.
+
+**The corollary that generalises past walls:** when a question has more than one
+asking site, the sites will not agree, and the disagreement is invisible from
+inside any one of them. Here the same question — *is this head a bare return?* —
+was asked at three emitter sites, and exactly one knew both spellings of the
+answer. The repair is not to fix the third site; it is to make the question
+answerable in one place and have every site call it, with a note saying the fourth
+site must call it too. A fourth site always arrives.
+
+**The cheap test, and it is mechanical:** having fixed something at a position,
+grep for the other callers of the thing you just changed and count them. If the
+count is greater than one and you edited one, you have not finished — you have
+moved the inconsistency somewhere it will be rediscovered later, by someone
+reading generated output.
