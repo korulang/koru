@@ -1187,6 +1187,79 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool) !void 
     try emitter.write("pub fn koru_allocator() @import(\"std\").mem.Allocator {\n");
     try emitter.write("    return .{ .ptr = undefined, .vtable = &__koru_vtable };\n");
     try emitter.write("}\n\n");
+
+    // THE LEAK CHECK IS A FUNCTION BECAUSE NOT EVERY PROGRAM HAS A `main`.
+    //
+    // It used to be written inline at the end of the emitted `main`, which is
+    // correct for every target that runs one — and silently absent on the target
+    // that most needs it. A unikernel supplies its own entry and calls the flows
+    // directly (examples/unikraft-net/wrapper.zig), so `main` is dead code there:
+    // the check shipped inside every image and never once executed. Zig does not
+    // even analyze it, which is the same lazy-analysis blind spot that hid the
+    // allocator itself (pinned by 310_122).
+    //
+    // As a `pub fn` the entry point decides when the run is over, which is the
+    // only entity that knows. `main` calls it at exit; a unikernel wrapper calls
+    // it when its loop ends; a server may call it per request.
+    //
+    // ⚠ WHAT THIS REPORTS, AND WHAT IT CANNOT — read before trusting it.
+    // It names WHEN, never WHAT. The count is over raw allocations, which carry
+    // no type and no owner, so a violation says "something outstanding at this
+    // moment" and can name neither the site nor the value. That is a real limit,
+    // not a rung: the substrate has nothing to name with.
+    //
+    // The proofs that DO name things live a level up, where values have owners —
+    // an obligation is settled at compile time, and a store with a column it
+    // cannot discharge is REFUSED at its declaration rather than counted at the
+    // end (690_057/058). This counter is an independent audit OF those proofs,
+    // not a substitute for them, and its whole value is being derived from a
+    // different mechanism than the thing it checks.
+    //
+    // ⚠ ZERO IS ONLY UNAMBIGUOUS AT END OF RUN. Do not read this as an
+    // assert-zero at an arbitrary boundary: a flow that hands a value onward is
+    // *correct* with a nonzero count — 690_057 inserts two transactions into a
+    // program-lifetime store, and every allocation is still outstanding when
+    // that flow ends. Exit is unambiguous precisely because it is the moment
+    // everything must already be gone.
+    // ⚠ ON BARE METAL IT MUST SPEAK BEFORE IT HALTS, and that was MEASURED, not
+    // reasoned. `@panic` on a freestanding target does not print — Zig's default
+    // handler traps, the CPU faults, and Unikraft's handler prints its own crash
+    // banner and a register dump. Booted a deliberately-leaking image: it halted
+    // in the right place (immediately after the program's own last line) and
+    // said NOTHING about a leak. A halt indistinguishable from any other halt is
+    // not a report, and on a target with no debugger the report is all there is.
+    //
+    // So the non-wasm freestanding path writes through the SAME seam printing
+    // uses — ISO C `fputs` resolved from the image (koru_std/io.kz:345 takes the
+    // identical road) — and only then traps. wasm keeps `@panic`: it has no
+    // `fputs` to bind to, and a wasm host surfaces a trap to the embedder rather
+    // than to a console, so the message has somewhere else to arrive.
+    try emitter.write("pub fn koru_leak_check() void {\n");
+    try emitter.write("    if (__koru_leak_count == 0) return;\n");
+    try emitter.write("    if (comptime @import(\"builtin\").target.os.tag == .freestanding) {\n");
+    try emitter.write("        if (comptime @import(\"builtin\").cpu.arch == .wasm32 or @import(\"builtin\").cpu.arch == .wasm64) {\n");
+    try emitter.write("            @panic(\"KORU LEAK CHECK FAILED: the produced program leaked\");\n");
+    try emitter.write("        } else {\n");
+    try emitter.write("            const __klc = struct { extern var stdout: ?*anyopaque; extern fn fputs(__s: [*:0]const u8, __st: ?*anyopaque) c_int; };\n");
+    try emitter.write("            var __lb: [128]u8 = undefined;\n");
+    try emitter.write("            const __lm = \"KORU LEAK CHECK FAILED: allocations still outstanding at end of run: \";\n");
+    try emitter.write("            @memcpy(__lb[0..__lm.len], __lm);\n");
+    try emitter.write("            var __ln: usize = __lm.len;\n");
+    try emitter.write("            var __lv = __koru_leak_count;\n");
+    try emitter.write("            var __ld: [20]u8 = undefined;\n");
+    try emitter.write("            var __lk: usize = 0;\n");
+    try emitter.write("            while (__lv > 0) : (__lk += 1) { __ld[__lk] = @intCast('0' + __lv % 10); __lv /= 10; }\n");
+    try emitter.write("            for (0..__lk) |__li| { __lb[__ln] = __ld[__lk - 1 - __li]; __ln += 1; }\n");
+    try emitter.write("            __lb[__ln] = '\\n'; __ln += 1; __lb[__ln] = 0;\n");
+    try emitter.write("            _ = __klc.fputs(@as([*:0]const u8, @ptrCast(&__lb)), __klc.stdout);\n");
+    try emitter.write("            @trap();\n");
+    try emitter.write("        }\n");
+    try emitter.write("    } else {\n");
+    try emitter.write("        @import(\"std\").debug.print(\"KORU LEAK CHECK FAILED: the produced program leaked (trace above)\\n\", .{});\n");
+    try emitter.write("        @import(\"std\").process.exit(1);\n");
+    try emitter.write("    }\n");
+    try emitter.write("}\n\n");
+
     try emitter.write("pub const main_module = struct {\n");
 }
 
@@ -1762,6 +1835,57 @@ fn emitStructLiteral(emitter: *CodeEmitter, ctx: *EmissionContext, value: []cons
                 first_field = false;
 
                 // Skip comma if present
+                if (i < inner.len and inner[i] == ',') {
+                    i += 1;
+                }
+            } else {
+                // Bare entry — a PUN (`{ p.x, p.y }` inside a literal that also
+                // carries named fields; all-pun literals route through
+                // emitFieldPunningLiteral). Name = last dot segment, value = the
+                // whole entry (pun law, struct_literal.zig). 810_122: the mixed
+                // `{ a.sum, a.next, isred: 0 }` used to drop both puns and emit
+                // only `.{ .isred = 0 }`.
+                const entry_start = field_start;
+                var depth_p: usize = 0;
+                var depth_b: usize = 0;
+                var depth_br: usize = 0;
+                var in_str = false;
+                var entry_end = i;
+                while (entry_end < inner.len) {
+                    const c = inner[entry_end];
+                    if (!in_str) {
+                        if (c == '"') in_str = true
+                        else if (c == '(') depth_p += 1
+                        else if (c == ')' and depth_p > 0) depth_p -= 1
+                        else if (c == '{') depth_b += 1
+                        else if (c == '}' and depth_b > 0) depth_b -= 1
+                        else if (c == '[') depth_br += 1
+                        else if (c == ']' and depth_br > 0) depth_br -= 1
+                        else if (c == ',' and depth_p == 0 and depth_b == 0 and depth_br == 0) break;
+                    } else {
+                        if (c == '"' and (entry_end == 0 or inner[entry_end - 1] != '\\')) in_str = false;
+                    }
+                    entry_end += 1;
+                }
+                const pun_value = std.mem.trim(u8, inner[entry_start..entry_end], " \t");
+                var last_dot: usize = 0;
+                var has_dot = false;
+                for (pun_value, 0..) |ch, idx| {
+                    if (ch == '.') {
+                        last_dot = idx;
+                        has_dot = true;
+                    }
+                }
+                const pun_name = if (has_dot) pun_value[last_dot + 1 ..] else pun_value;
+                if (!first_field) {
+                    try emitter.write(",");
+                }
+                try emitter.write(" .");
+                try emitter.write(pun_name);
+                try emitter.write(" = ");
+                try emitValue(emitter, ctx, pun_value);
+                first_field = false;
+                i = entry_end;
                 if (i < inner.len and inner[i] == ',') {
                     i += 1;
                 }
