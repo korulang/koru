@@ -809,8 +809,8 @@ pub const VendorLock = struct {
         };
         const into = add_into orelse (std.fmt.allocPrint(alloc, "./vendored/{s}", .{bare}) catch return);
 
-        if (!std.ascii.isAlphabetic(module[0]) and module[0] != '_') {
-            std.debug.print("✗ `{s}` cannot start a module name — pass one with `--as <module>`\n", .{module});
+        if (module.len == 0 or (!std.ascii.isAlphabetic(module[0]) and module[0] != '_')) {
+            std.debug.print("✗ `{s}` cannot start a module name — pass one with `--as <module>`\n", .{spec});
             std.process.exit(1);
         }
 
@@ -841,20 +841,28 @@ pub const VendorLock = struct {
             std.debug.print("✗ npm pack produced no tarball for `{s}`\n", .{spec});
             std.process.exit(1);
         }
-        defer std.fs.cwd().deleteFile(tgz) catch {};
+        // NOT `defer` — every failure below ends in `std.process.exit`, which does
+        // not run deferred code, so a refused download would leave its tarball
+        // sitting in the user's directory looking like something they asked for.
+        const failAdd = struct {
+            fn f(path: []const u8) noreturn {
+                std.fs.cwd().deleteFile(path) catch {};
+                std.process.exit(1);
+            }
+        }.f;
 
         // Verify the registry's own integrity claim against the bytes that
         // arrived, before a single one of them lands in the source tree.
         const ok = VendorLock.verifyIntegrity(alloc, tgz, resolved.integrity) catch false;
         if (!ok) {
             std.debug.print("✗ integrity check FAILED for {s}@{s} — the tarball does not match the registry's published {s}\n", .{ bare, resolved.version, resolved.integrity });
-            std.process.exit(1);
+            failAdd(tgz);
         }
         std.debug.print("  verified  {s}\n", .{resolved.integrity});
 
         std.fs.cwd().makePath(into) catch |err| {
             std.debug.print("✗ cannot create `{s}` ({s})\n", .{ into, @errorName(err) });
-            std.process.exit(1);
+            failAdd(tgz);
         };
 
         // npm tarballs wrap everything in a `package/` directory; strip it so the
@@ -864,16 +872,16 @@ pub const VendorLock = struct {
             .argv = &[_][]const u8{ "tar", "-xzf", tgz, "-C", into, "--strip-components", "1" },
         }) catch {
             std.debug.print("✗ could not extract {s}\n", .{tgz});
-            std.process.exit(1);
+            failAdd(tgz);
         };
         if (untar.term != .Exited or untar.term.Exited != 0) {
             std.debug.print("{s}", .{untar.stderr});
-            std.process.exit(1);
+            failAdd(tgz);
         }
 
         const manifest = VendorLock.hashTree(alloc, into) catch |err| {
             std.debug.print("✗ cannot hash `{s}` ({s})\n", .{ into, @errorName(err) });
-            std.process.exit(1);
+            failAdd(tgz);
         };
 
         const lock_path_add = std.fs.path.join(alloc, &[_][]const u8{ VendorLock.anchor, "vendor.lock" }) catch return;
@@ -884,8 +892,10 @@ pub const VendorLock = struct {
             .integrity = resolved.integrity,
         }) catch |err| {
             std.debug.print("✗ cannot write {s} ({s})\n", .{ lock_path_add, @errorName(err) });
-            std.process.exit(1);
+            failAdd(tgz);
         };
+
+        std.fs.cwd().deleteFile(tgz) catch {};
 
         std.debug.print("✓ vendored {s}@{s} → {s}  ({d} files)\n", .{ bare, resolved.version, into, manifest.files.len });
         std.debug.print("\nDeclare it so the compiler checks it on every build:\n\n", .{});
