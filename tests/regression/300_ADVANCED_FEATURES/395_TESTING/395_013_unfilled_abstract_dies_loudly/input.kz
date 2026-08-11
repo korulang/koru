@@ -1,0 +1,35 @@
+// Pins: an `[abstract]` tor that nothing implements must announce itself and
+// die when reached, exactly like the plain tor in 395_012 — the annotation buys
+// no exemption from the loud hole.
+//
+// `[abstract]` is a contract that an implementation lives SOMEWHERE. The wall
+// that enforces it (KORU047) fires at the invocation, upstream of the passes
+// that rewrite implementations, so a pass downstream can take the only
+// implementation away and leave the contract unmet with nobody left to notice.
+// The emitter's guard reads the program actually being emitted, which is the
+// one position no later pass can outrun.
+//
+// A test block stands KORU047 down wholesale (see 395_012), which is what lets
+// an unimplemented event reach emission at all.
+~import std/testing
+~import std/io
+
+~[abstract] tor fetch { id: u32 }
+| found u32
+| missing
+
+~tor run-it { id: u32 }
+| ok u32
+| gone
+
+~run-it = fetch(id)
+| found f => ok f
+| missing => gone
+
+~test(a test block exists, and mocks nothing) {
+    ~assert.ok()
+}
+
+~run-it(id: 1)
+| ok v |> std/io:print.ln("value = {{ v:d }}")
+| gone |> std/io:print.ln("nothing there")

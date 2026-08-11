@@ -46,6 +46,16 @@ buys nothing if a later pass can invalidate it. See
 [[frag-a-check-that-cannot-match-reports-clean]] for the sibling failure, where
 the guard is present but structurally unable to fire.
 
-Open: whether the emitter should carry that refusal itself, or whether the
-pairing pass should re-run the existing check after mutating. The first is
-harder to bypass; the second reuses a diagnostic that already reads well.
+**Settled 2026-08-11: the emitter carries it.** Re-running the upstream check
+after the mutating pass would fix this pass and only this pass — the next one
+written gets the same hole for free. The emitter is the single position that
+reads the program that will actually run, so a guard there cannot be outrun by
+anything, including passes nobody has written yet. It already existed for plain
+tors (`395_012`); `[abstract]` was simply exempt from it. Removing the exemption
+is the whole change, and `395_013` pins the abstract twin.
+
+The refusal is a runtime panic naming the event, not a compile error, and that
+is deliberate: a program may declare a capability it never calls, and a scaffold
+whose boxes are still empty must stay buildable. Loud on arrival, not loud on
+sight. **The rule is not "refuse early", it is "refuse where the truth is
+final".**

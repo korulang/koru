@@ -3584,12 +3584,21 @@ pub const VisitorEmitter = struct {
         // can see the whole picture; this is what happens where it cannot —
         // most of all in a program carrying test blocks, which stands that
         // refusal down for everything (395_012).
-        // `[abstract]` is exempt: its emitted body is a dispatch stub that is
-        // genuinely on the call path and gets resolved elsewhere (030_016 calls
-        // one during comptime evaluation). Panicking there kills a working
-        // program. The refusal still rejects an abstract event invoked with no
-        // implementation anywhere.
-        if (!found_impl and !event.hasAnnotation("abstract") and ast.stubWouldFabricate(event)) {
+        // `[abstract]` is NOT exempt. The contract that an implementation exists
+        // somewhere is checked at the invocation, upstream of the passes that
+        // rewrite implementations — and one of those passes can take the
+        // implementation away again, which is what resolve_abstract_impl did to
+        // every lone implementation until 430_057 pinned it. A guard that runs
+        // before the hole can reopen does not guard the hole. This one reads the
+        // program actually being emitted, so nothing downstream can outrun it.
+        //
+        // The exemption used to be justified by 030_016 "calling a dispatch stub
+        // during comptime evaluation". It was not: that test's own implementation
+        // was the one being renamed away, so it reached this guard because it
+        // genuinely had no implementation left. With the pairing fixed it sets
+        // found_impl and never arrives here. An abstract with a real
+        // implementation behind it cannot reach this line.
+        if (!found_impl and ast.stubWouldFabricate(event)) {
             const hole_name = try std.mem.join(self.allocator, ".", event.path.segments);
             defer self.allocator.free(hole_name);
             const msg = try std.fmt.allocPrint(

@@ -12638,8 +12638,18 @@ fn emitEventDeclForModule(
     // is what makes a scaffold runnable, an application written as flow with
     // its boxes still empty — but reaching an empty box may not be quiet.
     // Twin of the same guard in visitor_emitter; both read one predicate.
-    // `[abstract]` is exempt — its body is a dispatch stub resolved elsewhere.
-    if (!found_impl and !event.hasAnnotation("abstract") and ast.stubWouldFabricate(event)) {
+    //
+    // `[abstract]` is NOT exempt. The contract that an implementation exists
+    // somewhere is checked by KORU047 at the invocation, before the passes that
+    // rewrite implementations run — and a pass downstream of that check can take
+    // the implementation away again (resolve_abstract_impl did exactly that to a
+    // lone implementation until 430_057 pinned it). A guard that runs before the
+    // hole can reopen is not guarding the hole. This one reads the program that
+    // is actually being emitted, so it is the one that cannot be outrun.
+    // Reaching here means nothing implements the event NOW, whatever was true
+    // upstream; an abstract dispatch stub with a real implementation behind it
+    // sets found_impl and never arrives.
+    if (!found_impl and ast.stubWouldFabricate(event)) {
         const hole_name = try std.mem.join(ctx.allocator, ".", event.path.segments);
         defer ctx.allocator.free(hole_name);
         const msg = try std.fmt.allocPrint(

@@ -2324,10 +2324,12 @@ pub fn stripPhantomSuffix(type_str: []const u8) []const u8 {
 /// Those all stay with the refusal, where a reader can check each against the
 /// event in front of them.
 ///
-/// `[abstract]` in particular must NOT be answered here: an abstract event's
-/// emitted body is a dispatch stub that is genuinely on the call path and gets
-/// resolved elsewhere (030_016 calls one during comptime evaluation). It is a
-/// contract about where the implementation lives, not a fabricated answer.
+/// `[abstract]` in particular must NOT be answered here. It is a contract about
+/// where the implementation lives, and each caller weighs it differently: the
+/// shape checker refuses an invoked abstract whatever its output shape, while
+/// the emitter's loud-hole guard cares only whether an implementation is present
+/// in the program it is emitting — by then the annotation says nothing the
+/// search has not already answered.
 pub fn stubWouldFabricate(event: *const EventDecl) bool {
     if (event.return_type != null) return true;
 
