@@ -125,7 +125,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_001_event_multiline_shape/input.kz",
-                "line": 15,
+                "line": 6,
                 "col": 0
             }
         }

@@ -164,7 +164,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
-                "line": 14,
+                "line": 9,
                 "col": 0
             }
         },
@@ -192,7 +192,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
-                "line": 16,
+                "line": 14,
                 "col": 0
             }
         },
@@ -220,7 +220,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
-                "line": 17,
+                "line": 15,
                 "col": 0
             }
         },
@@ -248,7 +248,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
-                "line": 18,
+                "line": 16,
                 "col": 0
             }
         },

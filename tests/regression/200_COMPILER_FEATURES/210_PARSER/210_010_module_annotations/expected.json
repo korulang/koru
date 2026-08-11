@@ -41,32 +41,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "result",
-                    "kind": "terminal",
-                    "resume": null,
-                    "resume_phantom": null,
-                    "is_optional": false,
-                    "is_panic": false,
-                    "payload": {
-                        "fields": [
-                            {
-                                "name": "__type_ref",
-                                "type": "u32",
-                                "is_source": false,
-                                "is_file": false,
-                                "is_embed_file": false,
-                                "is_expression": false,
-                                "is_invocation_meta": false,
-                                "phantom": null
-                            }
-                        ]
-                    }
-                }
+
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_010_module_annotations/input.kz",
-                "line": 7,
+                "line": 4,
                 "col": 0
             }
         }

@@ -108,7 +108,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_003_conditional_imports/input.kz",
-                "line": 20,
+                "line": 19,
                 "col": 0
             }
         }

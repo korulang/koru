@@ -325,7 +325,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_092_effect_multi_arm_decl_indented/input.kz",
-                "line": 33,
+                "line": 27,
                 "col": 0
             }
         }

@@ -198,7 +198,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
-                "line": 23,
+                "line": 21,
                 "col": 0
             }
         },

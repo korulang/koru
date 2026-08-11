@@ -78,32 +78,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "done",
-                    "kind": "terminal",
-                    "resume": null,
-                    "resume_phantom": null,
-                    "is_optional": false,
-                    "is_panic": false,
-                    "payload": {
-                        "fields": [
-                            {
-                                "name": "__type_ref",
-                                "type": "bool",
-                                "is_source": false,
-                                "is_file": false,
-                                "is_embed_file": false,
-                                "is_expression": false,
-                                "is_invocation_meta": false,
-                                "phantom": null
-                            }
-                        ]
-                    }
-                }
+
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/220_COMPILATION/220_001_cross_module_type_basic/input.kz",
-                "line": 12,
+                "line": 6,
                 "col": 0
             }
         }

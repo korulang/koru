@@ -115,7 +115,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_079_effect_branch_resume_expression/input.kz",
-                "line": 11,
+                "line": 7,
                 "col": 0
             }
         },

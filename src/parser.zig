@@ -546,6 +546,40 @@ fn findTopLevelBrace(s: []const u8) ?usize {
     return null;
 }
 
+/// The first top-level `|` in an invocation head that is a VARIANT tag, not a
+/// `|>` chain marker — `blur|gpu` and `init(Body)|gpu` both split here, while
+/// `a() |> b()` keeps its pipe (the chain `|` is followed by `>`; a variant
+/// tag never is). Quote/paren/brace-aware so a literal or argument can't fake
+/// a variant split. Null when the head carries no variant.
+fn findTopLevelVariantPipe(s: []const u8) ?usize {
+    var paren_depth: i32 = 0;
+    var brace_depth: i32 = 0;
+    var in_string = false;
+
+    for (s, 0..) |c, i| {
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+
+        switch (c) {
+            '(' => paren_depth += 1,
+            ')' => paren_depth -= 1,
+            '{' => brace_depth += 1,
+            '}' => brace_depth -= 1,
+            '|' => {
+                if (paren_depth == 0 and brace_depth == 0 and (i + 1 >= s.len or s[i + 1] != '>')) {
+                    return i;
+                }
+            },
+            else => {},
+        }
+    }
+
+    return null;
+}
+
 /// Parser error set - explicit to avoid circular dependency issues
 pub const ParseError = error{
     OutOfMemory,
@@ -668,6 +702,25 @@ pub const Parser = struct {
             .file = self.reporter.file_name,
             .line = if (line_idx < self.lines.len) line_idx + 1 else self.lines.len,
             .column = indent,
+        };
+    }
+
+    /// The recorded location of a DECLARATION: the USER's file line where the
+    /// declaration STARTS. By the time the decl struct is built the cursor has
+    /// consumed the whole declaration, so `getCurrentLocation()` names the line
+    /// AFTER the body, in injected-buffer coordinates — and a consumer of
+    /// `--ast-json` reads stored locations raw, with no reporter translation to
+    /// save it (210_164 pins the correction). Injected compiler-module nodes
+    /// keep the parse coordinate; this is for USER declarations only.
+    fn getUserDeclStartLocation(self: *Parser, start_line_index: usize) errors.SourceLocation {
+        var line = start_line_index + 1;
+        if (line > self.reporter.injection_line_count) {
+            line -= self.reporter.injection_line_count;
+        }
+        return .{
+            .file = self.reporter.file_name,
+            .line = line,
+            .column = lexer.getIndent(self.lines[start_line_index]),
         };
     }
 
@@ -2544,7 +2597,7 @@ pub const Parser = struct {
             .is_implicit_flow = is_implicit_flow,
             .annotations = annotations_copy,
             .prose = self.takePendingProse(),
-            .location = self.getCurrentLocation(),
+            .location = self.getUserDeclStartLocation(event_line_index),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
         // Ownership transferred into event_decl; disarm the errdefer above.
@@ -2714,7 +2767,7 @@ pub const Parser = struct {
             .is_implicit_flow = is_implicit_flow,
             .annotations = try annotations.toOwnedSlice(self.allocator),
             .prose = self.takePendingProse(),
-            .location = self.getCurrentLocation(),
+            .location = self.getUserDeclStartLocation(event_line_index),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
 
@@ -4788,18 +4841,30 @@ pub const Parser = struct {
 
                 const source_text = lexer.trim(invocation_part[brace_start + 1 .. close_brace_idx.?]);
 
+                // A |variant tag on the name part (`~std/kernel:init(Body)|gpu
+                // <Type>{ ... }`) must ride onto the invocation, same as the
+                // bare-brace form (210_140's swallow covered both).
+                const angle_variant_pipe = findTopLevelVariantPipe(before_angle);
+                const before_angle_head = if (angle_variant_pipe) |vp| lexer.trim(before_angle[0..vp]) else before_angle;
+                var angle_variant: ?[]const u8 = null;
+                if (angle_variant_pipe) |vp| {
+                    const vs = lexer.trim(before_angle[vp + 1 ..]);
+                    if (vs.len > 0) angle_variant = try self.allocator.dupe(u8, vs);
+                }
+                errdefer if (angle_variant) |v| self.allocator.free(v);
+
                 // Check if before_angle has args: event(args)
                 // If so, parse path and args separately
                 var parsed_path: ast.DottedPath = undefined;
                 var existing_args: []const ast.Arg = &[_]ast.Arg{};
 
-                if (std.mem.indexOf(u8, before_angle, "(")) |paren_idx| {
+                if (std.mem.indexOf(u8, before_angle_head, "(")) |paren_idx| {
                     // Has args - extract path and parse args
-                    const event_name = lexer.trim(before_angle[0..paren_idx]);
+                    const event_name = lexer.trim(before_angle_head[0..paren_idx]);
                     parsed_path = try lexer.parseQualifiedPath(self.allocator, event_name, ast);
 
                     // Parse arguments from (...)
-                    const args_str = lexer.trim(before_angle[paren_idx..]);
+                    const args_str = lexer.trim(before_angle_head[paren_idx..]);
                     var args_list = try std.ArrayList(ast.Arg).initCapacity(self.allocator, 4);
                     defer args_list.deinit(self.allocator);
 
@@ -4823,7 +4888,7 @@ pub const Parser = struct {
                     existing_args = try args_list.toOwnedSlice(self.allocator);
                 } else {
                     // No args - just parse the path
-                    parsed_path = try lexer.parseQualifiedPath(self.allocator, before_angle, ast);
+                    parsed_path = try lexer.parseQualifiedPath(self.allocator, before_angle_head, ast);
                 }
 
                 // Build path string for registry lookup
@@ -4838,6 +4903,7 @@ pub const Parser = struct {
                     const base_invocation = ast.Invocation{
                         .path = parsed_path,
                         .args = existing_args,
+                        .variant = angle_variant,
                     };
 
                     // Create invocation with implicit Source parameter added
@@ -4875,6 +4941,7 @@ pub const Parser = struct {
                     return ast.Invocation{
                         .path = parsed_path,
                         .args = try new_args.toOwnedSlice(self.allocator),
+                        .variant = angle_variant,
                     };
                 }
             }
@@ -4951,27 +5018,31 @@ pub const Parser = struct {
 
         // Regular invocation without Source block
         // Find arguments in just the invocation part
-        const paren_idx = std.mem.indexOf(u8, invocation_part, "(");
-
-        const raw_path_str = if (paren_idx) |idx|
-            lexer.trim(invocation_part[0..idx])
-        else
-            lexer.trim(invocation_part);
+        // |variant suffix can sit AFTER the args as well as before them
+        // (`~std/kernel:init(Body)|gpu` — the 210_140 swallow: only the
+        // pre-paren form `blur|gpu` was split, so a variant tag on a source-
+        // block transform invocation vanished without a diagnostic).
+        const variant_pipe = findTopLevelVariantPipe(invocation_part);
+        const invocation_head = if (variant_pipe) |vp| lexer.trim(invocation_part[0..vp]) else invocation_part;
 
         // Check for |variant suffix (e.g., "blur|gpu" or "compute|zig[optimized]")
         // Note: variants use [] not () for parameterization to avoid ambiguity with args
         var variant: ?[]const u8 = null;
-        var path_str = raw_path_str;
-
-        if (std.mem.indexOfScalar(u8, raw_path_str, '|')) |variant_pipe_idx| {
-            // Split at pipe: path before, variant after
-            path_str = lexer.trim(raw_path_str[0..variant_pipe_idx]);
-            const variant_str = lexer.trim(raw_path_str[variant_pipe_idx + 1 ..]);
+        if (variant_pipe) |vp| {
+            const variant_str = lexer.trim(invocation_part[vp + 1 ..]);
             if (variant_str.len > 0) {
                 variant = try self.allocator.dupe(u8, variant_str);
             }
         }
         errdefer if (variant) |v| self.allocator.free(v);
+
+        const paren_idx = std.mem.indexOf(u8, invocation_head, "(");
+
+        const raw_path_str = if (paren_idx) |idx|
+            lexer.trim(invocation_head[0..idx])
+        else
+            lexer.trim(invocation_head);
+        const path_str = raw_path_str;
 
         var parsed_path = try lexer.parseQualifiedPath(self.allocator, path_str, ast);
         errdefer parsed_path.deinit(self.allocator);

@@ -253,7 +253,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
-                "line": 23,
+                "line": 19,
                 "col": 0
             }
         }

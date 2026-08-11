@@ -104,42 +104,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "data",
-                    "kind": "terminal",
-                    "resume": null,
-                    "resume_phantom": null,
-                    "is_optional": false,
-                    "is_panic": false,
-                    "payload": {
-                        "fields": [
-                            {
-                                "name": "name",
-                                "type": "[]const u8",
-                                "is_source": false,
-                                "is_file": false,
-                                "is_embed_file": false,
-                                "is_expression": false,
-                                "is_invocation_meta": false,
-                                "phantom": null
-                            },
-                            {
-                                "name": "age",
-                                "type": "i32",
-                                "is_source": false,
-                                "is_file": false,
-                                "is_embed_file": false,
-                                "is_expression": false,
-                                "is_invocation_meta": false,
-                                "phantom": null
-                            }
-                        ]
-                    }
-                }
+
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 15,
+                "line": 12,
                 "col": 0
             }
         },
@@ -152,7 +121,7 @@
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 19,
+                "line": 18,
                 "col": 0
             }
         },
@@ -161,7 +130,7 @@
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 20,
+                "line": 19,
                 "col": 0
             }
         },
@@ -185,32 +154,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "rendered",
-                    "kind": "terminal",
-                    "resume": null,
-                    "resume_phantom": null,
-                    "is_optional": false,
-                    "is_panic": false,
-                    "payload": {
-                        "fields": [
-                            {
-                                "name": "__type_ref",
-                                "type": "[]const u8",
-                                "is_source": false,
-                                "is_file": false,
-                                "is_embed_file": false,
-                                "is_expression": false,
-                                "is_invocation_meta": false,
-                                "phantom": null
-                            }
-                        ]
-                    }
-                }
+
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 23,
+                "line": 19,
                 "col": 0
             }
         },
@@ -219,7 +167,7 @@
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 24,
+                "line": 22,
                 "col": 0
             }
         },
@@ -232,7 +180,7 @@
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 30,
+                "line": 28,
                 "col": 0
             }
         },
@@ -241,7 +189,7 @@
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 31,
+                "line": 29,
                 "col": 0
             }
         },
@@ -257,7 +205,7 @@
                             "text": "<div>\n    <h1>Module-level test</h1>\n    <p>Syntax validated</p>\n</div>",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                                "line": 39,
+                                "line": 36,
                                 "col": 0
                             },
                             "scope": {
@@ -273,10 +221,10 @@
             },
             "continuations": [
                 {
-                    "branch": "rendered",
+                    "branch": "",
                     "kind": "terminal",
                     "is_catchall": false,
-                    "binding": "h",
+                    "binding": null,
                     "binding_type": "branch_payload",
                     "condition": null,
                     "step":                     {
@@ -291,16 +239,12 @@
                                         "text": "h.html",
                                         "location": {
                                             "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                                            "line": 39,
+                                            "line": 36,
                                             "col": 0
                                         },
                                         "scope": {
                                             "bindings": [
-                                                {
-                                                    "name": "h",
-                                                    "type": "unknown",
-                                                    "value_ref": "h"
-                                                }
+
                                             ]
                                         }
                                     }
@@ -318,7 +262,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 32,
+                "line": 30,
                 "col": 0
             }
         }

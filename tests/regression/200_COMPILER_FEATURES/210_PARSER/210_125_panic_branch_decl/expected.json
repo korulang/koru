@@ -214,7 +214,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_125_panic_branch_decl/input.kz",
-                "line": 21,
+                "line": 17,
                 "col": 0
             }
         }

@@ -88,7 +88,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_074_effect_branch_resume_type/input.kz",
-                "line": 8,
+                "line": 4,
                 "col": 0
             }
         }

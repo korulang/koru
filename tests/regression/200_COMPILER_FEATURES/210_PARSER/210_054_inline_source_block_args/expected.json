@@ -99,32 +99,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "transformed",
-                    "kind": "terminal",
-                    "resume": null,
-                    "resume_phantom": null,
-                    "is_optional": false,
-                    "is_panic": false,
-                    "payload": {
-                        "fields": [
-                            {
-                                "name": "__type_ref",
-                                "type": "*const Program",
-                                "is_source": false,
-                                "is_file": false,
-                                "is_embed_file": false,
-                                "is_expression": false,
-                                "is_invocation_meta": false,
-                                "phantom": null
-                            }
-                        ]
-                    }
-                }
+
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                "line": 15,
+                "line": 6,
                 "col": 0
             }
         },
@@ -137,7 +116,7 @@
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                "line": 19,
+                "line": 18,
                 "col": 0
             }
         },
@@ -156,7 +135,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                "line": 21,
+                "line": 18,
                 "col": 0
             }
         },
@@ -167,6 +146,15 @@
             "module": "input",
             "target": "zig",
             "is_pure": false,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 22,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
                 "line": 23,
@@ -183,15 +171,6 @@
             }
         },
         {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                "line": 25,
-                "col": 0
-            }
-        },
-        {
             "type": "flow",
             "invocation": {
                 "event": ["inline", "source"],
@@ -203,7 +182,7 @@
                             "text": "show",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                                "line": 27,
+                                "line": 26,
                                 "col": 0
                             },
                             "scope": {
@@ -220,7 +199,7 @@
                             "text": "const data = { x: 1, y: 2 };",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                                "line": 27,
+                                "line": 26,
                                 "col": 0
                             },
                             "scope": {
@@ -254,7 +233,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                "line": 26,
+                "line": 25,
                 "col": 0
             }
         },
@@ -263,7 +242,7 @@
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                "line": 29,
+                "line": 28,
                 "col": 0
             }
         },
@@ -296,7 +275,7 @@
                                         "text": "show",
                                         "location": {
                                             "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                                            "line": 31,
+                                            "line": 30,
                                             "col": 0
                                         },
                                         "scope": {
@@ -313,7 +292,7 @@
                                         "text": "const z = 3;",
                                         "location": {
                                             "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                                            "line": 31,
+                                            "line": 30,
                                             "col": 0
                                         },
                                         "scope": {
@@ -350,7 +329,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                "line": 30,
+                "line": 29,
                 "col": 0
             }
         }

@@ -32,32 +32,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "ready",
-                    "kind": "terminal",
-                    "resume": null,
-                    "resume_phantom": null,
-                    "is_optional": false,
-                    "is_panic": false,
-                    "payload": {
-                        "fields": [
-                            {
-                                "name": "__type_ref",
-                                "type": "i32",
-                                "is_source": false,
-                                "is_file": false,
-                                "is_embed_file": false,
-                                "is_expression": false,
-                                "is_invocation_meta": false,
-                                "phantom": null
-                            }
-                        ]
-                    }
-                }
+
             ],
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 6,
+                "line": 3,
                 "col": 0
             }
         },
@@ -81,32 +60,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "key",
-                    "kind": "terminal",
-                    "resume": null,
-                    "resume_phantom": null,
-                    "is_optional": false,
-                    "is_panic": false,
-                    "payload": {
-                        "fields": [
-                            {
-                                "name": "__type_ref",
-                                "type": "u8",
-                                "is_source": false,
-                                "is_file": false,
-                                "is_embed_file": false,
-                                "is_expression": false,
-                                "is_invocation_meta": false,
-                                "phantom": null
-                            }
-                        ]
-                    }
-                }
+
             ],
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 9,
+                "line": 5,
                 "col": 0
             }
         },
@@ -125,7 +83,7 @@
             ],
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 11,
+                "line": 7,
                 "col": 0
             }
         },
@@ -153,7 +111,7 @@
             ],
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 13,
+                "line": 9,
                 "col": 0
             }
         },
@@ -168,10 +126,10 @@
             },
             "continuations": [
                 {
-                    "branch": "ready",
+                    "branch": "",
                     "kind": "terminal",
                     "is_catchall": false,
-                    "binding": "t",
+                    "binding": null,
                     "binding_type": "branch_payload",
                     "condition": null,
                     "step":                     {
@@ -240,7 +198,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 14,
+                "line": 12,
                 "col": 0
             }
         }

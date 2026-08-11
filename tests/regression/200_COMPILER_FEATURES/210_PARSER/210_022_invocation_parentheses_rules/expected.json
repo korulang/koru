@@ -45,7 +45,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
-                "line": 6,
+                "line": 4,
                 "col": 0
             }
         },
@@ -102,7 +102,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
-                "line": 10,
+                "line": 8,
                 "col": 0
             }
         },
@@ -186,7 +186,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
-                "line": 16,
+                "line": 14,
                 "col": 0
             }
         },
@@ -255,7 +255,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
-                "line": 22,
+                "line": 20,
                 "col": 0
             }
         },
@@ -274,7 +274,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
-                "line": 23,
+                "line": 21,
                 "col": 0
             }
         },
