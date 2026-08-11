@@ -931,7 +931,18 @@ pub const VendorLock = struct {
     }
 
     if (names.items.len == 0) {
-        std.debug.print("No vendored bindings declared. Use ~std/vendor:bindings {{ module: ./path }}\n", .{});
+        // NOT a clean bill of health, and it must not read like one. `program`
+        // carries the ENTRY file's items only (ast.zig: Program has `items` and
+        // no module list), so a bindings block declared inside an imported module
+        // is invisible here — while the comptime transform, which walks every
+        // module, still finds and enforces it. Pinned by 115_046.
+        //
+        // So the build is checked either way; it is this REPORT that is partial,
+        // and saying "no vendored bindings" would be a green for a program that
+        // has them.
+        std.debug.print("No vendored bindings in this file. Declare one with ~std/vendor:bindings {{ module: ./path }}\n", .{});
+        std.debug.print("  (this command reads the entry file only — a binding declared inside an imported\n", .{});
+        std.debug.print("   module is still pinned and still checked at compile time, but is not listed here)\n", .{});
         return;
     }
 

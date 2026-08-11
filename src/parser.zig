@@ -3597,10 +3597,17 @@ pub const Parser = struct {
         // one fault to one message.
         const body = source_text orelse return;
 
-        const resolver = self.resolver orelse {
-            try self.reporter.addError(.KORU171, directive_line, 1, "std/vendor:bindings makes a pinned tree importable, so it needs a module resolver - this parse was started without one", .{});
-            return error.ParseError;
-        };
+        // No resolver: register nothing and say nothing. This is where a binding
+        // differs from `std/compiler:paths`, which refuses — a paths declaration
+        // has NO effect other than registration, so a parse that cannot register
+        // it has silently dropped the user's whole instruction. A binding's
+        // contract is the PIN, and the pin is enforced by the comptime transform
+        // no matter which parse saw the block; the redirect is an additional
+        // service. Refusing here made a bindings block inside an IMPORTED module
+        // fail outright, which is a shape that compiled before the redirect
+        // existed — pinned by 115_046. If a program then leans on a redirect that
+        // was never registered, its import fails loudly at the import site.
+        const resolver = self.resolver orelse return;
 
         var lines = std.mem.tokenizeAny(u8, body, "\n");
         while (lines.next()) |raw| {
