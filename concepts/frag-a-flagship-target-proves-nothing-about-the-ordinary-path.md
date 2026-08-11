@@ -64,13 +64,44 @@ the same in both cases — an unlike-enough consumer — and in both cases what 
 exposed was something the existing target had answered by default rather than by
 design.
 
+## The mechanism, sharpened by measurement (2026-08-11, later the same day)
+
+The route account above is right about the conclusion and wrong about the
+machinery, and the difference matters because it changes what to check next.
+
+The unikernel **does** carry the emitted preamble. `kraft` links
+`libkoruapp.a`, which is `wrapper.zig` compiling `output_emitted.zig` — the same
+scaffolding, allocator spine included, present in the object. It was never
+*compiled* only because Zig does not analyze a function body nothing reaches, and
+the one program on that target never asked for a byte. So the flagship did not
+take a different route around the scaffolding; it walked past it without ever
+looking inside.
+
+That is a stronger form of the same lesson. A route you avoid can at least be
+noticed as unvisited. A function that is present, shipped, and simply never
+called produces an artifact where the dead code is indistinguishable from live
+code by inspection — and every count of "does the unikernel build?" comes back
+yes. Confirmed by reverting the fix: an allocating program fails to compile for
+`x86_64-freestanding` where a non-allocating one succeeds, from the same
+scaffolding text.
+
+Also corrected: "Unikraft's own runtime, which supplies a libc." It supplies the
+*symbols* — `nm -g` over the 0.21.0 build shows `T malloc`, `T free`,
+`T posix_memalign` — but our compile sets `link_libc = false`, which is exactly
+why `std.heap.c_allocator` could not be NAMED while `extern fn posix_memalign`
+links fine. Symbols in the image and a libc known to the compiler are different
+facts, and conflating them is what made the allocator look unfixable.
+
+Pinned by koru `310_122`; the demonstration now allocates
+(`examples/unikraft-net/serve.kz`), so the scaffolding is reached rather than
+merely shipped.
+
 ## What would correct this belief
 
-Finding that the unikernel does in fact traverse the emitted preamble — that
-`kraft` compiles the same `output_emitted.zig` scaffolding rather than linking a
-static library around it — would make this a story about an untested target
-rather than a misleading one, and the lesson would collapse to ordinary "we
-never tried wasm."
+Finding that the emitted preamble is genuinely absent from the unikernel image —
+rather than present-but-unanalyzed, which is what was measured — would make this
+a story about an untested target rather than a misleading one, and the lesson
+would collapse to ordinary "we never tried wasm."
 
 It would also be corrected by evidence that these three assumptions were known
 and deliberately deferred, rather than never asked. Nothing in the tree said so:

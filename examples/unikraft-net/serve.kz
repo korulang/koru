@@ -27,7 +27,13 @@ const SockaddrIn = extern struct {
     zero: [8]u8 = [_]u8{0} ** 8,
 };
 
-const REPLY = "HTTP/1.1 200 OK\r\nContent-Length: 18\r\nConnection: close\r\n\r\nhello from koru\r\n\n";
+// The reply is BUILT PER REQUEST, not a compile-time constant, and that is the
+// point of this line rather than an embellishment. Until 2026-08-11 the emitted
+// allocator named `std.heap.c_allocator` (and then `page_allocator`), neither of
+// which can exist on a machine with no libc and no OS — so any Koru program that
+// asked for a byte failed to compile for this target. The one reason this example
+// ever built was that it never asked. Pinned by koru 310_122.
+const REPLY_HEAD = "HTTP/1.1 200 OK\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n";
 
 ~pub tor serve { port: u16 }
 | stopped string
@@ -50,7 +56,19 @@ const REPLY = "HTTP/1.1 200 OK\r\nContent-Length: 18\r\nConnection: close\r\n\r\
         if (c < 0) continue;
         var buf: [512]u8 = undefined;
         _ = $mod.recv(c, &buf, buf.len, 0);
-        _ = $mod.send(c, $mod.REPLY.ptr, $mod.REPLY.len, 0);
+
+        // Heap, inside a unikernel. `koru_allocator()` is the spine every stdlib
+        // proc draws from; on this target it now resolves to the image's own
+        // `posix_memalign`/`free`, the same way std/io's printing resolves to the
+        // image's `fputs`.
+        const alloc = koru_allocator();
+        const body = std.fmt.allocPrint(alloc, "hello from koru — request {d} of 3, off the heap\n", .{served + 1}) catch return .{ .failed = "out of memory building the body" };
+        defer alloc.free(body);
+        const head = std.fmt.allocPrint(alloc, $mod.REPLY_HEAD, .{body.len}) catch return .{ .failed = "out of memory building the head" };
+        defer alloc.free(head);
+
+        _ = $mod.send(c, head.ptr, head.len, 0);
+        _ = $mod.send(c, body.ptr, body.len, 0);
         _ = $mod.close(c);
         served += 1;
     }
