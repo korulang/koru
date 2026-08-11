@@ -9926,6 +9926,55 @@ pub fn emitContinuationBody(
             try emitter.write(";\n");
         }
 
+        // Effect-branches phase 3b (nested fold): an event carrying `!` arms
+        // compiles to `handler(Input, comptime __H)` — the 2nd arg holds the
+        // synthesized Handlers struct that carries the effect-arm bodies. The
+        // fold's SEED call and every back-edge re-invocation must pass it, or
+        // the arity mismatch surfaces as a raw Zig error naming a `__H` the
+        // author never wrote. Mirror emitFlow's pre_label partition: split the
+        // fold's children into effect arms (folded into Handlers) and terminal
+        // arms (which drive the loop switches); effect arms are NOT union
+        // members and must never appear as switch arms. Pinned by 210_170 —
+        // a fold with a prefix (`seed(): n0 |> #loop step(n: n0)`, the blocking
+        // `await` shape) hit exactly this gap.
+        const prev_pending_handlers = ctx.pending_handlers_name;
+        defer ctx.pending_handlers_name = prev_pending_handlers;
+        var fold_handlers_name_owned: ?[]const u8 = null;
+        defer if (fold_handlers_name_owned) |h| ctx.allocator.free(h);
+
+        var fold_terminal_buf: std.ArrayList(ast.Continuation) = .empty;
+        defer fold_terminal_buf.deinit(ctx.allocator);
+        var fold_effect_buf: std.ArrayList(ast.Continuation) = .empty;
+        defer fold_effect_buf.deinit(ctx.allocator);
+
+        var fold_event_has_effect = false;
+        if (event_decl) |ed| {
+            for (ed.branches) |b| {
+                if (b.kind == .effect) {
+                    fold_event_has_effect = true;
+                    break;
+                }
+            }
+        }
+        if (fold_event_has_effect) {
+            for (cont.continuations) |c| {
+                if (c.kind == .effect) {
+                    try fold_effect_buf.append(ctx.allocator, c);
+                } else {
+                    try fold_terminal_buf.append(ctx.allocator, c);
+                }
+            }
+            // An effect event with a resume value is never inline-eligible (the
+            // inline splice cannot express a resume value), so the Handlers path
+            // is the only one — the same net as emitFlow's `inline_elig == null`
+            // branch. The struct must be declared BEFORE the seed call below.
+            const hname = try std.fmt.allocPrint(ctx.allocator, "Handlers_{d}", .{result_counter.*});
+            fold_handlers_name_owned = hname;
+            try emitHandlersStruct(emitter, ctx, hname, fold_effect_buf.items, event_decl.?);
+            ctx.pending_handlers_name = hname;
+        }
+        const fold_conts: []const ast.Continuation = if (fold_event_has_effect) fold_terminal_buf.items else cont.continuations;
+
         // Emit the FIRST invocation BEFORE the loop (to get initial result)
         const result_var = try std.fmt.allocPrint(ctx.allocator, "result_{}", .{result_counter.*});
         defer ctx.allocator.free(result_var);
@@ -9951,7 +10000,24 @@ pub fn emitContinuationBody(
             try emitter.write("_");
             try writeBranchName(emitter, arg.name);
         }
-        try emitter.write(" });\n");
+        try emitter.write(" }");
+        // Effect-branches phase 3b: the fold target carries `!` arms, so the
+        // seed call takes the synthesized Handlers struct as its 2nd arg.
+        if (ctx.pending_handlers_name) |hname| {
+            const target_has_effect = blk: {
+                const items = ctx.ast_items orelse break :blk false;
+                const ed = findEventDeclByPath(items, &lwi.invocation.path) orelse break :blk false;
+                for (ed.branches) |b| {
+                    if (b.kind == .effect) break :blk true;
+                }
+                break :blk false;
+            };
+            if (target_has_effect) {
+                try emitter.write(", ");
+                try emitter.write(hname);
+            }
+        }
+        try emitter.write(");\n");
         result_counter.* += 1;
 
         // Register this label in the context map (for cross-level jumps)
@@ -9961,14 +10027,15 @@ pub fn emitContinuationBody(
             try label_map.put(lwi.label, .{
                 .handler_invocation = &lwi.invocation,
                 .result_var = result_copy,
-                // Nested labeled-loop on effect-bearing event isn't wired
-                // here yet — separate from the top-level pre_label case.
-                .handlers_name = null,
+                // Handlers struct for the same reason as above: a back-edge
+                // `@label(...)` re-invocation must pass the same comptime 2nd
+                // arg (the loop's re-entry is a fresh call, not an update).
+                .handlers_name = if (fold_event_has_effect) ctx.pending_handlers_name else null,
             });
         }
 
         // Find which branches loop back to this label for explicit condition
-        const looping_branches = try findLoopingBranches(lwi.label, cont.continuations, ctx.allocator);
+        const looping_branches = try findLoopingBranches(lwi.label, fold_conts, ctx.allocator);
         defer ctx.allocator.free(looping_branches);
 
         // NOW emit the while loop with explicit condition based on looping branches
@@ -10016,7 +10083,7 @@ pub fn emitContinuationBody(
         defer ctx.current_label = saved_label;
 
         // Emit nested continuations (the switch statement)
-        if (cont.continuations.len > 0) {
+        if (fold_conts.len > 0) {
             // Update current_source_event for tap matching in nested continuations
             const saved_source = ctx.current_source_event;
             const new_source = try buildCanonicalEventName(&lwi.invocation.path, ctx.allocator, ctx.main_module_name);
@@ -10034,7 +10101,7 @@ pub fn emitContinuationBody(
                 var looping_conts = try std.ArrayList(ast.Continuation).initCapacity(ctx.allocator, looping_branches.len);
                 defer looping_conts.deinit(ctx.allocator);
 
-                for (cont.continuations) |nested_cont| {
+                for (fold_conts) |nested_cont| {
                     // Check if this continuation is in the looping branches list
                     for (looping_branches) |loop_branch| {
                         if (std.mem.eql(u8, nested_cont.branch, loop_branch)) {
@@ -10050,10 +10117,10 @@ pub fn emitContinuationBody(
                 // We must mark non-looping branches as unreachable explicitly.
                 if (looping_conts.items.len > 0) {
                     // Build list of non-looping branch names
-                    var non_looping_branch_names = try std.ArrayList([]const u8).initCapacity(ctx.allocator, cont.continuations.len);
+                    var non_looping_branch_names = try std.ArrayList([]const u8).initCapacity(ctx.allocator, fold_conts.len);
                     defer non_looping_branch_names.deinit(ctx.allocator);
 
-                    for (cont.continuations) |nested_cont| {
+                    for (fold_conts) |nested_cont| {
                         var is_looping = false;
                         for (looping_branches) |loop_branch| {
                             if (std.mem.eql(u8, nested_cont.branch, loop_branch)) {
@@ -10086,13 +10153,13 @@ pub fn emitContinuationBody(
         ctx.current_label = null;
 
         // NOW emit switch for NON-LOOPING branches (after the while)
-        const has_non_looping_branches = cont.continuations.len > 0 and looping_branches.len < cont.continuations.len;
+        const has_non_looping_branches = fold_conts.len > 0 and looping_branches.len < fold_conts.len;
         if (has_non_looping_branches) {
             // Build list of non-looping continuations
-            var non_looping_conts = try std.ArrayList(ast.Continuation).initCapacity(ctx.allocator, cont.continuations.len - looping_branches.len);
+            var non_looping_conts = try std.ArrayList(ast.Continuation).initCapacity(ctx.allocator, fold_conts.len - looping_branches.len);
             defer non_looping_conts.deinit(ctx.allocator);
 
-            for (cont.continuations) |nested_cont| {
+            for (fold_conts) |nested_cont| {
                 // Check if this continuation is NOT in the looping branches list
                 var is_looping = false;
                 for (looping_branches) |loop_branch| {
@@ -10131,7 +10198,7 @@ pub fn emitContinuationBody(
                 defer break_path.deinit(ctx.allocator);
 
                 for (looping_branches) |branch| {
-                    if (branchHasBreakPath(branch, lwi.label, cont.continuations)) {
+                    if (branchHasBreakPath(branch, lwi.label, fold_conts)) {
                         try break_path.append(ctx.allocator, branch);
                     } else {
                         try purely_looping.append(ctx.allocator, branch);
@@ -10140,10 +10207,10 @@ pub fn emitContinuationBody(
 
                 try emitContinuationListWithUnreachableBranches(emitter, ctx, non_looping_conts.items, result_var, result_counter, purely_looping.items, break_path.items);
             }
-        } else if (cont.continuations.len > 0 and looping_branches.len == cont.continuations.len) {
+        } else if (fold_conts.len > 0 and looping_branches.len == fold_conts.len) {
             // ALL top-level branches are looping - but check for nested terminals
             // (e.g., from taps that wrap terminal branches with void continuations)
-            const has_nested_terminal = hasNestedTerminalInContinuations(cont.continuations);
+            const has_nested_terminal = hasNestedTerminalInContinuations(fold_conts);
             if (!has_nested_terminal) {
                 // No nested terminals - the while loop only exits via return statements
                 // Tell Zig this code path is unreachable
