@@ -1,0 +1,105 @@
+// Pins that a Koru program which ASKS FOR MEMORY builds for a bare x86_64
+// machine — no operating system, no libc.
+//
+// 310_121 pins the same journey for wasm and cannot see this hole, because a
+// program that never allocates never analyzes the allocator spine. Zig only
+// checks a function body that is reached, so the spine sat in every emitted
+// program on every target, unreachable and therefore uncompiled. The unikernel
+// example builds today for exactly that reason: `serve.kz` never asks for a
+// byte. The FIRST program to build a string is the one that finds out.
+//
+// What the spine used to do here: name `std.heap.page_allocator`, whose bare
+// path is `@compileError("freestanding/other page_size_max must provided with
+// std.options.page_size_max")` (std/heap.zig:57, reached via PageAllocator.map).
+// The libc branch cannot be named without a libc and the wasm branch resolves to
+// WasmAllocator only on a wasm arch, so a bare board fell through both.
+//
+// The fix takes the road `std/io` already took for printing: declare the ISO C
+// symbol and let the LINKER resolve it inside the image, rather than porting an
+// abstraction that cannot follow. `nm -g` over the Unikraft 0.21.0 objects built
+// by examples/unikraft-net shows `T malloc`, `T free`, `T posix_memalign`.
+//
+// This test STANDS IN FOR THE IMAGE by exporting those two symbols itself —
+// without them a freestanding executable has nothing to link against, and the
+// pin would be measuring the absence of a unikernel rather than the emitted
+// spine. The bodies are deliberately trivial; what is under test is that the
+// spine BINDS to them, not that they allocate well.
+//
+// COMPILE_ONLY: a freestanding x86_64 image has no host to run on. Compiling
+// and linking IS the assertion.
+
+const std = @import("std");
+
+~import std/build
+
+~std/build:config {
+    "target": "x86_64-freestanding"
+}
+
+~std/build:requires {
+    exe.root_module.link_libc = false;
+}
+
+// 310_121 can say `entry = .disabled` because a wasm REACTOR is a module a host
+// calls into. An ELF executable is not: the linker refuses with `no entry point
+// found` whether or not entry is disabled, because something must be first. A
+// real unikernel answers this by building a static LIBRARY and letting the
+// image's own boot code call in (examples/unikraft-net links `libkoruapp.a`),
+// which the harness has no way to ask for — so this pin supplies the entry
+// itself. It is never executed; COMPILE_ONLY means linking is the assertion.
+// ⚠ THE ENTRY MUST REACH THE ALLOCATOR ITSELF, and the first version of this
+// test proved why. A `_start` that merely traps satisfies the linker and leaves
+// the emitted flow unreferenced — so Zig never analyzes it, the spine is never
+// looked inside, and the test passed with the fix REVERTED. It was calibrated by
+// sabotage and failed that calibration; reading it would never have shown this.
+//
+// Reaching `koru_allocator()` from the entry is not a shortcut around the flow:
+// it is precisely what every stdlib proc body does, from a root the linker is
+// guaranteed to keep.
+export fn _start() callconv(.c) noreturn {
+    const a = koru_allocator();
+    const block = a.alloc(u8, 16) catch @trap();
+    a.free(block);
+    @trap();
+}
+
+// The image's memory, stood in for. A bump over a static arena: enough to be
+// linked and called, deliberately not enough to be an allocator.
+var __test_arena: [4096]u8 align(16) = undefined;
+var __test_used: usize = 0;
+
+export fn posix_memalign(memptr: *?*anyopaque, alignment: usize, size: usize) c_int {
+    const base = (__test_used + alignment - 1) & ~(alignment - 1);
+    if (base + size > __test_arena.len) return 12;
+    __test_used = base + size;
+    memptr.* = @ptrCast(&__test_arena[base]);
+    return 0;
+}
+
+export fn free(ptr: ?*anyopaque) void {
+    _ = ptr;
+}
+
+~pub tor assert-bare-allocation { }
+
+~proc assert-bare-allocation|zig {
+    const builtin = @import("builtin");
+    if (builtin.cpu.arch != .x86_64)
+        @compileError("build:config target did not reach the backend: compiled for " ++ @tagName(builtin.cpu.arch) ++ ", expected x86_64");
+    if (builtin.os.tag != .freestanding)
+        @compileError("build:config target did not reach the backend: compiled for " ++ @tagName(builtin.os.tag) ++ ", expected freestanding");
+    if (builtin.link_libc)
+        @compileError("this pin is only meaningful without a libc; link_libc is on");
+
+    // REACHING the spine is the whole point. An unreferenced allocator compiles
+    // on any target because Zig never looks inside it.
+    const a = koru_allocator();
+    const block = a.alloc(u8, 16) catch return;
+    a.free(block);
+}
+
+const fire = true;
+
+~if(fire)
+| then |> assert-bare-allocation()
+| else |> _
