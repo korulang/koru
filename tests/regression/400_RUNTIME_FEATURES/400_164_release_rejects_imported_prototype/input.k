@@ -1,10 +1,10 @@
 // Transitive gate: the entry module is NOT itself prototype, but it imports a
-// module that IS (`app/lib/proto` carries ~[prototype]). A `--release` build
+// module that IS (`app/lib/proto` carries `[prototype]`). A `--release` build
 // must still reject it — the gate refuses a prototype module ANYWHERE in the
 // import graph, not just the entry file. Drop --release and this runs (a dev
 // build allows prototype dependencies).
 
-~import std/io
-~import app/lib/proto
+import std/io
+import app/lib/proto
 
-~app/lib/proto:greet(name: "world"): msg |> std/io:print.ln(msg)
+app/lib/proto:greet(name: "world"): msg |> std/io:print.ln(msg)

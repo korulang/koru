@@ -1,25 +1,23 @@
-// The production gate: a `~[prototype]` module compiled with `--release` is
+// The production gate: a `[prototype]` module compiled with `--release` is
 // rejected outright (KORU029), before any lenient hole-synthesis. This is the
 // SAME source as 400_160 (which compiles and RUNS in a dev build) — only the
 // `--release` flag (COMPILER_FLAGS) is added, and it flips accept → reject.
 //
 // This is what stops prototype code from ever shipping: the release build
 // refuses the annotation, so the dev workflow of "run incomplete now" always
-// ends in "handle every branch and delete ~[prototype]" before release.
+// ends in "handle every branch and delete [prototype]" before release.
 
-~[prototype]
+[prototype]
 
-~import std/io
+import std/io
 
-~pub tor run {}
+pub tor run {}
 | done
 | err string
 
-~proc run|zig {
-    return .{ .err = "built path ran; done is still a hole" };
-}
+run => err "built path ran; done is still a hole"
 
-~run()
+run()
 | err msg |> std/io:print.ln(msg)
 // `| done` left unhandled. Compiles+runs WITHOUT --release (400_160); with
 // --release the whole module is rejected KORU029.

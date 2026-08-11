@@ -13,7 +13,7 @@ that relaxes terminal-branch exhaustiveness in BOTH directions (see "The dual"
 below): an unhandled required
 `|` branch is no longer a KORU022 error, it becomes a synthesized `@panic` arm —
 the SAME body an unhandled `| ?!` panic branch already gets — AND a handled arm
-for a branch the tor does not declare yet is no longer a KORU021/KORU030
+for a branch the event does not declare yet is no longer a KORU021/KORU030
 error, it is tolerated and pruned. A half-shaped program compiles and runs the
 paths that ARE built; a hole crashes loudly only if execution reaches it.
 
@@ -32,15 +32,28 @@ and greppable — there is deliberately no CLI flag a caller can pass to grant
 leniency. "The language always demands totality" is now scoped to the
 production altitude, not the language as a whole.
 
+## The pure-Koru surface: this is not a host-interop feature
+
+Prototype mode is FULLY expressible in pure Koru, and its pins say so: the
+400_160–166 tests are `.k` files. In the tilde-free `.k` surface the annotation
+is spelled bare `[prototype]` (same annotation, same module_annotations slot).
+The `~proc |zig` producer the original `.kz` pins used was incidental — it
+collapses to a direct construct arm, `run => err "..."` (the `=>`-constructs
+sibling of bare-return `warn -> msg`; prior pins 210_006/335_044), and a
+prototype library module is just a `.k` file opening with `[prototype]`
+(400_164's `lib/proto.k`). Positioning matters here: showing the feature
+through `.kz` host-decls made it read as a Zig add-on when nothing about it
+touches the host layer (Lars-flagged 2026-07-15).
+
 ## The dual: undeclared branches slide too (the doodle direction)
 
 Exhaustiveness has TWO directions, and `~[prototype]` relaxes both. The
 missing-branch direction above ("every DECLARED terminal must be HANDLED") lets
 you leave a handler out. The mirror direction — "every HANDLED branch must be
-DECLARED" — lets you write a handler for a branch the tor does NOT declare yet
+DECLARED" — lets you write a handler for a branch the event does NOT declare yet
 (400_165). This is the top-down authoring story: sketch the handler flow the way
-you actually reason about the program and let the tor's terminal declarations
-catch up later. An undeclared arm can never fire (the tor never produces it),
+you actually reason about the program and let the event's terminal declarations
+catch up later. An undeclared arm can never fire (the event never produces it),
 so it has ZERO runtime footprint — it is pure declaration-debt, not a latent
 panic. The declared path runs now; the undeclared arm is dropped from the
 lowered switch.
@@ -50,14 +63,14 @@ the point. The missing-branch hole is a LATENT RUNTIME PANIC (a synthesized
 `@panic` fires if reached). The undeclared arm is a PURE COMPILE-TIME GAP: it
 never reaches runtime, so it costs nothing and simply records a to-do.
 
-Both directions feed the GAP READOUT — a per-tor report printed to stderr at
+Both directions feed the GAP READOUT — a per-event report printed to stderr at
 compile time for any prototype flow with gaps (`📋 prototype gaps — event 'X'`),
 listing each `hole` (declared terminal unhandled → will `@panic`) and each
 `undeclared` arm (handled, not declared → pruned). This makes the whole gap
 surface visible WITHOUT exercising every path — the crucial gain over the
 latent-panic-only regime, where a hole you never hit at runtime stayed invisible.
 It is the machine-/human-readable frontier of "thought about, not built yet": the
-surface for agentic gap-closing and for describing the tors from exploratory
+surface for agentic gap-closing and for describing the events from exploratory
 code. It is emitted where both sets are already in hand (auto-discharge synthesis)
 — a first-cut home to lift into its own pass in a later tightening.
 

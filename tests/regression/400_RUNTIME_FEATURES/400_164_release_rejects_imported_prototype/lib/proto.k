@@ -1,0 +1,7 @@
+// A `[prototype]`-marked library module. It is COMPLETE (no holes) — the
+// annotation alone is what a release build refuses; the entry that imports it
+// cannot be released while this module carries `[prototype]`.
+[prototype]
+
+pub tor greet { name: string } -> string
+greet -> name

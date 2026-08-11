@@ -15,21 +15,20 @@
 // The production guarantee is untouched: remove `~[prototype]` and the same
 // source is rejected KORU022 (see 400_161). The annotation flips it.
 //
-// Here `run|zig` returns `.err` (the handled path), so the `| done` hole never
-// fires — the program runs to completion and prints.
-~[prototype]
+// Pure Koru: `run` is a direct construct arm (`=> err ...`) producing the
+// handled path, so the `| done` hole never fires — the program runs to
+// completion and prints.
+[prototype]
 
-~import std/io
+import std/io
 
-~pub tor run {}
+pub tor run {}
 | done
 | err string
 
-~proc run|zig {
-    return .{ .err = "built path ran; done is still a hole" };
-}
+run => err "built path ran; done is still a hole"
 
-~run()
+run()
 | err msg |> std/io:print.ln(msg)
 // `| done` left unhandled — a prototype hole. Compiles (synthesized @panic),
 // never fires on this run.

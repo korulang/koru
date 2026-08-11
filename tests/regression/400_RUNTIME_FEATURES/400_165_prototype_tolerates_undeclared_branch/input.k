@@ -9,27 +9,25 @@
 // fire (the event never produces it), so it has ZERO runtime footprint: it is
 // pure declaration-debt, not a latent panic. The path that IS declared runs now.
 //
-// Here `run|zig` returns `.done` (a declared branch), which prints. The `| soon`
+// Here `run` produces `err` (a declared branch), which prints. The `| soon`
 // arm handles a terminal the event never declares — it compiles, never fires,
 // and stays visibly absent from the declaration as a to-do the lifted-tag /
 // readout can list ("thought about, not built yet").
 //
-// The production guarantee is untouched: remove `~[prototype]` and the same
+// The production guarantee is untouched: remove `[prototype]` and the same
 // source is rejected KORU021 (see 400_166). The annotation is the only thing
 // that lets the undeclared arm slide.
-~[prototype]
+[prototype]
 
-~import std/io
+import std/io
 
-~pub tor run {}
+pub tor run {}
 | done
 | err string
 
-~proc run|zig {
-    return .{ .err = "declared path ran" };
-}
+run => err "declared path ran"
 
-~run()
+run()
 | done |> std/io:print.ln("done ran")
 | err msg |> std/io:print.ln(msg)
 | soon |> std/io:print.ln("undeclared arm — never fires, pure declaration-debt")
