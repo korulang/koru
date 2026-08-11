@@ -1,0 +1,131 @@
+==============================================================================
+CORPUS
+==============================================================================
+  test roots enumerated            : 1364
+  ... parsed                       : 1289
+  ... REFUSED by the parser        : 75   (MUST_ERROR programs; excluded from every count below)
+  distinct source files parsed     : 1909
+  distinct source files refused    : 75
+
+==============================================================================
+1. OPACITY — implementation behind a host body the compiler cannot read
+==============================================================================
+  APP (tests/regression)
+    event declarations                          : 1825
+    subflow implementations (transparent Koru)  : 384
+    proc implementations   (opaque host body)   : 1932
+      of those declaring themselves pure        : 12
+    OPACITY  opaque / all implementations       : 1932/2316 = 83.4%
+    opaque AND not pure                         : 1920/2316 = 82.9%
+    raw host_line items                         : 11022
+      of those module-level mutable `var`       : 79
+
+  KORU_STD
+    event declarations                          : 236
+    subflow implementations (transparent Koru)  : 5
+    proc implementations   (opaque host body)   : 235
+      of those declaring themselves pure        : 1
+    OPACITY  opaque / all implementations       : 235/240 = 97.9%
+    opaque AND not pure                         : 234/240 = 97.5%
+    raw host_line items                         : 7769
+      of those module-level mutable `var`       : 211
+
+  BOTH
+    event declarations                          : 2061
+    subflow implementations (transparent Koru)  : 389
+    proc implementations   (opaque host body)   : 2167
+      of those declaring themselves pure        : 13
+    OPACITY  opaque / all implementations       : 2167/2556 = 84.8%
+    opaque AND not pure                         : 2154/2556 = 84.3%
+    raw host_line items                         : 18791
+      of those module-level mutable `var`       : 290
+
+  proc bodies by host target: {'js': 653, 'zig': 1449, 'template|zig': 26, 'template|js': 20, 'template(once)|zig': 3, 'alt': 4, 'zig(default)': 2, 'koru': 3, 'raw_posix': 1, 'fast': 1, 'naive': 1, 'gpu': 1, 'cpu': 1, 'mlir': 2}
+  `;`-terminated statements inside those opaque bodies: 14912
+  HEURISTIC host-body scan (the compiler does NONE of this — a proc
+  body is an opaque string; this only asks what WOULD be in there):
+    no state-shaped construct          1172 procs  (54.1%)
+    ANY state-shaped construct          995 procs  (45.9%)
+    io / syscall                        618 procs  (28.5%)
+    allocator/heap                      513 procs  (23.7%)
+    pointer deref/cast                  344 procs  (15.9%)
+    assignment to a non-local           128 procs  (5.9%)
+    thread / atomic                       6 procs  (0.3%)
+    extern / C                            5 procs  (0.2%)
+
+==============================================================================
+2. CALL-GRAPH RESOLVABILITY
+==============================================================================
+  APP call sites (each program resolved against its own import set)
+    total      : 7134
+    unresolved : 318 = 4.5%
+          297    4.2%  unqualified, no declaration in the program
+                            184 x  captured
+                             15 x  match
+                             13 x  sub
+                             12 x  lit
+                              8 x  each
+                              8 x  ask
+                              6 x  pong
+                              6 x  std/store
+                              4 x  run
+                              3 x  std/constructor
+                              2 x  t1.fire
+                              2 x  probe.run
+           12    0.2%  qualified into a module with no parsed source
+                              3 x  db:disconnect
+                              2 x  mylib:greet
+                              2 x  db:connect
+                              2 x  db:query
+                              2 x  db:rollback
+                              1 x  db:commit
+            9    0.1%  qualified, module parsed, name absent
+                              3 x  compiler:elaborate.default
+                              2 x  compiler:coordinate.default
+                              1 x  io:println
+                              1 x  constructor:construct
+                              1 x  compiler:analysis.default
+                              1 x  trellis:census
+  KORU_STD internal call sites (counted once, not per program)
+    total      : 53
+    unresolved : 0 = 0.0%
+
+==============================================================================
+3. STATE ATTRIBUTION
+==============================================================================
+  programs declaring at least one store : 219
+  store declarations (summed)           : 318
+  Koru-visible state touches            : 1646
+    store_verb       1201
+    column_ref       445
+  breakdown:
+    store_verb_named                   1128  (68.5%)
+    column_ref_structured_text          375  (22.8%)
+    store_verb_UNNAMED                   73  (4.4%)
+    column_ref_via_string_template       70  (4.3%)
+    unattributable verbs by name: {'stored': 71, 'insert': 1, 'query': 1}
+
+  3b. PARAMETER REACH — what a callee can touch that the caller owns
+    APP: 1750 event input fields
+      array                           9  (0.5%)
+      comptime-only handle          184  (10.5%)
+      pointer/slice                 333  (19.0%)
+      value                        1224  (69.9%)
+      -> ADDRESS-CARRYING (unattributable): 333/1750 = 19.0%
+    KORU_STD: 543 event input fields
+      *anyopaque (type erased)        4  (0.7%)
+      comptime-only handle          292  (53.8%)
+      pointer/slice                  66  (12.2%)
+      value                         181  (33.3%)
+      -> ADDRESS-CARRYING (unattributable): 70/543 = 12.9%
+
+==============================================================================
+HEADLINE — the CAN'T-TELL fraction
+==============================================================================
+  Population: every effectful leaf a concurrent-region colouring must
+  assign a lockset to.
+    opaque host proc bodies not declared pure : 2154
+    Koru-visible named-store touches          : 1646
+    TOTAL                                     : 3800
+  CAN'T-TELL = the opaque bodies              : 2154 = 56.7%
+
