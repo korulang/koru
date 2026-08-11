@@ -9085,24 +9085,39 @@ fn emitContinuationList(
                             try emitter.write("{\n");
                             emitter.indent();
 
-                            // .source = event name
+                            const is_transition = std.mem.eql(u8, catchall.catchall_metatype.?, "Transition");
+
+                            // .source — enum literal for Transition (taps.EventEnum),
+                            // string for Profile/Audit (their structs are string-based,
+                            // see emitTapsNamespace).
                             try emitter.writeIndent();
-                            try emitter.write(".source = \"");
-                            try emitter.write(source_event);
-                            try emitter.write("\",\n");
+                            if (is_transition) {
+                                try emitter.write(".source = .");
+                                try canonicalNameToEnumTag(emitter, source_event);
+                                try emitter.write(",\n");
+                            } else {
+                                try emitter.write(".source = \"");
+                                try emitter.write(source_event);
+                                try emitter.write("\",\n");
+                            }
 
                             // .destination = null (terminal)
                             try emitter.writeIndent();
                             try emitter.write(".destination = null,\n");
 
-                            // .branch = branch name
+                            // .branch — enum literal for Transition, string otherwise
                             try emitter.writeIndent();
-                            try emitter.write(".branch = \"");
-                            try emitter.write(branch.name);
-                            try emitter.write("\",\n");
+                            if (is_transition) {
+                                try emitter.write(".branch = .");
+                                try emitBranchEnumValue(emitter, branch.name);
+                                try emitter.write(",\n");
+                            } else {
+                                try emitter.write(".branch = \"");
+                                try emitter.write(branch.name);
+                                try emitter.write("\",\n");
+                            }
 
                             // .timestamp_ns (Profile/Audit only)
-                            const is_transition = std.mem.eql(u8, catchall.catchall_metatype.?, "Transition");
                             if (!is_transition) {
                                 try emitter.writeIndent();
                                 try emitter.write(".timestamp_ns = __koru_std.time.nanoTimestamp(),\n");
@@ -9118,6 +9133,15 @@ fn emitContinuationList(
                             emitter.dedent();
                             try emitter.writeIndent();
                             try emitter.write("};\n");
+
+                            // The synthesized binding is minted for the
+                            // constructor even when the body discards it —
+                            // suppress the unused-constant (mirrors the
+                            // metatype_binding step path).
+                            try emitter.writeIndent();
+                            try emitter.write("_ = &");
+                            try emitter.write(catchall.binding.?);
+                            try emitter.write(";\n");
 
                             // Execute catch-all pipeline (can now reference binding)
                             try emitContinuationBody(emitter, ctx, catchall, result_counter);

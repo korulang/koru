@@ -564,17 +564,19 @@ pub const VisitorEmitter = struct {
     /// Scan AST items for metatype_binding steps to detect Profile/Transition/Audit metatypes
     /// Also collects events and branches for building EventEnum/BranchEnum
     /// This is needed because ~tap() transforms the AST directly without using the tap registry
-    fn scanForMetatypes(items: []const ast.Item, allocator: std.mem.Allocator) !MetatypeScanResult {
+    fn scanForMetatypes(items: []const ast.Item, allocator: std.mem.Allocator, main_module_name: ?[]const u8) !MetatypeScanResult {
         var result = MetatypeScanResult.init(allocator);
         for (items) |item| {
             switch (item) {
                 .flow => |flow| {
-                    var found = try scanContinuationsForMetatypes(flow.body.continuations, allocator);
+                    // The continuations dispatch on the flow HEAD's event — it
+                    // is the source a metatype catch-all references.
+                    var found = try scanContinuationsForMetatypes(flow.body.continuations, allocator, items, main_module_name, &flow.inv().path);
                     defer found.deinit();
                     try result.merge(&found);
                 },
                 .module_decl => |mod| {
-                    var nested = try scanForMetatypes(mod.items, allocator);
+                    var nested = try scanForMetatypes(mod.items, allocator, main_module_name);
                     defer nested.deinit();
                     try result.merge(&nested);
                 },
@@ -587,7 +589,16 @@ pub const VisitorEmitter = struct {
         return result;
     }
 
-    fn scanContinuationsForMetatypes(conts: []const ast.Continuation, allocator: std.mem.Allocator) !MetatypeScanResult {
+    fn scanContinuationsForMetatypes(
+        conts: []const ast.Continuation,
+        allocator: std.mem.Allocator,
+        items: []const ast.Item,
+        main_module_name: ?[]const u8,
+        /// The event whose arms these continuations dispatch on — the source a
+        /// metatype catch-all constructor references; null when the level has
+        /// no invocation (a synthesized preamble chain).
+        source_path: ?*const ast.DottedPath,
+    ) !MetatypeScanResult {
         var result = MetatypeScanResult.init(allocator);
         for (conts) |cont| {
             if (cont.node) |step| {
@@ -613,14 +624,38 @@ pub const VisitorEmitter = struct {
                         result.profile = true;
                     } else if (std.mem.eql(u8, metatype, "Transition")) {
                         result.transition = true;
+                        // The catch-all's constructor references enum literals
+                        // for BOTH the source event and each OPTIONAL branch it
+                        // fires on (210_017) — the EventEnum/BranchEnum must
+                        // contain them or `taps.Transition` cannot compile.
+                        if (source_path) |sp| {
+                            const canonical = emitter.buildCanonicalEventName(sp, allocator, main_module_name) catch null;
+                            if (canonical) |c| {
+                                defer allocator.free(c);
+                                // addEvent BORROWS (the metatype_binding callers
+                                // pass AST-owned names) — dupe the temporary.
+                                const owned = try allocator.dupe(u8, c);
+                                try result.addEvent(owned);
+                            }
+                            if (emitter.findEventDeclByPath(items, sp)) |ed| {
+                                for (ed.branches) |b| {
+                                    if (b.is_optional) try result.addBranch(b.name);
+                                }
+                            }
+                        }
                     } else if (std.mem.eql(u8, metatype, "Audit")) {
                         result.audit = true;
                     }
                 }
             }
-            // Recurse into nested continuations
+            // Recurse into nested continuations; a nested invocation becomes
+            // the new dispatch source for its children.
             if (cont.continuations.len > 0) {
-                var found = try scanContinuationsForMetatypes(cont.continuations, allocator);
+                const child_source = if (cont.node) |n|
+                    (if (n == .invocation) &n.invocation.path else source_path)
+                else
+                    source_path;
+                var found = try scanContinuationsForMetatypes(cont.continuations, allocator, items, main_module_name, child_source);
                 defer found.deinit();
                 try result.merge(&found);
             }
@@ -694,7 +729,7 @@ pub const VisitorEmitter = struct {
         // Check tap registry for metatype usage (old tap transformer)
         // AND scan AST for metatype_binding steps (new ~tap() library syntax)
         // These are "magical ambient types" emitted at top level when needed
-        var ast_metatypes = try scanForMetatypes(self.all_items, self.allocator);
+        var ast_metatypes = try scanForMetatypes(self.all_items, self.allocator, self.main_module_name);
         defer ast_metatypes.deinit();
         const has_base_transition = self.tap_registry.hasTransitionTaps() or ast_metatypes.transition;
         const has_profiling_transition = self.tap_registry.hasProfileTaps() or ast_metatypes.profile;
@@ -1048,21 +1083,15 @@ pub const VisitorEmitter = struct {
             // exit; a leaking produced program exits 1 so the harness fails
             // the test. Zero leaks is an absolute invariant — no exemptions.
             //
-            // HOW it reports is a fact about the target, not about the check.
-            // A freestanding target has no stderr to print to and no process to
-            // exit from — `debug.print` reaches for a file descriptor and
-            // `process.exit` for a syscall, and naming either one is a compile
-            // error on bare wasm even though the leak check itself is fine
-            // there. The comptime branch keeps the invariant absolute on every
-            // target and only varies how it announces a violation.
-            try self.code_emitter.write("    if (__koru_leak_count != 0) {\n");
-            try self.code_emitter.write("        if (comptime @import(\"builtin\").target.os.tag == .freestanding) {\n");
-            try self.code_emitter.write("            @panic(\"KORU LEAK CHECK FAILED: the produced program leaked\");\n");
-            try self.code_emitter.write("        } else {\n");
-            try self.code_emitter.write("            @import(\"std\").debug.print(\"KORU LEAK CHECK FAILED: the produced program leaked (trace above)\\n\", .{});\n");
-            try self.code_emitter.write("            @import(\"std\").process.exit(1);\n");
-            try self.code_emitter.write("        }\n");
-            try self.code_emitter.write("    }\n");
+            // HOW it reports is a fact about the target, not about the check,
+            // and WHERE it lives is a fact about the entry point. Both now sit
+            // in `koru_leak_check` (emitMainModuleStart), because a program
+            // without a `main` — a unikernel calling the flows from its own
+            // entry — had this check emitted and never executed. `main` is one
+            // caller of it, not its home. The limitation it can and cannot
+            // report is documented at that definition; read it there before
+            // trusting a green run on a target with no debugger.
+            try self.code_emitter.write("    koru_leak_check();\n");
 
             // Close regular main()
             try emitter.emitMainFunctionEnd(self.code_emitter);
