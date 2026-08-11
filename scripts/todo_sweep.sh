@@ -63,7 +63,17 @@ mapfile -t TODO_DIRS < <(find tests/regression -name TODO -not -path '*/node_mod
 # reported as clean — a sweep that greens over an undrivable residual is the
 # failure this whole surface exists to prevent.
 DECLARED_WITNESSES=()
-if [ -f todo/todo.kz ] && [ -x zig-out/bin/koruc ]; then
+if [ -f todo/todo.kz ] && [ ! -x zig-out/bin/koruc ]; then
+    # A manifest exists and cannot be read. Skipping quietly here would print a
+    # sweep that looks complete while checking none of the declarations — a
+    # substitute result standing in for a check that never ran, which is the
+    # one thing this surface is not allowed to do.
+    echo "${RED}${BOLD}todo-sweep: todo/todo.kz exists but there is no compiler at zig-out/bin/koruc.${NC}"
+    echo "  The declared residuals cannot be checked, so this sweep would report on"
+    echo "  half the problem and not say which half. Run zig build first."
+    exit 2
+fi
+if [ -f todo/todo.kz ]; then
     echo "${BOLD}todo-sweep: checking declared residuals${NC}"
     GATE_OUT=$(cd todo && ../zig-out/bin/koruc todo.kz todo 2>&1)
     GATE_RC=$?

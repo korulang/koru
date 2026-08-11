@@ -1105,24 +1105,82 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool) !void 
     // (double-free is a COMPILE-TIME error for well-typed programs), so
     // this is a backstop loss, not a loss of the language's actual
     // safety guarantee.
+    // WHICH allocator sits behind that spine is a fact about the TARGET, and
+    // the compiler does not know the target — `std/build:config { target }` is
+    // read by `zig build`, downstream of here. So the produced program chooses
+    // at comptime instead of being told.
+    //
+    // `c_allocator` cannot even be NAMED on a target without a libc: bare wasm
+    // and a freestanding board have no malloc to bind to, so emitting it
+    // unconditionally made every such target a compile error in code the user
+    // never wrote. `page_allocator` already resolves to Zig's WasmAllocator on
+    // a wasm arch (std/heap.zig:349), which is why one fallback covers both.
+    //
+    // ...covers both WASM targets. It does NOT cover a bare board, and that was
+    // measured rather than reasoned: `page_allocator` on `x86_64-freestanding`
+    // is its own compile error — "freestanding/other page_size_max must provided
+    // with std.options.page_size_max" (std/heap.zig:57), reached through
+    // PageAllocator.map. Swapping one refusal for another is not a fallback, so
+    // a freestanding target that is not wasm gets a THIRD backing.
+    //
+    // That third backing is the memory twin of how `std/io` prints there. The
+    // printing spine does not port Zig's writer to a machine with no OS; it
+    // declares ISO C `fputs` and lets the LINKER resolve it inside the image
+    // (koru_std/io.kz:345). Memory takes the identical road: `posix_memalign`
+    // and `free` are declared extern and resolved the same way. Measured on the
+    // Unikraft 0.21.0 image built by examples/unikraft-net — `nm -g` over its
+    // objects shows `T malloc`, `T free`, `T calloc`, `T realloc`,
+    // `T posix_memalign`, `T memalign`. The symbols were always there; only an
+    // abstraction over them was missing, which is the same sentence the network
+    // lift ended up writing.
+    //
+    // `posix_memalign` and not `malloc`, because the spine's vtable is handed an
+    // alignment and `malloc` cannot honour an over-aligned request. The `@max`
+    // against `@sizeOf(usize)` is POSIX's own precondition on the argument
+    // (alignment must be a power of two AND a multiple of `sizeof(void *)`);
+    // Zig's `Alignment` already guarantees the first half.
+    //
+    // `resize` returns false and `remap` returns null rather than reaching for
+    // `realloc`. This is a REFUSAL, not an omission: C's `realloc` makes no
+    // promise about preserving alignment, so an over-aligned block could come
+    // back merely `malloc`-aligned with nothing reporting it. Declining both
+    // makes Zig's allocator interface fall back to alloc-copy-free, which is
+    // slower and correct. A `realloc` path that silently drops an alignment
+    // guarantee is exactly the shape this file spent four bugs on.
+    try emitter.write("const __koru_bare = struct {\n");
+    try emitter.write("    extern fn posix_memalign(memptr: *?*anyopaque, alignment: usize, size: usize) c_int;\n");
+    try emitter.write("    extern fn free(ptr: ?*anyopaque) void;\n");
+    try emitter.write("    fn bareAlloc(_: *anyopaque, len: usize, alignment: @import(\"std\").mem.Alignment, _: usize) ?[*]u8 {\n");
+    try emitter.write("        var p: ?*anyopaque = null;\n");
+    try emitter.write("        const a = @max(alignment.toByteUnits(), @sizeOf(usize));\n");
+    try emitter.write("        if (posix_memalign(&p, a, len) != 0) return null;\n");
+    try emitter.write("        return @ptrCast(p);\n");
+    try emitter.write("    }\n");
+    try emitter.write("    fn bareResize(_: *anyopaque, _: []u8, _: @import(\"std\").mem.Alignment, _: usize, _: usize) bool { return false; }\n");
+    try emitter.write("    fn bareRemap(_: *anyopaque, _: []u8, _: @import(\"std\").mem.Alignment, _: usize, _: usize) ?[*]u8 { return null; }\n");
+    try emitter.write("    fn bareFree(_: *anyopaque, memory: []u8, _: @import(\"std\").mem.Alignment, _: usize) void { free(@ptrCast(memory.ptr)); }\n");
+    try emitter.write("    const vtable = @import(\"std\").mem.Allocator.VTable{ .alloc = bareAlloc, .resize = bareResize, .remap = bareRemap, .free = bareFree };\n");
+    try emitter.write("    const allocator = @import(\"std\").mem.Allocator{ .ptr = undefined, .vtable = &vtable };\n");
+    try emitter.write("};\n");
+    try emitter.write("const __koru_backing = if (@import(\"builtin\").link_libc) @import(\"std\").heap.c_allocator else if (@import(\"builtin\").os.tag == .freestanding) __koru_bare.allocator else @import(\"std\").heap.page_allocator;\n");
     try emitter.write("var __koru_leak_count: usize = 0;\n");
     try emitter.write("fn __koru_alloc(ctx: *anyopaque, len: usize, alignment: @import(\"std\").mem.Alignment, ret_addr: usize) ?[*]u8 {\n");
     try emitter.write("    _ = ctx;\n");
-    try emitter.write("    const r = @import(\"std\").heap.c_allocator.rawAlloc(len, alignment, ret_addr);\n");
+    try emitter.write("    const r = __koru_backing.rawAlloc(len, alignment, ret_addr);\n");
     try emitter.write("    if (r != null) __koru_leak_count += 1;\n");
     try emitter.write("    return r;\n");
     try emitter.write("}\n");
     try emitter.write("fn __koru_resize(ctx: *anyopaque, memory: []u8, alignment: @import(\"std\").mem.Alignment, new_len: usize, ret_addr: usize) bool {\n");
     try emitter.write("    _ = ctx;\n");
-    try emitter.write("    return @import(\"std\").heap.c_allocator.rawResize(memory, alignment, new_len, ret_addr);\n");
+    try emitter.write("    return __koru_backing.rawResize(memory, alignment, new_len, ret_addr);\n");
     try emitter.write("}\n");
     try emitter.write("fn __koru_remap(ctx: *anyopaque, memory: []u8, alignment: @import(\"std\").mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {\n");
     try emitter.write("    _ = ctx;\n");
-    try emitter.write("    return @import(\"std\").heap.c_allocator.rawRemap(memory, alignment, new_len, ret_addr);\n");
+    try emitter.write("    return __koru_backing.rawRemap(memory, alignment, new_len, ret_addr);\n");
     try emitter.write("}\n");
     try emitter.write("fn __koru_free(ctx: *anyopaque, memory: []u8, alignment: @import(\"std\").mem.Alignment, ret_addr: usize) void {\n");
     try emitter.write("    _ = ctx;\n");
-    try emitter.write("    @import(\"std\").heap.c_allocator.rawFree(memory, alignment, ret_addr);\n");
+    try emitter.write("    __koru_backing.rawFree(memory, alignment, ret_addr);\n");
     try emitter.write("    __koru_leak_count -= 1;\n");
     try emitter.write("}\n");
     try emitter.write("const __koru_vtable = @import(\"std\").mem.Allocator.VTable{ .alloc = __koru_alloc, .resize = __koru_resize, .remap = __koru_remap, .free = __koru_free };\n");

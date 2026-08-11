@@ -1010,9 +1010,21 @@ pub const VisitorEmitter = struct {
             // allocation counter — see emitMainModuleStart) must be zero at
             // exit; a leaking produced program exits 1 so the harness fails
             // the test. Zero leaks is an absolute invariant — no exemptions.
+            //
+            // HOW it reports is a fact about the target, not about the check.
+            // A freestanding target has no stderr to print to and no process to
+            // exit from — `debug.print` reaches for a file descriptor and
+            // `process.exit` for a syscall, and naming either one is a compile
+            // error on bare wasm even though the leak check itself is fine
+            // there. The comptime branch keeps the invariant absolute on every
+            // target and only varies how it announces a violation.
             try self.code_emitter.write("    if (__koru_leak_count != 0) {\n");
-            try self.code_emitter.write("        @import(\"std\").debug.print(\"KORU LEAK CHECK FAILED: the produced program leaked (trace above)\\n\", .{});\n");
-            try self.code_emitter.write("        @import(\"std\").process.exit(1);\n");
+            try self.code_emitter.write("        if (comptime @import(\"builtin\").target.os.tag == .freestanding) {\n");
+            try self.code_emitter.write("            @panic(\"KORU LEAK CHECK FAILED: the produced program leaked\");\n");
+            try self.code_emitter.write("        } else {\n");
+            try self.code_emitter.write("            @import(\"std\").debug.print(\"KORU LEAK CHECK FAILED: the produced program leaked (trace above)\\n\", .{});\n");
+            try self.code_emitter.write("            @import(\"std\").process.exit(1);\n");
+            try self.code_emitter.write("        }\n");
             try self.code_emitter.write("    }\n");
 
             // Close regular main()

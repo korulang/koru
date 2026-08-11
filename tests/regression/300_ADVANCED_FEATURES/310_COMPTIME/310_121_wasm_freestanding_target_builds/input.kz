@@ -1,0 +1,61 @@
+// Pins that a Koru program builds for a target with NO operating system and NO
+// libc — bare wasm — and that the produced artifact is named where the compiler
+// looks for it.
+//
+// Three things in the emitted program used to assume a hosted platform, none of
+// them written by the user:
+//
+//   - the allocator spine named `std.heap.c_allocator`, which cannot be NAMED
+//     on a target with no libc to bind malloc to;
+//   - the leak-check epilogue reached for stderr via `debug.print` and for a
+//     syscall via `process.exit`, neither of which exists freestanding;
+//   - the driver copied `zig-out/bin/output`, while Zig names a wasm executable
+//     `output.wasm` — so a SUCCESSFUL cross-compile reported FileNotFound.
+//
+// The first two are compile errors in code the user never wrote; the third is a
+// green build reported as a failure. All three are invisible to every other
+// target, because on a hosted platform each assumption happens to hold.
+//
+// `entry = .disabled` plus `rdynamic` is what makes the artifact a REACTOR — a
+// module with exports a host calls, rather than a command that runs once and
+// exits. That is the shape a request handler needs.
+//
+// COMPILE_ONLY because the artifact is a wasm module, which needs a wasm host
+// to run and cannot execute on the build machine. Compiling IS the assertion.
+
+const std = @import("std");
+
+~import std/build
+
+~std/build:config {
+    "target": "wasm32-freestanding"
+}
+
+~std/build:requires {
+    exe.entry = .disabled;
+    exe.rdynamic = true;
+    exe.root_module.link_libc = false;
+}
+
+~pub tor assert-target { }
+
+~proc assert-target|zig {
+    const builtin = @import("builtin");
+    if (builtin.cpu.arch != .wasm32)
+        @compileError("build:config target did not reach the backend: compiled for " ++ @tagName(builtin.cpu.arch) ++ ", expected wasm32");
+    if (builtin.os.tag != .freestanding)
+        @compileError("build:config target did not reach the backend: compiled for " ++ @tagName(builtin.os.tag) ++ ", expected freestanding");
+}
+
+// A symbol the host side reaches in. Its survival into the module is what
+// `rdynamic` buys; without it the export is stripped and there is nothing to
+// call.
+export fn koru_add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+const fire = true;
+
+~if(fire)
+| then |> assert-target()
+| else |> _

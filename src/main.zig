@@ -1301,8 +1301,21 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\        // and that panic reads as a compiler crash.
             \\        switch (result.term) {
             \\            .Exited => |exit_code| if (exit_code == 0) {
-            \\                // Copy from zig-out/bin/output to the requested output name
-            \\                __koru_std.fs.cwd().copyFile("zig-out/bin/output", __koru_std.fs.cwd(), output_exe, .{}) catch |copy_err| {
+            \\                // Copy from zig-out/bin/output to the requested output name.
+            \\                //
+            \\                // Zig names a wasm executable `output.wasm`; every other
+            \\                // target produces a bare `output`. Looking only for the bare
+            \\                // name made a SUCCESSFUL cross-compile report failure —
+            \\                // "Failed to copy output: error.FileNotFound" with a perfectly
+            \\                // good .wasm sitting in zig-out/bin the whole time.
+            \\                //
+            \\                // Only the SOURCE name varies. The destination stays exactly
+            \\                // what was asked for: a wasm host is handed the bytes, and
+            \\                // neither WebAssembly.compile nor the test harness cares what
+            \\                // the file on disk is called.
+            \\                const is_wasm = if (build_target) |t| __koru_std.mem.indexOf(u8, t, "wasm") != null else false;
+            \\                const zig_artifact = if (is_wasm) "zig-out/bin/output.wasm" else "zig-out/bin/output";
+            \\                __koru_std.fs.cwd().copyFile(zig_artifact, __koru_std.fs.cwd(), output_exe, .{}) catch |copy_err| {
             \\                    const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ Failed to copy output: {}\n", .{copy_err});
             \\                    try __koru_std.fs.File.stderr().writeAll(msg2);
             \\                    __koru_std.process.exit(1);
