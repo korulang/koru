@@ -1,6 +1,6 @@
 // PINS: the constructor's CONSUMPTION path — deriving a NEW struct type from an
 // EXISTING type's fields. `std/types:fields-of(Player)` is a comptime traversal
-// SOURCE (emergent iteration, like ~for — it pulses `! each f` over Player's fields,
+// SOURCE (emergent iteration, like for — it pulses `! each f` over Player's fields,
 // not an iterator fed to a loop); `field(f.name, f.type)` rebuilds each into
 // PlayerSnapshot. Round
 // reads the fields via Zig `@typeInfo` in the lowered code — NO registry (generation

@@ -12,14 +12,14 @@
 // back). Sequence is the chain; a sub-rule is demanded with `sub(<rule>): v`;
 // a literal token is consumed with `lit("...")`.
 //
-//   ~std/parser:grammar(nums)
+//   std/parser:grammar(nums)
 //   ! value v |> std/parser:match(v)
 //       | `-?[0-9]+` n -> n
 //       | array a -> a
 //   ! array a |> std/parser:match(a)
 //       | `\[` _ |> std/parser:sub(value): v |> std/parser:lit("]") -> v
 //
-//   ~std/parser:parse(input, grammar: nums)
+//   std/parser:parse(input, grammar: nums)
 //   | value v |> use(v)
 //   | parse-error { line, col, expected, found } |> report(...)
 //

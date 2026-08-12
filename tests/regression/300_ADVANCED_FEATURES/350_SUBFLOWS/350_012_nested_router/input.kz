@@ -3,7 +3,7 @@
 // ============================================================================
 // Test: Can orisha:router be nested inside another orisha:router's catch-all?
 // This is the foundation for tree-structured routing where:
-//   ~orisha:router(req)
+//   orisha:router(req)
 //   | [GET /api/health] |> response { ... }
 //   | [*] |> orisha:router(req)        <-- nested router
 //       | [GET /other] |> response { ... }

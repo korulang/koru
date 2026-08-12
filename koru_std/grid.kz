@@ -18,7 +18,7 @@
 // gets there by forbidding something rather than by optimising.
 //
 // USAGE:
-//   ~import std/grid
+//   import std/grid
 //
 //   std/grid:new(cells, size: 4096) { count: 0[i64], sx: 0.0[f32] }
 //   std/grid:stored { cells[h].count: cells[h].count + 1 }

@@ -1,5 +1,5 @@
 // Test: std/interpreter:run event
-// Uses ~get-scope to get dispatcher, passes to std/interpreter:run
+// Uses get-scope to get dispatcher, passes to std/interpreter:run
 
 ~import std/runtime
 ~import std/interpreter

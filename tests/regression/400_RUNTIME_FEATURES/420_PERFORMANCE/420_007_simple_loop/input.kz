@@ -1,7 +1,7 @@
 // PERFORMANCE TEST: Koru label loops vs Zig while loops
 // Goal: Prove Koru loops (#/@) compile to same code as Zig while loops
 // Based on working test: 203_labels_and_jumps
-// Loop: Count to 10 million (runs ~10ms for better benchmark accuracy)
+// Loop: Count to 10 million (runs 10ms for better benchmark accuracy)
 // Baseline: Zig while loop
 // Threshold: 1.05x (5% slower max)
 

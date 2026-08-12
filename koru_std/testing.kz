@@ -4,9 +4,9 @@
 // Compiler-guided test development with automatic mock detection.
 //
 // Usage:
-//   ~test(User cannot withdraw more than balance) {
-//       ~account.balance = amount 50
-//       ~app:withdraw(amount: 100)
+//   test(User cannot withdraw more than balance) {
+//       account.balance = amount 50
+//       app:withdraw(amount: 100)
 //       | insufficient_funds |> assert.ok()
 //   }
 //
@@ -101,8 +101,8 @@ const validateMocks = struct {
                 continue;
             }
 
-            // A bare return (`~ev -> value`) is the TWIN of the branch
-            // constructor (`~ev => branch value`), not a degenerate case of it:
+            // A bare return (`ev -> value`) is the TWIN of the branch
+            // constructor (`ev => branch value`), not a degenerate case of it:
             // it pairs with the declaration's `return_type` and carries no
             // branch tag at all, so `bc.branch_name` is empty by construction.
             // Looking that empty name up in `branches` is what refused every
@@ -309,7 +309,7 @@ const validateMocks = struct {
         if (source.text.len == 0) break :parse_block;
 
         // The test body has no file of its own. It inherits the ENCLOSING file's
-        // DIALECT — and only the dialect. A `.k` is pure Koru with no `~`; the
+        // DIALECT — and only the dialect. A `.k` is pure Koru with no ``; the
         // invented "__test__.kz" told the parser this was host-embedded, so every
         // line of the body parsed as HOST TEXT, nothing was collected, and the
         // emitted test block came out EMPTY — a pass with zero assertions in it
@@ -325,7 +325,7 @@ const validateMocks = struct {
         // read during parse and never during init.
         //
         // Ruled by Lars 2026-08-07: "use the same extension and semantics as the
-        // original file... Writing `~` inside a `.k`-file makes no sense, that is
+        // original file... Writing `` inside a `.k`-file makes no sense, that is
         // literally the actual rule."
         var p = parser_impl.Parser.init(allocator, source.text, "__test__.kz", &[_][]const u8{}, null) catch {
             break :parse_block;
@@ -415,7 +415,7 @@ const validateMocks = struct {
     for (cloned_program.items) |p_item| {
         switch (p_item) {
             .flow => |f| {
-                // Skip top-level flows (they contain ~test), but keep impl flows (impl_of set)
+                // Skip top-level flows (they contain test), but keep impl flows (impl_of set)
                 if (f.impl_of) |*impl_path| {
                     // Only add if NOT mocked
                     if (!matchesMock.check(impl_path, cloned_mocks.items)) {
@@ -965,8 +965,8 @@ const emitFlowWithMocks = struct {
 
 // Test that multiple variants produce equivalent results
 // Usage:
-//   ~test.property.equivalent {
-//       ~ast:select(blur|*)
+//   test.property.equivalent {
+//       ast:select(blur|*)
 //   }
 ~[comptime|transform] pub tor test.property.equivalent {
     source: Source
@@ -978,7 +978,7 @@ const emitFlowWithMocks = struct {
 
 // The actual transform will:
 // 1. Parse source block as Koru AST
-// 2. Find mock definitions: lines matching `~event = branch { ... }`
+// 2. Find mock definitions: lines matching `event = branch { ... }`
 // 3. Extract the flow under test (non-mock lines)
 // 4. Trace flow to find impure events
 // 5. Error if impure event not mocked
@@ -987,7 +987,7 @@ const emitFlowWithMocks = struct {
 // 8. Rewrite flow to call mangled versions
 // 9. Emit Zig test block
 
-// ~proc test {
+// proc test {
 //     // TODO: Implement transform
 //     // For now, just parse and validate structure
 // }

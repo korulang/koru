@@ -1,4 +1,4 @@
-// A bare return of a RECORD type produced from a ~proc (the dominant impl
+// A bare return of a RECORD type produced from a proc (the dominant impl
 // style). The decl output is the record `{ w: i64, h: i64 }`; the proc returns
 // it; the call site binds with `:` and reads fields. Companion to 020_024
 // (record, flat produce) on the proc axis.

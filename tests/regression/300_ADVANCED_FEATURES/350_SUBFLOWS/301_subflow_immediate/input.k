@@ -2,7 +2,7 @@
 // VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
 // ============================================================================
 // Test: Immediate subflow with field mapping
-// Feature: ~event_name = branch { output-field: input_field }
+// Feature: event_name = branch { output-field: input_field }
 // Verifies: Input fields are accessible and mapped to output correctly
 // ============================================================================
 

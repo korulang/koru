@@ -2,7 +2,7 @@
 // effect handlers via `effects["each"]` (effect-kind branches, separate from
 // terminal `continuations["done"]`), loops them with `{% for %}`, converts
 // each `when` guard to an `if`, and calls each handler by its link. This is
-// `for` minus the keyword — once green, the `~for` keyword is a thin template
+// `for` minus the keyword — once green, the `for` keyword is a thin template
 // over this, and ForeachNode can die.
 //
 // Bodies are generated outside (as handler fns); the template holds only a

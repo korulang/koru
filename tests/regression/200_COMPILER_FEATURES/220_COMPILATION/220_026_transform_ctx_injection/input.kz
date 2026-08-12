@@ -1,7 +1,7 @@
 // PINS: `ctx` is a transform-injectable machine parameter. A
 // `[comptime|transform]` event may declare `ctx: *std/compiler:CompilerContext`
 // and receive the LIVE compilation context — the same value the metacircular
-// passes take (`~pub tor run-pre-transforms { ctx: CompilerContext }`,
+// passes take (`pub tor run-pre-transforms { ctx: CompilerContext }`,
 // compiler.kz:806), carrying the AST, the unfiltered `original_ast` for
 // metadata queries, the accumulated `errors`/`warnings`, and the error policy.
 //

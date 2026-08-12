@@ -3,7 +3,7 @@
 // lives inside a SUBFLOW impl. The subflow body-emission path drops the inline
 // block in UNLABELED, leaving the `__KORU_INLINE__` placeholder intact, so Zig
 // reports `label not found: '__KORU_INLINE__'`. The top-level continuation path
-// (continuation_codegen.zig ~273-310) DOES wrap the block in a unique label and
+// (continuation_codegen.zig 273-310) DOES wrap the block in a unique label and
 // substitute it — the subflow path must route through the same substitution.
 //
 // print.ln inside a subflow works (it STREAMS — no bound result, no label), so

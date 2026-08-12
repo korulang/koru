@@ -3,7 +3,7 @@
 // proc side binds it with `const a = ask(q)`. The subflow side binds it with
 // the established call-site `:` bind and continues with the established
 // bind-then-construct form — `query = ask(q): a => done a` is byte-for-byte
-// the 100_053 shape (`~process = compute(x: input): v => result v`), with the
+// the 100_053 shape (`process = compute(x: input): v => result v`), with the
 // callee being the event's own arm instead of a declared event.
 //
 // Consumer side is already-landed grammar: `->` produces the resume value

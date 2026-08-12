@@ -4,11 +4,11 @@
 // This is backend-agnostic: creates IR nodes that emit to Zig, GLSL, JS, etc.
 //
 // Pattern Detected (GENERAL, not nbody-specific!):
-//   ~event loop_step { i: usize, limit: usize, ... }
+//   event loop_step { i: usize, limit: usize, ... }
 //   | continue { i: usize, ... }
 //   | done { ... }
 //
-//   ~proc loop_step {
+//   proc loop_step {
 //       if (i < limit) {
 //           return .{ .continue = .{ .i = i, ... } };
 //       } else {
@@ -16,7 +16,7 @@
 //       }
 //   }
 //
-//   ~some_event = loop_step(i: 0, limit: n, ...)
+//   some_event = loop_step(i: 0, limit: n, ...)
 //   | continue c |> #loop work_event(i: c.i, ...)
 //       | result |> @loop(i: c.i + 1, ...)
 //   | done |> finished {}

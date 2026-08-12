@@ -2,7 +2,7 @@
 // VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
 // ============================================================================
 // Test 505: Tap shorthand syntax
-// Tests that `~tap(event)` is equivalent to `~tap(event -> *)`
+// Tests that `tap(event)` is equivalent to `tap(event -> *)`
 // The shorthand omits `-> *` when observing all branches.
 
 ~import std/io
@@ -15,7 +15,7 @@
     return "Pong!";
 }
 
-// SHORTHAND: ~tap(ping) instead of ~tap(ping -> *)
+// SHORTHAND: tap(ping) instead of tap(ping -> *)
 ~tap(ping): v |> std/io:print.ln("Tap observed pong")
 
 // Main flow

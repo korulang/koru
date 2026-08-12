@@ -5,7 +5,7 @@
 // only proves dispatch with `_` discard).
 //
 // Also the pure-Koru showcase: no host code anywhere, so this is a .k
-// file — no `~` host markers at all.
+// file — no `` host markers at all.
 import std/regex
 import std/io
 

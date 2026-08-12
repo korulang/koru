@@ -5,10 +5,10 @@
 // originates the celsius value with a LITERAL-SUFFIX instead of via an
 // event:
 //
-//   330_063:  ~read-temp = reading 22.5
-//             ~read-temp(...) | reading c |> to-fahrenheit(c: c)
+//   330_063:  read-temp = reading 22.5
+//             read-temp(...) | reading c |> to-fahrenheit(c: c)
 //
-//   330_066:  ~to-fahrenheit(c: 22.5<celsius>)
+//   330_066:  to-fahrenheit(c: 22.5<celsius>)
 //             // The literal `22.5` originates with phantom <celsius>;
 //             // no event needed for the origination.
 //

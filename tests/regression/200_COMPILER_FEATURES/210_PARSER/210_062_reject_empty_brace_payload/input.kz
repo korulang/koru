@@ -5,7 +5,7 @@ const std = @import("std");
 
 // WRONG: Empty braces in branch payload
 // Should be either:
-// - A void event: ~event done {} (no branches at all)
+// - A void event: event done {} (no branches at all)
 // - Identity syntax: | done SomeType
 ~tor verify {}
 | ok {}

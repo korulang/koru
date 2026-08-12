@@ -1,6 +1,6 @@
 // Test: Transform can extract and use generic parameters
 //
-// Given: ~ring.new[T:u32;N:1024](name: "counter_ring")
+// Given: ring.new[T:u32;N:1024](name: "counter_ring")
 //
 // Transform should:
 // 1. Parse event_name to extract T=u32, N=1024

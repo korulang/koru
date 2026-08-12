@@ -2,8 +2,8 @@
 //
 // STATUS: Testing terse subflow syntax with arrayed captures.
 //
-// This version uses ~subflow = branch { field: expr } syntax
-// for maximum terseness. No ~proc ceremony!
+// This version uses subflow = branch { field: expr } syntax
+// for maximum terseness. No proc ceremony!
 
 const std = @import("std");
 ~import std/control
@@ -33,7 +33,7 @@ const ZERO_DV = [5][3]f64{
 };
 
 // ============================================================================
-// Events with SUBFLOW implementations - no ~proc needed!
+// Events with SUBFLOW implementations - no proc needed!
 // ============================================================================
 
 ~tor init {} -> [5]Body

@@ -4,9 +4,9 @@
 // easy part; the hard part is that once it's in your repo it LOOKS trustworthy,
 // and nothing notices when it changes. `std/vendor` makes the change loud:
 //
-//   ~import std/vendor
+//   import std/vendor
 //
-//   ~std/vendor:bindings {
+//   std/vendor:bindings {
 //       koru/vaxis: ./vendored/vaxis
 //   }
 //

@@ -1,7 +1,7 @@
 // Pins that a program declares its own import aliases, in itself, with no
 // koru.json in the test directory at all.
 //
-// The alias has to exist before `~import domain/user` is read, and parse and
+// The alias has to exist before `import domain/user` is read, and parse and
 // import resolution are one pass — so this pins the ordering as much as the
 // spelling: the declaration acts mid-descent, above its first use.
 //

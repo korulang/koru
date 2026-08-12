@@ -1,7 +1,7 @@
 // Koru Standard Library: Root
 // Auto-imported when any std/* module is imported
-// Transitively imports control + declarations to make keywords (like ~if, ~for,
-// ~const) globally available.
+// Transitively imports control + declarations to make keywords (like if, for,
+// const) globally available.
 
 ~import std/control
 ~import std/declarations

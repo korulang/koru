@@ -1,5 +1,5 @@
 // Test: Parser should reject old tap syntax
-// The old syntax `~source -> dest` was replaced with `~tap(source -> dest)`
+// The old syntax `source -> dest` was replaced with `tap(source -> dest)`
 
 const std = @import("std");
 

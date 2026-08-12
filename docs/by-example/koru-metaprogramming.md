@@ -25,8 +25,8 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 // a family of events using a wildcard pattern.
 //
 // Use cases enabled by this:
-// - Log levels: ~log.* matches ~log.error, ~log.warn, ~log.info
-// - Generics: ~ring.* matches ~ring.new[T:u32;N:1024]
+// - Log levels: log.* matches log.error, log.warn, log.info
+// - Generics: ring.* matches ring.new[T:u32;N:1024]
 // - Any event family with shared handling logic
 //
 // VERIFIES:
@@ -47,7 +47,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 ```koru
 // Test: Parser accepts generic params in event names via bracket syntax
 //
-// ~ring.new[T:u32;N:1024](name: "my_ring")
+// ring.new[T:u32;N:1024](name: "my_ring")
 //
 // This is NOT phantom type syntax (which appears on TYPE references).
 // This is generic parameter syntax (which appears on EVENT names).
@@ -63,13 +63,13 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 // Transform receives full name: "ring.new[T:u32;N:1024]"
 // Transform parses brackets, extracts T=u32, N=1024, synthesizes typed code.
 
-~[comptime|transform]pub tor ring.* {
+[comptime|transform]pub tor ring.* {
     event_name: string,
     item: *const Item,
     program: *const Program,
 } -> SiteResult
 
-~proc ring.*|zig {
+proc ring.*|zig {
     const std = @import("std");
     const ast = @import("ast");
     const allocator = std.heap.page_allocator;
@@ -111,7 +111,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 }
 
 // This invocation has generic params in brackets
-~ring.new[T:u32;N:1024](name: "my_ring")
+ring.new[T:u32;N:1024](name: "my_ring")
 ```
 
 ### 700_011_generics_param_extraction
@@ -119,7 +119,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 ```koru
 // Test: Transform can extract and use generic parameters
 //
-// Given: ~ring.new[T:u32;N:1024](name: "counter_ring")
+// Given: ring.new[T:u32;N:1024](name: "counter_ring")
 //
 // Transform should:
 // 1. Parse event_name to extract T=u32, N=1024
@@ -133,13 +133,13 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 //
 // This is generics-as-library: the transform IS the generic instantiation.
 
-~[comptime|transform]pub tor ring.* {
+[comptime|transform]pub tor ring.* {
     event_name: string,
     item: *const Item,
     program: *const Program,
 } -> SiteResult
 
-~proc ring.*|zig {
+proc ring.*|zig {
     const std = @import("std");
     const ast = @import("ast");
     const allocator = std.heap.page_allocator;
@@ -207,7 +207,7 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 }
 
 // Create a ring buffer of 1024 u32 values
-~ring.new[T:u32;N:1024](name: "my_ring")
+ring.new[T:u32;N:1024](name: "my_ring")
 ```
 
 ### 700_031_ai_test_analysis
@@ -234,8 +234,8 @@ These are the receipts for the `koru-metaprogramming` skill — passing tests sh
 // - "What's the minimal fix?" → AI suggests patch
 
 // Placeholder - this test documents the pattern, not a specific implementation
-~tor test.placeholder {}
-~proc test.placeholder|zig { }
-~test.placeholder()
+tor test.placeholder {}
+proc test.placeholder|zig { }
+test.placeholder()
 ```
 

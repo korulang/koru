@@ -74,14 +74,14 @@ const std = @import("std");
 // LOW-LEVEL API (phantom types, full control) - FUTURE
 // ============================================================================
 
-// ~pub event open { path: string }
+// pub event open { path: string }
 // | opened { handle: FileHandle }
 // | failed { error: []const u8 }
 
-// ~pub event read { handle: FileHandle }
+// pub event read { handle: FileHandle }
 // | data { content: []const u8 }
 // | failed { error: []const u8 }
 
-// ~pub event close { handle: FileHandle }
+// pub event close { handle: FileHandle }
 // | closed {}
 // | failed { error: []const u8 }

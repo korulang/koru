@@ -1,7 +1,7 @@
 // Pins that a package reached as a DIRECTORY and as its own `index` FILE is
 // ONE module, not two.
 //
-// `~import mylib` resolves to the directory; `~import mylib/helper` inside that
+// `import mylib` resolves to the directory; `import mylib/helper` inside that
 // directory's index makes the compiler synthesize an `mylib/index` import,
 // which resolves to the FILE. Both name the same module, and dedup keyed on the
 // resolved path, so the two spellings never matched and the package was

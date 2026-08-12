@@ -1,10 +1,10 @@
-// Test: ~for loop body can access outer scope bindings
+// Test: for loop body can access outer scope bindings
 //
-// VISION: When ~for is in a pipeline, the loop body should be able to
+// VISION: When for is in a pipeline, the loop body should be able to
 // reference bindings from outer continuations (like init.data, p.count).
 //
 // This is the pattern used in nbody-optimized:
-//   ~get-data()
+//   get-data()
 //   | result init |> for(0..p.n)
 //       | each |> process(data: init.items[0..])  // <-- outer scope binding!
 //
@@ -30,7 +30,7 @@ const std = @import("std");
     std.debug.print("Processing: {d}\n", .{value});
 }
 
-// The critical pattern: ~for in pipeline with outer scope reference
+// The critical pattern: for in pipeline with outer scope reference
 ~get-params(): p |> for(0..p.count)
     ! each i |> process-item(value: p.items[i])
     | done |> std/io:print.ln("All items processed")

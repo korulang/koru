@@ -6,14 +6,14 @@
 // The compiler decides optimal data layout and iteration strategy.
 //
 // USAGE:
-//   ~import std/kernel
+//   import std/kernel
 //
 //   // 1. Declare the shape (structure with explicit types)
-//   ~std/kernel:shape(Body) { x: f64, y: f64, z: f64, vx: f64, vy: f64, vz: f64, mass: f64 }
+//   std/kernel:shape(Body) { x: f64, y: f64, z: f64, vx: f64, vy: f64, vz: f64, mass: f64 }
 //
 //   // 2. Initialize kernel data (creates instance of shape)
 //   // Uses Koru syntax (x: value) which transforms to Zig (.x = value)
-//   ~std/kernel:init(Body) { x: 0, y: 0, z: 0, vx: 1.0, vy: 0, vz: 0, mass: 1.0 }
+//   std/kernel:init(Body) { x: 0, y: 0, z: 0, vx: 1.0, vy: 0, vz: 0, mass: 1.0 }
 //   | kernel bodies |> ...
 //
 //   // 3. Perform kernel operations
@@ -76,7 +76,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
 // This is NOT a transform - it just sits in the AST for kernel.init to look up.
 //
 // Example:
-//   ~std/kernel:shape(Body) { x: f64, y: f64, z: f64, mass: f64 }
+//   std/kernel:shape(Body) { x: f64, y: f64, z: f64, mass: f64 }
 
 ~[norun]pub tor shape {
     expr: Expression,
@@ -94,7 +94,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
 // the struct definition and initialization code, replaces the flow.
 //
 // Example:
-//   ~std/kernel:init(Body) { x: 0, y: 0, mass: 1.0 }
+//   std/kernel:init(Body) { x: 0, y: 0, mass: 1.0 }
 //   | kernel bodies |> ...
 //
 // Koru syntax "x: 0" transforms to Zig syntax ".x = 0"
@@ -119,7 +119,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
-    // Helper to find the source text for a ~std.kernel:shape(name) declaration.
+    // Helper to find the source text for a std.kernel:shape(name) declaration.
     // Descends through `.module_decl`: a shape declared in the same library as
     // the init it types is one level down from `program.items` (115_005), and a
     // miss here does not refuse — it falls through to a hardcoded
@@ -627,10 +627,10 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
     // STEP 5: Transform source to Zig struct initialization
     // ========================================================================
     // Helper: transform "x: 42, y: 0" -> ".x = 42, .y = 0"
-    // THE TARGET LANGUAGE, READ ONCE. `~capture` settled this shape
+    // THE TARGET LANGUAGE, READ ONCE. `capture` settled this shape
     // (control.kz:427): a transform whose two renderings differ in a handful of
     // spellings branches on the build language here rather than growing a `|js`
-    // twin of its whole body. init is 1391 lines and ~60 emission sites, of which
+    // twin of its whole body. init is 1391 lines and 60 emission sites, of which
     // eight actually differ — a variant would be 1391 lines of copy waiting to
     // drift, which is the two-lowerings-of-one-construct shape that comment
     // rejects. The `|js` VARIANT mechanism is right when the two renderings are
@@ -2227,5 +2227,5 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
 // FUTURE: kernel.reduce, kernel.cross
 // ============================================================================
 
-// ~[comptime|transform]pub event reduce { ... }
-// ~[comptime|transform]pub event cross { ... }
+// [comptime|transform]pub event reduce { ... }
+// [comptime|transform]pub event cross { ... }

@@ -1,8 +1,8 @@
 // Test: Full end-to-end ring buffer using event globbing
 //
 // This demonstrates the complete generics-as-library pattern:
-// 1. Declare generic type with glob: ~event ring.*
-// 2. Instantiate with params: ~ring.new[T:u32;N:64](...)
+// 1. Declare generic type with glob: event ring.*
+// 2. Instantiate with params: ring.new[T:u32;N:64](...)
 // 3. Use generated type: ring.enqueue(42)
 //
 // The ring buffer is fully typed at compile time.

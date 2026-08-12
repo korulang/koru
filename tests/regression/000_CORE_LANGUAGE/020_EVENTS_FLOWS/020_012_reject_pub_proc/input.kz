@@ -1,4 +1,4 @@
-// Test: ~pub proc should be rejected
+// Test: pub proc should be rejected
 // Only events can be pub, procs cannot.
 // Procs are implementation details - they follow their event's visibility.
 

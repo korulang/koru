@@ -1,7 +1,7 @@
 // Pins that the import gate sees the compiler flags from INSIDE an imported
 // module, not only in the entry file.
 //
-// 310_104 pins `~[profile]import` in the entry file and is green. This moves
+// 310_104 pins `[profile]import` in the entry file and is green. This moves
 // the SAME gate one module deeper: the entry imports `test_lib/wiring`, and
 // `wiring` is the one carrying the gated `import test_lib/tracer`. Run with
 // --profile (COMPILER_FLAGS), so the gate must KEEP the tracer import and its

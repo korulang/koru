@@ -4,7 +4,7 @@
 // is the same move, because C has exactly one way to hand over a run of values
 // it does not own:
 //
-//     ~pub tor apply-gain { input: []const f32, output: []f32, gain: f32 }
+//     pub tor apply-gain { input: []const f32, output: []f32, gain: f32 }
 //     export fn apply_gain(input_ptr: [*]const f32, input_len: usize,
 //                          output_ptr: [*]f32, output_len: usize, gain: f32) void
 //

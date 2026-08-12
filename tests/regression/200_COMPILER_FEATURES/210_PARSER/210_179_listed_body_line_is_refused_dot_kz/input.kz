@@ -1,8 +1,8 @@
 // PINS: in a `.kz`, a line indented under a subflow definition belongs to that
 // subflow's body or it is refused — it never falls through to the host.
 //
-// `~` is the host→Koru switch, written once per construct. A body line carries
-// no `~` of its own, so when the subflow grammar declines to claim this one it
+// `` is the host→Koru switch, written once per construct. A body line carries
+// no `` of its own, so when the subflow grammar declines to claim this one it
 // is not left over as Koru — it is handed to Zig verbatim. The line reappears
 // inside the generated file at struct scope and Zig says
 // `expected ',' after field` about code the author never wrote.
@@ -13,10 +13,10 @@
 //
 // The control is the same two steps, chained:
 //
-//     ~run = say-a()
+//     run = say-a()
 //         |> say-b()
 //
-// Both tors here are same-module `~proc`s reached without a module qualifier,
+// Both tors here are same-module `proc`s reached without a module qualifier,
 // which is the point: 210_178 is the same shape in a `.k` with `std/io` calls,
 // and it hoists silently instead of leaking. Vary the file form and the symptom
 // changes; vary local-vs-cross-module and it does not. The file form is the

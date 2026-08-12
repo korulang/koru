@@ -1,4 +1,4 @@
-// Cross-target `~if` whose branch bodies are `print.ln` — a comptime|transform
+// Cross-target `if` whose branch bodies are `print.ln` — a comptime|transform
 // event nested as a continuation body. Pins that the print family lowers to JS
 // through its `|js` transform variant at a NESTED site, not only at top level:
 // the JS emitter must splice the transform's `inv.inline_body` for the branch

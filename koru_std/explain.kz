@@ -18,7 +18,7 @@
 // freshly-parsed, pre-analysis AST (closest to original source).
 //
 // STATUS: item 1 of the build — the command registers and dispatches, and can
-// reach the program AST. Explainer *discovery* (walking for ~[explainer] events)
+// reach the program AST. Explainer *discovery* (walking for [explainer] events)
 // and output dispatch (json/html/text) are the next rungs; today it reports what
 // it can already see and names the not-yet-wired path.
 

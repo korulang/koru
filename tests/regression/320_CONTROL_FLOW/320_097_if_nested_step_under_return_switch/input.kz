@@ -1,4 +1,4 @@
-// GREEN (2026-06-27): `~if` as a NESTED continuation STEP, reached after a
+// GREEN (2026-06-27): `if` as a NESTED continuation STEP, reached after a
 // value-producing head event, with the whole flow on the `return switch`
 // fast path — driven by a `#L`/`@L` label-fold loop.
 //
@@ -7,13 +7,13 @@
 // label). Here the "clock" is the loop counter so the output is deterministic,
 // but the EMIT PATH is identical: `tick`'s head is a single-branch
 // value-producing event (`clock -> | t`), and its `| t n |> if(n < limit)`
-// continuation's STEP is the `~if` template.
+// continuation's STEP is the `if` template.
 //
 // THE BUG THIS PINS (emitter_helpers.zig, `emitSubflowContinuationsWithDepth`
 // return-switch fast path): a `tick` this simple (no labels/captures of its
 // own, head produces one branch) qualified for the `return switch (result)`
 // optimization. That fast path emitted the `.t` arm's `if` STEP as a raw
-// `_event.handler(.{...})` call — but `~if` is a `|template|`, inlined by the
+// `_event.handler(.{...})` call — but `if` is a `|template|`, inlined by the
 // template processor into `inline_body`; it has no runtime event. The result
 // was a call to a nonexistent `koru_<module>.if_event`:
 //
@@ -45,7 +45,7 @@
 
 ~pub tor run { limit: i64 } -> i64
 
-// Head = value-producing `clock`; nested STEP = `~if` deciding live/expired.
+// Head = value-producing `clock`; nested STEP = `if` deciding live/expired.
 ~tick = clock(passes): n |> if(n < limit)
     | then => live { limit, passes: n + 1 }
     | else => expired n

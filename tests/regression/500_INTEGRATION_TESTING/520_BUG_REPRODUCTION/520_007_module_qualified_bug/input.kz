@@ -3,7 +3,7 @@
 // BUG: Module-qualified invocations work in continuations but NOT in top-level flows
 //
 // This test has TWO invocations of the SAME event (io:println):
-// 1. Top-level flow: ~io:println(...)           ← BROKEN (generates println.handler)
+// 1. Top-level flow: io:println(...)           ← BROKEN (generates println.handler)
 // 2. Continuation:   | ok |> io:println(...)    ← WORKS (generates io.println.handler)
 //
 // Both should generate io.println.handler() but only #2 does!

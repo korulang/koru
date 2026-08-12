@@ -7,7 +7,7 @@
 // is not a type, so it does not belong in `types.kz` either. It is its own
 // thing: a declaration.
 //
-// This module is auto-imported via `index.kz` (like `control`), so the `~const`
+// This module is auto-imported via `index.kz` (like `control`), so the `const`
 // keyword is globally available whenever any std/* module is imported.
 
 ~[comptime]
@@ -15,7 +15,7 @@
 // ============================================================================
 // CONST - module-level value declarations as a per-target TEMPLATE.
 // ============================================================================
-// ~const({ threshold: 5 }) | as cfg |> ...use cfg.threshold...
+// const({ threshold: 5 }) | as cfg |> ...use cfg.threshold...
 //
 // Much simpler than capture:
 // - No mutation, so no `captured` branches to transform

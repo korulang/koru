@@ -2,10 +2,10 @@
 // Provides void event for dumping AST state at any pipeline stage
 //
 // Usage with taps:
-// ~* std/compiler:elaborate -> ctx
+// * std/compiler:elaborate -> ctx
 // |> dump-ast(ctx, "post-elaborate")
 //
-// ~* std/compiler:optimize -> ctx
+// * std/compiler:optimize -> ctx
 // |> dump-ast(ctx, "post-optimization")  // See IR nodes!
 
 const std = @import("std");

@@ -17,8 +17,8 @@
 // check blind at precisely the sink taint tracking exists to guard.
 //
 // Suspected site: phantom_semantic_checker.zig validateArgument returns early on
-// `expected_phantom == null` (~:2828), ~55 lines BEFORE the `context.isDisposed`
-// check that raises the diagnostic (~:2884). Disposal is a property of the
+// `expected_phantom == null` (:2828), 55 lines BEFORE the `context.isDisposed`
+// check that raises the diagnostic (:2884). Disposal is a property of the
 // binding, not of what the consumer wants — the gate is inverted.
 //
 // Sibling: 335_048 (same leak with the clean result correctly bound AND used,

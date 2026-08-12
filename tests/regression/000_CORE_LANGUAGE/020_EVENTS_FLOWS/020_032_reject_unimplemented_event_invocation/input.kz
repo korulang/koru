@@ -10,7 +10,7 @@
 // an invoked event with no implementation is a hole in the program and must
 // fail loudly at the koru level.
 //
-// Grounded on 020_021_event_arrow_return with the `~double -> a * 2`
+// Grounded on 020_021_event_arrow_return with the `double -> a * 2`
 // implementation line deleted.
 ~import std/io
 

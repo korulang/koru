@@ -1,5 +1,5 @@
 // Test: Annotations appear in AST JSON output
-// Verifies that ~[annotation] syntax is parsed and stored in AST
+// Verifies that [annotation] syntax is parsed and stored in AST
 
 const std = @import("std");
 

@@ -16,7 +16,7 @@
 // where the arms already are — pinned green at 210_190.
 //
 // The rule generalises rather than being special to this shape. In
-// `koru_std/compiler.kz`, `~analysis`'s dedented `| failed` attaches to
+// `koru_std/compiler.kz`, `analysis`'s dedented `| failed` attaches to
 // `check-release-gate` at the same level, and `check-release-gate` DOES declare
 // `| failed`; the desugar then replicates it across every stage. "The choke
 // guards the subtree" describes that replication, not the attachment.

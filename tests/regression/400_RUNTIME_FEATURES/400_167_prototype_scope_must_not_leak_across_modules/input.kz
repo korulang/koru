@@ -1,9 +1,9 @@
-// PINS: ~[prototype] must be scoped to the module that bears the annotation.
+// PINS: [prototype] must be scoped to the module that bears the annotation.
 // It is a per-file opt-in (concepts/frag-prototype-mode-panic-holes.md) — a
 // module that does NOT carry the annotation must keep full exhaustiveness even
 // when some OTHER module in the program is a prototype.
 //
-// This main module IS ~[prototype], and imports app/helper — a plain,
+// This main module IS [prototype], and imports app/helper — a plain,
 // non-prototype module. helper.kz contains an incomplete flow (a declared
 // terminal left unhandled). Because helper is not a prototype, that hole must
 // be rejected KORU022, exactly as it is when no module in the program is a

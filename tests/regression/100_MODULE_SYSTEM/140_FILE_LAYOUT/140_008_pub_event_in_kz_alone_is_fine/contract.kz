@@ -1,6 +1,6 @@
-// Phase 3 opt-in carve-out: a single .kz file with ~pub event is the
+// Phase 3 opt-in carve-out: a single .kz file with pub event is the
 // status-quo koru_std pattern. No .k companion exists, so the Phase 3
-// rule must NOT fire. This test defends every existing ~pub event in
+// rule must NOT fire. This test defends every existing pub event in
 // koru_std against the validator over-firing.
 
 const std = @import("std");

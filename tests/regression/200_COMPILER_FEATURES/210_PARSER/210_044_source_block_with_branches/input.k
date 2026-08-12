@@ -1,7 +1,7 @@
 // TEST: Parser acceptance of Source block with args AND branch continuations
 //
 // This tests that the PARSER correctly accepts:
-//   ~event(arg: value) {
+//   event(arg: value) {
 //       source content
 //   }
 //   | branch |> ...

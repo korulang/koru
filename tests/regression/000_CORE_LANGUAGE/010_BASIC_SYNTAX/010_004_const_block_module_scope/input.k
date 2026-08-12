@@ -6,7 +6,7 @@
 // directly — no host-side companion file needed.
 //
 // Pins the module-declaration form specifically, as distinct from the
-// config-capture form (`~const(...) | as cfg |> ...`): the bare block must
+// config-capture form (`const(...) | as cfg |> ...`): the bare block must
 // declare `name`/`count` at module scope for the flow to interpolate them.
 import std/io
 

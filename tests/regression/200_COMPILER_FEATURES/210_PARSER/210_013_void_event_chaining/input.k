@@ -1,6 +1,6 @@
 // Test: Parser should handle void event chaining
 // Void events (no output branches) should support continuation syntax
-// ~void-event() |> next_event() should create a continuation
+// void-event() |> next_event() should create a continuation
 
 tor void-event {}
 

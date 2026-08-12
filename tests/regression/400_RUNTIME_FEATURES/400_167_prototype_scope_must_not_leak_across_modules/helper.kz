@@ -1,5 +1,5 @@
 // A plain, non-prototype module (app/helper). Its own flow leaves the declared
-// terminal `| err` unhandled — a hole. Since this module carries no ~[prototype]
+// terminal `| err` unhandled — a hole. Since this module carries no [prototype]
 // annotation, that hole must be rejected KORU022 regardless of what any other
 // module in the program is annotated with. See input.kz for what this pins.
 

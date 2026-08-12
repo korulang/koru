@@ -16,11 +16,11 @@
 // The expected error below is what SHOULD fire when enforcement lands.
 //
 // Grounding:
-//   ~import syntax             — 330_007/input.kz line 1
+//   import syntax             — 330_007/input.kz line 1
 //   *File<opened!> as param    — 330_040_undisposed_nested_obligation/fs.kz line 20
-//   ~pub event open {...}      — 330_007/fs.kz line 4
+//   pub event open {...}      — 330_007/fs.kz line 4
 //   | opened *File<opened!>    — 330_007/fs.kz line 5
-//   ~event void (no branches)  — 330_020/input.kz line 2 (~event log-done {})
+//   event void (no branches)  — 330_020/input.kz line 2 (event log-done {})
 //   invocation chain |>        — 330_007/input.kz line 3
 
 ~import app/fs

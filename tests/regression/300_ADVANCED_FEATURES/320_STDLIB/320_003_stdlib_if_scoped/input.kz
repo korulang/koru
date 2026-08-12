@@ -1,5 +1,5 @@
-// Test: ~if with outer scope bindings
-// Verifies that ~if works when:
+// Test: if with outer scope bindings
+// Verifies that if works when:
 // 1. It's in a pipeline (not top-level)
 // 2. The condition references a continuation binding
 
@@ -14,7 +14,7 @@ const std = @import("std");
     return 42;
 }
 
-// Test: ~if in pipeline, condition uses binding from outer continuation
+// Test: if in pipeline, condition uses binding from outer continuation
 ~get-value(): r |> if(r > 10)
     | then |> std/io:print.ln("Value is greater than 10")
     | else |> std/io:print.ln("Value is 10 or less")

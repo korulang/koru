@@ -1,4 +1,4 @@
-// MIRROR of 030_142_nominal_in_pipeline: `~string` and `~int` declaring nominal
+// MIRROR of 030_142_nominal_in_pipeline: `string` and `int` declaring nominal
 // primitive types inside an imported .kz module, used as tor parameter types
 // there.
 //

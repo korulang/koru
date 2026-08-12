@@ -8,7 +8,7 @@
 // the body event consumes on its INPUT and issues on its OUTPUT, and `@loop`
 // routes output -> input.
 //
-//   ~spin = make(): h0 |> #loop step(h: h0)   make ISSUES <owned!> (h0), seeds the fold
+//   spin = make(): h0 |> #loop step(h: h0)   make ISSUES <owned!> (h0), seeds the fold
 //   | again v |> @loop(h: v)                  back-edge carries the re-issued handle
 //   | stop r -> r                             escapes it to the outside disposer
 //

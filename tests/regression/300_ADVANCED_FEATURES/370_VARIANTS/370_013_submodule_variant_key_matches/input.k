@@ -8,7 +8,7 @@
 //
 // It hid because a TOP-LEVEL event has no separator to disagree about
 // (`"input:pump"` is spelled identically on both sides), and every variant test
-// in the suite used one. Orisha's own `~[build(linux)]` line, selecting its
+// in the suite used one. Orisha's own `[build(linux)]` line, selecting its
 // epoll pump, had never taken effect either.
 
 import std/io

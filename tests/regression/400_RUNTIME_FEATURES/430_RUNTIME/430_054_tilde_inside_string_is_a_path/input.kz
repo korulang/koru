@@ -1,12 +1,12 @@
-// Test: a `~` INSIDE a string literal is data, never parser mode.
+// Test: a `` INSIDE a string literal is data, never parser mode.
 //
-// Interpreter source rejects `~` in code position (430_047) because there it
+// Interpreter source rejects `` in code position (430_047) because there it
 // is the host-embedding marker and marks nothing in pure Koru. That rejection
-// MUST NOT reach inside string literals: `"~/notes.txt"` is a home-directory
+// MUST NOT reach inside string literals: `"/notes.txt"` is a home-directory
 // path, and a home-directory path is not a dialect question.
 //
 // This pin exists because the wall could plausibly be written as "reject any
-// source containing `~`", which would make the single most common path on a
+// source containing ``", which would make the single most common path on a
 // unix machine unexpressable. It cannot be written that way.
 
 ~import std/runtime

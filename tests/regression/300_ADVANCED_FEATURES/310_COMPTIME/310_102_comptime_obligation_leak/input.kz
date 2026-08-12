@@ -11,10 +11,10 @@
 //
 // The mechanism, isolated by probe:
 //
-//   1. Drop `~[comptime]` from the tor DECL and the identical program IS
+//   1. Drop `[comptime]` from the tor DECL and the identical program IS
 //      refused — "error[KORU030]: Resource 's' obligation <unsanitized!> was not
 //      discharged. No tor accepts <!unsanitized>." So the checker works.
-//   2. With `~[comptime]` on the decl, `comptime_eval.flowIsFoldable`
+//   2. With `[comptime]` on the decl, `comptime_eval.flowIsFoldable`
 //      (comptime_eval.zig:851) matches this flow: a `[comptime]` head with a
 //      bare-return impl. `Folder.foldFlow` (comptime_eval.zig:717) evaluates
 //      `get-input` to the literal, SUBSTITUTES it into the residue continuation,

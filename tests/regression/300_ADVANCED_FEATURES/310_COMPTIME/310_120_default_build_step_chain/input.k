@@ -1,12 +1,12 @@
 // Pins that the STDLIB DEFAULT build steps actually run — not merely that
 // overriding them works.
 //
-// 310_033 already covers `~[default]` precedence and dependency ordering, but it
+// 310_033 already covers `[default]` precedence and dependency ordering, but it
 // overrides compile_backend, build AND run with echoes. Every script it executes
 // is its own, so it is structurally incapable of noticing that a default step is
 // broken. Two defects hid there for exactly that reason:
 //
-//   1. `~[default, depends_on(compile_backend)]` used `,` where annotations
+//   1. `[default, depends_on(compile_backend)]` used `,` where annotations
 //      separate on `|`, so the dependency was DROPPED — silently, until PARSE007
 //      started refusing that spelling.
 //   2. The default `build` step ran `./zig-out/bin/main` while phase 1 emits

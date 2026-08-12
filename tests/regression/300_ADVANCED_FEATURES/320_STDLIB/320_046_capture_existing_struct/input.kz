@@ -1,8 +1,8 @@
 // Test: Capture from existing value — BLOCK FORM.
 //
-// `~capture { entity }` — a block holding a single bare expression — binds to
+// `capture { entity }` — a block holding a single bare expression — binds to
 // an existing value instead of building a new struct cell. (Open call,
-// flagged 2026-06-11: this replaces the old `~capture(entity)` parens form so
+// flagged 2026-06-11: this replaces the old `capture(entity)` parens form so
 // capture has exactly ONE argument shape: the source block.)
 // `captured { field: expr }` updates just that field, preserves others.
 

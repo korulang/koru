@@ -1,8 +1,8 @@
-// Test: interpreter source is pure Koru — a leading `~` is rejected.
+// Test: interpreter source is pure Koru — a leading `` is rejected.
 //
-// `~` marks a Koru form embedded in Zig host text; it has no job in a context
+// `` marks a Koru form embedded in Zig host text; it has no job in a context
 // that is already pure Koru. `.k` rejects it, and so does interpreter source:
-// what the shell and the wire accept is `ping()`, never `~ping()`.
+// what the shell and the wire accept is `ping()`, never `ping()`.
 
 ~import std/runtime
 ~import std/io

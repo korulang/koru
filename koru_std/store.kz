@@ -154,7 +154,7 @@ fn storeParseWriteHead(name: []const u8) StoreHeadError!StoreWriteHead {
 ///
 /// Measured (4096 rows x 50000 frames, two columns written per row): with the
 /// writes made unconditional the benchmark runs at the hand-written-JavaScript
-/// control, and with them conditional it runs ~2.1x slower. It is the
+/// control, and with them conditional it runs 2.1x slower. It is the
 /// CONDITIONALITY, not the mask arithmetic and not the body size: swapping
 /// `Math.floor(m / 2**i) % 2` for a bitwise test measured nothing, and padding
 /// an unconditional body back to full length also measured nothing.
@@ -174,7 +174,7 @@ fn storeEnvwriteSpecName(alloc: std.mem.Allocator, store: []const u8, cols: []co
 
 /// EVERY DISTINCT COLUMN SET WRITTEN TO `store` ANYWHERE IN THE PROGRAM.
 ///
-/// Shaped like `TakeScan` (~:2020): a `stored` site is very often NOT a
+/// Shaped like `TakeScan` (:2020): a `stored` site is very often NOT a
 /// top-level flow. Measured on an ECS benchmark whose only write lives in a
 /// `! query` arm, a scan of `flatItems` alone found ZERO sites — the write is a
 /// node inside the arm's continuation tree. So this walks flows AND their
@@ -757,8 +757,8 @@ fn storeLowerText(
 // STORE.CREATE — declare + instantiate a store; the (f) coordinator
 // ============================================================================
 //
-//   ~std/store:new(game) { entities: 0[i64] }              — capacity-1 VALUE
-//   ~std/store:new(pool, capacity: 64) { hp: i64 }         — CONTAINER (rows)
+//   std/store:new(game) { entities: 0[i64] }              — capacity-1 VALUE
+//   std/store:new(pool, capacity: 64) { hp: i64 }         — CONTAINER (rows)
 //
 // Name arg + seed block (kernel:shape's surface). CAPACITY selects the
 // shape (690_050 ruling): default 1 → reactive value, > 1 → container.
@@ -783,7 +783,7 @@ fn storeLowerText(
 
     // THE TARGET LANGUAGE, READ ONCE — kernel's shape (kernel.kz:616), applied
     // where the answer is the opposite one. Kernel found eight differing sites
-    // in ~60 and branched inside one body; store's generated artifact is a data
+    // in 60 and branched inside one body; store's generated artifact is a data
     // structure, so most of what it emits genuinely differs and the two
     // renderings are written side by side at each site rather than seamed.
     //
@@ -1659,7 +1659,7 @@ fn storeLowerText(
             // RETAIN the discovered discharger (its event_decl AND matching
             // proc_decl) so dead-strip preserves them. The teardown calls the
             // discharger from RAW HOST CODE (`<host>.<name>_event.handler`,
-            // ~line 2441) — invisible to dead-strip's invocation scan. Without
+            // line 2441) — invisible to dead-strip's invocation scan. Without
             // this, an insert-then-query-only owned store (no user `take`-back
             // invoking the discharger) strips `free`/`close`, and the teardown
             // call dangles at a nonexistent `<mod>.<name>_event` (690_060). Same
@@ -5654,7 +5654,7 @@ fn storeLowerText(
     }
 
     // ------------------------------------------------------------------
-    // Collect watches: every `~std/store:watch(<this store>)` flow's
+    // Collect watches: every `std/store:watch(<this store>)` flow's
     // branches. One watch per field for now (sequencing splice = later).
     // ------------------------------------------------------------------
     const WatchArm = struct {
@@ -6524,7 +6524,7 @@ fn storeLowerText(
         // The announce impl flow re-dispatches the SAME watch arms (fresh
         // clones - the shared-pointer footgun is real).
         var ann_arms = std.ArrayList(ast.Continuation).initCapacity(allocator, cell_fields.len) catch unreachable;
-        // Twin of the plural announce's `any_observer` (~:3805). The two
+        // Twin of the plural announce's `any_observer` (:3805). The two
         // lowerings of one construct drift when only the one being looked at is
         // improved (frag-a-fix-lands-in-one-lowering-path), and this is the same
         // dead dispatch on the singleton's side.
@@ -6801,7 +6801,7 @@ fn storeLowerText(
 // STORE.STORED — the sole write path: an ordinary call into the subflow
 // ============================================================================
 //
-//   ~std/store:stored { game.entities: game.entities + 1 }
+//   std/store:stored { game.entities: game.entities + 1 }
 //
 // Rewritten into `__store_write_game(field: <idx>, value: <expr'>)` where
 // <expr'> has dotted store reads rewritten to the cell. The replacement is
@@ -6821,7 +6821,7 @@ fn storeLowerText(
     // A written value that BUILT text left its buffer declaration on the
     // original invocation. Carrying that preamble onto a replacement flow is
     // not enough on its own: the pass runner treats a preamble-bearing
-    // replacement as the `~capture`/`~const` contract — the preamble REPLACES
+    // replacement as the `capture`/`const` contract — the preamble REPLACES
     // the call — and DROPS the invocation, so the write silently disappears
     // (transform_pass_runner.zig:104, and the comment there says exactly this).
     //
@@ -7199,7 +7199,7 @@ fn storeLowerText(
             // THE SPECIALISED UNIT IF `new` EMITTED ONE, else the general
             // masked one. Both sides derive the name from the same ascending
             // column list, so agreement is by construction; the existence check
-            // is the same shape `writec_name` already uses (~:6890), and a miss
+            // is the same shape `writec_name` already uses (:6890), and a miss
             // costs speed rather than correctness.
             const sorted = allocator.alloc(usize, env_idx.len) catch unreachable;
             @memcpy(sorted, env_idx);
@@ -8038,8 +8038,8 @@ fn storeLowerText(
 // STORE.INSERT — append a row to a plural store (rung two)
 // ============================================================================
 //
-//   ~std/store:insert(game) { hp: 30, kind: 1 }              — bare append
-//   ~std/store:insert(game) { hp: 50, kind: 1 } | row r |> … — handle form
+//   std/store:insert(game) { hp: 30, kind: 1 }              — bare append
+//   std/store:insert(game) { hp: 50, kind: 1 } | row r |> … — handle form
 //
 // Rewritten into `__store_insert_<s>(…)` (void) or `__store_inserth_<s>(…)`
 // (`| row i64`) — the site's own continuations ride along. `__site_line`
@@ -8707,7 +8707,7 @@ fn storeLowerText(
     //
     //     ! query { [row]e, [ordinal]n } |> … n … e.v …
     //
-    // `! query e` stays the shorthand for `! query { [row]e }`; ~149 green
+    // `! query e` stays the shorthand for `! query { [row]e }`; 149 green
     // sites write it and rule 1 of the 690_086 ruleset still governs the row.
     //
     // WHAT IS STILL REFUSED, and why it is not the same thing. An UNANNOTATED
@@ -10040,7 +10040,7 @@ fn storeLowerText(
 // STORE.STRIPE — the imperative sweep verb ((l)/O13, 690_014)
 // ============================================================================
 //
-//   ~std/store:stripe(game)
+//   std/store:stripe(game)
 //
 // Announce-only: standing watches re-fire with CURRENT values. No write
 // happens, so interceptors (the write contract) do NOT run. Compiles to

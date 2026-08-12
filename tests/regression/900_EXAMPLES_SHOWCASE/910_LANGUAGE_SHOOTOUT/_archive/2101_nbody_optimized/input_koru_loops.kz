@@ -1,7 +1,7 @@
 // LANGUAGE SHOOTOUT: N-body Gravitational Simulation
-// HONEST VERSION: Uses Koru ~for for the hot loops
+// HONEST VERSION: Uses Koru for for the hot loops
 //
-// This is the REAL test - can ~for match Zig's loop performance?
+// This is the REAL test - can for match Zig's loop performance?
 
 const std = @import("std");
 
@@ -174,15 +174,15 @@ const Body = struct {
 }
 
 // ============================================================================
-// Main flow: Using Koru ~for for the HOT LOOPS
+// Main flow: Using Koru for for the HOT LOOPS
 // ============================================================================
 
-// Start simple: just test the outer simulation loop with ~for
+// Start simple: just test the outer simulation loop with for
 // The body loops are still in process-all-pairs for now
 
 ~tor process-all-pairs { bodies: []Body, dt: f64 }
 
-// This uses Koru ~for for the OUTER loop
+// This uses Koru for for the OUTER loop
 ~process-all-pairs = for(0..5)
 | each i |> for(i.val+1..5)
     | each j |> process-pair(bodies, i: i.val, j: j.val, dt)

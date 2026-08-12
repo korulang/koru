@@ -24,7 +24,7 @@ const std = @import("std");
 // Test data
 var numbers = [_]i32{ 5, 2, 8, 1, 9, 3 };
 
-// Use it! The ~ makes it a Koru flow, [expand] inlines the template
+// Use it! The  makes it a Koru flow, [expand] inlines the template
 ~sort(arr: numbers[0..])
 
 // Verify it worked

@@ -1,4 +1,4 @@
-// PINS: a Zig `\\` multiline string inside a `~proc …|zig` body is DATA that
+// PINS: a Zig `\\` multiline string inside a `proc …|zig` body is DATA that
 // runs to end of line exactly like `//`, so its braces must never move the
 // depth `extractProcBody` counts to find that body's closing `}`.
 //

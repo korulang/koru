@@ -1,5 +1,5 @@
-// Abstract events: `~[abstract]` declares a signature; a `~proc` in the same
-// file is an optional default implementation; `~module:event = ...` provides
+// Abstract events: `[abstract]` declares a signature; a `proc` in the same
+// file is an optional default implementation; `module:event = ...` provides
 // THE implementation. Within an implementation, calling the event name
 // delegates to the default. Resolved at compile time — no runtime dispatch.
 

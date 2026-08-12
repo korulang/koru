@@ -5,7 +5,7 @@
 //
 // This enables LINQ-style pipelines without explicit plumbing:
 //
-//   ~from(items)
+//   from(items)
 //   |> where(x > 10)      // seq auto-injected from previous branch
 //   |> select(x.name)     // seq auto-injected
 //   | seq result |> ...   // explicit only at the end
@@ -63,7 +63,7 @@ const test_data = [_]i32{ 1, 2, 3, 4, 5 };
 
 // THE TEST: Auto-threaded pipeline
 // Without auto-threading, this would need:
-//   ~from(source: test_data[0..])
+//   from(source: test_data[0..])
 //   | seq s1 |> where(pred: true, seq: s1)
 //       | seq s2 |> count(seq: s2)
 //           | count c |> print-result(c)

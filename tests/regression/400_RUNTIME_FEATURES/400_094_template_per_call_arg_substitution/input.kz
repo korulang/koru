@@ -1,5 +1,5 @@
 // Test: per-call template with captured-argument substitution.
-// `~count-to(n: 3)` captures `3` as the Expression text for `n`. The
+// `count-to(n: 3)` captures `3` as the Expression text for `n`. The
 // template interpolates `{{ n }}` into the Zig body. Each call site
 // substitutes ITS captured value, so this is the foundation of macro-
 // shaped events like `for`, `if`, etc.

@@ -1,5 +1,5 @@
 // Phase 3 rule 2: when contract.k exists, this companion .kz file
-// cannot also declare ~pub event. Implementation files own the procs;
+// cannot also declare pub event. Implementation files own the procs;
 // the public surface lives in .k only.
 
 const std = @import("std");

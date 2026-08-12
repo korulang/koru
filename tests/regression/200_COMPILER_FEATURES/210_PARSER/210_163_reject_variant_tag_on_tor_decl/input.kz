@@ -1,12 +1,12 @@
-// Pins: a variant tag belongs on a `~proc`, never on the `~tor` that declares
-// the contract. `~tor compute|zig {}` must be rejected at the frontend — the
+// Pins: a variant tag belongs on a `proc`, never on the `tor` that declares
+// the contract. `tor compute|zig {}` must be rejected at the frontend — the
 // tor names WHAT is done, the proc's `|zig` names HOW and for which target.
 //
 // The guarded shape is the identifier boundary: `|` terminates a tor's name
 // rather than being absorbed into it. Absorbing it mints a declaration named
-// `compute|zig`, which no `~proc compute|zig` and no `~compute()` call site
+// `compute|zig`, which no `proc compute|zig` and no `compute()` call site
 // can ever match, so one construct ends up with three different spellings and
 // the frontend has nothing left to disagree with.
 //
-// Doctrine: variants live on procs only (`~proc name|target`).
+// Doctrine: variants live on procs only (`proc name|target`).
 ~tor compute|zig {}

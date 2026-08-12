@@ -1,7 +1,7 @@
 // TEST (aspirational): the parser SILENTLY SWALLOWS a |variant selector
 // on a transform invocation with a source block.
 //
-//   ~std/kernel:init(Body)|gpu { ... }
+//   std/kernel:init(Body)|gpu { ... }
 //
 // parses with exit 0 today, but "gpu" appears NOWHERE in the AST — the
 // token is dropped without a diagnostic. By the maximalist-parser tenet

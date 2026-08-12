@@ -1,6 +1,6 @@
 // Record-field obligation (330_096: `make` returns { h: *Handle<owned!>, n }),
 // re-bound through a SUBFLOW's declared return type before the caller ever
-// sees it (302_subflow_flow:24's `~process = double(value: input): r -> r`
+// sees it (302_subflow_flow:24's `process = double(value: input): r -> r`
 // bind-then-bare-return shape). `spin` declares the SAME record return type as
 // `make` and its body is nothing but a bare pass-through of `make`'s result.
 // The caller binds `res`, uses `res.n`, and never discharges `res.h`.

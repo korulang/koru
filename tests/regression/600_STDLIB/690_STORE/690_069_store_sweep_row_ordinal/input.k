@@ -44,7 +44,7 @@
 // handle addressing, where `[` FOLLOWS an identifier and is parsed by the
 // store's lvalue grammar. Position tells them apart.
 //
-// `! query e` stays legal as the shorthand for `! query { [row]e }` — ~149
+// `! query e` stays legal as the shorthand for `! query { [row]e }` — 149
 // green sites depend on it and rule 1 of 690_086 still governs the row.
 //
 // STILL OPEN, deliberately not pinned here: whether the block may ALSO name

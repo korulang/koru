@@ -12,14 +12,14 @@
 //    - Compiler selects based on platform/benchmarks
 //
 // 2. MOCKS (for testing) - Use subflow syntax, NOT variants!
-//    - ~event.path = branch { fake_data }
+//    - event.path = branch { fake_data }
 //    - Scoped to individual tests
 //    - Applied via compile-time AST substitution
 //    - See TESTING-STORY.md
 //
 // 3. COMPILER PASSES - Transform AST before emission
 //    - Walk AST looking for procs with .target field
-//    - Invoke ~compile.target event (proc-based compiler pass)
+//    - Invoke compile.target event (proc-based compiler pass)
 //    - Replace proc.body with generated Zig wrapper
 //    - Happens in compiler.coordinate pipeline, NOT in emitter!
 //
@@ -124,7 +124,7 @@ const std = @import("std");
 // By defining compiler.coordinate as a SUBFLOW, we can completely
 // replace the compilation pipeline! Real variant coordinator would:
 //
-// ~compiler.coordinate =
+// compiler.coordinate =
 //     compiler.passes.evaluate_comptime(ast: ast)
 //     | evaluated ev |> compiler.check.structure(ast: ev.ast)
 //     | valid v |> compiler.passes.compile_variants(ast: v.ast)  ← NEW!
@@ -134,7 +134,7 @@ const std = @import("std");
 //
 // The compiler.passes.compile_variants pass would:
 // 1. Walk AST for procs with .target field
-// 2. For each, invoke ~compile.target event (defined above)
+// 2. For each, invoke compile.target event (defined above)
 // 3. Replace proc.body with returned wrapper code
 // 4. Set proc.target = null (now it's pure Zig!)
 //

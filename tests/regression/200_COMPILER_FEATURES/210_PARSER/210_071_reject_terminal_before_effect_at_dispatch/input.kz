@@ -7,7 +7,7 @@
 // by the parser.
 //
 // The well-formed shape (defended by 210_073) is:
-//   ~count-to-three = for(0..3)
+//   count-to-three = for(0..3)
 //   ! each _ |> std/io:print.ln("counting")
 //   | done |> result 3
 // ============================================================================

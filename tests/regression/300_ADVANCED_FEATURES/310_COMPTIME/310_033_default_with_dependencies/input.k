@@ -1,5 +1,5 @@
 // Test 645: Default Steps with Dependencies
-// Tests that ~[default|depends_on(...)] annotations work correctly
+// Tests that [default|depends_on(...)] annotations work correctly
 //
 // Overrides all default steps with simple echos to verify:
 // 1. Steps execute in dependency order

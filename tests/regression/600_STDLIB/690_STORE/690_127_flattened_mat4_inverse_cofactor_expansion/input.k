@@ -1,11 +1,11 @@
 // PINS: a FULL 4x4 matrix inverse over flattened f64 columns — sixteen
 // outputs under one sweep arm, each rhs the complete cofactor-over-determinant
-// expansion (~770 characters: a signed 3x3 minor divided by the inline
-// Laplace determinant, ~40 column reads per entry). This is ecs_bench_suite's
+// expansion (770 characters: a signed 3x3 minor divided by the inline
+// Laplace determinant, 40 column reads per entry). This is ecs_bench_suite's
 // heavy_compute kernel (rust-gamedev's workload) at the expression layer:
 // 690_119 pins its row, 690_120 pins its 2x2 seed, this pins the real size.
 //
-// What it guards is EXPRESSION SCALE through the stored path: a ~13KB plural
+// What it guards is EXPRESSION SCALE through the stored path: a 13KB plural
 // block, parenthesized subexpressions forty operands deep, every one of the
 // sixteen input columns read by every entry. The outputs land in separate
 // columns (o00..o33) because a block reads its own earlier writes (690_126)

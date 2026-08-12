@@ -3,7 +3,7 @@
 // A bare-return event has no named branch, so the branch-name tap body
 // (`| result |> ...`) has nothing to match. Instead the tap binds the
 // produced value with `:` — the exact call-site bind rule as
-// `~compute(...): v |> ...`. Design ruled by Lars 2026-06-25.
+// `compute(...): v |> ...`. Design ruled by Lars 2026-06-25.
 
 const std = @import("std");
 ~import std/taps

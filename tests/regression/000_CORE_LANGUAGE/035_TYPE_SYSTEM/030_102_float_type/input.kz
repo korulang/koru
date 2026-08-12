@@ -1,6 +1,6 @@
-// TEST: ~float creates a nominal floating-point type
+// TEST: float creates a nominal floating-point type
 //
-// ~float(Temperature) creates a distinct type that wraps f64
+// float(Temperature) creates a distinct type that wraps f64
 // Koru tracks it as a separate type for type checking purposes.
 //
 // Expected: Compiles and runs, Temperature is usable as a float

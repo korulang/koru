@@ -1,9 +1,9 @@
-// Test: ~for inside a continuation pipeline
+// Test: for inside a continuation pipeline
 //
-// This tests the pipeline case where ~for is used INSIDE a continuation:
+// This tests the pipeline case where for is used INSIDE a continuation:
 //   | result |> for(0..3) | each i |> ... | done |> ...
 //
-// This is different from top-level ~for which is the flow's main invocation.
+// This is different from top-level for which is the flow's main invocation.
 
 ~import std/io
 ~import std/control
@@ -17,7 +17,7 @@ const std = @import("std");
     return 3;
 }
 
-// Main flow: pipeline ~for
+// Main flow: pipeline for
 ~get-count(): r |> for(0..r)
     ! each _ |> std/io:print.ln("iteration")
     | done |> std/io:print.ln("done")

@@ -1,17 +1,17 @@
 // Test 170: Module-Level Event Globbing with Taps
 //
 // Tests that taps can use wildcards to match ALL events from a module.
-// Pattern: ~input:* -> * matches ANY event in the main module.
+// Pattern: input:* -> * matches ANY event in the main module.
 //
 // This demonstrates powerful observability - a single tap pattern can
 // intercept every event in a module, perfect for profiling or logging.
 //
 // Structure:
 //   test_lib/
-//     logger.kz  → Defines ~input:* -> * to intercept ALL main module events
+//     logger.kz  → Defines input:* -> * to intercept ALL main module events
 //
 // Expected: The logger's tap fires for ALL events (compute, format, display)
-//          even though the pattern only specifies ~input:* once.
+//          even though the pattern only specifies input:* once.
 
 const std = @import("std");
 
@@ -40,5 +40,5 @@ const std = @import("std");
     std.debug.print("Final: {s}\n", .{text});
 }
 
-// Call all three events - the logger's ~input:* tap should intercept ALL of them!
+// Call all three events - the logger's input:* tap should intercept ALL of them!
 ~compute(x: 42): r |> format(value: r): f |> display(text: f)

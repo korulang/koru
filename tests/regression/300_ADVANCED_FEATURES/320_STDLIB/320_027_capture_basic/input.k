@@ -1,4 +1,4 @@
-// Test: Basic ~capture as top-level flow — BLOCK FORM.
+// Test: Basic capture as top-level flow — BLOCK FORM.
 //
 // Ratified 2026-06-11: `capture` and `captured` take bare source blocks, no
 // parens. `name { ... }` is unambiguously an invocation since `=>` took over

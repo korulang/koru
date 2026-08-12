@@ -5,8 +5,8 @@
 // 3. Handler code generates without errors
 // 4. Backend compiles successfully with parser wrapper
 //
-// NOTE: This is a COMPILE-ONLY test. Runtime usage requires ~build.requires
-// See test 997 for the runtime usage test (documents missing ~build.requires feature)
+// NOTE: This is a COMPILE-ONLY test. Runtime usage requires build.requires
+// See test 997 for the runtime usage test (documents missing build.requires feature)
 
 ~import std/koru
 

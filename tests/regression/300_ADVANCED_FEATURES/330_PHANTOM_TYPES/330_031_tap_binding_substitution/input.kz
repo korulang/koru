@@ -1,6 +1,6 @@
 // PINS: a tap's binding substitutes into the tap body's arguments —
 // `f.handle` reads a field of the observed return through the tap binding.
-// Tap-on-bare-return spelling grounded on 310_006 (`~tap(hello -> *): v |> ...`).
+// Tap-on-bare-return spelling grounded on 310_006 (`tap(hello -> *): v |> ...`).
 ~import std/taps
 ~import app/fs
 ~tap(app/fs:open -> *): f |> app/fs:log-open(f.handle)

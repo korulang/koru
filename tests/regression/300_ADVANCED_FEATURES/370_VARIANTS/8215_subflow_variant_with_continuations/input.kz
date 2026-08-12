@@ -1,6 +1,6 @@
 // Test 8215: Subflow variant with continuations.
 //
-// Shape: `~event|variant = invocation(args) | branch binding |> result_constructor`
+// Shape: `event|variant = invocation(args) | branch binding |> result_constructor`
 // Combines the variant-arm declaration (new, established by 8213/8214) with
 // the subflow-with-continuations shape from 302_subflow_flow (grounded passing test).
 //

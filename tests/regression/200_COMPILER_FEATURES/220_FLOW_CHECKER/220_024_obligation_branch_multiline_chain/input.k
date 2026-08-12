@@ -2,7 +2,7 @@
 // spread over multiple EQUAL-INDENT lines. Pins that it compiles and runs
 // identically to its inline sibling on the same branch (prints a/b/hello). The
 // pieces: the obligation shape is 610_001_string_basic's shape (green); the
-// equal-indent multi-line `|>` continuation is koru_std/compiler.kz's `~analysis`
+// equal-indent multi-line `|>` continuation is koru_std/compiler.kz's `analysis`
 // pipeline shape (green — the live compiler). Only the combination — a multi-line
 // chain INSIDE an obligation branch `| ok s` — is what this locks.
 //

@@ -20,7 +20,7 @@
 //
 // SURFACE NOTE (caps ruling, 2026-07-03): Lars ruled that mechanism
 // vocabulary must not leak into annotations — capability requirements are
-// declared as `~[cap("...")]` intent annotations that trellis REASONS
+// declared as `[cap("...")]` intent annotations that trellis REASONS
 // OVER, not as trellis(...)/guard bindings. The guard-invocation spelling
 // below is a placeholder; the binding design for transform-invocation
 // variants (no proc to annotate) is open — see

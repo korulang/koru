@@ -1,4 +1,4 @@
-// Test: Struct declared via ~struct used as event parameter type
+// Test: Struct declared via struct used as event parameter type
 //
 // This is the real payoff: declare a type through Koru,
 // then use it in event signatures and flows.

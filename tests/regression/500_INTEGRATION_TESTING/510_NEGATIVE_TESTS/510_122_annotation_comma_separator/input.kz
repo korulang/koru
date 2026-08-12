@@ -1,7 +1,7 @@
 // Test: a `,` between annotation entries is REFUSED (PARSE007), where it used to
 // be silently absorbed.
 //
-// Annotations separate on `|`. `~[comptime, norun]` is not two annotations — it
+// Annotations separate on `|`. `[comptime, norun]` is not two annotations — it
 // parses as ONE entry spelled `"comptime, norun"`, which matches nothing, so the
 // block silently means less than it reads. That exact shape shipped in
 // `koru_std/build.kz`'s default build steps and dropped a real `depends_on`
@@ -10,7 +10,7 @@
 // Failing loud here is what makes that class of defect non-recurring.
 //
 // The refusal is TARGETED, not a blanket ban on commas: a comma inside an entry's
-// own argument list is depth > 0 and stays legal (`~[build("debug", "trace")]` in
+// own argument list is depth > 0 and stays legal (`[build("debug", "trace")]` in
 // 310_058, `other[x, y]` in 310_106 — both passing), as does one inside a string.
 // The diagnostic also has to hand back the CORRECTED spelling, because a message
 // that echoes the broken text teaches nothing; that is the `[comptime|norun]` in

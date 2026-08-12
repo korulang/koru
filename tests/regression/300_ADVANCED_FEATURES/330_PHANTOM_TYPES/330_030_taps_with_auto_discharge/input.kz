@@ -1,6 +1,6 @@
 // PINS: a tap observing an obligation-minting tor composes with auto-discharge —
 // the tap fires AND the <opened!> obligation still gets its close inserted.
-// Tap-on-bare-return spelling grounded on 310_006 (`~tap(hello -> *): v |> ...`).
+// Tap-on-bare-return spelling grounded on 310_006 (`tap(hello -> *): v |> ...`).
 ~import std/taps
 ~import app/fs
 ~tap(app/fs:open -> *): f |> app/fs:log-open(handle: 42)

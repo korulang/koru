@@ -5,7 +5,7 @@
 // grounded in tests/regression/200_COMPILER_FEATURES/220_COMPILATION/
 // 220_013_many_transforms_no_cap/input.kz:20-26 (event t1.* decl + proc
 // t1.*|zig handler, replacement = inline-code comment) and :162 (bare
-// `~t1.fire("x")` flow-head invocation matched + replaced, MUST_RUN, green).
+// `t1.fire("x")` flow-head invocation matched + replaced, MUST_RUN, green).
 //
 // Component B: an obligation branch (`std/string:from-page` -> `| ok s |>`
 // .. `| err _ |>`, discharged via `std/string:free(s)` on every terminal),
@@ -13,10 +13,10 @@
 // 670_022_readlines_under_obligation/input.k:9-14 (arbitrary invocations
 // legally sit as the `| ok s |>` payload there), and
 // 300_ADVANCED_FEATURES/335_OBLIGATION_STRESS/335_021_instance_no_explicit_free/
-// input.kz:14-19 (`~` marks flow-head only; mid-chain steps carry no tilde,
+// input.kz:14-19 (`` marks flow-head only; mid-chain steps carry no tilde,
 // in a .kz host-embedded file).
 //
-// Composition: the glob-matched invocation itself (no leading `~`, same
+// Composition: the glob-matched invocation itself (no leading ``, same
 // mid-chain-invocation shape as `work()` in 020_006_void_pipeline_sequence:12)
 // sits as the `| ok s |>` payload, chained onward to std/string:free(s). The
 // transform must fire at this mid-chain site exactly as it does at flow-head,

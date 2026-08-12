@@ -1,5 +1,5 @@
-// Test 320_010: Basic ~for loop
-// Tests that ~for compiles to optimal Zig for-loop
+// Test 320_010: Basic for loop
+// Tests that for compiles to optimal Zig for-loop
 //
 // SEMANTICS:
 // - | each item |> runs for EACH element (N times)

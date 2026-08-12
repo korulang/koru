@@ -2,7 +2,7 @@
 // the COUNT of them is the assertion.
 //
 // `run-one` chains four void steps off one binding, two of which are `work`,
-// and `~for` drives it ten times: exactly twenty `Work` lines. The count is
+// and `for` drives it ten times: exactly twenty `Work` lines. The count is
 // what this test holds, because a chain that silently dropped a step would
 // still compile, still run, and still exit 0 — printing ten. Nothing else
 // distinguishes the two outcomes.

@@ -2,7 +2,7 @@
 // VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
 // ============================================================================
 // Test: Flow-based subflow calling another event
-// Feature: ~event_name = other_event(args) | branch |> result { fields }
+// Feature: event_name = other_event(args) | branch |> result { fields }
 // Verifies: Subflow can invoke events and map their outputs
 // ============================================================================
 

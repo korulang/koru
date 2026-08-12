@@ -1,6 +1,6 @@
 // Library module: fs
 // Single disposal event - auto-discharge would normally kick in,
-// but the importing module is marked ~[strict], so it must not.
+// but the importing module is marked [strict], so it must not.
 
 const std = @import("std");
 

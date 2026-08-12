@@ -8,17 +8,17 @@
 // - Uses the shape_checker for optional validation before execution
 //
 // Usage:
-//   ~import std/interpreter
-//   ~import std/runtime
+//   import std/interpreter
+//   import std/runtime
 //
 //   // Register events you want callable at runtime
-//   ~std/runtime:register(scope: "api") {
+//   std/runtime:register(scope: "api") {
 //       greet
 //       process_order
 //   }
 //
 //   // Interpret Koru source
-//   ~std/interpreter:run(source: user_input, scope: "api")
+//   std/interpreter:run(source: user_input, scope: "api")
 //   | result r |> handle_result(value: r.value)
 //   | parse-error e |> respond(status: 400, body: e.message)
 //   | validation-error e |> respond(status: 400, body: e.message)
@@ -709,17 +709,17 @@ pub const DischargesSpecFn = *const fn([]const u8) []const DischargeSpec;  // ev
 // HOST-TILDE WALL - interpreter source is pure Koru
 // ============================================================================
 
-/// Location of a `~` found in code position, or null if the source is clean.
+/// Location of a `` found in code position, or null if the source is clean.
 pub const HostTilde = struct {
     line: u32,
     column: u32,
 };
 
-/// `~` switches a HOST-EMBEDDED file (.kz/.kjs) from the host language into
+/// `` switches a HOST-EMBEDDED file (.kz/.kjs) from the host language into
 /// Koru. Interpreter source is already pure Koru, so the character marks
 /// nothing here and is rejected outright — the same rule `.k` files enforce.
 ///
-/// Tildes INSIDE string literals are left alone: `open(path: "~/notes.txt")`
+/// Tildes INSIDE string literals are left alone: `open(path: "/notes.txt")`
 /// is a path, not a parser-mode switch.
 pub fn findHostTilde(source: []const u8) ?HostTilde {
     var line: u32 = 1;
@@ -1054,7 +1054,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // ============================================================================
 
 // Parse and execute in one step - the main interpreter entry point
-// Use ~get-scope to get the dispatcher first, then pass it here
+// Use get-scope to get the dispatcher first, then pass it here
 ~[retain]pub tor run {
     source: string,
     dispatcher: DispatchFn,
@@ -1122,7 +1122,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // Parse WITHOUT executing — the other half of `eval`.
 //
 // Interpreter source is pure Koru: it has no file, so it has no host half and
-// no `~`. That is why this takes no file name. The full compiler parser
+// no ``. That is why this takes no file name. The full compiler parser
 // derives its host/pure mode from the filename extension
 // (`src/parser.zig:707`), so handing it a synthetic name silently answers a
 // question interpreted source does not have; `flow_parser` has no such notion
@@ -1697,7 +1697,7 @@ fn executeFlow(
     var dispatch_result: DispatchResult = undefined;
 
     // =========================================================================
-    // SPECIAL HANDLING: Control flow (~if, ~for)
+    // SPECIAL HANDLING: Control flow (if, for)
     // Recognized as both bare (if) and qualified (std/control:if)
     // =========================================================================
     const is_if = (inv.path.module_qualifier == null and
@@ -1725,7 +1725,7 @@ fn executeFlow(
                       std.mem.eql(u8, inv.path.segments[0], "while"));
 
     if (is_if) {
-        // std.debug.print("[INTERPRETER] Detected ~if, evaluating condition\n", .{});
+        // std.debug.print("[INTERPRETER] Detected if, evaluating condition\n", .{});
 
         // Get expression from the first arg (should be the condition)
         var condition_result: bool = false;
@@ -1779,13 +1779,13 @@ fn executeFlow(
         // Set the branch based on condition result
         dispatch_result.branch = if (condition_result) "then" else "else";
         dispatch_result.fields = &[_]NamedField{};
-        // std.debug.print("[INTERPRETER] ~if taking branch: | {s} |>\n", .{dispatch_result.branch});
+        // std.debug.print("[INTERPRETER] if taking branch: | {s} |>\n", .{dispatch_result.branch});
     } else if (is_for) {
         // =====================================================================
-        // SPECIAL HANDLING: ~for - Runtime loop
-        // ~for(0..N) | each i |> body | done |> after
+        // SPECIAL HANDLING: for - Runtime loop
+        // for(0..N) | each i |> body | done |> after
         // =====================================================================
-        // std.debug.print("[INTERPRETER] Detected ~for, executing loop\n", .{});
+        // std.debug.print("[INTERPRETER] Detected for, executing loop\n", .{});
 
         // Parse range from first arg (format: "start..end")
         var start: i64 = 0;
@@ -1799,7 +1799,7 @@ fn executeFlow(
             }
         }
 
-        // std.debug.print("[INTERPRETER] ~for range: {d}..{d}\n", .{ start, end });
+        // std.debug.print("[INTERPRETER] for range: {d}..{d}\n", .{ start, end });
 
         // Find | each | and | done | continuations
         var each_cont: ?*const ast.Continuation = null;
@@ -1817,7 +1817,7 @@ fn executeFlow(
         if (each_cont) |cont| {
             var i = start;
             while (i < end) : (i += 1) {
-                // std.debug.print("[INTERPRETER] ~for iteration {d}\n", .{i});
+                // std.debug.print("[INTERPRETER] for iteration {d}\n", .{i});
 
                 // Bind loop variable if there's a binding
                 if (cont.binding) |binding_name| {
@@ -1855,7 +1855,7 @@ fn executeFlow(
         // After loop, take | done | branch
         dispatch_result.branch = "done";
         dispatch_result.fields = &[_]NamedField{};
-        // std.debug.print("[INTERPRETER] ~for complete, taking | done |>\n", .{});
+        // std.debug.print("[INTERPRETER] for complete, taking | done |>\n", .{});
 
         // If there's a done continuation with a node, follow it
         if (done_cont) |cont| {
@@ -1893,8 +1893,8 @@ fn executeFlow(
         return Value.fromDispatch(dispatch_result.branch, dispatch_result.fields);
     } else if (is_while) {
         // =====================================================================
-        // SPECIAL HANDLING: ~while - Conditional loop with state
-        // ~while(condition in { state }) | continue c |> ... continued { } | done c |> ...
+        // SPECIAL HANDLING: while - Conditional loop with state
+        // while(condition in { state }) | continue c |> ... continued { } | done c |> ...
         // =====================================================================
 
         // Parse "condition in { initial_state }" from the first arg
@@ -2316,7 +2316,7 @@ fn executeFlow(
                 );
                 try ctx.env.bind(binding_name, bound_value);
 
-                // Also populate expr_bindings for ~if conditions
+                // Also populate expr_bindings for if conditions
                 if (bound_value.fields.len == 1 and std.mem.eql(u8, bound_value.fields[0].name, "__type_ref")) {
                     // Scalar payload: bind the value directly
                     try ctx.expr_bindings.set(binding_name, fieldValueToExprValue(bound_value.fields[0].value));

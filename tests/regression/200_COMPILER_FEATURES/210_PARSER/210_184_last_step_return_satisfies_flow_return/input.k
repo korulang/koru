@@ -2,7 +2,7 @@
 // terminus is written, because there is nothing left to say.
 //
 // A BRANCH terminus already vanishes this way. `koru_std/compiler.kz`'s
-// `~analysis` ends at its last stage with only the dedented `| failed` choke —
+// `analysis` ends at its last stage with only the dedented `| failed` choke —
 // no `| ctx c5 => ctx c5` — because the final stage's `ctx` matches the flow's
 // declared `| ctx` branch. The compiler self-hosts through that form.
 //
@@ -19,7 +19,7 @@
 //
 // Sibling of 210_176 (WHERE the thread lands mid-chain) and 210_182 (an arrow
 // terminus that follows a chain). This one pins the terminus that is not
-// written at all — and it is what `~elaborate` wants, since the `: c4 -> c4` it
+// written at all — and it is what `elaborate` wants, since the `: c4 -> c4` it
 // still carries is the last binder in the pass.
 import std/io
 

@@ -29,9 +29,9 @@
 //
 // The compiler also already OWNS the taxonomy it fails to check. KORU047, fired
 // when an invoked event has no implementation, enumerates the four forms by name:
-//   "Implement it with a proc (`~proc f|zig { ... }`), a bare-return impl
-//    (`~f -> <value>`), a branch constructor (`~f => <branch> <value>`), or a
-//    subflow (`~f = <flow>`)"
+//   "Implement it with a proc (`proc f|zig { ... }`), a bare-return impl
+//    (`f -> <value>`), a branch constructor (`f => <branch> <value>`), or a
+//    subflow (`f = <flow>`)"
 // So there is prose in-tree that distinguishes `->` from `=> <branch> <value>`
 // and knows which is which. Note also that this pin's impl is `=> response` —
 // a branch name with NO value, which does not match the `<branch> <value>` shape

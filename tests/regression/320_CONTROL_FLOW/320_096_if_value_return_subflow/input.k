@@ -26,7 +26,7 @@
 // than a value expression).
 //
 // ROOT (grounded in emitter_helpers.zig): the value-return subflow path
-// (~line 2192, `return switch (result) { ... }`) treats the head invocation as
+// (line 2192, `return switch (result) { ... }`) treats the head invocation as
 // a VALUE-PRODUCING EVENT — it binds `const result = <head>` and switches on
 // its Output union. But `if` is a `|template|`, which produces its value by
 // continuation HAND-OFF (`__koru_continue_N` markers), not a union. The two

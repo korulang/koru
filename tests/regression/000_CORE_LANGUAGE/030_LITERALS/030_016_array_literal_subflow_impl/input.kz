@@ -1,11 +1,11 @@
 // TEST: Array literal in subflow implementation
 //
 // Array literals work in regular comptime flows but fail in subflow implementations
-// using the `~event = flow` syntax.
+// using the `event = flow` syntax.
 //
 // This test mimics the compiler.kz coordinate pattern:
-//   ~[abstract] event coordinate { ... }
-//   ~coordinate = step1() | result r |> step2(values: [r.a, r.b, r.c])
+//   [abstract] event coordinate { ... }
+//   coordinate = step1() | result r |> step2(values: [r.a, r.b, r.c])
 
 const std = @import("std");
 
@@ -36,7 +36,7 @@ const Context = struct {
 }
 
 // THE KEY TEST: Subflow implementation with array literal
-// This syntax (`~process = ...`) creates a subflow_impl
+// This syntax (`process = ...`) creates a subflow_impl
 // Array literals inside subflow_impl flows emit incorrectly
 ~process = setup(): r |> consume(contexts: [r.c0, r.c1, r.c2])
     | consumed c -> c

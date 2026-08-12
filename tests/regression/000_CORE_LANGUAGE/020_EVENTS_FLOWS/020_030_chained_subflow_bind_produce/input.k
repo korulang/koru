@@ -1,6 +1,6 @@
 // CHAINED bind→produce subflow: the body is a `|>` pipeline of bare-return
 // sub-calls, each binding its result, and the tail produces with `->`:
-//   ~combo = a(x): r1 |> b(x: r1): r2 -> r2
+//   combo = a(x): r1 |> b(x: r1): r2 -> r2
 // This is the metacircular `frontend` pipeline's exact shape (a chain of
 // `-> CompilerContext` passes). The single-step form (020_029) works; the
 // chained form currently drops the trailing `-> r2` produce (the inline-

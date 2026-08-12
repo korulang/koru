@@ -311,7 +311,7 @@ const VisitorContext = struct {
         
         fn visitFlow(self: *ASTVisitor, flow: anytype) !void {
             // Top-level flows become initialization code
-            // These are the actual invocations like ~hello()
+            // These are the actual invocations like hello()
             try self.emitter.emitComment("Flow invocation");
             
             // Build the event path

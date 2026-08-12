@@ -17,11 +17,11 @@
 //
 //   scatter-dominated (003_ecs_reactive boids, 100k boids into a 32768-cell
 //   grid, interleaved, checksum 592303452 both ways)
-//       column 98.7ms   row 91.5ms      -- row wins by ~7%
+//       column 98.7ms   row 91.5ms      -- row wins by 7%
 //
 //   sweep-dominated (004_grid_layout, nine i64 fields, 1M cells, 400 sweeps
 //   reading one field, same total both ways)
-//       column 0.04s    row 0.45s       -- column wins by ~11x
+//       column 0.04s    row 0.45s       -- column wins by 11x
 //
 // That second number is why this is a declaration and not a default anyone
 // gets to pick centrally, and it is checked in as a runnable pair rather than

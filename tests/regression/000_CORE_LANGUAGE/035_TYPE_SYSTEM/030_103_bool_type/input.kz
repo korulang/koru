@@ -1,6 +1,6 @@
-// TEST: ~bool creates a nominal boolean type
+// TEST: bool creates a nominal boolean type
 //
-// ~bool(IsActive) creates a distinct type that wraps bool
+// bool(IsActive) creates a distinct type that wraps bool
 // Koru tracks it as a separate type for type checking purposes.
 //
 // Expected: Compiles and runs, IsActive is usable as a bool

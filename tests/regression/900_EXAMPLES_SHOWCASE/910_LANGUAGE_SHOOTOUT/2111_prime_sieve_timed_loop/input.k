@@ -7,7 +7,7 @@
 // without a Zig loop.
 //
 // 320_097 pinned the EMIT PATH for a label-fold with a value-producing head and
-// a nested `~if` step, but its `| live` arm was trivial (`@L(l.limit, l.passes)`).
+// a nested `if` step, but its `| live` arm was trivial (`@L(l.limit, l.passes)`).
 // THIS pins the next thing: a `| live` arm carrying a multi-step ALLOCATING flow
 // (heap field alloc, a `for` loop firing an `! each` effect per i, a `[transform]`
 // that emits a specialized strided marker, and a `free`) that must fully discharge

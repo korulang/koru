@@ -302,7 +302,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     args[1] = .{ .name = "slot", .value = std.fmt.allocPrint(allocator, "&__fld_self_{d}_{d}", .{ L, C }) catch unreachable };
     args[2] = .{ .name = "bits", .value = allocator.dupe(u8, bits_expr) catch unreachable };
     // Mark the routed call so the emitter emits our preamble (stack vars) and then
-    // STILL makes the normal handler call — unlike ~const/~for/~if/~capture, which
+    // STILL makes the normal handler call — unlike const/for/if/capture, which
     // set preamble_code to REPLACE the call. Without this marker the emitter would
     // skip the new-instack call and the field binding would be undeclared.
     const anns = allocator.alloc([]const u8, 1) catch unreachable;
@@ -372,7 +372,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 ~proc strike|zig {
     // Word-wise stepMask marking: precompute the per-phase word masks for this
     // stride, then OR one mask per 64-bit word (cyclically, SIMD-lowered) instead
-    // of one store per bit. ~7x faster than per-bit scatter on dense strides
+    // of one store per bit. 7x faster than per-bit scatter on dense strides
     // (measured, identical result), the prime-sieve hot path. For stride >= 64 the
     // mask holds <1 bit so we fall back to per-word scatter. (Algorithm: the
     // odds-only stepMask sieve, PlummersSoftwareLLC/Primes solution_5.)
@@ -383,7 +383,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     if (stride >= 64) {
         // Sparse (<1 bit/word): 8-way-unrolled byte scatter. Precompute 8 marks'
         // byte-offsets + bit-masks (the pattern repeats every 8 strides = `stride`
-        // bytes), OR 8 independent bytes per iteration so they pipeline. ~4x the
+        // bytes), OR 8 independent bytes per iteration so they pipeline. 4x the
         // dominant large-prime cost vs bit-at-a-time (measured). (solution_5.)
         const bytes = std.mem.sliceAsBytes(data);
         var bi = start;
@@ -451,7 +451,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     // (4*cycleLen is always a multiple of 4). LLVM lowers @Vector(4,u64) to ldp/stp
     // paired instructions (256 bits per op), halving memory-instruction count vs a
     // doubled @Vector(2,u64) loop and issuing two independent 128-bit ORs per step.
-    // Measured ~+8% on M-series NEON. The post-loop scalar fixup handles the
+    // Measured +8% on M-series NEON. The post-loop scalar fixup handles the
     // remainder (firstMod is unchanged since 4*cycleLen is a multiple of cycleLen).
     var cycleMasks4 = [_]u64{0} ** 256;
     for (0..cycleLen) |j| {
@@ -488,7 +488,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 // Wheel-strided strike: for a prime `p`, set every bit `p*w` where `w` is a wheel
 // position (the residues in `wheel`, repeated every `period`) with `w >= p` and
 // `p*w <= limit`. The composite wheel positions of `p` are exactly `p * (wheel
-// positions >= p)`, so this marks only coprime-to-period multiples — ~`period/φ`
+// positions >= p)`, so this marks only coprime-to-period multiples — `period/φ`
 // fewer strikes than the full `strike`. Assumes `wheel[0] == 1` (the unit residue),
 // used for the cheap per-block early-out.
 ~pub tor strike-wheel { f: *Field<field>, p: usize, wheel: []const usize, period: usize, limit: usize }
@@ -593,8 +593,8 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     // per (from&7, stride&7) — lane `n`'s bit position (from + n*stride)&7 =
     // (fr + n*st)&7 is fixed by the two residues, so its 8 masks become COMPILE-TIME
     // IMMEDIATES. That removes the masks[8] array load which, together with offs[8],
-    // overflowed the ~14 GP registers and spilled every iteration — the sol3-parity
-    // lever (perf: L1 loads/pass ~456K->~247K, instructions ~648K->~450K). The 8-lane
+    // overflowed the 14 GP registers and spilled every iteration — the sol3-parity
+    // lever (perf: L1 loads/pass 456K->247K, instructions 648K->450K). The 8-lane
     // step (8*stride bits = stride bytes) is what keeps each lane's bit position
     // invariant across the loop; the per-lane byte offsets (o0..o7) stay runtime but
     // now fit in registers without the masks array.
@@ -636,7 +636,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
     }
     code.appendSlice(allocator, "};\n\n") catch unreachable;
     // dispatch via FUNCTION-POINTER LUT, not switch: a switch inlines every generated
-    // marker body into one function and thrashes the i-cache (~3-5% measured);
+    // marker body into one function and thrashes the i-cache (3-5% measured);
     // a compact indirect call through a LUT avoids that and beats hand-tuned Zig.
     const lut_open = std.fmt.allocPrint(allocator, "const __mm_lut_{d}_{d} = blk: {{ var t = [_]?*const fn ([*]u64, usize, usize) void{{null}} ** {d};\n", .{ L, C, DENSE_LIMIT }) catch unreachable;
     code.appendSlice(allocator, lut_open) catch unreachable;

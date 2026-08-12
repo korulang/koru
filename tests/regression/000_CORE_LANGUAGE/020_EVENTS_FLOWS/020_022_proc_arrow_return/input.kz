@@ -1,4 +1,4 @@
-// Proc-backed bare return: `-> T` with a ~proc impl (the dominant impl style in
+// Proc-backed bare return: `-> T` with a proc impl (the dominant impl style in
 // the corpus). The proc returns the bare value directly; Output is i32, no union.
 ~import std/io
 

@@ -3,13 +3,13 @@
 // This module provides basic event observability for Koru programs.
 //
 // Usage:
-//   ~import std/ccp
+//   import std/ccp
 //   koruc my_app.kz --ccp
 //
 // Result: Program emits JSONL transition events to stdout at runtime
 //
 // Architecture:
-// - Uses Koru's universal tap system (~* -> *)
+// - Uses Koru's universal tap system (* -> *)
 // - Zero-cost when disabled (dead-strips at compile time)
 // - Self-governing: requires both import AND --ccp flag
 //
@@ -95,7 +95,7 @@ const std = @import("std");
 // UNIVERSAL TAP: Observe ALL event transitions in the program
 //
 // This tap fires for every event transition:
-// - User code events (any ~event in your program)
+// - User code events (any event in your program)
 // - Standard library events (when used)
 //
 // The Transition metatype provides:

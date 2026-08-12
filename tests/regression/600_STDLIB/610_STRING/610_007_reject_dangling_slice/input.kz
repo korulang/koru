@@ -1,6 +1,6 @@
 // PIN (RED — waiting on a spelling, not on a fix): `std/string:read` is
 // `{ s: *String<view|instance> } -> string` (string.kz:100) and its body is
-// `~read -> s.data` (string.kz:101). The returned `string` BORROWS s's buffer,
+// `read -> s.data` (string.kz:101). The returned `string` BORROWS s's buffer,
 // and nothing ties its lifetime to `s`. Freeing `s` and then reading the borrow
 // compiles and SIGSEGVs (exit 139).
 //

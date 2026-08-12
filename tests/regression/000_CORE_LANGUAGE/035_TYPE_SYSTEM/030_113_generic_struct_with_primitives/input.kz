@@ -1,6 +1,6 @@
 // RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
 // dead `Box<EmailAddress>` generation. A stamped name whose parameter
-// is a KORU-MINTED nominal type (not a host primitive): `~string`
+// is a KORU-MINTED nominal type (not a host primitive): `string`
 // declares the nominal EmailAddress; the stamp references it by its
 // registry name. This is the pin that requires field types to
 // REFERENCE REGISTRY ENTRIES rather than bottom out in host strings —

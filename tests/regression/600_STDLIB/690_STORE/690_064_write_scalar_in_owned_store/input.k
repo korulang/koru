@@ -3,7 +3,7 @@
 // `{ label: *String<instance!>, done: i64 }` store must let you toggle `done`
 // without touching `label`.
 //
-// The wall (690_062's sibling, store.kz ~3936): the plural write surface
+// The wall (690_062's sibling, store.kz 3936): the plural write surface
 // bundles ALL columns into one __store_write_(row, field, value_0, value_1)
 // event, unwritten slots riding as "typed zeros no arm reads". A scalar's zero
 // is cheap; an OWNED slot carries a consume-phantom <!instance> and has NO zero

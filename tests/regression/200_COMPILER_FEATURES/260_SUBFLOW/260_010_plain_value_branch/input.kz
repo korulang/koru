@@ -1,5 +1,5 @@
 // Test plain value branch return in subflows
-// Syntax: ~event = branch { expr } instead of branch { field: expr }
+// Syntax: event = branch { expr } instead of branch { field: expr }
 
 const std = @import("std");
 

@@ -1,7 +1,7 @@
 // Test: Interpreter binding reference evaluation in args
 //
 // This tests that when we chain events like:
-//   ~first() | ok x |> second(arg: x.field)
+//   first() | ok x |> second(arg: x.field)
 //
 // The interpreter evaluates x.field against the environment,
 // NOT passing the literal string "x.field".

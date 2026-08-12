@@ -1,5 +1,5 @@
 // Test 603: Inline Annotation Syntax
-// Tests that ~[a|b|c] produces annotations: ["a", "b", "c"]
+// Tests that [a|b|c] produces annotations: ["a", "b", "c"]
 
 const std = @import("std");
 

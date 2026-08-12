@@ -3,7 +3,7 @@
 //
 // `from(name) { <var> over <lo>..<hi> }` bakes a `const` table at COMPILE TIME
 // from a restricted, closed comprehension — the regex->DFA move generalized from
-// strings to data. Pure-Koru SURFACE (no `~` at the call site); the comprehension
+// strings to data. Pure-Koru SURFACE (no `` at the call site); the comprehension
 // is EVALUATED by the `table_from` Zig filter (template_processor.zig) and EMITTED
 // as a const array, exactly as `const` emits scalars via `parse_fields`. Both the
 // |zig and |js variants call the SAME filter, so the two lowerings of one

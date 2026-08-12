@@ -4,8 +4,8 @@
 // a family of events using a wildcard pattern.
 //
 // Use cases enabled by this:
-// - Log levels: ~log.* matches ~log.error, ~log.warn, ~log.info
-// - Generics: ~ring.* matches ~ring.new[T:u32;N:1024]
+// - Log levels: log.* matches log.error, log.warn, log.info
+// - Generics: ring.* matches ring.new[T:u32;N:1024]
 // - Any event family with shared handling logic
 //
 // VERIFIES:

@@ -1,6 +1,6 @@
 // Test: Test framework reports passing and failing tests
 //
-// Two ~test bodies — one asserts true, one asserts false.
+// Two test bodies — one asserts true, one asserts false.
 // post.sh runs `zig test` on the emitted output and inverts
 // the exit code: a non-zero zig-test exit means the deliberately
 // failing test was correctly detected.

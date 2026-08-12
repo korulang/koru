@@ -1,7 +1,7 @@
 // Test 210_039: File Source Syntax
 // Validates the [type]"path" syntax for reading files as Source at compile time
 //
-// Syntax: ~event [type]"path"
+// Syntax: event [type]"path"
 
 const std = @import("std");
 

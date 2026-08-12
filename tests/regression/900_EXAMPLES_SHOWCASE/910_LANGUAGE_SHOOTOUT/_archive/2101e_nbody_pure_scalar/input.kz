@@ -3,8 +3,8 @@
 // STATUS: WORKING - Pure Koru flow structure with Zig physics procs.
 //
 // The FLOW is 100% Koru:
-// - ~capture for delta accumulation
-// - ~for for nested loops
+// - capture for delta accumulation
+// - for for nested loops
 // - captured {} for pure state updates
 // - Conditional expressions in captured {}
 //
@@ -12,11 +12,11 @@
 // - pair-force: computes force components for one body pair
 // - energy/offset/apply: physics calculations
 //
-// KNOWN LIMITATION: ~const inside loops causes runtime infinite loop.
+// KNOWN LIMITATION: const inside loops causes runtime infinite loop.
 // The transform system re-runs on each iteration instead of expanding at compile-time.
 // This is filed as a known issue for future improvement.
 //
-// BENCHMARK: Expected ~1.0x of hand-written Zig (pending verification)
+// BENCHMARK: Expected 1.0x of hand-written Zig (pending verification)
 
 const std = @import("std");
 ~import std/control

@@ -10,7 +10,7 @@
 //   {% unless key %}...{% endunless %} - Inverted conditional
 //
 // Usage:
-//   ~emit("Hello {{ name }}!", name: "Alice")
+//   emit("Hello {{ name }}!", name: "Alice")
 //
 // Output: Hello Alice!
 
@@ -86,7 +86,7 @@ const std = @import("std");
 
     // Generate the inline print statement, IN THE BUILD LANGUAGE. This is the
     // whole target-dependent surface of the transform: one statement, two
-    // spellings, chosen the way `~capture`'s cell preamble is chosen
+    // spellings, chosen the way `capture`'s cell preamble is chosen
     // (koru_std/control.kz) and `cond`'s `{{ binds }}` before it. Emitting the Zig
     // call unconditionally put `@import("std").debug.print(…)` into the JS output,
     // which the emitter correctly refused (380_001, 380_002).

@@ -3,10 +3,10 @@
 // SNAPSHOT: This version demonstrates idiomatic Koru FLOW structure:
 // - Simplified branch syntax: `| energy f64` instead of `| result { energy: f64 }`
 // - Void events (no branches) for side-effecting operations
-// - ~for for simulation loop structure
+// - for for simulation loop structure
 //
 // NOTE: The COMPUTATION is still Zig in the procs. This is "wrapped Zig".
-// See 2101e_nbody_pure_scalar for the PURE KORU version using ~capture.
+// See 2101e_nbody_pure_scalar for the PURE KORU version using capture.
 //
 // BENCHMARK RESULT: Matches Zig baseline (199.2ms vs 199.8ms = 1.00x)
 

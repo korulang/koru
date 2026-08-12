@@ -1,7 +1,7 @@
 // LANGUAGE SHOOTOUT: N-body (KERNEL PAIRWISE VERSION)
 //
 // Full benchmark using kernel:pairwise with noalias optimization.
-// Target: match Rust performance (~1.36s on 50M iterations)
+// Target: match Rust performance (1.36s on 50M iterations)
 
 const std = @import("std");
 ~import std/kernel

@@ -6,12 +6,12 @@
 // of — so `|> _` is meaningless and rejected.
 //
 // A void event is NOT special here: it chains monadically like anything
-// else (`~hello() |> next()` is legal). What is rejected is the misplaced
+// else (`hello() |> next()` is legal). What is rejected is the misplaced
 // `_`, never "a redundant terminator after a void event".
 //
-// Legal:   ~hello()
-// Legal:   ~hello() |> next()
-// Illegal: ~hello() |> _
+// Legal:   hello()
+// Legal:   hello() |> next()
+// Illegal: hello() |> _
 
 ~tor hello {}
 

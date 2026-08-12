@@ -3,7 +3,7 @@
 // fields, if-conditions, args) are passed to Zig as RAW STRINGS, not parsed into a
 // Koru AST — so `a % b` reaches Zig verbatim, and Zig REJECTS `%` on signed ints
 // ("signed integers and floats must use @rem or @mod"), a hard backend compile
-// error. That is why .k authors reach for raw `@mod` (euclidean — and ~1.25x slower
+// error. That is why .k authors reach for raw `@mod` (euclidean — and 1.25x slower
 // than @rem's truncated remainder, which is C's `%`; measured 45.9ms vs 36.6ms on
 // the josephus hot loop).
 //

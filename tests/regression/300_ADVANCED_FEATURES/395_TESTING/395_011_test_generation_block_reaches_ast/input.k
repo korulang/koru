@@ -1,16 +1,16 @@
-// Pins: the test block std/compiler's own ~test lowering generates must reach
+// Pins: the test block std/compiler's own test lowering generates must reach
 // the emitted program.
 //
-// processTestFlow (koru_std/compiler.kz:1423) parses a ~test body, substitutes
+// processTestFlow (koru_std/compiler.kz:1423) parses a test body, substitutes
 // each mocked event by writing `const __mock_result_N = <mocked branch>` plus
 // the binding extraction for the branch the mock forces
 // (compiler.kz:1722-1773), and hands the finished `test "..." { ... }` back as
-// an inline_code item that replaces the ~test flow.
+// an inline_code item that replaces the test flow.
 //
-// That pass only ever sees a live ~test flow when the coordinator puts
-// test-generation ahead of elaborate: std/testing's ~test transform
+// That pass only ever sees a live test flow when the coordinator puts
+// test-generation ahead of elaborate: std/testing's test transform
 // (koru_std/testing.kz:225) runs inside elaborate's run-pre-transforms
-// (compiler.kz:1249) and consumes every ~test invocation, so under the default
+// (compiler.kz:1249) and consumes every test invocation, so under the default
 // order (compiler.kz:757) test-generation finds nothing to do. The coordinator
 // override below is the shape 430_COORDINATION/8401_custom_coordinator_bug and
 // 430_008_pipeline_profiling already pin.

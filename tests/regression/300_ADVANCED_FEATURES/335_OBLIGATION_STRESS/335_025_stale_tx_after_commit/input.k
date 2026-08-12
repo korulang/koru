@@ -5,7 +5,7 @@
 //
 // Grounding:
 //   - legal flow:             330_027/input.kz:4-9 (commit OR rollback, then disconnect)
-//   - commit consuming <!tx>: ./db.kz:40 (~pub event commit { tx: *Transaction<!transaction> })
+//   - commit consuming <!tx>: ./db.kz:40 (pub event commit { tx: *Transaction<!transaction> })
 //   - use-after pattern:      330_007/input.kz:3 (close then use-file with same binding)
 import app/db
 

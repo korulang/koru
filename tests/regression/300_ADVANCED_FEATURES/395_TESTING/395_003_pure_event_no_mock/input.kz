@@ -1,6 +1,6 @@
 // Test: Pure events don't require mocks
 //
-// Events with ~[pure] procs can be called in tests without mocking.
+// Events with [pure] procs can be called in tests without mocking.
 // Only impure events (side effects) need mocks.
 
 ~import std/testing

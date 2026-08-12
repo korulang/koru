@@ -1,5 +1,5 @@
-// Test 320_011: ~for with nested continuations (chained events)
-// Tests that ~for correctly handles | each |> event1() | result |> event2() patterns
+// Test 320_011: for with nested continuations (chained events)
+// Tests that for correctly handles | each |> event1() | result |> event2() patterns
 //
 // SEMANTICS:
 // - | each item |> step1() invokes step1 for each element

@@ -5,7 +5,7 @@
 // which is what the `|js` sibling pins.
 //
 // Compared to template(once): per-call renders fresh for each invocation,
-// so two `~ping()` calls would each get an independent render. This first
+// so two `ping()` calls would each get an independent render. This first
 // test has just one call.
 
 const std = @import("std");

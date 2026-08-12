@@ -25,17 +25,17 @@ pub const registerVariant = emitter_helpers.registerVariant;
 // ============================================================================
 // FLAG MATCHING - Annotation-based conditional compilation
 // ============================================================================
-// Use ~[build("prod")] or ~[build("dev", "staging")] to conditionally include
+// Use [build("prod")] or [build("dev", "staging")] to conditionally include
 // declarations based on the --build=X compiler flag.
 //
 // Usage in source code:
-//   ~[build("prod")]koru/docker:image(tag: "myapp:latest") {
+//   [build("prod")]koru/docker:image(tag: "myapp:latest") {
 //       FROM alpine:3.18
 //       COPY zig-out/bin/main /usr/local/bin/myapp
 //       CMD ["myapp"]
 //   }
 //
-//   ~[build("dev")]koru/docker:image(tag: "myapp:latest") {
+//   [build("dev")]koru/docker:image(tag: "myapp:latest") {
 //       FROM alpine:3.18
 //       RUN apk add --no-cache gdb strace
 //       COPY zig-out/bin/main /usr/local/bin/myapp
@@ -91,7 +91,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 }
 
 // Declare build dependency using implicit Source block
-// Usage: ~std/build:requires { exe.linkSystemLibrary("sqlite3"); }
+// Usage: std/build:requires { exe.linkSystemLibrary("sqlite3"); }
 // [norun] annotation prevents auto-execution - collect() reads from AST instead
 ~[comptime|norun]pub tor requires {
     source: Source
@@ -111,11 +111,11 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // ============================================================================
 // Allows selecting different proc variants based on --build flag.
 // Usage:
-//   ~[build("release")]std/build:variants {
+//   [build("release")]std/build:variants {
 //       "compute": "fast",
 //       "blur": "gpu"
 //   }
-//   ~[build("debug")]std/build:variants {
+//   [build("debug")]std/build:variants {
 //       "compute": "naive",
 //       "blur": "cpu"
 //   }
@@ -206,10 +206,10 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // ============================================================================
 // Sets build-time configuration values (e.g., cross-compilation target).
 // Composes with build:variants — variants select WHICH code, config sets
-// HOW to build it. Both use the same ~[build(X)] guard system.
+// HOW to build it. Both use the same [build(X)] guard system.
 //
 // Usage:
-//   ~[build("linux")]std/build:config {
+//   [build("linux")]std/build:config {
 //       "target": "x86_64-linux-musl"
 //   }
 //
@@ -289,7 +289,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // build:command.flow (backend passes, slower but more powerful).
 //
 // Usage:
-//   ~std/build:command.sh(name: "test", description: "Run all tests") {
+//   std/build:command.sh(name: "test", description: "Run all tests") {
 //     ./run_regression.sh
 //   }
 //
@@ -316,7 +316,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //   ) !void
 //
 // Usage:
-//   ~std/build:command.zig(name: "build") {
+//   std/build:command.zig(name: "build") {
 //     const std = @import("std");
 //     const ast = @import("ast");
 //
@@ -352,7 +352,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // The command body IS a flow continuation - no Source block, no Zig, just Koru.
 //
 // Usage:
-//   ~std/build:command(name: "greet", description: "Say hello")
+//   std/build:command(name: "greet", description: "Say hello")
 //   | execute ctx |>
 //       if(ctx.argv.len > 1)
 //       | then |> std/io:println("Hello, " ++ ctx.argv[1] ++ "!")
@@ -366,10 +366,10 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //   - ctx.program: *const Program - full AST access (optional)
 //
 // Unlike command.sh (shell) or command.zig (raw Zig), command uses normal
-// Koru flow syntax. Same patterns as everything else - events, branches, ~if.
+// Koru flow syntax. Same patterns as everything else - events, branches, if.
 //
 // Examples:
-//   ~std/build:command(name: "check", description: "Run all checks")
+//   std/build:command(name: "check", description: "Run all checks")
 //   | execute ctx |>
 //       std/build:run_step("lint")
 //       | done |> std/build:run_step("test")
@@ -386,27 +386,27 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // during the compilation process. Steps declare dependencies using annotations.
 //
 // Usage:
-//   ~std/build:step(name: "compile") {
+//   std/build:step(name: "compile") {
 //     zig build-exe main.zig
 //   }
 //
-//   ~[depends_on(compile)]std/build:step(name: "test") {
+//   [depends_on(compile)]std/build:step(name: "test") {
 //     ./main --test
 //   }
 //
-//   ~[depends_on(compile, test)]std/build:step(name: "package") {
+//   [depends_on(compile, test)]std/build:step(name: "package") {
 //     tar czf app.tar.gz main
 //   }
 //
 // Execution:
 // - Steps are collected from AST with their annotations
-// - Dependencies are extracted from ~[depends_on(...)] annotations
+// - Dependencies are extracted from [depends_on(...)] annotations
 // - Dependency graph is built and topologically sorted
 // - Steps execute in correct order (circular dependencies are detected and error)
 //
 // Annotations:
-// - ~[depends_on(step1, step2, ...)] - Variadic dependency list
-// - Future: ~[parallel], ~[optional], ~[timeout(30)], etc.
+// - [depends_on(step1, step2, ...)] - Variadic dependency list
+// - Future: [parallel], [optional], [timeout(30)], etc.
 
 ~[comptime|norun]pub tor step { name: string, source: Source }
 
@@ -419,7 +419,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //   3. Run the final program
 //
 // Users can override any step by defining their own with the same name
-// (without the ~[default] annotation). The override resolution in main.zig
+// (without the [default] annotation). The override resolution in main.zig
 // will automatically use user-defined steps over these defaults.
 
 // Phase 1: Compile backend metaprogram using build_backend.zig
@@ -435,8 +435,8 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // compile_backend, build AND run with echoes, so it proves ordering while
 // executing none of these scripts.
 //
-// 1. The separator was `,`. Annotations separate on `|` (`~[comptime|transform]`,
-//    `~[abstract|retain]`). `~[default, depends_on(compile_backend)]` parsed as
+// 1. The separator was `,`. Annotations separate on `|` (`[comptime|transform]`,
+//    `[abstract|retain]`). `[default, depends_on(compile_backend)]` parsed as
 //    something that is not two annotations, and the depends_on was DROPPED
 //    SILENTLY — no diagnostic, just a dependency that never fires. The comma
 //    inside `depends_on(a, b)` is a different thing: that is one annotation's
@@ -466,11 +466,11 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // build:requires configures the FINAL PROGRAM compilation.
 //
 // Usage (invoked by compiler.kz during backend coordination):
-//   ~std/build:collect(ctx: ctx, output-path: "build.zig")
+//   std/build:collect(ctx: ctx, output-path: "build.zig")
 //   | collected { ctx: CompilerContext }
 //
 // The pass:
-// - Walks ctx.ast for all ~build:requires invocations
+// - Walks ctx.ast for all build:requires invocations
 // - Collects the Source parameters (Zig build code)
 // - Generates build.zig using emit_build_zig library
 // - Returns updated ctx with passes_completed incremented
@@ -503,7 +503,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
                         std.mem.eql(u8, flow.inv().path.segments[0], "requires"));
 
                     if (is_build_requires) {
-                        // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
+                        // Respect build flags: [build("prod")], [build("dev")], etc.
                         if (!matchesFlags(flow.inv().annotations)) continue;
                         // Extract source parameter
                         for (flow.inv().args) |arg| {
@@ -539,7 +539,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
                                 std.mem.eql(u8, flow.inv().path.segments[0], "requires"));
 
                             if (is_build_requires) {
-                                // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
+                                // Respect build flags: [build("prod")], [build("dev")], etc.
                                 if (!matchesFlags(flow.inv().annotations)) continue;
                                 for (flow.inv().args) |arg| {
                                     if (std.mem.eql(u8, arg.name, "source")) {

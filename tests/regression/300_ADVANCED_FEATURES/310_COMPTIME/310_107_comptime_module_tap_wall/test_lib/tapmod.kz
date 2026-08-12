@@ -1,4 +1,4 @@
-// A ~[comptime|runtime] module carrying a tap — the shape the wall rejects.
+// A [comptime|runtime] module carrying a tap — the shape the wall rejects.
 ~[comptime|runtime]
 
 const std = @import("std");

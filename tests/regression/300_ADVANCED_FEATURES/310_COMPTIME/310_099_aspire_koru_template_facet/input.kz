@@ -7,10 +7,10 @@
 // a [comptime] context the |koru facet is selected, the rendered impl is
 // parsed, evaluated at Stage C, and the value spliced into the residue.
 //
-// Also encodes the ruled head shape `~[template] proc name|koru`: the
+// Also encodes the ruled head shape `[template] proc name|koru`: the
 // consumption mode lives in the annotation beside its sibling [transform]
 // (control.kz:151), and the pipe path is name|target only. Today's
-// `~proc name|template|zig` form (control.kz:35) predates this ruling.
+// `proc name|template|zig` form (control.kz:35) predates this ruling.
 //
 // Grounded surface: event/call/bind/fold shape mirrors 310_098 (green);
 // Liquid arg substitution mirrors 250_001 (green). ASPIRATIONAL bits: the

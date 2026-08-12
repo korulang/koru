@@ -14,5 +14,5 @@ std/template:define(name: "debug-print") {
 // [expand] = processed by transform_pass_runner via template lookup
 [norun|expand]pub tor debug-print { value: Expression }
 
-// Use it - note the ~ prefix to make it a Koru flow!
+// Use it - note the  prefix to make it a Koru flow!
 debug-print(value: 42)

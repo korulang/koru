@@ -1,7 +1,7 @@
 // Pins: an event that is declared, wired, and never implemented ANYWHERE must
 // announce itself and die when reached — it may not fabricate an answer.
 //
-// A program carrying `~test` blocks stands the invoked-but-unimplemented wall
+// A program carrying `test` blocks stands the invoked-but-unimplemented wall
 // (KORU047) down wholesale, because an implementation may be sitting in an
 // unparsed test body that no walk of this AST can see. That stand-down covers
 // application flows too, so the emitter's no-implementation path synthesizes

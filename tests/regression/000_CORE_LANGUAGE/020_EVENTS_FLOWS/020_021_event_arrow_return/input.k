@@ -7,9 +7,9 @@
 // the ordinary obligation/scope system (an obligation-carrying return MUST be
 // named to be dischargeable; a throwaway could bind `_`).
 //
-// Grounded baseline (existing today): `~name => ...` branch-constructor impl
+// Grounded baseline (existing today): `name => ...` branch-constructor impl
 // (020_014), `std/io:print.ln("{{ d:d }}")` (810 AoC). NEW (proposed): the
-// `-> i32` on the event decl (output TYPE), the `~double -> a * 2` BARE-RETURN
+// `-> i32` on the event decl (output TYPE), the `double -> a * 2` BARE-RETURN
 // impl (`->` produces the value; `=>` stays the branch constructor), and the
 // call-site `: d` BIND. The produce/consume duality: `->` produces a bare return
 // (the twin of `=>`); `:` binds it at the call site (the twin of `|`/`!`). `:`

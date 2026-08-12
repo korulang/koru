@@ -8,6 +8,6 @@ const std = @import("std");
 | error i32
 
 // WRONG: This is Zig syntax, not Koru
-// Should be: ~input:fetch = success { body: "mock response" }
+// Should be: input:fetch = success { body: "mock response" }
 ~input:fetch =
     .{ .success = "mock response" }

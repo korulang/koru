@@ -1,5 +1,5 @@
 // RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
-// dead `~type(StringIntEntry = Entry<...>)` generation. The alias-
+// dead `type(StringIntEntry = Entry<...>)` generation. The alias-
 // dissolution pin: the SAME stamped name spelled at two independent
 // sites (a declaration site and a consumption site, no alias, no
 // import of a type binding) must resolve to the SAME registry

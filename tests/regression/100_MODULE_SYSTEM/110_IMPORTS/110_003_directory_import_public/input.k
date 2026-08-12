@@ -2,17 +2,17 @@
 //
 // Tests importing PUBLIC events from a directory of .kz files.
 // Each file becomes a sub-namespace under the directory name.
-// All events are marked ~pub, so they should be importable.
+// All events are marked pub, so they should be importable.
 //
 // Structure:
 //   test_lib/
-//     graphics.kz  -> test_lib.graphics: (~pub events)
-//     audio.kz     -> test_lib.audio: (~pub events)
+//     graphics.kz  -> test_lib.graphics: (pub events)
+//     audio.kz     -> test_lib.audio: (pub events)
 //
 // Expected behavior: SUCCESS
-//   ~import "test_lib"
-//   ~app/test_lib/graphics:init()
-//   ~app/test_lib/audio:play(sound: "beep")
+//   import "test_lib"
+//   app/test_lib/graphics:init()
+//   app/test_lib/audio:play(sound: "beep")
 //
 // See test 831 for the FAILURE case (non-public events)
 

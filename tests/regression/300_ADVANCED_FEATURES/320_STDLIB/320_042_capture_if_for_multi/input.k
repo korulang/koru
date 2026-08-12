@@ -10,7 +10,7 @@
 //     (effects fire during; the cell is mutated each iteration).
 //   - `| captured result` is the CONTINUATION — the after-value, handed off once.
 //     It is OPTIONAL (`| ?captured`): if the work happened via side effects in
-//     the effect-branch, you may decline the final reading (cf. `~for`'s `| ?done`).
+//     the effect-branch, you may decline the final reading (cf. `for`'s `| ?done`).
 //   - The `{ sum: ..., count: ... }` block is OPAQUE — the `captured` handler
 //     interprets it via the projector and emits per-target writes into the cell.
 //

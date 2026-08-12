@@ -2,7 +2,7 @@
 // two stages declare that branch with different payload shapes, the claim
 // must be REJECTED (type-aware choke — KORU031).
 //
-// Mini-`analysis` (compiler.kz): `~analysis = check-… |> check-… | failed f => …`
+// Mini-`analysis` (compiler.kz): `analysis = check-… |> check-… | failed f => …`
 // works because every stage agrees on `| failed { ctx, message }`. This pin is
 // the wall when that invariant breaks — stage-b's `failed` is i64 while the
 // choke / stage-a / enclosing `run` carry string. Name-only replication would

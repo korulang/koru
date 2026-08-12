@@ -1,4 +1,4 @@
-// Pins: an abstract tor with exactly ONE implementation and no `~proc` default
+// Pins: an abstract tor with exactly ONE implementation and no `proc` default
 // runs that implementation.
 //
 // The pairing pass looks for a default and an override separately. After

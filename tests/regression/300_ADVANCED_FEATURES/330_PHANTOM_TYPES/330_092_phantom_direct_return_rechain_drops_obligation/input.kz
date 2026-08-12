@@ -8,7 +8,7 @@
 // sqlite3/pcre2 house style for non-branching accessors) and hit this the
 // moment two field-sets were chained. Minimal, yyjson-free repro.
 //
-//   ~make(): h0 |> bump(h: h0): h1 |> bump(h: h1): h2 |> dispose(h: h2)
+//   make(): h0 |> bump(h: h0): h1 |> bump(h: h1): h2 |> dispose(h: h2)
 //
 // EXPECTED (if fixed): compiles and runs, printing `n=2`.
 // ACTUAL: error[KORU030]: Phantom state mismatch: argument 'h' carries no

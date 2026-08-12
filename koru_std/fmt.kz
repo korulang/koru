@@ -321,7 +321,7 @@ pub const FormattedText = struct {
 
 // TODO: fmt.blk.with_allocator - requires solving how user params
 // coexist with transform infrastructure params in the pass runner.
-// ~[comptime|transform]pub event fmt.blk.with_allocator { ... }
+// [comptime|transform]pub event fmt.blk.with_allocator { ... }
 
 // ============================================================================
 // FMT.LN - One-line format with Liquid templates, returns text via continuation
@@ -613,7 +613,7 @@ pub const FormattedText = struct {
 //
 //  2. THE ARM BINDING IS OURS TO DECLARE. `emitInlineContinuationBody`
 //     (js_emitter.zig:1792) splices an arm's body WITHOUT its `| line l` bind —
-//     the `~if`/`~for` template renderings hoist their own binds for the same
+//     the `if`/`for` template renderings hoist their own binds for the same
 //     reason. So the `| line l` shape declares `l` here and hands off with a
 //     `__koru_continue_N` marker; the call-site-bind shape (`: l |> …`) declares
 //     `l` and leaves the arms to `emitUnconsumedContinuations`.

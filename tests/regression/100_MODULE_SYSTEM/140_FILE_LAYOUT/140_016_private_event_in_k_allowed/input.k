@@ -1,4 +1,4 @@
-// Pins: a standalone .k full program may declare PRIVATE (non-~pub) events.
+// Pins: a standalone .k full program may declare PRIVATE (non-pub) events.
 // A .k is a full program, not a contract-only surface — the private event is
 // implemented as pure Koru in-file and a local flow calls it. Guards the
 // removal of KORU111 Rule 1 ("private event in contract file").

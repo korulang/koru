@@ -1,6 +1,6 @@
 // Test: Parser accepts generic params in event names via bracket syntax
 //
-// ~ring.new[T:u32;N:1024](name: "my_ring")
+// ring.new[T:u32;N:1024](name: "my_ring")
 //
 // This is NOT phantom type syntax (which appears on TYPE references).
 // This is generic parameter syntax (which appears on EVENT names).

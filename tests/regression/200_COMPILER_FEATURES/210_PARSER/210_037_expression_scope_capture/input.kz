@@ -5,7 +5,7 @@
 // NOTE: `Expression` no longer auto-adds `[comptime]`. Representation (a
 // captured source string) and timing (when the event runs) are orthogonal
 // axes; coupling them wrongly flipped runtime-emitting keyword templates
-// (~if/~for) to pure-comptime. Comptime is now explicit — an event that
+// (if/for) to pure-comptime. Comptime is now explicit — an event that
 // splices its captured expression at compile time declares `[comptime]`.
 
 const std = @import("std");

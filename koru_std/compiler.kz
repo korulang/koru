@@ -29,7 +29,7 @@ const Source = ast.Source;
 // hint and the source preview that make a koru diagnostic look like one.
 pub const ErrorReporter = @import("errors").ErrorReporter;
 
-// Compiler backend build requirements are defined below via ~requires
+// Compiler backend build requirements are defined below via requires
 
 // Simplified Koru Compiler Library
 // A working implementation that can actually be injected and used
@@ -85,7 +85,7 @@ pub const CompilerContext = struct {
 // The frontend collects these during compilation and generates build.zig.
 //
 // Usage:
-//   ~compiler:requires {
+//   compiler:requires {
 //     exe.linkSystemLibrary("sqlite3");
 //   }
 //
@@ -306,7 +306,7 @@ pub const CompilerContext = struct {
     ast_transform_module.addImport("ast", ast_module);
     ast_transform_module.addImport("errors", errors_module);
 
-    // Release gate - rejects ~[prototype] modules under --release (the production gate)
+    // Release gate - rejects [prototype] modules under --release (the production gate)
     const release_gate_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/release_gate.zig" },
         .target = target,
@@ -395,7 +395,7 @@ pub const CompilerContext = struct {
     });
 
     // Struct-literal projector - parses Koru `{ name: expr }` into ordered field
-    // pairs / a liquid record. Used by the ~capture transform to interpret the
+    // pairs / a liquid record. Used by the capture transform to interpret the
     // opaque `captured({...})` payload (docs/PARSER_PALETTE.md).
     const struct_literal_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/struct_literal.zig" },
@@ -666,7 +666,7 @@ pub const CompilerContext = struct {
 // The frontend collects these during --help to build flag documentation.
 //
 // Usage:
-//   ~compiler:flag.declare {
+//   compiler:flag.declare {
 //     "name": "fusion",
 //     "description": "Enable event fusion optimization",
 //     "type": "boolean"
@@ -690,7 +690,7 @@ pub const CompilerContext = struct {
 //   }
 //
 // A host-embedding file (`.kz`, `.kjs`, …) writes the same block as
-// `~std/compiler:paths { .. }`. Diagnostics render whichever spelling the file
+// `std/compiler:paths { .. }`. Diagnostics render whichever spelling the file
 // being compiled actually uses.
 //
 // One `alias: path` per line. `{{ ENTRY }}`, `{{ KORU_HOME }}` and
@@ -729,21 +729,21 @@ pub const CompilerContext = struct {
 // Commands have full AST access and run in the backend compilation phase.
 //
 // Usage (in your module, e.g. package.kz):
-//   ~import std/compiler
+//   import std/compiler
 //
-//   ~std/compiler:command.declare {
+//   std/compiler:command.declare {
 //     "name": "i",
 //     "alias": "install",
 //     "description": "Install npm packages from requires.npm declarations"
 //   }
 //
-//   ~[comptime|command]pub event install {
+//   [comptime|command]pub event install {
 //       program: *const Program,
 //       allocator: std.mem.Allocator,
 //       argv: []const []const u8,
 //   }
 //
-//   ~proc install {
+//   proc install {
 //       // Full AST access - walk program for requires.npm, etc.
 //   }
 //
@@ -760,7 +760,7 @@ pub const CompilerContext = struct {
 // ============================================================
 
 // The compiler coordinator (user-overridable)
-// Abstract: Users can override with ~std/compiler:coordinate = ...
+// Abstract: Users can override with std/compiler:coordinate = ...
 ~[comptime|abstract] pub tor coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: string, metrics: string }
 | error string
@@ -818,7 +818,7 @@ pub const CompilerContext = struct {
         @panic("context-create: could not initialise the compilation's diagnostic reporter");
     };
     // Continuation/source locations were recorded by the FRONTEND in its
-    // INJECTED-buffer coordinates — it auto-prepends `~import std/compiler`
+    // INJECTED-buffer coordinates — it auto-prepends `import std/compiler`
     // (one line) and the frontend's own reporter knows to translate, while
     // this backend reporter reads the user file raw. Apply the same user-source
     // translation when the frontend injected (same condition as src/main.zig),
@@ -858,7 +858,7 @@ pub const CompilerContext = struct {
 // Helper: Dump AST as JSON for introspection
 // Usage: Insert at key points in pipeline to inspect AST state
 // Void event - just prints and continues
-// Example: ~ast-dump(ctx: c, flag: "elaborate") |> ...
+// Example: ast-dump(ctx: c, flag: "elaborate") |> ...
 ~[comptime]pub tor ast-dump {
     ctx: CompilerContext,
     flag: string
@@ -900,7 +900,7 @@ pub const CompilerContext = struct {
 
 // Pre-stage transforms: run the transform runner's `.pre` stage BEFORE the
 // template pass. A transform that GRAFTS templated code — e.g. std/constructor
-// dissolving into a comptime list plus a `~for` over the var it just defined —
+// dissolving into a comptime list plus a `for` over the var it just defined —
 // must dissolve FIRST, so the template pass then processes the graft as ordinary
 // code. Only `.pre`-tagged transforms fire here; `.main`/`.post` still run at
 // Phase 2.4 (evaluate-comptime). `.pre` transforms carry @pass_ran, so that later
@@ -1323,13 +1323,13 @@ pub const CompilerContext = struct {
     return updated_ctx;
 }
 
-// Test generation segment: Generates Zig test blocks from ~test declarations
+// Test generation segment: Generates Zig test blocks from test declarations
 // Runs AFTER analysis (purity is propagated) but BEFORE optimization
 // This uses the SAME emitter as emission - no hand-rolled code generation!
 ~[comptime|abstract] pub tor test-generation { ctx: CompilerContext } -> CompilerContext
 
 // Test generation implementation
-// Finds ~test invocations in AST and generates Zig test blocks
+// Finds test invocations in AST and generates Zig test blocks
 ~proc test-generation|zig {
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "test_generation";
@@ -1472,7 +1472,7 @@ const processTestFlow = struct {
 
         // Parse the source body
         // The test body has no file of its own. It inherits the ENCLOSING file's
-        // DIALECT — and only the dialect. A `.k` is pure Koru with no `~`; the
+        // DIALECT — and only the dialect. A `.k` is pure Koru with no ``; the
         // invented "__test__.kz" told the parser this was host-embedded, so every
         // line of the body parsed as HOST TEXT, nothing was collected, and the
         // emitted test block came out EMPTY — a pass with zero assertions in it
@@ -1488,7 +1488,7 @@ const processTestFlow = struct {
         // read during parse and never during init.
         //
         // Ruled by Lars 2026-08-07: "use the same extension and semantics as the
-        // original file... Writing `~` inside a `.k`-file makes no sense, that is
+        // original file... Writing `` inside a `.k`-file makes no sense, that is
         // literally the actual rule."
         var parser = parser_impl.Parser.init(allocator, source_text, "__test__.kz", &[_][]const u8{}, null) catch {
             log.verbose("[TEST-GEN] Failed to init parser for test '{s}'\n", .{test_name});
@@ -1832,7 +1832,7 @@ const emitFlowWithMocks = struct {
 ~pub tor evaluate-comptime { ctx: CompilerContext } -> CompilerContext
 
 // Structural shape checking - validates events/branches exist, base types match
-// Release gate - rejects ~[prototype] modules under --release (runs first in analysis)
+// Release gate - rejects [prototype] modules under --release (runs first in analysis)
 ~pub tor check-release-gate { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: string }
@@ -1892,7 +1892,7 @@ const emitFlowWithMocks = struct {
 // CCP observability pass - injects universal observability taps into user AST
 // When enabled, this makes every compiled program self-observing by adding:
 // - emit_json event/proc for JSON output
-// - Universal tap (~* -> *) that emits transition events
+// - Universal tap (* -> *) that emits transition events
 ~pub tor inject-ccp { ctx: CompilerContext } -> CompilerContext
 
 // Implementation of Zig code emission - this IS ComptimeEmitter as a Koru proc!
@@ -2451,7 +2451,7 @@ const joinPathAlloc = struct {
 }
 
 // Structural shape checker implementation
-// Release gate: reject a ~[prototype] module built with --release (the production
+// Release gate: reject a [prototype] module built with --release (the production
 // gate). Runs FIRST in analysis and only under --release, so prototype code is
 // dismissed up front rather than leniently compiled. Dev builds (no --release)
 // skip it entirely and keep the prototype affordance. See release_gate.zig +
@@ -2460,7 +2460,7 @@ const joinPathAlloc = struct {
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "check_release_gate";
 
-    // Only release builds gate. Dev builds allow ~[prototype].
+    // Only release builds gate. Dev builds allow [prototype].
     if (!CompilerEnv.hasFlag("release")) {
         return .{ .ctx = mutable_ctx };
     }
@@ -2558,7 +2558,7 @@ const joinPathAlloc = struct {
     };
     defer checker.deinit();
 
-    // ~[prototype]: relax required terminal-branch exhaustiveness so unhandled
+    // [prototype]: relax required terminal-branch exhaustiveness so unhandled
     // `|` branches become synthesized @panic holes (see ShapeChecker.prototype_mode).
     for (mutable_ctx.ast.module_annotations) |ann| {
         if (std.mem.eql(u8, ann, "prototype")) {
@@ -2645,7 +2645,7 @@ const joinPathAlloc = struct {
     };
     defer checker.deinit();
 
-    // ~[prototype]: relax required terminal-branch exhaustiveness (see
+    // [prototype]: relax required terminal-branch exhaustiveness (see
     // FlowChecker.prototype_mode). Consistent with check-structure; by this pass
     // the auto-discharge synthesis has usually already filled the hole arm.
     for (mutable_ctx.ast.module_annotations) |ann| {
@@ -2798,7 +2798,7 @@ const joinPathAlloc = struct {
     };
     defer checker.deinit();
 
-    // ~[prototype]: same relaxation as check-phantom-semantic (400_165) — the
+    // [prototype]: same relaxation as check-phantom-semantic (400_165) — the
     // argument slice walks the same continuations, so the same doodle arms
     // must slide here too.
     for (mutable_ctx.ast.module_annotations) |ann| {
@@ -2859,7 +2859,7 @@ const joinPathAlloc = struct {
     // Check if auto-discharge is disabled entirely. Disabling means "do not
     // INSERT disposal calls — let phantom errors fire"; it never means the
     // discard shapes go invisible. The pass still runs in normalize-only mode
-    // below so an obligation-carrying bare call (`~open()` discarding a
+    // below so an obligation-carrying bare call (`open()` discarding a
     // `-> T<state!>` return) is materialized into its explicit `: _ |> _`
     // form and the phantom checker can fire KORU030 on the leak.
     const insertion_disabled = CompilerEnv.hasFlag("auto-discharge=disable");
@@ -2868,7 +2868,7 @@ const joinPathAlloc = struct {
     // `strict` is an opaque annotation word, not a fixed semantics: each pass
     // that cares reads it and renders it into its own domain. For auto-discharge,
     // strict means "do not guess the single cleanup — require it explicitly",
-    // so a module marked ~[strict] opts out of insertion and the phantom checker
+    // so a module marked [strict] opts out of insertion and the phantom checker
     // fires KORU030 for any undischarged obligation. Other passes (ours and
     // third-party) may read the same word and honor it in their own lane.
     var strict_module = false;
@@ -2889,7 +2889,7 @@ const joinPathAlloc = struct {
     // muted (`| <name> _ |> ...`). Same source, flag flips it.
     const strict_panic_branches = CompilerEnv.hasFlag("panic-branches=strict");
 
-    // `~[prototype]`: module opt-in to compile-and-run INCOMPLETE. An unhandled
+    // `[prototype]`: module opt-in to compile-and-run INCOMPLETE. An unhandled
     // required TERMINAL branch becomes a synthesized @panic hole (same body as
     // an unhandled `| ?!`) instead of a KORU022 exhaustiveness error — so a
     // half-shaped program runs its built paths now and crashes loudly at a hole.
@@ -2940,7 +2940,7 @@ const joinPathAlloc = struct {
     };
     defer inserter.deinit();
 
-    // Run the pass - may modify AST. Insertion opted out (flag or ~[strict])
+    // Run the pass - may modify AST. Insertion opted out (flag or [strict])
     // still normalizes head discards so downstream enforcement sees them.
     const run_result = if (insertion_disabled or strict_module)
         inserter.runNormalizeOnly(mutable_ctx.ast)
@@ -3017,7 +3017,7 @@ const joinPathAlloc = struct {
     };
     defer checker.deinit();
 
-    // ~[prototype]: relax the "handled a branch the event doesn't produce" wall
+    // [prototype]: relax the "handled a branch the event doesn't produce" wall
     // (KORU030) for terminal continuations — the doodle where handler arms lead
     // the declaration (see PhantomSemanticChecker.prototype_mode, 400_165).
     // Consistent with check-structure / check-flow.
@@ -3098,7 +3098,7 @@ const joinPathAlloc = struct {
 
 // CCP Observability Injection Pass
 // Injects universal observability taps into the user's AST
-// This makes every compiled program self-observing by adding emit_json and ~* -> * tap
+// This makes every compiled program self-observing by adding emit_json and * -> * tap
 ~proc inject-ccp|zig {
     // Inject CCP observability helpers as self-contained Zig code
     // Uses __ccp_std local import to avoid namespace pollution

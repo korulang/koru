@@ -11,7 +11,7 @@
 //   - flow structure:            330_027/input.kz
 //   - connect/query/disconnect:  ./db.kz (this dir's fixture)
 //   - commit requiring conn:     ./db.kz (conn: *Connection<connected>)
-//   - disconnect consuming conn: ./db.kz (~pub tor disconnect { conn: *Connection<!connected> })
+//   - disconnect consuming conn: ./db.kz (pub tor disconnect { conn: *Connection<!connected> })
 ~import app/db
 
 ~app/db:connect(url: "postgres://localhost/test"): c |> app/db:query(conn: c): tx |> app/db:disconnect(conn: c) |> app/db:commit(tx, conn: c)

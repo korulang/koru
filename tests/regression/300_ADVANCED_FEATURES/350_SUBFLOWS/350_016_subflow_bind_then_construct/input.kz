@@ -2,7 +2,7 @@
 //
 // A subflow whose head is a bare-return (`-> T`) event binds the produced
 // value with `:` and immediately constructs the outer event's branch from it:
-//   ~proc1 = mk(x: n): v -> v
+//   proc1 = mk(x: n): v -> v
 // The `-> v` construct must survive parsing as a void-branch continuation
 // (it has no `| branch binding` wrapper — the `: v` bind moved to the head).
 // Previously the orphaned `=>` was dropped and the handler never returned.

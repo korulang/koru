@@ -1,8 +1,8 @@
 ---
 type: belief
 id: frag-tilde-marks-the-host-boundary
-provenance: ruled while orienting on the budgeted interpreter / resource bridge / shell direction; settles the design question 430_047's TODO had carried open since 2026-05-15. Corrected 2026-08-07 after Lars asked whether the interpreter still accepted `~` and the answer turned out to be "on one route it is mandatory". Evolved later the same day by a four-repo sweep for the forbidden spelling: the corpus came back clean, but the enforcement did not — the compiler half of the rule had no pin, and the interpreter's flow parser still documents and unit-tests the tilde as optional beneath every guarded door
-ts: 2026-08-07
+provenance: ruled while orienting on the budgeted interpreter / resource bridge / shell direction; settles the design question 430_047's TODO had carried open since 2026-05-15. Corrected 2026-08-07 after Lars asked whether the interpreter still accepted `~` and the answer turned out to be "on one route it is mandatory". Evolved later the same day by a four-repo sweep for the forbidden spelling: the corpus came back clean, but the enforcement did not — the compiler half of the rule had no pin, and the interpreter's flow parser still documents and unit-tests the tilde as optional beneath every guarded door. Evolved 2026-08-12 by the corpus-presentation sweep: the by-example generator embedded raw `.kz` verbatim into every context-facing artifact, teaching `~tor`/`~import`/`~hello()` as the surface for months — a door that taught the negation; the generator now strips the marker at presentation and the corpus sources' comment prose was swept
+ts: 2026-08-12
 ---
 
 # `~` marks the host boundary, and nothing else
@@ -102,6 +102,33 @@ diagnostic's own words rather than its code, so rewording the wall is also a
 red. The interpreter half had pins throughout; nobody noticed the compiler half
 did not, because the *rule* felt covered — which is what a half-pinned rule
 feels like from the inside.
+
+## The corpus-presentation door (2026-08-12)
+
+The enumeration gained a door that had been teaching the negation for months:
+the by-example generator (`scripts/lib/corpus.js`) embedded raw `.kz` —
+code *and* comment prose — verbatim into every context-facing artifact
+(`koru-by-example.md`, `docs/by-example/*.md`, the skill files). An LLM or a
+reader met `~tor hello {}`, `~import std/io`, `~hello()` as the language's
+surface spelling — the exact inverse of this rule, rewarded with a green
+board because nothing executed those files. Measured before the fix: 115
+tilde-lines in `koru-by-example.md`, 412 in the by-example shards, 10 in
+skills.
+
+The fix is a presentation rule, not a source rule: the generator strips the
+line-start marker (the only position `~` occupies in `.kz`) when embedding
+source, and the corpus sources' whole-line comment prose was swept (343
+files, comment-only, zero code lines — the diff was checked). A reference
+corpus teaches the PURE surface, because pure Koru is the surface that
+rejects the tilde. Residual `~` in artifacts is legitimate: error pins
+quoting the rejected form, and skill prose explaining the rule itself.
+
+The topology is this fragment's own fourth door: a subsystem (the generator)
+borrowing another's machinery (the raw test files) and bringing different
+assumptions with it. The generator answered "present the source as-is"; the
+doctrine demanded "present the pure surface". Nothing executed the output, so
+nothing complained — the doctrine's own line: *an unguarded path is not the
+neutral absence of a guard; it runs whatever its borrowed machinery believes.*
 
 Related: [[frag-k-file-is-a-full-program]] (the `.k` half of the same rule),
 [[frag-a-watcher-off-the-normal-path-is-not-a-wall]] (the general shape).

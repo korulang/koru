@@ -1,5 +1,5 @@
 // `if` arms PRODUCE a bare-return event's `-> T` value with `->`:
-//   ~pick = if(n < 10) | then -> n | else -> n - 10
+//   pick = if(n < 10) | then -> n | else -> n - 10
 // Each arm's `->` satisfies the enclosing event's single return — the same
 // produce glyph a continuation handler uses (020_025), now through `if`.
 // This is part 1 of the single-return-form endeavor: a single output is the

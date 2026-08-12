@@ -1,7 +1,7 @@
 // Test 365_001: Basic Interceptor Syntax
 //
 // Demonstrates basic interceptor that transforms payload before delivery.
-// Interceptors use ~intercept(* -> destination) to modify in-flight payloads.
+// Interceptors use intercept(* -> destination) to modify in-flight payloads.
 
 const std = @import("std");
 ~import std/interceptors

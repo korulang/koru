@@ -1,14 +1,14 @@
 // Chrome Tracing Profiler - Proof-of-Concept Timeline Profiler
 // ==================================================================
 // Usage:
-//   ~[profile]import std/profiler
+//   [profile]import std/profiler
 //   koruc my_app.kz --profile
 //
 // Result: Program generates /tmp/koru_profile.json in Chrome Tracing Format
 // View in Chrome: chrome://tracing
 //
 // Architecture:
-// - Universal tap (~* -> *) captures all event transitions (lane tid=0)
+// - Universal tap (* -> *) captures all event transitions (lane tid=0)
 // - Meta-events (koru:start, koru:end) are the program ENVELOPE, not
 //   transitions: they emit as ph:"i" instant anchors plus one synthesized
 //   ph:"X" "program" span between them, on their own named lane (tid=1)

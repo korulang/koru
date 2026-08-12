@@ -1,7 +1,7 @@
 // Test 656: User-defined flags appear in help
 //
 // Any library (not just stdlib) should be able to declare flags via
-// ~std/compiler:flag.declare and have them show up in --help.
+// std/compiler:flag.declare and have them show up in --help.
 //
 // This enables third-party libraries and user code to extend the CLI.
 //

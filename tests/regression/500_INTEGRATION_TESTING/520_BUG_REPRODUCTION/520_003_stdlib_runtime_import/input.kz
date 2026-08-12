@@ -1,13 +1,13 @@
 // Test 995: User programs cannot import stdlib modules at runtime yet
 //
 // BUG: User programs SHOULD be able to import stdlib modules like std/koru
-//      and use them at runtime, but can't because ~build.requires isn't implemented
+//      and use them at runtime, but can't because build.requires isn't implemented
 //
 // CURRENT: Backend compiles output_emitted.zig with bare `zig build-exe`
 //          This doesn't set up module imports, so @import("parser") fails
 //
-// EXPECTED: Once ~build.requires is implemented:
-//   1. User declares: ~build.requires { ... set up parser module ... }
+// EXPECTED: Once build.requires is implemented:
+//   1. User declares: build.requires { ... set up parser module ... }
 //   2. Backend generates build.zig with module configuration
 //   3. Final compilation has modules available
 //   4. User code can actually call parser.source_event.handler()
@@ -23,7 +23,7 @@ const std = @import("std");
 ~proc test-parser-runtime|zig {
     const allocator = std.heap.page_allocator;
 
-    // This code is CORRECT but won't work until ~build.requires is implemented
+    // This code is CORRECT but won't work until build.requires is implemented
     const test_source =
         \\~tor hello {}
         \\| done

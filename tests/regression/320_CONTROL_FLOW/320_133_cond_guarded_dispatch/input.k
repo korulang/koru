@@ -4,7 +4,7 @@
 // producing when its guard holds; a guardless `| c _` arm is the default. cond
 // does no matching itself — it sits on the `when`-guard + branch-binding
 // primitive (400_087, 210_078) and lowers to a first-match if/else-if cascade,
-// the same way ~if/~for are templates in koru_std/control.kz.
+// the same way if/for are templates in koru_std/control.kz.
 import std/io
 
 pub tor coin-value { k: i64 } -> i64

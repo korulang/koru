@@ -1,7 +1,7 @@
 // Test 642: Basic Default Override
 // Tests that user-defined build steps override stdlib defaults
 //
-// The stdlib provides ~[default] build:step definitions
+// The stdlib provides [default] build:step definitions
 // User code can override by defining the same name without [default]
 // Expected: User's version wins, diagnostic shows "overridden by main"
 

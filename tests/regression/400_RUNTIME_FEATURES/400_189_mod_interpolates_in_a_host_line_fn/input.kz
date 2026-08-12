@@ -1,5 +1,5 @@
 // `$mod.` must interpolate in a plain HOST-LINE `fn`, not only inside a
-// `~proc` body. Ruled by Lars 2026-08-07: "I think probably $mod should also
+// `proc` body. Ruled by Lars 2026-08-07: "I think probably $mod should also
 // interpolate in the hostlines. It feels very likely."
 //
 // ASPIRATIONAL RED until it does. Today the token survives verbatim into the
@@ -9,10 +9,10 @@
 //
 // which names generated code and implicates no line the author wrote. The
 // author's options are to guess, or to discover by bisection that the rule is
-// "$mod works in ~proc, not in fn" — which nothing states.
+// "$mod works in proc, not in fn" — which nothing states.
 //
 // FOUND BY AN APP. koru-examples kopium-headless/wire.kz factored a helper out
-// of a working `~proc` into a plain `fn` beside it — the most ordinary
+// of a working `proc` into a plain `fn` beside it — the most ordinary
 // refactor there is, moving code DOWN into a helper in the same module — and it
 // stopped compiling. The proc kept working; the fn did not. Nothing about the
 // two spellings suggests they differ in what they may name.

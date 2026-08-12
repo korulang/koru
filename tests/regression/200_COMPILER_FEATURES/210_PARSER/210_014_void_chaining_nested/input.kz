@@ -1,6 +1,6 @@
 // Test: Void event chaining with nested continuations
 // When chaining void -> event with branches, should parse nested continuations correctly
-// Pattern: ~void-event() |> branching-event()
+// Pattern: void-event() |> branching-event()
 //              | branch1 |> _
 //              | branch2 |> _
 

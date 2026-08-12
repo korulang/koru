@@ -8,7 +8,7 @@
 
 const std = @import("std");
 
-// Realistic Koru module (~50 lines, multiple events, nested flows)
+// Realistic Koru module (50 lines, multiple events, nested flows)
 const SAMPLE =
     \\// User authentication module
     \\const std = @import("std");

@@ -1,7 +1,7 @@
 // PINS: a `#loop` fold preceded by a prefix invocation must still bind the
 // EXIT arm's payload capture.
 //
-// 210_123 is this program with the prefix removed (`~spin = #loop step(n: 0)`)
+// 210_123 is this program with the prefix removed (`spin = #loop step(n: 0)`)
 // and it holds the shape green, so the fold, the `@loop` back-edge and the
 // `| done r -> r` bare-return exit are all individually sound. Adding one bind
 // ahead of the fold head is the entire difference here.

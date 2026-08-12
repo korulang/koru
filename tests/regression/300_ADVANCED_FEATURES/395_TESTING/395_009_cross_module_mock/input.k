@@ -12,7 +12,7 @@
 //
 // This test verifies mocking events from IMPORTED modules.
 //
-// The syntax `~std/fs:read-lines = failed "mock error"` means:
+// The syntax `std/fs:read-lines = failed "mock error"` means:
 // "For this test, provide this implementation for the std/fs:read-lines event"
 //
 // This is NOT just for testing - Source blocks with impl declarations enable:

@@ -2,7 +2,7 @@
 // VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
 // ============================================================================
 // Test: Subflow with multiple chained continuations
-// Feature: ~event = first(...) | b1 |> second(...) | b2 |> third(...) | b3 |> result
+// Feature: event = first(...) | b1 |> second(...) | b2 |> third(...) | b3 |> result
 // Verifies: Subflows can chain multiple invocations through continuation pipelines
 // ============================================================================
 

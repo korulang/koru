@@ -3,7 +3,7 @@
 
 import lib
 
-// Using ~check without module qualification
+// Using check without module qualification
 // The expression "2 + 2" should be captured as expr
 check(2 + 2)
 

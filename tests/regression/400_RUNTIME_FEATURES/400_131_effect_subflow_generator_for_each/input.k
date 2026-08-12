@@ -4,7 +4,7 @@
 // shape as 2111) and satisfies gen's arms from for's arms using ONLY the
 // established subflow forms:
 //   - `! each i |> each(i)` — for's firing chains into a CALL of gen's own
-//     `each` arm. Firing-is-a-call, exactly what a `~proc` body does with
+//     `each` arm. Firing-is-a-call, exactly what a `proc` body does with
 //     `each(i)` (400_100); the chain step is stock grammar (220_021).
 //   - `| done => done n` — for's terminal maps to gen's terminal with the
 //     established `=>` branch mapping (240 `| continue => iterated`).

@@ -1,7 +1,7 @@
 // Test 406: Import with explicit .kz extension
 //
 // Tests that imports work with explicit .kz extensions:
-// - ~import "std/io.kz" should work the same as ~import "std/io"
+// - import "std/io.kz" should work the same as import "std/io"
 // - This allows disambiguation when both a file and directory exist
 //   (e.g., foo.kz and foo/ directory)
 

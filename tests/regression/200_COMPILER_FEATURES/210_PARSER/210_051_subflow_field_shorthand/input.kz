@@ -10,7 +10,7 @@
 // - Braces = struct:           |> entity { e }  means { e: e }
 //
 // CURRENT BEHAVIOR:
-// - `~foo = bar { e }` emits: return .{ .bar = e };
+// - `foo = bar { e }` emits: return .{ .bar = e };
 // - SHOULD emit:              return .{ .bar = .{ .e = e } };
 //
 // WORKAROUND: Use explicit `{ e: e }` syntax

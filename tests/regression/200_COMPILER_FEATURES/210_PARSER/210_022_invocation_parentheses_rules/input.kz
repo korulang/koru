@@ -22,4 +22,4 @@
 ~stepOne() |> stepTwo()
 
 // INVALID CASES (should be parser errors):
-// ~voidCall                          // Missing () when no source block
+// voidCall                          // Missing () when no source block

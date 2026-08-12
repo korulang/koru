@@ -3,10 +3,10 @@
 // Timing primitives for measuring code execution.
 //
 // Usage:
-//   ~import std/time
-//   ~import std/io
+//   import std/time
+//   import std/io
 //
-//   ~std/time:now(): start |> do_work()
+//   std/time:now(): start |> do_work()
 //       |> std/time:elapsed(start: start): d
 //           |> std/io:print.ln("work: {{ d.ms:f }}ms")
 
@@ -26,7 +26,7 @@ const std = @import("std");
 // MICROSECONDS: measured, every pair of distinct readings is exactly 1000 ns
 // apart. Anything faster than a microsecond reported ZERO, and every other
 // measurement carried a +/-1 us floor it never declared. `std.time.Instant`
-// reads the monotonic counter and resolves ~40 ns on the same machine.
+// reads the monotonic counter and resolves 40 ns on the same machine.
 //
 // The value is nanoseconds since the first reading in this process. Callers
 // only ever subtract two of them, so the epoch is arbitrary; it is lazy so a

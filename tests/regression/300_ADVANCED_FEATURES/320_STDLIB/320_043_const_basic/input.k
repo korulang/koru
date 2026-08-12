@@ -1,8 +1,8 @@
 // Test: the const/capture PAIR — the two sibling source-block forms composed.
-// `~const { ... }` declares the immutable config (flat per-target declaration,
-// names used directly); `~capture { ... }` declares the mutable cell. Same
+// `const { ... }` declares the immutable config (flat per-target declaration,
+// names used directly); `capture { ... }` declares the mutable cell. Same
 // argument shape (one source block), opposite mutability. Migrated 2026-06-11
-// from three generations of dead surface (`~const({...})` parens + `| as cfg`
+// from three generations of dead surface (`const({...})` parens + `| as cfg`
 // + `=>` branch bodies); the old form pinned the nested-capture-in-const gap,
 // which dissolved when both forms went flat.
 // sum = (6 + 8 + 10) * 2 = 48 over threshold 5.

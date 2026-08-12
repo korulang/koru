@@ -1,4 +1,4 @@
-// Template engine NORTH STAR (if = pure continuation): `~if` is a |template|
+// Template engine NORTH STAR (if = pure continuation): `if` is a |template|
 // proc with NO effects — it just RETURNS one of its terminal continuations.
 // The template's own `if/else` structure picks which terminal is returned;
 // the consumer's `| then |>` / `| else |>` body dispatches on it. This is the

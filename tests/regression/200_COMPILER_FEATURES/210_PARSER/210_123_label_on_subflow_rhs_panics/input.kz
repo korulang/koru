@@ -1,5 +1,5 @@
 // GREEN PIN (was RED; found by AoC day 4): a LABEL ANCHOR on a subflow RHS
-// (`~spin = #loop step(...)` + `@loop` re-invocation) used to PANIC koruc:
+// (`spin = #loop step(...)` + `@loop` re-invocation) used to PANIC koruc:
 // lexer.withoutLabelAnchor chopped the line at the LAST `#` without checking
 // that a valid label followed, so a PRE-invocation label truncated the whole
 // invocation to "" — zero path segments — and tap_transformer.zig:162 indexed

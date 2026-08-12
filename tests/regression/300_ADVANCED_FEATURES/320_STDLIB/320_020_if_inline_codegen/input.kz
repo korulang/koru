@@ -1,6 +1,6 @@
-// Test: ~if compiles to literal if/else with ZERO event overhead
+// Test: if compiles to literal if/else with ZERO event overhead
 //
-// This test verifies that the ~if transform generates INLINE Zig code
+// This test verifies that the if transform generates INLINE Zig code
 // using the Flow.inline_body field, instead of calling if_impl_event.handler.
 //
 // What this tests:

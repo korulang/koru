@@ -6,6 +6,6 @@
 // redundant"). One branch is never the right shape: zero outputs => void event,
 // one output => `-> T`, two-or-more => a real tagged union with >= 2 branches.
 //
-// WRONG: one branch, with a payload — should be `~event run { x: i64 } -> i64`.
+// WRONG: one branch, with a payload — should be `event run { x: i64 } -> i64`.
 ~tor run { x: i64 }
 | total i64

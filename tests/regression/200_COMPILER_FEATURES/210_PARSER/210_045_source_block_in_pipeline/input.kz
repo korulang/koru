@@ -4,10 +4,10 @@
 // the parser should still detect and parse the Source block correctly.
 //
 // Top-level works:
-//   ~event { source }      <-- WORKS
+//   event { source }      <-- WORKS
 //
 // Inside pipeline should also work:
-//   ~first_event()
+//   first_event()
 //   | branch |> second_event {
 //       source content here
 //     }

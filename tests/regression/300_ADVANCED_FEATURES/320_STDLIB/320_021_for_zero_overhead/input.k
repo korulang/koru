@@ -1,6 +1,6 @@
-// Test: ~for compiles to literal for loop with ZERO event overhead
+// Test: for compiles to literal for loop with ZERO event overhead
 //
-// VISION: The ~for transform should use the template system to emit
+// VISION: The for transform should use the template system to emit
 // a literal Zig for loop, NOT a synthetic event with captured body.
 //
 // BEFORE (current broken implementation):

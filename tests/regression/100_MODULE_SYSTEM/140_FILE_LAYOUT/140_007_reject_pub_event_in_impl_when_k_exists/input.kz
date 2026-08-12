@@ -1,5 +1,5 @@
 // Phase 3 captured failing test: when .k exists, the sibling .kz cannot
-// also declare ~pub event. Today both declarations land (the registry
+// also declare pub event. Today both declarations land (the registry
 // silently drops the duplicate); this test pins KORU111 until the
 // validator pass lands.
 

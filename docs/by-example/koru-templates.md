@@ -28,30 +28,30 @@ These are the receipts for the `koru-templates` skill — passing tests shown as
 //
 // Result: Zero-cost, type-safe stdlib wrappers with clean Koru syntax.
 
-~import std/template
+import std/template
 
 const std = @import("std");
 
 // Template uses @TypeOf to infer element type from the array itself
 // This gives us generics "for free" - Zig figures out the types!
-~std/template:define(name: "sort") {
+std/template:define(name: "sort") {
     std.mem.sort(@TypeOf({{ arr }}[0]), {{ arr }}, {}, std.sort.asc(@TypeOf({{ arr }}[0])));
 }
 
 // [norun] = no proc needed, event just stores shape
 // [expand] = transform replaces invocation with template expansion
-~[norun|expand]pub tor sort { arr: Expression }
+[norun|expand]pub tor sort { arr: Expression }
 
 // Test data
 var numbers = [_]i32{ 5, 2, 8, 1, 9, 3 };
 
-// Use it! The ~ makes it a Koru flow, [expand] inlines the template
-~sort(arr: numbers[0..])
+// Use it! The  makes it a Koru flow, [expand] inlines the template
+sort(arr: numbers[0..])
 
 // Verify it worked
-~tor verify {}
+tor verify {}
 
-~proc verify|zig {
+proc verify|zig {
     // Check sorted order
     var prev: i32 = numbers[0];
     for (numbers[1..]) |n| {
@@ -64,7 +64,7 @@ var numbers = [_]i32{ 5, 2, 8, 1, 9, 3 };
     std.debug.print("PASS: array sorted correctly\n", .{});
 }
 
-~verify()
+verify()
 ```
 
 **Output:**
@@ -88,14 +88,14 @@ PASS: array sorted correctly
 //
 // This enables [expand] to handle branching constructs without full [transform] procs.
 
-~import std/template
-~import std/io
+import std/template
+import std/io
 
 const std = @import("std");
 
 // Template produces ONLY the expression that returns the union value
 // Type is inlined since [norun] events don't generate event structs
-~std/template:define(name: "maybe") {
+std/template:define(name: "maybe") {
     blk: {
         const Result = union(enum) {
             some: struct { val: i32 },
@@ -111,14 +111,14 @@ const std = @import("std");
 }
 
 // Event with branches - expand detects branches and uses switch_result mode
-~[norun|expand]pub tor maybe { expr: Expression }
+[norun|expand]pub tor maybe { expr: Expression }
 | some i32
 | none
 
 // Usage - continuations become switch arms automatically
 var test_value: ?i32 = 42;
 
-~maybe(expr: test_value)
+maybe(expr: test_value)
 | some _ |> std/io:print.ln("Got a value!")
 | none |> std/io:print.ln("Got nothing")
 ```
@@ -148,7 +148,7 @@ std/template:define(name: "debug-print") {
 // [expand] = processed by transform_pass_runner via template lookup
 [norun|expand]pub tor debug-print { value: Expression }
 
-// Use it - note the ~ prefix to make it a Koru flow!
+// Use it - note the  prefix to make it a Koru flow!
 debug-print(value: 42)
 ```
 
@@ -176,13 +176,13 @@ value: 42
 //
 // sum-to(5) = 5 + 4 + 3 + 2 + 1 = 15.
 
-~import std/io
-~import std/template
+import std/io
+import std/template
 
 const std = @import("std");
 
 // [expand] conditional: yes when n <= 0, else no.
-~std/template:define(name: "leq-zero") {
+std/template:define(name: "leq-zero") {
     blk: {
         const Result = union(enum) { yes: void, no: void };
         const __v: i64 = {{ expr }};
@@ -194,22 +194,22 @@ const std = @import("std");
     }
 }
 
-~[norun|expand]pub tor leq-zero { expr: Expression }
+[norun|expand]pub tor leq-zero { expr: Expression }
 | yes
 | no
 
-~tor sum-to { n: i64 } -> i64
+tor sum-to { n: i64 } -> i64
 
 // The recursive subflow: base case returns 0; recursive case calls itself and
 // adds n to the returned subtotal. `=>` is the branch-construct glyph.
-~sum-to = leq-zero(expr: n)
+sum-to = leq-zero(expr: n)
 | yes -> 0
 | no |> sum-to(n: n - 1): t -> t + n
 
-~tor print-result { value: i64 }
-~proc print-result|zig { std.debug.print("{d}\n", .{value}); }
+tor print-result { value: i64 }
+proc print-result|zig { std.debug.print("{d}\n", .{value}); }
 
-~sum-to(n: 5): r |> print-result(value: r)
+sum-to(n: 5): r |> print-result(value: r)
 ```
 
 **Output:**
@@ -249,7 +249,7 @@ const std = @import("std");
 // than a value expression).
 //
 // ROOT (grounded in emitter_helpers.zig): the value-return subflow path
-// (~line 2192, `return switch (result) { ... }`) treats the head invocation as
+// (line 2192, `return switch (result) { ... }`) treats the head invocation as
 // a VALUE-PRODUCING EVENT — it binds `const result = <head>` and switches on
 // its Output union. But `if` is a `|template|`, which produces its value by
 // continuation HAND-OFF (`__koru_continue_N` markers), not a union. The two
@@ -282,7 +282,7 @@ sum-to(n: 5): r |> std/io:print.ln("{{ r:d }}")
 ### 320_097_if_nested_step_under_return_switch
 
 ```koru
-// GREEN (2026-06-27): `~if` as a NESTED continuation STEP, reached after a
+// GREEN (2026-06-27): `if` as a NESTED continuation STEP, reached after a
 // value-producing head event, with the whole flow on the `return switch`
 // fast path — driven by a `#L`/`@L` label-fold loop.
 //
@@ -291,13 +291,13 @@ sum-to(n: 5): r |> std/io:print.ln("{{ r:d }}")
 // label). Here the "clock" is the loop counter so the output is deterministic,
 // but the EMIT PATH is identical: `tick`'s head is a single-branch
 // value-producing event (`clock -> | t`), and its `| t n |> if(n < limit)`
-// continuation's STEP is the `~if` template.
+// continuation's STEP is the `if` template.
 //
 // THE BUG THIS PINS (emitter_helpers.zig, `emitSubflowContinuationsWithDepth`
 // return-switch fast path): a `tick` this simple (no labels/captures of its
 // own, head produces one branch) qualified for the `return switch (result)`
 // optimization. That fast path emitted the `.t` arm's `if` STEP as a raw
-// `_event.handler(.{...})` call — but `~if` is a `|template|`, inlined by the
+// `_event.handler(.{...})` call — but `if` is a `|template|`, inlined by the
 // template processor into `inline_body`; it has no runtime event. The result
 // was a call to a nonexistent `koru_<module>.if_event`:
 //
@@ -311,34 +311,34 @@ sum-to(n: 5): r |> std/io:print.ln("{{ r:d }}")
 // flow bails to the normal `emitContinuationBody` path, which routes the
 // template body through `emitInlineBodyNode` (the same helper top-level flows
 // use). Loop of 1_000_000 ticks -> "iterations: 1000000".
-~import std/io
-~import std/control
+import std/io
+import std/control
 
 // A single-branch value-producing head — mirrors `std/time:now() -> | t`, the
 // clock read at the top of the self-timed loop. Deterministic stand-in: echoes
 // the running pass count as branch `t`.
-~pub tor clock { passes: i64 } -> i64
+pub tor clock { passes: i64 } -> i64
 
-~proc clock|zig {
+proc clock|zig {
     return passes;
 }
 
-~pub tor tick { limit: i64, passes: i64 }
+pub tor tick { limit: i64, passes: i64 }
 | live { limit: i64, passes: i64 }
 | expired i64
 
-~pub tor run { limit: i64 } -> i64
+pub tor run { limit: i64 } -> i64
 
-// Head = value-producing `clock`; nested STEP = `~if` deciding live/expired.
-~tick = clock(passes): n |> if(n < limit)
+// Head = value-producing `clock`; nested STEP = `if` deciding live/expired.
+tick = clock(passes): n |> if(n < limit)
     | then => live { limit, passes: n + 1 }
     | else => expired n
 
-~run = #L tick(limit, passes: 0)
+run = #L tick(limit, passes: 0)
 | live l |> @L(l.limit, l.passes)
 | expired e -> e
 
-~run(limit: 1000000): n |> std/io:print.ln("iterations: {{ n:d }}")
+run(limit: 1000000): n |> std/io:print.ln("iterations: {{ n:d }}")
 ```
 
 **Output:**
@@ -626,7 +626,7 @@ capture { n: 1[i64] }
 // producing when its guard holds; a guardless `| c _` arm is the default. cond
 // does no matching itself — it sits on the `when`-guard + branch-binding
 // primitive (400_087, 210_078) and lowers to a first-match if/else-if cascade,
-// the same way ~if/~for are templates in koru_std/control.kz.
+// the same way if/for are templates in koru_std/control.kz.
 import std/io
 
 pub tor coin-value { k: i64 } -> i64

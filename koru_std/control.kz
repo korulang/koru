@@ -1,10 +1,10 @@
 ~[comptime]
 
 // Koru Standard Library: Control Flow
-// Provides ~if for zero-overhead conditional branching
+// Provides if for zero-overhead conditional branching
 //
-// ARCHITECTURE: ~if is a pure comptime transform that generates inline Zig code.
-// - ~if(expr) | then |> ... | else |> ... becomes a literal if/else statement
+// ARCHITECTURE: if is a pure comptime transform that generates inline Zig code.
+// - if(expr) | then |> ... | else |> ... becomes a literal if/else statement
 // - No function call overhead, full access to outer scope
 // - Uses template_utils.lookupTemplate + interpolate for metaprogramming!
 
@@ -14,12 +14,12 @@ const std = @import("std");
 
 // IF - Conditional as a template over the continuation-return mechanism.
 //
-// Syntax: ~if(cond)
+// Syntax: if(cond)
 //         | then |> ...      // optional: runs when cond is true
 //         | else |> ...      // optional: runs when cond is false
 //
 // ARCHITECTURE:
-// - ~if is a |template|zig proc, NOT a dedicated AST node (no ConditionalNode).
+// - if is a |template|zig proc, NOT a dedicated AST node (no ConditionalNode).
 //   The body is a literal Zig if/else. `then` / `else` are TERMINAL
 //   continuations, CONTINUED by the template via `{{ continuations["X"].continue }}`
 //   — the same producer→consumer dispatch every branched event uses. Where
@@ -40,7 +40,7 @@ const std = @import("std");
     }
 }
 
-// JS variant of ~if. The per-call render is target-blind to the EMITTER (the
+// JS variant of if. The per-call render is target-blind to the EMITTER (the
 // body is spliced inline before variant selection), so the RENDERER selects
 // THIS variant when --lang=js. The body is byte-identical to the Zig one — JS
 // `if/else` shares the same surface — but it is now HONESTLY the JS variant,
@@ -64,14 +64,14 @@ const std = @import("std");
 //         | c _ -> <default>              // guardless catch-all (the else)
 //
 // ARCHITECTURE:
-// - ~cond is a |template|zig proc, like ~if. `| c *` is a single VARIADIC
+// - cond is a |template|zig proc, like if. `| c *` is a single VARIADIC
 //   terminal branch — the wildcard `*` legalizes the lone declaration (parser
 //   single-branch exemption) and marks it as filled by N guarded arms at the
 //   use site. The template renders continuations["c"] as ONE `if / else if /
 //   else` cascade: each guarded arm's `when` becomes a condition (`arm.guard`)
 //   and its body the matching block (`arm.continue[unguarded]`), with the
 //   guardless `| c _` arm as the trailing `else`. Same continuation-return
-//   machine as ~if; ~if's two fixed arms become N guard-selected ones.
+//   machine as if; if's two fixed arms become N guard-selected ones.
 // - DISPATCH IS EXCLUSIVE — the arm whose guard matches runs, and no other. The
 //   cascade is what makes that structural: `else if` cannot re-test a guard
 //   against state an earlier arm just wrote. Pinned by 320_138, whose two arms
@@ -94,7 +94,7 @@ const std = @import("std");
     }{% endif %}{% endfor %}
 }
 
-// JS variant of ~cond. The CASCADE is byte-identical to the Zig one and that is
+// JS variant of cond. The CASCADE is byte-identical to the Zig one and that is
 // the point: `if (g) { … } else if (g2) { … } else { … }` is one construct in
 // both languages, so every structural decision `cond` makes — first-match
 // exclusivity, the guardless arm as the trailing `else`, `{{ binds }}` hoisted
@@ -102,7 +102,7 @@ const std = @import("std");
 // shared, not re-derived. `arm.continue[unguarded]` mints the same
 // `__koru_continue_bare_N` marker the Zig path uses; js_emitter resolves it via
 // emitInlineBodyResolvingContinuations (mirroring the Zig
-// emitInlineCodeResolvingSplices), exactly as ~if|template|js does.
+// emitInlineCodeResolvingSplices), exactly as if|template|js does.
 //
 // The ONE divergence is `{{ binds }}`, and it is not in this file: the binder
 // preamble is host DECLARATION syntax (`const v = <scrutinee>;`), so
@@ -125,12 +125,12 @@ const std = @import("std");
 // FOR - Iteration as a template over the effect-branch engine (ZERO OVERHEAD)
 // ============================================================================
 //
-// Syntax: ~for(iterable_expr)
+// Syntax: for(iterable_expr)
 //         ! each item |> process(value: item)
 //         | done |> finalize()        // optional: runs once after the loop
 //
 // ARCHITECTURE:
-// - ~for is a |template|zig proc, NOT a dedicated AST node. The body is a
+// - for is a |template|zig proc, NOT a dedicated AST node. The body is a
 //   literal Zig `for`; each `! each` effect handler is called inside it
 //   (guarded by its `when`, if any). The optional `| done` terminal is RETURNED
 //   via `{{ continuations["done"].continue }}` — the producer→consumer dispatch,
@@ -168,7 +168,7 @@ const std = @import("std");
     {{ continuations["done"].continue }}
 }
 
-// JS variant of ~for. Same Liquid context surface as the Zig variant —
+// JS variant of for. Same Liquid context surface as the Zig variant —
 // `{{ iterable }}`, `effects["each"]`, `h.inlined_link[scope]`,
 // `continuations["done"].continue` — but a JS-native `for…of` loop header
 // instead of the Zig `for (…) |x| {}` capture form. The per-iteration
@@ -185,7 +185,7 @@ const std = @import("std");
 // through verbatim as a `for…of`. Only the loop HEADER differs between the two;
 // the body (effect-handler calls) is shared. The richer Zig-subset expression
 // translator (array literals, `@builtins`, …) is the deferred follow-up
-// (docs/PARSER_PALETTE.md §8.4); for now JS `~for` supports ranges + JS-shaped
+// (docs/PARSER_PALETTE.md §8.4); for now JS `for` supports ranges + JS-shaped
 // iterables.
 ~proc for|template|js {
     {% const __koru_range = parse_range(expr) %}{% if __koru_range.is_range %}for (let __koru_item = {{ __koru_range.lo }}; __koru_item < {{ __koru_range.hi }}; __koru_item++) {% else %}for (const __koru_item of {{ expr }}) {% endif %}{
@@ -200,7 +200,7 @@ const std = @import("std");
 // CAPTURE - Accumulation with pure semantics (ZERO OVERHEAD)
 // ============================================================================
 //
-// Syntax: ~capture { total: 0 }
+// Syntax: capture { total: 0 }
 //         ! as acc |> for(items)
 //             ! each i |> captured { total: acc.total + i }
 //         | captured final |> result(sum: final.total)
@@ -209,11 +209,11 @@ const std = @import("std");
 // Bare `name { ... }` is unambiguously an invocation since the `=>` construct
 // glyph took over branch construction (210_047). The parens forms
 // `capture({...})` / `captured({...})` are retired (ratified 2026-06-11).
-// A block holding a single bare expression (`~capture { entity }`) seeds from
+// A block holding a single bare expression (`capture { entity }`) seeds from
 // an existing value instead of building a new struct cell.
 //
 // ARCHITECTURE:
-// - ~capture is a comptime transform: `! as` binds the cell (live/during),
+// - capture is a comptime transform: `! as` binds the cell (live/during),
 //   `captured { ... }` invocations are rewritten into general `.assignment`
 //   nodes, `| captured` is the one-shot after-read.
 //
@@ -255,7 +255,7 @@ const std = @import("std");
     }
 
     // --- Find `! as <cell>` (the mutable cell) and `| captured <result>` (the
-    //     after-read). Mirrors ~const's `| as` lookup. ---
+    //     after-read). Mirrors const's `| as` lookup. ---
     var as_cont: ?*const ast.Continuation = null;
     var captured_cont: ?*const ast.Continuation = null;
     var cell_name: []const u8 = "acc";
@@ -359,7 +359,7 @@ const std = @import("std");
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU164, flow.location, flow.module, "{s}", .{em}) } };
     }
 
-    // --- Assemble the new flow continuations: void chains so the REAL ~for / ~if
+    // --- Assemble the new flow continuations: void chains so the REAL for / if
     //     templates run over the cell (no degradation). ---
     var new_conts = std.ArrayList(ast.Continuation).initCapacity(allocator, 2) catch unreachable;
 
@@ -405,7 +405,7 @@ const std = @import("std");
 
     // --- The cell seed: `var <cell> = .{ .name = value, ... };`, built from the
     //     projector's fields (no koruStructToZig text surgery). For existing-var
-    //     captures (`~capture(myVar)`) the expr is not a struct literal, so emit
+    //     captures (`capture(myVar)`) the expr is not a struct literal, so emit
     //     it verbatim. `_ = &cell;` keeps it live even if the loop never writes. ---
     //
     // HOST LANGUAGE. Everything below is host DECLARATION syntax, which makes it
@@ -417,7 +417,7 @@ const std = @import("std");
     // anonymous literal, JS needs `let` and an object literal and nothing else.
     // Read the build language ONCE, here, and let both spellings fall out of it:
     // a second `preamble_js` field would be two lowerings of one construct, the
-    // shape `~for`/`scan` was converged to avoid (see `~for`, above).
+    // shape `for`/`scan` was converged to avoid (see `for`, above).
     //
     // Before this, the Zig text was unconditional, so `--lang=js` got a
     // `comptime blk:` type synthesis and `_ = &cell;` spliced into JavaScript.
@@ -427,7 +427,7 @@ const std = @import("std");
     const host_is_js = std.mem.eql(u8, CompilerEnv.lang, "js");
 
     // A block holding exactly one bare expression seeds from an existing
-    // value: `~capture { entity }`. After the pun law, a bare punnable name
+    // value: `capture { entity }`. After the pun law, a bare punnable name
     // resolves to name==value (e.g. entity/entity); a singleton non-punnable
     // keeps name=="". Anything with distinct named fields builds a fresh
     // struct cell.

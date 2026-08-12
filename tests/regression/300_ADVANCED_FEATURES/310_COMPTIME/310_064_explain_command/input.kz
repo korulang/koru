@@ -1,4 +1,4 @@
-// Pins the explain-command spine: a library ships a ~[explainer] event returning
+// Pins the explain-command spine: a library ships a [explainer] event returning
 // an ExplainReport; the `explain` command discovers it, calls it, and renders the
 // collected report to text / json / html. This inline explainer stands in for a
 // real library explainer (std/store's lands separately) — it exercises the full

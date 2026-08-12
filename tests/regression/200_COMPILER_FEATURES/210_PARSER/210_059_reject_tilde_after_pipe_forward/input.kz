@@ -1,7 +1,7 @@
 // ============================================================================
 // Test 210_059: Reject tilde invocation after pipe-forward
 // A pipe-forward (|>) chains into a continuation body, not a new flow.
-// Writing `~call()` after `|>` is nonsensical — if you need to chain
+// Writing `call()` after `|>` is nonsensical — if you need to chain
 // flows, use a branch binding and invoke from the continuation body.
 // ============================================================================
 

@@ -4,8 +4,8 @@
 // Test 405: Import paths must not start with $ prefix anymore
 // Design: The superfluous $ prefix has been removed from the import syntax.
 //
-// Valid:   ~import "std/io"
-// Invalid: ~import "$std/io" (dollar prefix is rejected)
+// Valid:   import "std/io"
+// Invalid: import "$std/io" (dollar prefix is rejected)
 
 const std = @import("std");
 

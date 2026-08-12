@@ -14,7 +14,7 @@
 //
 // The consequence is a composition hole rather than a corner: an event with
 // effect branches cannot be wrapped, renamed, or specialised by a subflow —
-// which is how every other event is composed. `~drive = beats(k)` is the
+// which is how every other event is composed. `drive = beats(k)` is the
 // simplest wrapper anyone would write.
 //
 // Reached first through std/store's sweep (690_082), where the arm's callee has

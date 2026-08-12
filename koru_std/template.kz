@@ -4,7 +4,7 @@
 // Templates are stored in the AST and looked up by name at compile time.
 //
 // Usage:
-//   ~std/template:define(name: "if") [template]{
+//   std/template:define(name: "if") [template]{
 //       if (${condition}) {
 //           ${| then |}
 //       } else {

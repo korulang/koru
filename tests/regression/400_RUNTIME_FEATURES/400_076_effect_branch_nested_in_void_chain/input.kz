@@ -3,7 +3,7 @@
 // `setup()` is a plain void event. `emitter(...)` is a multi-fire pump
 // that yields `! item usize` per element. The dispatch chains them:
 //
-//   ~setup() |> emitter(n: 3)
+//   setup() |> emitter(n: 3)
 //   ! item i |> ...
 //
 // The outer flow's first invocation (`setup`) carries no effect branches,

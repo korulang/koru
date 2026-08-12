@@ -1,5 +1,5 @@
 // RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
-// dead `~struct(Result<T, E>)` generation. This pin marks the OPEN
+// dead `struct(Result<T, E>)` generation. This pin marks the OPEN
 // composition question: a stamped name whose parameter is ITSELF a
 // stamped name needs a grouping spelling — flat `#` repetition is
 // ambiguous (`wrapper#box#i64`: box#i64 in wrapper, or box-of-i64-in-

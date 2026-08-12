@@ -1,32 +1,32 @@
-// NEGATIVE TEST. This pins that `~` inside a Koru flow is ILLEGAL and the
+// NEGATIVE TEST. This pins that `` inside a Koru flow is ILLEGAL and the
 // compiler MUST reject it. It is NOT a feature awaiting a fix.
 //
 // The offending line is the subflow RHS below:
 //
-//     ~decide = ~if(ctx.flag and ctx.n > 0)
-//               ^ second `~` — ILLEGAL
+//     decide = if(ctx.flag and ctx.n > 0)
+//               ^ second `` — ILLEGAL
 //
-// `~` is parser mode, not a call operator. It switches the parser from Zig
+// `` is parser mode, not a call operator. It switches the parser from Zig
 // into Koru. Once you are in Koru you STAY in Koru until the flow ends — you
-// never write `~` again inside it. The `~decide =` already opened Koru, so the
-// `~if` on the RHS is a `~` inside a flow. This is the FIRST rule in the Koru
-// handbook ("The `~` prefix is parser mode, not a call operator"). The legal
-// form, if this were a real subflow, would drop the second tilde: `~decide =
-// if(...)`. `~if(...)` at FLOW-STATEMENT position is fine (see 320_002) — what
-// is illegal is `~if` as the RHS of a flow that is already in Koru.
+// never write `` again inside it. The `decide =` already opened Koru, so the
+// `if` on the RHS is a `` inside a flow. This is the FIRST rule in the Koru
+// handbook ("The `` prefix is parser mode, not a call operator"). The legal
+// form, if this were a real subflow, would drop the second tilde: `decide =
+// if(...)`. `if(...)` at FLOW-STATEMENT position is fine (see 320_002) — what
+// is illegal is `if` as the RHS of a flow that is already in Koru.
 //
 // HISTORY (do not repeat): two ADD loops on 2026-05-31 mistook this rejection
 // for a bug. The first (b5a4d4de) pinned it as "should work, fix later"; the
-// second (2e986a27) made parser.zig STRIP the leading `~` so the illegal code
+// second (2e986a27) made parser.zig STRIP the leading `` so the illegal code
 // compiled — teaching the compiler to ACCEPT what the language forbids, the
 // exact lax-compiler anti-pattern. Both were premise-absorption failures: the
 // commission was never checked against the language standard. Reverted; this
 // test now correctly stands as MUST_ERROR.
 //
-// CURRENT REJECTION: the parser records the literal name `~if`, which Stage C
-// fails to resolve -> `error[KORU040]: unknown event 'input:~if'`
+// CURRENT REJECTION: the parser records the literal name `if`, which Stage C
+// fails to resolve -> `error[KORU040]: unknown event 'input:if'`
 // (BACKEND_EXEC_ERROR). That message is technically a rejection but POOR — it
-// blames an "unknown event" instead of naming the `~`-inside-flow violation.
+// blames an "unknown event" instead of naming the ``-inside-flow violation.
 // Improving the diagnostic to say so directly is legitimate future work, to be
 // done by TIGHTENING (a clear early-layer parser error), NEVER by accepting the
 // code. If that work lands, update expected_error.txt to the new message; the
@@ -35,7 +35,7 @@
 // NOTE on the arms: `yes ctx` / `no ctx` use the canonical braceless
 // identity-branch constructor (not `yes(ctx)`, which `parser.zig:5984` would
 // read as an invocation). That part is correct and incidental — the rejection
-// fires on the `~if` long before the arms matter.
+// fires on the `if` long before the arms matter.
 
 ~import std/io
 

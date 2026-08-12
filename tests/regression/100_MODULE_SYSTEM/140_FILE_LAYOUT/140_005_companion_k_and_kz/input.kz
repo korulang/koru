@@ -6,7 +6,7 @@
 // extension probe order reaches.
 //
 // That matters beyond this test: a program whose Koru and Zig share one file
-// must write `~` on every Koru line, because the parser really is sitting in
+// must write `` on every Koru line, because the parser really is sitting in
 // the host language. Split along this seam and the declarative half has no
 // host language in it, so the character is not needed anywhere in it.
 

@@ -6,32 +6,32 @@
 //
 // DESIGN PHILOSOPHY:
 // - Events are implicitly tappable - no hooks, no callbacks
-// - Users observe via ~tap() without modifying this library
+// - Users observe via tap() without modifying this library
 // - Multicast: multiple taps = multiple observers, ALL see every message
 // - `when` clauses fuse predicates into the producer (zero-cost filtering)
 //
 // USAGE:
 //   const std = @import("std");
-//   ~import std/rings
+//   import std/rings
 //
 //   // Instantiate with your type (Zig generics - fully specialized at comptime)
 //   const MyRing = std.rings.MpmcRing(u64, 1024);
 //   var ring = MyRing.init();
 //
 //   // Enqueue (tappable!) - identity branches
-//   ~std/rings:enqueue(ring: &ring, value: 42)
+//   std/rings:enqueue(ring: &ring, value: 42)
 //   | ok |> ...
 //   | full |> handle_backpressure()
 //
 //   // Dequeue (tappable!) - identity branch with value
-//   ~std/rings:dequeue(ring: &ring)
+//   std/rings:dequeue(ring: &ring)
 //   | some v |> process(v)    // v IS the u64, not v.value
 //   | none |> wait_for_producer()
 //
 // OBSERVABILITY (implicit - no library changes needed):
-//   ~tap(std/rings:enqueue -> *) | ok e |> telemetry:record_enqueue()
-//   ~tap(std/rings:enqueue -> *) | full |> metrics:backpressure()
-//   ~tap(std/rings:dequeue -> *) | some v when v.ring == my_ring |> log(v)
+//   tap(std/rings:enqueue -> *) | ok e |> telemetry:record_enqueue()
+//   tap(std/rings:enqueue -> *) | full |> metrics:backpressure()
+//   tap(std/rings:dequeue -> *) | some v when v.ring == my_ring |> log(v)
 //
 // MULTICAST:
 //   Unlike traditional MPMC where one consumer wins, taps enable TRUE multicast:
@@ -158,7 +158,7 @@ pub fn MpmcRing(comptime T: type, comptime capacity: usize) type {
 // Example:
 //   const Ring = MpmcRing(u64, 1024);
 //   var ring = Ring.init();
-//   ~std/rings:enqueue(ring: &ring, value: 42)
+//   std/rings:enqueue(ring: &ring, value: 42)
 
 // Generic type alias for event signatures
 // Users replace with their concrete Ring type
@@ -198,26 +198,26 @@ pub fn MpmcRing(comptime T: type, comptime capacity: usize) type {
 //   const MyRing = MpmcRing(MyData, 256);
 //
 //   // Identity branches: | branch Type (not | branch { field: Type })
-//   ~event my.enqueue { ring: *MyRing, value: MyData }
+//   event my.enqueue { ring: *MyRing, value: MyData }
 //   | ok
 //   | full
 //
-//   ~proc my.enqueue {
+//   proc my.enqueue {
 //       if (ring.tryEnqueue(value)) return .ok;
 //       return .full;
 //   }
 //
-//   ~event my.dequeue { ring: *MyRing }
+//   event my.dequeue { ring: *MyRing }
 //   | some MyData
 //   | none
 //
-//   ~proc my.dequeue {
+//   proc my.dequeue {
 //       if (ring.tryDequeue()) |v| return .{ .some = v };
 //       return .none;
 //   }
 //
 // Subflow constructors for identity branches:
-//   ~my.transform = my.dequeue(ring: r)
+//   my.transform = my.dequeue(ring: r)
 //   | some v |> result { v * 2 }   // Expression directly, no field name
 //   | none |> default { 0 }
 //

@@ -1,5 +1,5 @@
 // Test: Explicit qualification bypasses keyword system
-// Even with keyword collision, explicit ~lib-a:process works
+// Even with keyword collision, explicit lib-a:process works
 import lib_a
 import lib_b
 

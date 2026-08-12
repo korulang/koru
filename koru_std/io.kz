@@ -54,10 +54,10 @@ fn ioLowerJsExpr(alloc: std.mem.Allocator, text: []const u8) []const u8 {
 
 // Print formatted text
 // NOTE: printf with varargs would require runtime support - skipping for now
-// ~pub event io.printf { format: string, args: anytype }
+// pub event io.printf { format: string, args: anytype }
 // | printed {}
 //
-// ~proc io.printf {
+// proc io.printf {
 //     std.debug.print(format, args);
 //     return .{ .printed = .{} };
 // }
@@ -92,10 +92,10 @@ fn ioLowerJsExpr(alloc: std.mem.Allocator, text: []const u8) []const u8 {
 
 // Debug print for development
 // NOTE: debug with anytype would require runtime support - skipping for now
-// ~pub event io.debug { label: string, value: anytype }
+// pub event io.debug { label: string, value: anytype }
 // | printed {}
 //
-// ~proc io.debug {
+// proc io.debug {
 //     std.debug.print("[DEBUG {s}]: ", .{label});
 //     std.debug.print("{any}\n", .{value});
 //     return .{ .printed = .{} };
@@ -251,7 +251,7 @@ fn ioLowerJsExpr(alloc: std.mem.Allocator, text: []const u8) []const u8 {
 // Syntax: std/io:print.ln("Hello {{ name }}! Count: {{ count }}")
 //
 // ARCHITECTURE:
-// - ~print.ln is a comptime transform that generates inline Zig code
+// - print.ln is a comptime transform that generates inline Zig code
 // - Parses {{ ... }} placeholders from the Expression string
 // - Optional format specifier: {{ name:s }} or {{ count:d }}
 // - Generates: std.debug.print("Hello {}! Count: {}\n", .{name, count});
@@ -1414,10 +1414,10 @@ fn __printInterpolateJs(
 // ============================================================================
 // PRINT.BLK|RAW_POSIX - raw I/O fast path variant for linux/macos
 // ============================================================================
-// Selected via ~[build(linux)] / ~[build(macos)] std/build:variants below.
+// Selected via [build(linux)] / [build(macos)] std/build:variants below.
 // Emits inline posix.write calls when all placeholders use :d or :s specifiers.
 // Falls back to std.debug.print only when complex format specifiers (:any, :f)
-// are used. The raw path produces ~1,728 B ELF binaries vs ~7 KB for stdlib.
+// are used. The raw path produces 1,728 B ELF binaries vs 7 KB for stdlib.
 ~proc print.blk|raw_posix {
     const ast = @import("ast");
 
@@ -2041,7 +2041,7 @@ fn __printInterpolateJs(
 // VARIANT REGISTRATION - Platform-specific dispatch for print.blk
 // ============================================================================
 // On linux/macos, route std.io:print.blk → raw_posix variant (raw posix.write).
-// On windows, the bare ~proc print.blk (std.debug.print) is used by default.
+// On windows, the bare proc print.blk (std.debug.print) is used by default.
 // build=<host_os> is auto-injected by koruc; users can override with --build=<other>.
 
 ~[build(linux)]std/build:variants {

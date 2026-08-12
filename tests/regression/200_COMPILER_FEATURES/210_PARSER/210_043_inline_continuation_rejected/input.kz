@@ -1,7 +1,7 @@
 // ============================================================================
 // Test 210_043: Inline continuation rejected
 // Continuations (|) must start on a new line with proper indentation.
-// Single-line flows like `~event() | branch |> _` are NOT valid Koru.
+// Single-line flows like `event() | branch |> _` are NOT valid Koru.
 // ============================================================================
 
 ~tor greet { name: string } -> string

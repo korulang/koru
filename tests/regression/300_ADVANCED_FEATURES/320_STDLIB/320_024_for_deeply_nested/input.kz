@@ -1,6 +1,6 @@
-// Test: ~for deeply nested in continuation hierarchy
+// Test: for deeply nested in continuation hierarchy
 //
-// This tests the case where ~for is several levels deep in nested continuations,
+// This tests the case where for is several levels deep in nested continuations,
 // like in the nbody benchmark:
 //   | result1 |> event1() | done |> event2() | result2 |> for(...) | each |> ...
 //

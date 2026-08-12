@@ -6,9 +6,9 @@
 //
 // Usage in a library (e.g., curl/index.kz):
 //
-//   ~import std/deps
+//   import std/deps
 //
-//   ~std/deps:requires.system {
+//   std/deps:requires.system {
 //       "name": "curl",
 //       "check": "curl-config --version",
 //       "brew": "curl",
@@ -300,7 +300,7 @@
                     std.mem.eql(u8, flow.inv().path.segments[0], "requires") and
                     std.mem.eql(u8, flow.inv().path.segments[1], "system"))
                 {
-                    // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
+                    // Respect build flags: [build("prod")], [build("dev")], etc.
                     if (!matchesBuildFlags(flow.inv().annotations)) continue;
                     // Extract source parameter
                     for (flow.inv().args) |arg| {

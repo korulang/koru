@@ -9,7 +9,7 @@
 // Grounding:
 //   - error-branch rollback pattern: 330_027/input.kz (| else |> rollback(tx) |> disconnect)
 //   - rollback requiring conn:       ./db.kz (conn: *Connection<connected>)
-//   - disconnect consuming conn:     ./db.kz (~pub tor disconnect { conn: *Connection<!connected> })
+//   - disconnect consuming conn:     ./db.kz (pub tor disconnect { conn: *Connection<!connected> })
 ~import app/db
 ~import std/control
 

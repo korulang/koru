@@ -23,7 +23,7 @@
 ~import std/taps
 
 // Base event: adds 5 to a number, as a pure value continuation.
-// (cf. 040_CONTROL_FLOW/211_nested_depth_2: `~add-one => done value + 1`)
+// (cf. 040_CONTROL_FLOW/211_nested_depth_2: `add-one => done value + 1`)
 ~tor add-five { value: i32 } -> i32
 
 ~add-five -> value + 5

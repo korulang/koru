@@ -11,7 +11,7 @@
 //
 // Same-file comptime works: see 210_030_comptime_flows.
 // Real-world reproducer: koru-libs/pq/examples/02_sql.kz
-//   ~[comptime|norun]pub event sql { conninfo: ..., source: Source }
+//   [comptime|norun]pub event sql { conninfo: ..., source: Source }
 
 import app/comptime_lib
 

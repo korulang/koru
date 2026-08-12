@@ -7,12 +7,12 @@
 // that lies "handled" and silently drains the branch forever. That is a silent
 // fallback, exactly what the language repudiates.
 //
-// `~[prototype]` gives an HONEST escape hatch instead: leave the branch out,
+// `[prototype]` gives an HONEST escape hatch instead: leave the branch out,
 // and the compiler synthesizes a @panic arm for it — the same body an
 // unhandled `| ?!` panic branch gets. The built path runs now; the unbuilt
 // path is a loud latent panic, not a silent drain. "Get started right now."
 //
-// The production guarantee is untouched: remove `~[prototype]` and the same
+// The production guarantee is untouched: remove `[prototype]` and the same
 // source is rejected KORU022 (see 400_161). The annotation flips it.
 //
 // Pure Koru: `run` is a direct construct arm (`=> err ...`) producing the

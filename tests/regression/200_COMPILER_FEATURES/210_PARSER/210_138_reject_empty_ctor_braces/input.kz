@@ -1,13 +1,13 @@
 // ============================================================================
 // Test 210_138: MUST_ERROR — empty constructor braces `=> done {}` are a relic
 //
-// A payloadless branch constructs with its name alone: `~foo => done`.
+// A payloadless branch constructs with its name alone: `foo => done`.
 // The braced spelling `=> done {}` used to parse to a DIFFERENT tree than
 // the bare form (the braces flipped BranchConstructor.has_expressions), so
 // one meaning had two spellings and the trees disagreed — surfaced by the
 // canonical-printer round-trip harness, ruled illegal 2026-07-02.
 //
-// Canonical form: `~foo => done`.
+// Canonical form: `foo => done`.
 // ============================================================================
 
 ~tor foo {}

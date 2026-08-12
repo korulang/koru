@@ -1,4 +1,4 @@
-// Pins: the raw-slice return rejection points at the `~tor` that carries the
+// Pins: the raw-slice return rejection points at the `tor` that carries the
 // offending return type. 510_104 pins the MESSAGE for this identical source;
 // this pin holds the other half of the same diagnostic — WHERE it lands.
 //

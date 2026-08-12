@@ -1,6 +1,6 @@
 // Test: Unknown suffix should error with Levenshtein-based suggestion
 //
-// ~log.warning("...") should fail because "warning" is not a valid level.
+// log.warning("...") should fail because "warning" is not a valid level.
 // The transform should:
 // 1. Match log.* pattern
 // 2. Extract suffix "warning"

@@ -1,7 +1,7 @@
 // Test 210_038: Implicit Expression AND Source Parameters
 // Validates that an event can have BOTH expr: Expression and source: Source
 // and the parser correctly captures both from the syntax:
-//   ~event(expression) { source content }
+//   event(expression) { source content }
 
 const std = @import("std");
 
@@ -30,7 +30,7 @@ const std = @import("std");
 }
 
 // Test: Use both implicit expression AND implicit source block
-// Syntax: ~event(expr) { source }
+// Syntax: event(expr) { source }
 const show_greeting = true;
 
 ~conditional.render(show_greeting) {

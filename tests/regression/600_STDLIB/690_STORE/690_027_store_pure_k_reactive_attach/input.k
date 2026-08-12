@@ -1,5 +1,5 @@
 // The store is a PURE-Koru surface: this whole program — new, the reference
-// reactive-attach with a guard, and writes — is a `.k` file with no `~` anywhere.
+// reactive-attach with a guard, and writes — is a `.k` file with no `` anywhere.
 // The tildes in the .kz store tests were vestigial; nothing about the store's
 // surface requires them.
 import std/io

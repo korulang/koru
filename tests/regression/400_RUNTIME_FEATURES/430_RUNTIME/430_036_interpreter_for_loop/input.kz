@@ -1,6 +1,6 @@
 // Test: Interpreter for loop
 //
-// Tests that ~for(0..N) | each i |> body | done |> ... works
+// Tests that for(0..N) | each i |> body | done |> ... works
 
 ~import std/runtime
 ~import std/interpreter

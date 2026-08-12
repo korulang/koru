@@ -1,4 +1,4 @@
-// MIRROR of 330_042_metatype_binding_scope: `~tap` relocated into an imported
+// MIRROR of 330_042_metatype_binding_scope: `tap` relocated into an imported
 // .kz module, tapping a tor declared in that same module.
 //
 // tap is the most invasive transform on the wall: it walks the whole program

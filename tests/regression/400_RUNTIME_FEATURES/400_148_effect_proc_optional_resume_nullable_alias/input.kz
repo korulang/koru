@@ -1,4 +1,4 @@
-// OPTIONAL RESUME ARMS, proc side — designed 2026-07-03. A `~proc |zig` impl
+// OPTIONAL RESUME ARMS, proc side — designed 2026-07-03. A `proc |zig` impl
 // gets the presence truth as a NULLABLE FUNCTION POINTER alias: for an
 // optional arm the emitter binds
 //     const ask: ?*const fn (...) T = if (@hasDecl(__H, "ask")) &__H.ask else null;

@@ -13,7 +13,7 @@
 // the tell: an arrow with a chain pipe in front of it is a later step's
 // business, parsed with that step.
 //
-// This is the shape `koru_std/compiler.kz`'s `~elaborate` collapses to — six
+// This is the shape `koru_std/compiler.kz`'s `elaborate` collapses to — six
 // stages, no intermediate binders, one `-> c4` terminus. 1 + 10 + 10 = 21.
 import std/io
 

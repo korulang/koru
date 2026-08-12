@@ -8,6 +8,15 @@
 // flow/shape checkers resolve binding types and reject HERE, with a
 // koru diagnostic naming both declared types.
 //
+// The reference for the diagnosis is already on the shelf: the phantom
+// checker rejects a value bound as one phantom state and passed as
+// another (`feet!` bound, handed to a `meters!` param) — same-shape,
+// distinct-identity, koru-led (frag-bare-phantom-resolves-to-base-type-
+// module). This pin is the same check, at the level of DECLARED TYPE
+// identity: Meters and Feet are two registry entries and one shape, and
+// a Meters value handed to a Feet param must reject the same way a
+// `meters!` value handed to a `feet!` param does.
+//
 // A produced Meters value bound and passed onward as Feet must be
 // rejected by the Koru checker — before any Zig compilation.
 

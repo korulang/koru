@@ -2,9 +2,9 @@
 // Enables scoped runtime evaluation of parsed Koru code
 //
 // DESIGN:
-// - ~std/runtime:register(scope: "name") { events } declares a scope (norun)
-// - ~std/runtime:collect-scopes walks AST and generates dispatch tables
-// - ~std/runtime:get-scope(name: "...") looks up a scope at runtime
+// - std/runtime:register(scope: "name") { events } declares a scope (norun)
+// - std/runtime:collect-scopes walks AST and generates dispatch tables
+// - std/runtime:get-scope(name: "...") looks up a scope at runtime
 
 ~[comptime|runtime]
 
@@ -1430,10 +1430,10 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 //
 // Delegates to `std/interpreter:parse`, which is the interpreter's own parser.
 // It takes no file name on purpose: interpreted source has no file, therefore
-// no host half and no `~`. This entry point used to hold a copy of the
+// no host half and no ``. This entry point used to hold a copy of the
 // COMPILER's file parser (`std/koru:parse.source`), which derives its
 // host/pure mode from the filename extension — so a synthetic `"x.kz"`
-// silently put interpreted source in host mode and made `~` mandatory, the
+// silently put interpreted source in host mode and made `` mandatory, the
 // exact inverse of the rule `run` enforces.
 
 ~pub tor parse.source {

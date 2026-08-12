@@ -1,5 +1,5 @@
 // Mid-chain `: bind` of a BARE-RETURN value inside a BRANCH HANDLER:
-//   ~start() | created c0 |> mk(x: c0): c1 |> use-it(x: c1)
+//   start() | created c0 |> mk(x: c0): c1 |> use-it(x: c1)
 // `mk` is `-> i64`; its result is bound `: c1` mid-chain and used downstream.
 // This is the metacircular `coordinate` pipeline's shape — it consumes the
 // bare-return `elaborate(ctx): c1 |> analysis(ctx: c1)` inside the `| created`

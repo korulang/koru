@@ -1,7 +1,7 @@
 // Test 654: Help discovers flags from input file
 //
 // When running `koruc input.kz --help`, the help output should include
-// flags declared via ~std/compiler:flag.declare in the input file
+// flags declared via std/compiler:flag.declare in the input file
 // and its imports.
 //
 // This test imports std/compiler which declares flags like --ccp, --verbose.

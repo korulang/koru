@@ -1,4 +1,4 @@
-// Test: ~[pub] struct as keyword
+// Test: [pub] struct as keyword
 //
 // Pub annotation should still work with keyword syntax.
 

@@ -1,5 +1,5 @@
 // Test 310_009: Multiple Taps on Same Event (Library Syntax)
-// Validates that multiple ~tap() declarations all fire
+// Validates that multiple tap() declarations all fire
 // NOTE: Taps fire in REVERSE declaration order (last declared = first to fire)
 
 const std = @import("std");

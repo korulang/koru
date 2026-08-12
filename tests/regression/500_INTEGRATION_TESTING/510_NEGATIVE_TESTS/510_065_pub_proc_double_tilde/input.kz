@@ -1,5 +1,5 @@
-// Test: ~pub ~proc variant is also rejected
-// Parser catches both "pub proc" and "pub ~proc" variants
+// Test: pub proc variant is also rejected
+// Parser catches both "pub proc" and "pub proc" variants
 
 ~tor foo { x: i32 }
 

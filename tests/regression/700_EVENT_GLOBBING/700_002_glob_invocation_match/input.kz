@@ -1,7 +1,7 @@
-// Test: Does ~log.error match the glob pattern log.* ?
+// Test: Does log.error match the glob pattern log.* ?
 //
 // This test verifies that invocations can match glob pattern events:
-// - ~log.error(...) should match the glob event log.*
+// - log.error(...) should match the glob event log.*
 // - The transform should run and replace the invocation
 //
 // The transform replaces the invocation with a simple inline print.

@@ -1,6 +1,6 @@
 // Test 350_015: bare-return (`-> T`) bind on a mid-chain subflow continuation.
 //
-// In a subflow body `~run = a() |> b(): v |> c(v)`, the bind `: v` on the
+// In a subflow body `run = a() |> b(): v |> c(v)`, the bind `: v` on the
 // non-head invocation `b()` must bind b's produced value so the downstream
 // step can use it — previously the subflow continuation emitter discarded the
 // result with `_ =` and dropped the bind, leaving `v` undeclared.

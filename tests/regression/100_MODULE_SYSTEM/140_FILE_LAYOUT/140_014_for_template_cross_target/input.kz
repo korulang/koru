@@ -1,4 +1,4 @@
-// Cross-target `~for(0..3)` with a `print` effect-handler body. Pins the whole
+// Cross-target `for(0..3)` with a `print` effect-handler body. Pins the whole
 // chain lowering identically to Zig and JS:
 //   - `for|template|js` (koru_std/control.kz) is selected on a --lang=js build;
 //   - the range iterable `0..N` lowers to a JS counting loop
@@ -8,7 +8,7 @@
 //   - that handler body — `std/io:print(...)`, a comptime|transform nested as an
 //     effect-splice body — lowers through its `|js` variant, spliced by the JS
 //     emitter from the invocation's `inline_body`, not emitted as a `.impl` call.
-// A JS-array iterable (`~for([1,2,3])`) rides the same path as a `for…of`.
+// A JS-array iterable (`for([1,2,3])`) rides the same path as a `for…of`.
 ~import std/control
 ~import std/io
 

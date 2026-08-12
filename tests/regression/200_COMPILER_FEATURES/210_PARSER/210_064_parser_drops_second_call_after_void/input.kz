@@ -1,7 +1,7 @@
 // Test: Parser drops second call when chain body starts with a void call
 //
 // Reproduces a parser data-loss bug observed in 8401_custom_coordinator_bug.
-// In a synthesis body of the shape `~event = void_call() |> next_call(...)`,
+// In a synthesis body of the shape `event = void_call() |> next_call(...)`,
 // the parser silently drops `next_call(...)` from the AST. Visible via
 // --ast-json (only the void call's invocation appears in the flow), and
 // downstream as a Zig codegen error (switch on void) because the branch

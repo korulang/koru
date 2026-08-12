@@ -1,4 +1,4 @@
-// Layer 3 demonstration: ~[pure] annotation on a proc lifts the
+// Layer 3 demonstration: [pure] annotation on a proc lifts the
 // assume-impure default. The proc gets is_pure=true and (since it
 // has no calls) is_transitively_pure=true.
 

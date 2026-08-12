@@ -77,9 +77,9 @@ Hello World
 // invoked, so the program compiles and produces no output.
 const std = @import("std");
 
-~tor hello {}
+tor hello {}
 
-~proc hello|zig {
+proc hello|zig {
     std.debug.print("Event executed\n", .{});
 }
 ```
@@ -93,14 +93,14 @@ const std = @import("std");
 // This should compile, run, and output "Flow executed"
 const std = @import("std");
 
-~tor hello {}
+tor hello {}
 
-~proc hello|zig {
+proc hello|zig {
     std.debug.print("Flow executed\n", .{});
 }
 
 // Top-level flow - should execute
-~hello()
+hello()
 ```
 
 **Output:**
@@ -127,43 +127,43 @@ var cleanup_count: i32 = 0;
 var process_count: i32 = 0;
 
 // Void events have no output branches
-~tor setup {}
+tor setup {}
 
-~proc setup|zig {
+proc setup|zig {
     setup_count += 1;
     std.debug.print("Setup: count={}\n", .{setup_count});
 }
 
-~tor cleanup {}
+tor cleanup {}
 
-~proc cleanup|zig {
+proc cleanup|zig {
     cleanup_count += 1;
     std.debug.print("Cleanup: count={}\n", .{cleanup_count});
 }
 
-~tor process {}
+tor process {}
 
-~proc process|zig {
+proc process|zig {
     process_count += 1;
     std.debug.print("Process: count={}\n", .{process_count});
 }
 
 // Test void events in flows
 // Call setup once
-~setup()
+setup()
 
 // Call process three times  
-~process()
-~process()
-~process()
+process()
+process()
+process()
 
 // Call cleanup once
-~cleanup()
+cleanup()
 
 // Verify with a regular event
-~tor verify {}
+tor verify {}
 
-~proc verify|zig {
+proc verify|zig {
     if (setup_count == 1 and process_count == 3 and cleanup_count == 1) {
         std.debug.print("Void events work correctly\n", .{});
     } else {
@@ -171,7 +171,7 @@ var process_count: i32 = 0;
     }
 }
 
-~verify()
+verify()
 ```
 
 **Output:**
@@ -203,42 +203,42 @@ var cleanup_count: i32 = 0;
 var process_count: i32 = 0;
 
 // Void events have no output branches
-~tor setup {}
+tor setup {}
 
-~proc setup|zig {
+proc setup|zig {
     setup_count += 1;
     std.debug.print("Setup: count={}\n", .{setup_count});
 }
 
-~tor cleanup {}
+tor cleanup {}
 
-~proc cleanup|zig {
+proc cleanup|zig {
     cleanup_count += 1;
     std.debug.print("Cleanup: count={}\n", .{cleanup_count});
 }
 
-~tor process {}
+tor process {}
 
-~proc process|zig {
+proc process|zig {
     process_count += 1;
     std.debug.print("Process: count={}\n", .{process_count});
 }
 
 // Test void events in flows
 // Call setup once
-~setup()
+setup()
 
 // Call process three times  
-~process()
-~process() |> process()
+process()
+process() |> process()
 
 // Call cleanup once
-~cleanup()
+cleanup()
 
 // Verify with a regular event
-~tor verify {}
+tor verify {}
 
-~proc verify|zig {
+proc verify|zig {
     if (setup_count == 1 and process_count == 3 and cleanup_count == 1) {
         std.debug.print("Void events work correctly\n", .{});
     } else {
@@ -246,7 +246,7 @@ var process_count: i32 = 0;
     }
 }
 
-~verify()
+verify()
 ```
 
 **Output:**
@@ -295,9 +295,9 @@ Hello, World!
 
 const std = @import("std");
 
-~tor sum { numbers: []const i32 } -> i32
+tor sum { numbers: []const i32 } -> i32
 
-~proc sum|zig {
+proc sum|zig {
     var total: i32 = 0;
     for (numbers) |n| {
         total += n;
@@ -305,9 +305,9 @@ const std = @import("std");
     return total;
 }
 
-~tor check { expected: i32, actual: i32 }
+tor check { expected: i32, actual: i32 }
 
-~proc check|zig {
+proc check|zig {
     if (expected != actual) {
         std.debug.print("FAIL: expected {}, got {}\n", .{ expected, actual });
         std.process.exit(1);
@@ -316,7 +316,7 @@ const std = @import("std");
 }
 
 // Use array literal syntax
-~sum(numbers: [1, 2, 3, 4]): r |> check(expected: 10, actual: r)
+sum(numbers: [1, 2, 3, 4]): r |> check(expected: 10, actual: r)
 ```
 
 ### 030_012_struct_literal_inline
@@ -336,16 +336,16 @@ pub const Config = struct {
     retries: i32,
 };
 
-~tor configure { config: Config } -> i32
+tor configure { config: Config } -> i32
 
-~proc configure|zig {
+proc configure|zig {
     const total = config.timeout * config.retries;
     return total;
 }
 
-~tor check { expected: i32, actual: i32 }
+tor check { expected: i32, actual: i32 }
 
-~proc check|zig {
+proc check|zig {
     if (expected != actual) {
         std.debug.print("FAIL: expected {}, got {}\n", .{ expected, actual });
         std.process.exit(1);
@@ -354,7 +354,7 @@ pub const Config = struct {
 }
 
 // Use struct literal syntax (Koru-style, not Zig-style)
-~configure(config: { timeout: 30, retries: 3 }): c |> check(expected: 90, actual: c)
+configure(config: { timeout: 30, retries: 3 }): c |> check(expected: 90, actual: c)
 ```
 
 ## CONTROL FLOW
@@ -369,49 +369,49 @@ pub const Config = struct {
 // Tests that events can have multiple branches and procs can return different ones
 const std = @import("std");
 
-~tor check { value: i32 }
+tor check { value: i32 }
 | positive i32
 | zero
 | negative i32
 
-~proc check|zig {
+proc check|zig {
     if (value > 0) return .{ .positive = value };
     if (value < 0) return .{ .negative = value };
     return .{ .zero = .{} };
 }
 
-~tor handle-positive { n: i32 }
+tor handle-positive { n: i32 }
 
-~proc handle-positive|zig {
+proc handle-positive|zig {
     std.debug.print("Positive branch works: {}\n", .{n});
 }
 
-~tor handle-zero {}
+tor handle-zero {}
 
-~proc handle-zero|zig {
+proc handle-zero|zig {
     std.debug.print("Zero branch works\n", .{});
 }
 
-~tor handle-negative { n: i32 }
+tor handle-negative { n: i32 }
 
-~proc handle-negative|zig {
+proc handle-negative|zig {
     std.debug.print("Negative branch works: {}\n", .{n});
 }
 
 // Test 1: Positive value (42)
-~check(value: 42)
+check(value: 42)
 | positive p |> handle-positive(n: p)
 | zero |> handle-zero()
 | negative n |> handle-negative(n)
 
 // Test 2: Zero value (0)
-~check(value: 0)
+check(value: 0)
 | positive p |> handle-positive(n: p)
 | zero |> handle-zero()
 | negative n |> handle-negative(n)
 
 // Test 3: Negative value (-7)
-~check(value: -7)
+check(value: -7)
 | positive p |> handle-positive(n: p)
 | zero |> handle-zero()
 | negative n |> handle-negative(n)
@@ -438,43 +438,43 @@ Negative branch works: -7
 const std = @import("std");
 
 // Validation events
-~tor validate { value: i32 }
+tor validate { value: i32 }
 | valid i32
 | invalid string
 
-~proc validate|zig {
+proc validate|zig {
     if (value > 0) {
         return .{ .valid = value };
     }
     return .{ .invalid = "Value must be positive" };
 }
 
-~tor double { value: i32 } -> i32
+tor double { value: i32 } -> i32
 
-~proc double|zig {
+proc double|zig {
     return value * 2;
 }
 
-~tor triple { value: i32 } -> i32
+tor triple { value: i32 } -> i32
 
-~proc triple|zig {
+proc triple|zig {
     return value * 3;
 }
 
-~tor success { result: i32 }
+tor success { result: i32 }
 
-~proc success|zig {
+proc success|zig {
     std.debug.print("Success: {}\n", .{result});
 }
 
-~tor failure { msg: string }
+tor failure { msg: string }
 
-~proc failure|zig {
+proc failure|zig {
     std.debug.print("Failure: {s}\n", .{msg});
 }
 
 // Flow with multiple branching paths
-~validate(value: 42)
+validate(value: 42)
 | valid v |> double(value: v): doubled |> success(result: doubled)
 | invalid e |> triple(value: -1): _ |> failure(msg: e)
 ```
@@ -487,14 +487,14 @@ const std = @import("std");
 // Previously: emitter would generate |name| capture even for empty payloads
 // Fixed: emitter now generates => { without capture for empty payloads
 
-~import std/io
+import std/io
 
 // Event with two branches, BOTH empty (no payload fields)
-~tor check-value { n: i32 }
+tor check-value { n: i32 }
 | positive
 | non-positive
 
-~proc check-value|zig {
+proc check-value|zig {
     if (n > 0) {
         return .{ .positive = .{} };
     } else {
@@ -503,15 +503,15 @@ const std = @import("std");
 }
 
 // Test: handle both empty branches
-~check-value(n: 42)
+check-value(n: 42)
 | positive |> std/io:print.ln("42 is positive")
 | non-positive |> std/io:print.ln("42 is not positive")
 
-~check-value(n: -5)
+check-value(n: -5)
 | positive |> std/io:print.ln("-5 is positive")
 | non-positive |> std/io:print.ln("-5 is not positive")
 
-~check-value(n: 0)
+check-value(n: 0)
 | positive |> std/io:print.ln("0 is positive")
 | non-positive |> std/io:print.ln("0 is not positive")
 ```
@@ -590,11 +590,11 @@ Testing subflow-defined semantics:
 const std = @import("std");
 
 // Server events
-~tor listen { port: u16 }
+tor listen { port: u16 }
 | ready u32
 | failed string
 
-~proc listen|zig {
+proc listen|zig {
     std.debug.print("Listening on port {}\n", .{port});
     if (port == 0) {
         return .{ .failed = "Invalid port" };
@@ -602,11 +602,11 @@ const std = @import("std");
     return .{ .ready = port };
 }
 
-~tor accept { server: u32 }
+tor accept { server: u32 }
 | connected { conn: u32, server: u32 }
 | failed u32
 
-~proc accept|zig {
+proc accept|zig {
     std.debug.print("Accepting connection\n", .{});
     if (server == 9999) {
         return .{ .failed = server };
@@ -614,12 +614,12 @@ const std = @import("std");
     return .{ .connected = .{ .conn = server + 1, .server = server } };
 }
 
-~tor process { conn: u32 }
+tor process { conn: u32 }
 | done u32
 | retry u32
 | error { conn: u32, msg: string }
 
-~proc process|zig {
+proc process|zig {
     std.debug.print("Processing connection {}\n", .{conn});
     if (conn % 3 == 0) {
         return .{ .error = .{ .conn = conn, .msg = "Processing error" } };
@@ -630,27 +630,27 @@ const std = @import("std");
     return .{ .retry = conn };
 }
 
-~tor close { conn: u32 }
+tor close { conn: u32 }
 
-~proc close|zig {
+proc close|zig {
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
-~tor log-error { conn: u32, msg: string } -> u32
+tor log-error { conn: u32, msg: string } -> u32
 
-~proc log-error|zig {
+proc log-error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
     return conn;
 }
 
-~tor cleanup { conn: u32 }
+tor cleanup { conn: u32 }
 
-~proc cleanup|zig {
+proc cleanup|zig {
     std.debug.print("Cleaning up connection {}\n", .{conn});
 }
 
 // Main flow with nested labels
-~listen(port: 8080)
+listen(port: 8080)
 | ready s |> #accept_loop accept(server: s)
     | connected c |> #process_loop process(c.conn)
         | done d |> close(conn: d) |> @accept_loop(c.server)
@@ -670,13 +670,13 @@ const std = @import("std");
 // Test 168: Import Registers Taps Automatically
 //
 // Tests that importing a module automatically registers any taps defined in it.
-// This is the mechanism that makes `~[profile]import "std/profiler"` work -
+// This is the mechanism that makes `[profile]import "std/profiler"` work -
 // the import adds the module's universal taps to the tap registry, enabling
 // full-program instrumentation with a single line.
 //
 // Structure:
 //   test_lib/
-//     logger.kz  → Defines a universal tap ~tap(* -> *) that logs all events
+//     logger.kz  → Defines a universal tap tap(* -> *) that logs all events
 //
 // Expected: The logger's tap fires for ALL events, even though we didn't
 //          explicitly write the tap pattern in this file.
@@ -686,33 +686,33 @@ const std = @import("std");
 const std = @import("std");
 
 // Import the logger module (which defines universal taps)
-~import app/test_lib/logger
+import app/test_lib/logger
 
 // Define some events to test with
-~tor compute { x: i32 } -> i32
+tor compute { x: i32 } -> i32
 
-~tor format { value: i32 } -> string
+tor format { value: i32 } -> string
 
-~tor display { text: string }
+tor display { text: string }
 
-~proc compute|zig {
+proc compute|zig {
     std.debug.print("compute({d})\n", .{x});
     return x * 2;
 }
 
-~proc format|zig {
+proc format|zig {
     std.debug.print("format({d})\n", .{value});
     // Allocate temporary string for testing
     const text = "formatted";
     return text;
 }
 
-~proc display|zig {
+proc display|zig {
     std.debug.print("Final: {s}\n", .{text});
 }
 
 // Call events - the logger's universal tap should intercept them!
-~compute(x: 42): r |> format(value: r): f |> display(text: f)
+compute(x: 42): r |> format(value: r): f |> display(text: f)
 ```
 
 **Output:**
@@ -729,30 +729,30 @@ Final: formatted
 
 ```koru
 // Test 603: Inline Annotation Syntax
-// Tests that ~[a|b|c] produces annotations: ["a", "b", "c"]
+// Tests that [a|b|c] produces annotations: ["a", "b", "c"]
 
 const std = @import("std");
 
 // Single annotation
-~[comptime] tor single {}
+[comptime] tor single {}
 
 // Multiple annotations with | delimiter
-~[comptime|runtime] tor dual {}
+[comptime|runtime] tor dual {}
 
 // Many annotations
-~[comptime|runtime|fuseable|inline] tor many {}
+[comptime|runtime|fuseable|inline] tor many {}
 
 // Parameterized annotation (opaque string)
-~[optimize(level: 3)] tor optimized {}
+[optimize(level: 3)] tor optimized {}
 
 // Mix of simple and parameterized
-~[comptime|optimize(level: 3)|inline] tor mixed {}
+[comptime|optimize(level: 3)|inline] tor mixed {}
 
-~proc single|zig { return .{ .done = .{} }; }
-~proc dual|zig { return .{ .done = .{} }; }
-~proc many|zig { return .{ .done = .{} }; }
-~proc optimized|zig { return .{ .done = .{} }; }
-~proc mixed|zig { return .{ .done = .{} }; }
+proc single|zig { return .{ .done = .{} }; }
+proc dual|zig { return .{ .done = .{} }; }
+proc many|zig { return .{ .done = .{} }; }
+proc optimized|zig { return .{ .done = .{} }; }
+proc mixed|zig { return .{ .done = .{} }; }
 ```
 
 ## PHANTOM TYPES
@@ -794,7 +794,7 @@ Closing file
 //
 // Tests that <allocated!> obligation can be discharged with <!allocated>
 
-~import std/io
+import std/io
 
 const std = @import("std");
 
@@ -803,9 +803,9 @@ pub const Resource = struct {
     allocator: std.mem.Allocator,
 };
 
-~pub tor create-resource { name: string } -> *Resource<allocated!>
+pub tor create-resource { name: string } -> *Resource<allocated!>
 
-~proc create-resource|zig {
+proc create-resource|zig {
     const alloc = std.heap.page_allocator;
     const data = std.fmt.allocPrint(alloc, "Resource: {s}", .{name}) catch unreachable;
     const res = alloc.create(Resource) catch unreachable;
@@ -813,16 +813,16 @@ pub const Resource = struct {
     return res;
 }
 
-~pub tor destroy-resource { res: *Resource<!allocated> }
+pub tor destroy-resource { res: *Resource<!allocated> }
 
-~proc destroy-resource|zig {
+proc destroy-resource|zig {
     res.allocator.free(res.data);
     std.heap.page_allocator.destroy(res);
 }
 
 // Simple sequential test
-~std/io:print.ln("Test start")
-~create-resource(name: "Test"): r |> destroy-resource(res: r) |> std/io:print.ln("Test done")
+std/io:print.ln("Test start")
+create-resource(name: "Test"): r |> destroy-resource(res: r) |> std/io:print.ln("Test done")
 ```
 
 **Output:**
@@ -842,18 +842,18 @@ Test done
 // runs it, then returns. No terminal `|` branches — this is a void event
 // with one effect operation.
 
-~import std/io
+import std/io
 
 const std = @import("std");
 
-~pub tor ping { msg: string }
+pub tor ping { msg: string }
 ! pong string
 
-~proc ping|zig {
+proc ping|zig {
     pong(msg);
 }
 
-~ping(msg: "hello effect branches")
+ping(msg: "hello effect branches")
 ! pong reply |> std/io:print.blk {
     {{ reply:s }}
 }

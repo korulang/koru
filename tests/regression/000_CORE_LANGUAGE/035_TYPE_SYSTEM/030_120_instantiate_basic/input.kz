@@ -1,5 +1,5 @@
 // RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
-// dead `~type(OptionalInt = Option<i32>)` alias generation. Under the
+// dead `type(OptionalInt = Option<i32>)` alias generation. Under the
 // stamped-name convention the alias DISSOLVES: the deterministic name
 // IS the identity, spellable anywhere. This pin = registry breakdown
 // #4 (generic event param): a stamped type named in an EVENT SIGNATURE

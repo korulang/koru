@@ -11,7 +11,7 @@
 //   parameter is 'v'. The legal spelling is `echo(v: other)` (see 210_091).
 //
 // CURRENT BEHAVIOR (the bug this pins): compiles clean. The emit path
-//   (emitter_helpers.zig ~5975) treats a bare arg as positional and binds it
+//   (emitter_helpers.zig 5975) treats a bare arg as positional and binds it
 //   to parameter[idx] BY INDEX, never checking that 'other' puns to 'v'.
 //   RED until the frontend rejects it. Exact diagnostic code/wording is a
 //   design call (TBD with the fix); expected_patterns below is the target.

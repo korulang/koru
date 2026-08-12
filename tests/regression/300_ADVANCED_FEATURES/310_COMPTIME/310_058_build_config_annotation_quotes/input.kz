@@ -1,6 +1,6 @@
 // Test: build flag with multiple arguments survives quote escaping.
 //
-// `~[build("a", "b")]` carries two double-quoted strings with a comma —
+// `[build("a", "b")]` carries two double-quoted strings with a comma —
 // the worst-case shape for a string-escape bug since both inner quotes
 // AND the comma must round-trip into the emitted Zig annotation array.
 

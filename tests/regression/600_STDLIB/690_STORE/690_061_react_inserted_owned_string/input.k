@@ -6,7 +6,7 @@
 // it, owes nothing; teardown frees each live element. First REACT-over-owned
 // rung (READ landed in 690_060; watch/interceptor over owned was the wall).
 //
-// Currently WALLED at store.kz:~1410 (lifecycle interceptors on an owned-column
+// Currently WALLED at store.kz:1410 (lifecycle interceptors on an owned-column
 // store are a later rung). This pins the TARGET — MUST_RUN, red until it lands.
 import std/io
 import std/string

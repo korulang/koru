@@ -1,14 +1,14 @@
 // Test: Impure events require overrides
 // MUST_ERROR: has impure events without overrides
 //
-// When a test calls an impure event (Zig proc without ~[pure]),
+// When a test calls an impure event (Zig proc without [pure]),
 // the compiler should error and list ALL impure events at once.
 //
 // This is the "fix/recompile loop killer" - great UX!
 
 ~import std/testing
 
-// Impure event - Zig proc without ~[pure]
+// Impure event - Zig proc without [pure]
 ~tor fetch-user { id: u32 } -> string
 
 ~proc fetch-user|zig {

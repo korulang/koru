@@ -1,4 +1,4 @@
-// Test: ~capture with multiple accumulated fields, as a SUBFLOW implementation.
+// Test: capture with multiple accumulated fields, as a SUBFLOW implementation.
 // One pass through the data, multiple cells in one block, pure next-state
 // semantics (compute the entire next state at once). Also exercises the
 // multi-FIELD multi-LINE captured block.

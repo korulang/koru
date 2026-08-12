@@ -1,13 +1,13 @@
 // SUBFLOW-IMPLEMENTED EFFECTS (Barbour effect-typing arc) — the historic pin,
 // now on the RULED spelling (2026-07-02): firing an arm IS calling it, with
 // established subflow grammar only. The original sketch's statement-fire
-// (`~gen => for(0..n) ! each i | done n`) is dead; inside the declaring
-// event's impl, the event's own arms are CALLABLE, exactly as a `~proc` body
+// (`gen => for(0..n) ! each i | done n`) is dead; inside the declaring
+// event's impl, the event's own arms are CALLABLE, exactly as a `proc` body
 // calls `each(i)` today — so the firing chains with stock `|>` and the
 // terminal maps with stock `=>` (240's shape).
 //
 // Why it matters (unchanged from the original pin): every effect-bearing
-// event used to be `~proc`-backed — the proc was the trust boundary, firing
+// event used to be `proc`-backed — the proc was the trust boundary, firing
 // effects from opaque host code "unsafe"-style. With a subflow impl, the
 // firing and the per-firing obligation rule are visible to the flow-level
 // checkers instead of trusted. Pure-.k twin: 400_131; obligation pair:

@@ -1,7 +1,7 @@
 // Test 506: Multi-branch taps with fan-out
 // Multiple tap handlers for the same branch should ALL fire
 //
-// ~tap(foo -> *)
+// tap(foo -> *)
 // | success s |> log-success(s)
 // | success s |> audit-success(s)  // BOTH fire on success
 // | error e |> log-error(e)

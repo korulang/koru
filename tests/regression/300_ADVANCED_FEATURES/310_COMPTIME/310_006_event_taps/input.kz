@@ -1,5 +1,5 @@
 // Test 310_006: Event Taps (Library Syntax)
-// Validates that ~tap() observes and reacts to event transitions
+// Validates that tap() observes and reacts to event transitions
 
 const std = @import("std");
 ~import std/taps

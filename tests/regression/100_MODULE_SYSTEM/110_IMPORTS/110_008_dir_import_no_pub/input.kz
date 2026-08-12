@@ -1,12 +1,12 @@
 // Test 156b: Directory import with non-public events (negative test)
 //
-// Tests that importing events WITHOUT ~pub markers fails at compile time
+// Tests that importing events WITHOUT pub markers fails at compile time
 // This enforces proper API boundaries
 
 const std = @import("std");
 
 // Import directory 'lib/raylib' containing graphics.kz and audio.kz
-// Events in these files are NOT marked ~pub, so this should fail
+// Events in these files are NOT marked pub, so this should fail
 ~import app/lib/raylib
 
 // Attempting to use non-public events should fail

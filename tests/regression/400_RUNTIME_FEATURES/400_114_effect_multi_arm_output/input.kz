@@ -7,12 +7,12 @@
 // 210_093 (single-line).
 //
 // The resume-by-named-arm spelling (`=> halved v`) reuses the existing
-// branch-ctor resume grammar (cf. the subflow resume `~greet => greeting "..."`
+// branch-ctor resume grammar (cf. the subflow resume `greet => greeting "..."`
 // in 020_014), now in effect-resume position. Glyph discipline holds: this
 // effect HAS arms, so `=>` constructs one (`->` is the single-resume producer
 // and is illegal here).
 //
-// The `~proc` consumes the multi-arm resume as a TAGGED UNION — the same way
+// The `proc` consumes the multi-arm resume as a TAGGED UNION — the same way
 // it binds a scalar from a `-> T` effect today, `const r = ask(payload)`
 // binds the synthesized `union(enum) { halved: i32, timeout: void }` and the
 // proc dispatches with an ordinary Zig `switch`.

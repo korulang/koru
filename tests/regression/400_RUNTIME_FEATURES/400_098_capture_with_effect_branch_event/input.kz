@@ -1,12 +1,12 @@
-// Test: `~capture` integrates with effect-branch events.
+// Test: `capture` integrates with effect-branch events.
 //
 // Surfaced 2026-05-25 designing the effect-branches throughput benchmark.
 // The user-facing intent: producer fires `! v` for each yielded value;
-// consumer wraps the iteration in `~capture` to accumulate. Mirrors the
-// canonical `~for` + capture pattern from how-capture-works (the blog),
+// consumer wraps the iteration in `capture` to accumulate. Mirrors the
+// canonical `for` + capture pattern from how-capture-works (the blog),
 // but with a user-defined effect-branch event in the iteration slot.
 //
-// Current behavior (the bug): the transform that lowers `~capture` to
+// Current behavior (the bug): the transform that lowers `capture` to
 // inline Zig calls the inner event's handler without passing the
 // consumer's comptime handler struct (`__H`). Effect-branch events have
 // signature `handler(Input, comptime __H: type)`, so the call fails with

@@ -4,12 +4,12 @@
 // Transform passes enforce conventions, not the parser.
 //
 // Valid event names (parser accepts all of these):
-//   ~ring:new[T:i32]       ← bracket style generics
-//   ~ring:new<T:i32>       ← angle bracket style generics
-//   ~ring:new{T:i32}       ← NOT valid (brace starts body)
-//   ~log.*                 ← glob pattern
-//   ~math:add<A,B>         ← multiple type params
-//   ~weird:name$with#chars ← arbitrary characters
+//   ring:new[T:i32]       ← bracket style generics
+//   ring:new<T:i32>       ← angle bracket style generics
+//   ring:new{T:i32}       ← NOT valid (brace starts body)
+//   log.*                 ← glob pattern
+//   math:add<A,B>         ← multiple type params
+//   weird:name$with#chars ← arbitrary characters
 //
 // The parser counts:
 //   () parentheses - must balance

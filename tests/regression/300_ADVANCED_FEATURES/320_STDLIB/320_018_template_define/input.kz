@@ -1,4 +1,4 @@
-// Test: ~std/template:define parses and stores template in AST
+// Test: std/template:define parses and stores template in AST
 //
 // This test verifies that template definitions:
 // 1. Parse correctly (no syntax errors)

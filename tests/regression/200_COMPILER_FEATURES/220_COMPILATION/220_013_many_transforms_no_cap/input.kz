@@ -2,7 +2,7 @@
 // collected transform handlers into a FIXED [16]TransformEvent array and
 // silently stopped wiring at `transform_count < 16` — no error, no warning.
 // A handful of always-present implicit transforms (capture/assert/test/...)
-// eat ~3 slots, so a program with ~14+ user transforms silently lost handlers.
+// eat 3 slots, so a program with 14+ user transforms silently lost handlers.
 // A dropped handler leaves its invocation un-transformed, so the event's
 // `transformed` branch can't be satisfied -> KORU022 at the call site, even
 // though every transform here is correctly defined.

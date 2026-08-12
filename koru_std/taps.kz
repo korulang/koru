@@ -8,13 +8,13 @@
 // observation lowers to a free, inline call rather than a runtime hook.
 //
 // USAGE (in `.kz`):
-//   ~import std/taps
+//   import std/taps
 //
 //   // Observe a concrete source, bind its produced value, react:
-//   ~tap(compute -> *): v |> observed(value: v)
+//   tap(compute -> *): v |> observed(value: v)
 //
 //   // Metatype branch (required for wildcard sources):
-//   ~tap(* -> *)
+//   tap(* -> *)
 //   | Profile p |> profiler(p)
 
 ~[comptime]
@@ -27,7 +27,7 @@ var metatype_global_counter: usize = 0;
 // ============================================================================
 // TAP TRANSFORM
 // ============================================================================
-// When the compiler encounters ~tap(...), this transform:
+// When the compiler encounters tap(...), this transform:
 // 1. Parses the source/destination patterns
 // 2. Walks the program AST finding matching transitions
 // 3. Wraps matching continuations with the tap's void call
@@ -77,7 +77,7 @@ var metatype_global_counter: usize = 0;
     // All tap branches - we support multiple handlers for same branch (fan-out)
     var all_tap_branches = tap_flow.body.continuations;
 
-    // Bare-return tap surface: `~tap(e -> *): v |> obs(v)` carries the value bind
+    // Bare-return tap surface: `tap(e -> *): v |> obs(v)` carries the value bind
     // `v` on the tap flow HEAD (return_binding), while the observer sits on a
     // void-branch (`branch == ""`) continuation with no binding. Lift `v` onto
     // that continuation so the wrap path rewrites it like a branch tap's payload
@@ -575,7 +575,7 @@ var metatype_global_counter: usize = 0;
                     }
                 }
             } else if (tap_binding != null and tap_branch.len == 0 and source_produced != null) {
-                // Bare-return tap (`~tap(e -> *): v |> obs(v)`): the source `-> T`
+                // Bare-return tap (`tap(e -> *): v |> obs(v)`): the source `-> T`
                 // event has no branch payload binding; its produced value is the
                 // source head's `: r` bind, already declared in scope. Rewrite the
                 // tap's `v` straight to that (`obs(value: v)` → `obs(value: r)`).
@@ -867,7 +867,7 @@ var metatype_global_counter: usize = 0;
                         continue;
                     }
 
-                    // A bare-return tap binding (`~tap(e -> *): f |> obs(f.x)`)
+                    // A bare-return tap binding (`tap(e -> *): f |> obs(f.x)`)
                     // needs the observed value IN SCOPE. When the source head
                     // has no `: r` bind, a binding stamped on the void wrapper
                     // continuation names nothing the emitter ever declares —

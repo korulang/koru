@@ -1,5 +1,5 @@
 // PINS: a subflow continuation naming a branch the invoked tor does not declare
-// is rejected (KORU021), in SUBFLOW position — the flow head is `~process = …`,
+// is rejected (KORU021), in SUBFLOW position — the flow head is `process = …`,
 // not a top-level call.
 //
 // `double` declares `doubled` and `refused`. The third arm names `tripled`,

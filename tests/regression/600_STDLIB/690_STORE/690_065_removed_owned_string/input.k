@@ -3,7 +3,7 @@
 // the reactive-todo CRUD (insert/query/react/write all landed; this is the
 // "react when a todo is removed" piece).
 //
-// `removed` fires in the take path (store.kz ~2440), BEFORE the swap-remove,
+// `removed` fires in the take path (store.kz 2440), BEFORE the swap-remove,
 // with the row's outgoing values — for an owned column the BARE-BORROW
 // projection (690_060/061, LC.emit already builds it): the interceptor reads
 // the label, consumes nothing; `take` then moves the owned value OUT to the
@@ -11,7 +11,7 @@
 // only row, teardown has nothing live.
 //
 // The machinery already exists (LC.emit bare-borrow payload + the take-path
-// removed firing); only the create-time wall (store.kz ~1432, "removed/updated
+// removed firing); only the create-time wall (store.kz 1432, "removed/updated
 // interceptors over an owned column are a later rung") blocked it. This rung
 // splits that wall to admit `removed` while `updated` stays walled (updated
 // carries TWO owned images — a distinct later rung).

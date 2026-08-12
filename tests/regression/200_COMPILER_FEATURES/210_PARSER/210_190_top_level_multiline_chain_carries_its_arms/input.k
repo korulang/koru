@@ -3,10 +3,10 @@
 //
 // The machinery is not missing. It is written, it runs, and it compiles the
 // compiler — a subflow definition with an indented chain and a dedented arm is
-// `koru_std/compiler.kz`'s `~analysis`, and 210_152 pins the same shape green.
+// `koru_std/compiler.kz`'s `analysis`, and 210_152 pins the same shape green.
 // Only the top-level path never reaches it.
 //
-// Measured on the identical four lines: as `~run = stage-a` / `  |> stage-b` /
+// Measured on the identical four lines: as `run = stage-a` / `  |> stage-b` /
 // `| failed f => failed f` it runs. Move it to a top-level statement, change
 // nothing else, and it is `KORU010: stray continuation line`. The discriminator
 // is the POSITION, not the indentation and not the bind.

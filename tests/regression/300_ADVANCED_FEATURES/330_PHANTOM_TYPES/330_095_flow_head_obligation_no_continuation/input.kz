@@ -1,5 +1,5 @@
 // Pins: a flow-head bare-return obligation in a CONTINUATION-LESS flow is a
-// flow exit — `~make(): _` (or `: h`) issues <owned!> with nothing after it,
+// flow exit — `make(): _` (or `: h`) issues <owned!> with nothing after it,
 // so auto-discharge inserts dispose() at the head exactly as it does for a
 // nested bind (330_094). The head has no terminal for the terminator-disposal
 // machinery to fire on, so the inserter synthesizes one (renaming a `_` head

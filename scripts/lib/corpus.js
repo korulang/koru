@@ -120,11 +120,22 @@ function walk(dir, breadcrumbs, negativeTests) {
     // so the kz-only path is unchanged.
     const inputKzPath = path.join(dir, 'input.kz');
     const inputKPath = path.join(dir, 'input.k');
+    // The corpus teaches the PURE Koru surface. A `.kz` is Koru embedded in
+    // host text, where every Koru line opens with `~` — the host-boundary
+    // marker (frag-tilde-marks-the-host-boundary). Pure Koru (`.k`) rejects
+    // the tilde outright, so a reference corpus that prints `~tor`, `~import`,
+    // `~hello()` would be teaching a spelling the language refuses: the
+    // marker is stripped at line start (the only position it occupies in
+    // `.kz`) before embedding. Type-declaration bodies, host Zig, and `~`
+    // inside strings are untouched — the strip is exactly the marker, nothing
+    // else. Applied to both inputs so a `.k` migrating back the other way is
+    // represented the same way.
+    const deTilde = (s) => s.split('\n').map((l) => l.replace(/^([ \t]*)~/, '$1')).join('\n');
     const parts = [];
     if (fs.existsSync(inputKzPath))
-      parts.push(fs.readFileSync(inputKzPath, 'utf-8').replace(/\n+$/, ''));
+      parts.push(deTilde(fs.readFileSync(inputKzPath, 'utf-8')).replace(/\n+$/, ''));
     if (fs.existsSync(inputKPath))
-      parts.push(fs.readFileSync(inputKPath, 'utf-8').replace(/\n+$/, ''));
+      parts.push(deTilde(fs.readFileSync(inputKPath, 'utf-8')).replace(/\n+$/, ''));
     if (parts.length === 0) return [];
     const expectedPath = path.join(dir, 'expected.txt');
     return [

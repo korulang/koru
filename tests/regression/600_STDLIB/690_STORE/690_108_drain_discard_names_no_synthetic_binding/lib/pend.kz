@@ -5,7 +5,7 @@
 // `! discharge` arm bolted onto the declaration.
 //
 // This is the shape koru/curl:Pending has in koru-examples/downloads, where
-// `~pub tor cancel { p: *Pending<!open> } -> *Multi<owned!>` returns the batch.
+// `pub tor cancel { p: *Pending<!open> } -> *Multi<owned!>` returns the batch.
 // An i64 return carries the same property without a second obligation.
 //
 // The contrast is app/lib/tx (690_057/058/097): TWO void dischargers, so the

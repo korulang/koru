@@ -97,7 +97,7 @@
 // program) a residual is always about ONE PLACE. `tags` route it to consumers.
 //
 // In pure `.k` there is no tilde — this is a Koru feature, not a
-// host-embedding one. A host-embedding file writes the same block with `~`.
+// host-embedding one. A host-embedding file writes the same block with ``.
 //
 // [norun] for the same reason as flag.declare and std/invariants: the
 // declaration never executes. It is data in the AST, harvested after the parse

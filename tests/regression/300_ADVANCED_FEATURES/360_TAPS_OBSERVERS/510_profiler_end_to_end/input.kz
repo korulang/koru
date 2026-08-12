@@ -1,4 +1,4 @@
-// Pins the runtime profiler end-to-end: ~[profile]import + --profile produces
+// Pins the runtime profiler end-to-end: [profile]import + --profile produces
 // a valid Chrome Tracing file capturing the program's real transitions, while
 // the profiler's own write-* events stay invisible (opaque taps).
 ~import std/io

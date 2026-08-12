@@ -18,9 +18,9 @@
 
 // A local hard-failure sink. Nothing in std/io exposes a callable panic at
 // the pure-Koru surface (grep: no `std/io:panic` anywhere in the corpus;
-// @panic only ever appears inside `~proc ...|zig` bodies) — this is the
+// @panic only ever appears inside `proc ...|zig` bodies) — this is the
 // GROUNDED idiom for "turn a required `| err` branch into a loud crash"
-// (mirrors 400_143's `~event stash {...} ~proc stash|zig {...}` shape: a
+// (mirrors 400_143's `event stash {...} proc stash|zig {...}` shape: a
 // tiny custom event+proc pair, not a language builtin).
 ~pub tor fatal { msg: string }
 ~proc fatal|zig { @panic(msg); }
@@ -125,7 +125,7 @@
             // `exec`'s `sql` parameter is a raw, unparameterized string
             // (GROUNDED: index.kz's exec proc calls sqlite3_exec directly on
             // whatever bytes it's given — no bind-parameter path exists for
-            // mutations, only `~query(){{...}}`'s SELECT-only transform
+            // mutations, only `query(){{...}}`'s SELECT-only transform
             // does bind parameters). `std/fmt:blk` is a real, GROUNDED
             // koru_std/fmt.kz construct ({{ }} interpolation, comptime
             // transform, produces `*FormattedText<allocated!>`) but has

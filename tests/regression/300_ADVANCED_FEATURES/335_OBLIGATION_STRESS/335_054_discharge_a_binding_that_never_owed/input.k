@@ -42,8 +42,8 @@
 //
 // Both refuse this, which is legitimate and common:
 //
-//   ~tor pass-through { h: *Handle<!owned> }
-//   ~pass-through = sink(h)          # delegate the transferred obligation
+//   tor pass-through { h: *Handle<!owned> }
+//   pass-through = sink(h)          # delegate the transferred obligation
 //
 // A `<!state>` PARAMETER means the caller handed the debt in, so the body may
 // settle it once. The seeding for that is written (the impl-param block builds

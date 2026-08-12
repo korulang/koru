@@ -1,7 +1,7 @@
 // Library module with a [comptime] event
 //
 // Mirrors the pattern from @korulang/postgres:
-//   ~[comptime|norun]pub event sql { conninfo: ..., source: Source }
+//   [comptime|norun]pub event sql { conninfo: ..., source: Source }
 // Simplified to avoid Source parameter complexity.
 
 const std = @import("std");

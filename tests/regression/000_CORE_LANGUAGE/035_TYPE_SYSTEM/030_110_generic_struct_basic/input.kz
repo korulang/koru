@@ -1,5 +1,5 @@
 // RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
-// dead generation: `~struct(Option<T>)` parametric grammar is banned
+// dead generation: `struct(Option<T>)` parametric grammar is banned
 // (generics-are-a-comptime-library ruling, 2026-06-13; `<>` is the
 // phantom channel). The intent — a parameterized type — survives as a
 // STAMPED NAME: `#` marks a monomorphized type identity in the name

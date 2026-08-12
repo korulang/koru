@@ -52,7 +52,7 @@
 // `rule` is the claim, in prose, addressed to whoever reads it.
 //
 // In pure `.k` there is no tilde — this is a Koru feature, not a
-// host-embedding one. A host-embedding file writes the same block with `~`.
+// host-embedding one. A host-embedding file writes the same block with ``.
 //
 // [norun] for the same reason as flag.declare: the declaration never executes.
 // It is data in the AST, harvested after the parse by whoever asks. That is

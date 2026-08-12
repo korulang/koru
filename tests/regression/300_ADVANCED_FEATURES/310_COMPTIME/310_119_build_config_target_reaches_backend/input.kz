@@ -17,9 +17,9 @@
 // dot namespace. But the corpus could not tell the difference between "cross
 // -compiles" and "silently builds native", and that is what this test closes.
 //
-// No `~[build(...)]` annotation, so the config always matches (build.kz:57) and
+// No `[build(...)]` annotation, so the config always matches (build.kz:57) and
 // no CLI flag is needed. The assertion is a comptime one INSIDE a fired tor: an
-// unfired `~pub tor main` emits a main() holding only the flow prologue and
+// unfired `pub tor main` emits a main() holding only the flow prologue and
 // epilogue, so its body would never be analysed and the wall would not exist.
 //
 // COMPILE_ONLY because the artifact is an x86_64 Linux binary that cannot run on

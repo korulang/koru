@@ -1,4 +1,4 @@
-// An inline flow inside a `~proc` body is refused at the parser boundary.
+// An inline flow inside a `proc` body is refused at the parser boundary.
 //
 // A proc body is host code the compiler cannot read, so a proc is a LEAF: the
 // only structure Koru can see lives in the flows and events outside it. An
@@ -22,8 +22,8 @@
 // to re-enable the feature. Nothing was red if someone did. This test is.
 //
 // The gate is positional: it fires on a line inside a proc body opening with
-// `~` that is not a host keyword (`~struct`, `~if`, `~for`, ...), and on
-// `return ~...` and `const x = ~...`.
+// `` that is not a host keyword (`struct`, `if`, `for`, ...), and on
+// `return ...` and `const x = ...`.
 
 ~import std/io
 

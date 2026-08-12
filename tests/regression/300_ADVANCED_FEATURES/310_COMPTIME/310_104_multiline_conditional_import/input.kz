@@ -1,5 +1,5 @@
 // Pins the multiline annotation block attaching to an import — one grammar
-// with the inline form (310_027/029 pin inline `~[profile]import`): bullets
+// with the inline form (310_027/029 pin inline `[profile]import`): bullets
 // are the annotation entries, prose lines are human rationale (discarded by
 // the parser, kept for the reader), and the entries gate the import exactly
 // as they would inline.

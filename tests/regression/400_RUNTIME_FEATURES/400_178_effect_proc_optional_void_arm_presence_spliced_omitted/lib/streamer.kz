@@ -1,4 +1,4 @@
-// A `~proc |zig` with a VOID optional arm whose body probes presence via
+// A `proc |zig` with a VOID optional arm whose body probes presence via
 // `@hasDecl(__H, "<arm>")` — the proc-side presence spelling vaxis:run's
 // tick gate uses. Sound on the Handlers-fn path, where `__H` is the
 // synthesized comptime type. A TOP-LEVEL cross-module consumer takes the

@@ -5,7 +5,13 @@
 // the registry-backed checker, with a diagnostic naming both types
 // (not a Zig error pointing into generated code; today binding/payload
 // types are strings the checker cannot reason about — the 2026-07-06
-// walk's "checked earlier" requirement). Spelling PROVISIONAL.
+// walk's "checked earlier" requirement).
+//
+// The value-level shape of this argument already runs: the phantom
+// checker refuses same-shaped distinct-identity VALUES (`feet!` vs
+// `meters!`). `box#i64` vs `box#f64` is that same refusal moved up to
+// STAMPED TYPE identity — the registry's job, mirroring a power the
+// checker already has rather than inventing one. Spelling PROVISIONAL.
 
 ~import std/types
 

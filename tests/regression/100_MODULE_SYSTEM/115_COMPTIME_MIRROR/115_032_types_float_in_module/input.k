@@ -1,4 +1,4 @@
-// MIRROR of 030_102_float_type: `~float` declaring a nominal floating-point
+// MIRROR of 030_102_float_type: `float` declaring a nominal floating-point
 // type inside an imported .kz module.
 //
 // Sibling of 115_031 on the other primitive. Kept separate because the types

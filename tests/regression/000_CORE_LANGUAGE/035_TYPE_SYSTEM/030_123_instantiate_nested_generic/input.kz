@@ -1,5 +1,5 @@
 // RED PIN (type-system design walk, 2026-07-06/07). REWRITTEN from the
-// dead nested-`~type` generation. Registry breakdown #3: a COMPOSED
+// dead nested-`type` generation. Registry breakdown #3: a COMPOSED
 // stamped type (parameter is itself stamped) crossing an event-
 // signature boundary. Depends on the composition-grouping spelling
 // pinned at 030_112 (PROVISIONAL parens) — this pin adds the

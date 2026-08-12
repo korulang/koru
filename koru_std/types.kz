@@ -11,21 +11,21 @@
 //   - Enable data-oriented patterns (ECS, etc.)
 //
 // USAGE:
-//   ~import std/types
+//   import std/types
 //
-//   ~std/types:struct(Player) { name: []const u8, health: i32 }
-//   ~[pub]std/types:struct(Position) { x: f32, y: f32 }
+//   std/types:struct(Player) { name: []const u8, health: i32 }
+//   [pub]std/types:struct(Position) { x: f32, y: f32 }
 //
-//   ~std/types:enum(Color) { red, green, blue }
-//   ~[pub]std/types:enum(State) { idle, running, jumping }
+//   std/types:enum(Color) { red, green, blue }
+//   [pub]std/types:enum(State) { idle, running, jumping }
 //
-//   ~std/types:union(Value) { int: i32, float: f32, none }
+//   std/types:union(Value) { int: i32, float: f32, none }
 //
 // Future annotations:
-//   ~[pub|soa]std/types:struct(Enemies) { hp: i32, x: f32, y: f32 }
-//   ~[packed]std/types:struct(NetworkPacket) { ... }
+//   [pub|soa]std/types:struct(Enemies) { hp: i32, x: f32, y: f32 }
+//   [packed]std/types:struct(NetworkPacket) { ... }
 //
-// NOTE: For const declarations, use raw Zig or ~const (in std/declarations —
+// NOTE: For const declarations, use raw Zig or const (in std/declarations —
 // const is a value declaration, not a type, so it lives in its own module).
 
 ~[comptime|runtime]
@@ -41,7 +41,7 @@ const std = @import("std");
 // [soa] - (future) emits struct-of-arrays layout
 // [packed] - (future) emits packed struct
 // `fields-of(T)` — a comptime traversal SOURCE over an existing type's fields.
-// Iteration is EMERGENT: like `~for`, it pulses `! each f` (each `f` a reflected
+// Iteration is EMERGENT: like `for`, it pulses `! each f` (each `f` a reflected
 // field, `.name` / `.type`) rather than handing an iterator to a loop. Round one is
 // consumed by std/constructor's struct terminal (lowered to Zig `@typeInfo`); a
 // standalone lowering — `fields-of` traversing outside a constructor — is the later
@@ -50,7 +50,7 @@ const std = @import("std");
 ! each *
 | ?done
 
-// STANDALONE lowering — `fields-of(T)` used OUTSIDE a constructor. Mirrors ~for's
+// STANDALONE lowering — `fields-of(T)` used OUTSIDE a constructor. Mirrors for's
 // template, but the iterable is `@typeInfo(T).@"struct".fields` and the loop is
 // `inline for` (reflected fields are heterogeneous — each `.type` differs — so it
 // must comptime-unroll). INSIDE a constructor the `.pre` struct terminal consumes
@@ -106,7 +106,7 @@ const std = @import("std");
     // 1. "Option<T>"  -> generic definition, store but don't emit
     // 2. "Player"     -> normal struct, emit as-is
     //
-    // NOTE: For instantiation (e.g., "OptionalInt = Option<i32>"), use ~type
+    // NOTE: For instantiation (e.g., "OptionalInt = Option<i32>"), use type
 
     // Helper: format body with consistent indentation (inline)
     const formatBodyFn = struct {
@@ -147,7 +147,7 @@ const std = @import("std");
 
     if (has_angle) {
         // GENERIC DEFINITION: "Option<T>" - don't emit Zig code
-        // Store the definition as a special comment that ~type can parse
+        // Store the definition as a special comment that type can parse
         // Format: // __GENERIC__:Name<Params>:Body
         const escaped_body = std.mem.replaceOwned(u8, allocator, source.text, "\n", "\\n") catch unreachable;
         const code = std.fmt.allocPrint(
@@ -208,10 +208,10 @@ const std = @import("std");
 // Koru tracks them as separate types for type checking.
 //
 // USAGE:
-//   ~string(EmailAddress)    // wraps []const u8
-//   ~int(UserId)             // wraps i64
-//   ~float(Temperature)      // wraps f64
-//   ~bool(IsActive)          // wraps bool
+//   string(EmailAddress)    // wraps []const u8
+//   int(UserId)             // wraps i64
+//   float(Temperature)      // wraps f64
+//   bool(IsActive)          // wraps bool
 
 // Declare a nominal string type (wraps []const u8)
 ~[keyword|comptime|transform]pub tor string {
@@ -417,11 +417,11 @@ const std = @import("std");
 // Instantiate a generic type with concrete type arguments.
 //
 // USAGE:
-//   ~struct(Option<T>) { value: ?T = null }   // Define generic
-//   ~type(OptionalInt = Option<i32>)          // Instantiate it
+//   struct(Option<T>) { value: ?T = null }   // Define generic
+//   type(OptionalInt = Option<i32>)          // Instantiate it
 //
-//   ~struct(Pair<A, B>) { first: A, second: B }
-//   ~type(StringIntPair = Pair<[]const u8, i32>)
+//   struct(Pair<A, B>) { first: A, second: B }
+//   type(StringIntPair = Pair<[]const u8, i32>)
 
 ~[keyword|comptime|transform]pub tor type {
     expr: Expression,
@@ -543,7 +543,7 @@ const std = @import("std");
     }
 
     if (equals_pos == null) {
-        // No '=' found - invalid syntax for ~type
+        // No '=' found - invalid syntax for type
         std.debug.print("ERROR: ~type requires 'Name = Generic<Args>' syntax\n", .{});
         return .{};
     }

@@ -8,7 +8,7 @@
 // surface) over SERIALIZED ANCESTRY PATHS of the program's flow trees, with
 // branch-constructor verdicts:
 //
-//   ~std/trellis:define("kernel-shape")
+//   std/trellis:define("kernel-shape")
 //   | `std/kernel:init/kernel/.*` => ok
 //   | `.*std/kernel:pairwise` => error "std/kernel:pairwise found outside std/kernel:init"
 //   | `.*std/kernel:self` => error "std/kernel:self found outside std/kernel:init"
@@ -26,14 +26,14 @@
 // message. Paths matching no arm are unconstrained (placement-constraint
 // semantics; closedness is spelled with a catch-all error arm).
 //
-//   ~std/trellis:enforce("kernel-shape")   — program-wide LAW: a violation
+//   std/trellis:enforce("kernel-shape")   — program-wide LAW: a violation
 //     halts compilation at Stage C with a located koru-level diagnostic:
 //     Check "kernel-shape" failed: <message> at file:line:col
 //     (Immediate halt, not @compileError injection: a later transform must
 //     never get the chance to trip over the malformed tree and bury the
 //     real message under a panic.)
 //
-//   ~std/trellis:check("kernel-shape")     — CATEGORIZATION: the verdict
+//   std/trellis:check("kernel-shape")     — CATEGORIZATION: the verdict
 //   | ok |> ...                              arrives as ordinary branch
 //   | error msg |> ...                       dispatch, resolved at comptime;
 //                                            the losing branch is dead code.

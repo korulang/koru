@@ -33,7 +33,7 @@
 //      when it was a completed one. Nobody read the emitted program, which names
 //      the disposal on the line above.
 //   2. The SPELLING went illegal underneath it. The original declared
-//      `~tor make {} | ok *Handle<owned!>` — a single continuation branch
+//      `tor make {} | ok *Handle<owned!>` — a single continuation branch
 //      carrying a payload — which a later ruling refuses outright:
 //      `error[PARSE003]: single continuation branch 'ok' carrying a payload is a
 //      one-variant tag union — declare the single output as a bare return

@@ -5,7 +5,7 @@
 // to an event, regardless of where they appear in the call graph.
 //
 // Structure:
-//   ~hello() | said _ |> goodbye() | said _ |> _
+//   hello() | said _ |> goodbye() | said _ |> _
 //
 // The tap on 'goodbye' should fire even though goodbye() is nested
 // inside hello()'s continuation, not a top-level flow.

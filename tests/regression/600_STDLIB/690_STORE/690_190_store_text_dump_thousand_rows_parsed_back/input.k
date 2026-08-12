@@ -14,7 +14,7 @@
 // survive the text, a dropped row, or a repaired pairing all break it.
 //
 // There is no whole-store save/load verb (the gauntlet-2 hole); this program
-// is the floor a verb must beat — ~40 lines of hand-rolled envelope for two
+// is the floor a verb must beat — 40 lines of hand-rolled envelope for two
 // i64 columns, and no float column can cross at all (std/string has
 // parse-int/from-int only; no float mirror).
 import std/io

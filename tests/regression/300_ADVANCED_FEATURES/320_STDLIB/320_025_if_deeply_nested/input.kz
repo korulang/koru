@@ -1,6 +1,6 @@
-// Test: ~if deeply nested in continuation hierarchy
+// Test: if deeply nested in continuation hierarchy
 //
-// This tests the case where ~if is several levels deep in nested continuations.
+// This tests the case where if is several levels deep in nested continuations.
 // Same structural challenge as 320_024_for_deeply_nested.
 //
 // The transform must search RECURSIVELY through nested continuations.

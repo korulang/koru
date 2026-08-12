@@ -1,5 +1,5 @@
 // Pins: a declaration's recorded AST location is a line of the USER'S file.
-// `~tor solo` is written on line 11 and must be recorded as line 11.
+// `tor solo` is written on line 11 and must be recorded as line 11.
 //
 // The guarded shape is a disagreement between two coordinate systems inside
 // one compiler: `-->` diagnostics count from the user's line 1 (510_106,

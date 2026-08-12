@@ -1,12 +1,12 @@
 // PINS A BUG (not yet fixed — see comment below): a bare, non-braced
 // `const NAME: Type = value;` line in a pure-Koru `.k` file is neither
 // accepted nor cleanly rejected. It SHOULD be rejected at the parser
-// boundary: `.k` files have no host-Zig escape at all (`~`-prefixed lines
+// boundary: `.k` files have no host-Zig escape at all (``-prefixed lines
 // are already rejected with PARSE003 — see 's parser.zig:677-696), and the
 // only legal `const` shape in a `.k` file is the braced declaration form
 // from koru_std/declarations.kz: `const { name: value, ... }`.
 //
-// Instead, `src/parser.zig` synthesizes a leading `~` for any non-`|`/`!`
+// Instead, `src/parser.zig` synthesizes a leading `` for any non-`|`/`!`
 // top-level `.k` line (parser.zig:719-727) and dispatches it through the
 // general construct machinery. A bare `const NAME: Type = value;` line
 // doesn't match the braced `const {}` keyword shape, so it falls through

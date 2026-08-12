@@ -3,16 +3,16 @@
 // Variants are NOT just for different targets (GPU/CPU/WASM).
 // They're for ANY alternative implementation:
 //
-//   ~proc sort|zig(reference)   - obviously correct, slow
-//   ~proc sort|zig(optimized)   - fast, complex, needs verification
+//   proc sort|zig(reference)   - obviously correct, slow
+//   proc sort|zig(optimized)   - fast, complex, needs verification
 //
 // This enables PROPERTY TESTING:
 //   For random inputs, reference == optimized
 //
 // Syntax forms:
-//   ~proc event|target              - target variant (gpu, js, wasm)
-//   ~proc event|target(qualifier)   - qualified variant (zig(reference))
-//   ~proc event.*|variant           - glob + variant combined
+//   proc event|target              - target variant (gpu, js, wasm)
+//   proc event|target(qualifier)   - qualified variant (zig(reference))
+//   proc event.*|variant           - glob + variant combined
 
 // === USE CASE 1: Property Testing ===
 
@@ -41,9 +41,9 @@
 }
 
 // Property test: both variants produce same output
-// ~test(sort variants equivalent) {
+// test(sort variants equivalent) {
 //     const input = random_array(1000);
-//     ~sort|zig(reference) = (items: input)
+//     sort|zig(reference) = (items: input)
 //     | sorted ref |>
 //         sort|zig(optimized)(items: input)
 //         | sorted opt |> assert.eq(ref.items, opt.items)
@@ -78,8 +78,8 @@
 // === USE CASE 3: Glob + Variant + Property Test ===
 
 // ALL image transforms can be property-tested:
-// ~test(image.transform.* cpu == gpu) {
-//     ~image.transform.blur|cpu = (pixels: test_image, ...)
+// test(image.transform.* cpu == gpu) {
+//     image.transform.blur|cpu = (pixels: test_image, ...)
 //     | transformed cpu_result |>
 //         image.transform.blur|gpu(pixels: test_image, ...)
 //         | transformed gpu_result |>

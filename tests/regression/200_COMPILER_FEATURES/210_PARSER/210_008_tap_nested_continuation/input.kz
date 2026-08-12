@@ -5,7 +5,7 @@
 // based on indentation, not flattening them into a single array.
 //
 // When we write:
-//   ~source -> * | Transition t |> log() | done |> _
+//   source -> * | Transition t |> log() | done |> _
 //
 // The parser should create:
 //   tap.continuations[0] = { branch: "Transition", nested: [...] }

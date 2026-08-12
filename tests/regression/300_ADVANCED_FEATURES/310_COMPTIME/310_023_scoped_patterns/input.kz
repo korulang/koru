@@ -1,6 +1,6 @@
 // Test 621: Scoped Pattern Matching
 // Validates that unqualified patterns match local events by name
-// Pattern ~file.* should match both file.read and file.write in current scope
+// Pattern file.* should match both file.read and file.write in current scope
 
 const std = @import("std");
 

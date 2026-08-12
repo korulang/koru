@@ -9,7 +9,7 @@
 // reach the binary. Runtime collection is not the constructor; it's the store.
 //
 // SURFACE: `std/constructor(nums)` invokes the module's `default` event (the
-// default-event rule: `~std/M(args)` ≡ `~std/M:default(args)`). The header arg is
+// default-event rule: `std/M(args)` ≡ `std/M:default(args)`). The header arg is
 // the cell NAME; the `! construct` half drives a LINQ traversal whose `push`
 // calls collect into the cell; `| constructed <r>` is the one-shot after-read.
 //
@@ -25,7 +25,7 @@ const std = @import("std");
 // the first-parameter implicit slot: `std/constructor(nums)` lands `expr = "nums"`.
 //
 // `pre` stage: the constructor must DISSOLVE before the elaboration template pass
-// runs, so its grafted `~for(built)` (over the comptime list it defines) is
+// runs, so its grafted `for(built)` (over the comptime list it defines) is
 // template-processed as ordinary code. The pipeline runs `.pre` transforms via
 // `run-pre-transforms`, ahead of `process-template-procs` (see compiler.kz).
 ~[comptime|transform|pre]pub tor default { expr: Expression, reporter: *std/compiler:ErrorReporter }
@@ -49,7 +49,7 @@ const std = @import("std");
 
 // VALUE TERMINAL transform. Dissolves the `! construct` half into a comptime
 // list-accumulator preamble and keeps the `| constructed` after-body as a void
-// chain so the REAL ~for runs over the built list (no degradation) — capture's
+// chain so the REAL for runs over the built list (no degradation) — capture's
 // exact structure, cell = growing `[]const E` instead of a scalar.
 ~[transform]proc default|zig {
     const ast = @import("ast");
@@ -128,7 +128,7 @@ const std = @import("std");
     const preamble = p.toOwnedSlice(allocator) catch unreachable;
 
     // --- New continuations: `| constructed r` → `const r = cell;` (after-read) then
-    //     the after-body reusing the REAL ~for over the built list. The `! construct`
+    //     the after-body reusing the REAL for over the built list. The `! construct`
     //     branch is CONSUMED into the preamble and never re-emitted. ---
     var new_conts = std.ArrayList(ast.Continuation).initCapacity(allocator, 1) catch unreachable;
     if (constructed_cont) |dc| {

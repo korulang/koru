@@ -1,5 +1,5 @@
 // Reproduce Orisha pattern exactly:
-// ~module:event()
+// module:event()
 //   | branch |>
 //     module:other_event()
 

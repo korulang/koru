@@ -3,7 +3,7 @@
 // A claim is something an author asserts about a declaration, written in the
 // vertical annotation block where the reader already is:
 //
-//   ~[
+//   [
 //   - measured no-alloc-in-kernel
 //     This variant compiles the kernel body to a compute shader; the shape is
 //     checked by running it, not by inspection.
@@ -165,7 +165,7 @@
     // ── the key, and the crash ────────────────────────────────────────────
     //
     // The key is kind + module + subject + VARIANT + rule. The variant is not
-    // decoration: `~proc compute|zig` and `~proc compute|gpu` are two different
+    // decoration: `proc compute|zig` and `proc compute|gpu` are two different
     // implementations of one contract (370_VARIANTS/8201_variants_basic
     // declares three), and each deserves its own claim. Drop the variant from
     // the key and they collide — which is exactly what this check exists to

@@ -1,4 +1,4 @@
-// Test conditional imports - ~[flag]import syntax
+// Test conditional imports - [flag]import syntax
 //
 // This test verifies that conditional imports are deadstripped when flags are not set.
 // Since we run WITHOUT --profile or --test flags, both conditional imports below

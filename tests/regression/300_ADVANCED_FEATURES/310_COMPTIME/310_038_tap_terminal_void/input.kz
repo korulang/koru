@@ -4,7 +4,7 @@
 // This is critical for full program profiling - we must be able to observe
 // ALL events, including terminal void events that don't continue anywhere.
 //
-// Pattern: ~std/io:print.ln("Hello")  <-- nothing after this
+// Pattern: std/io:print.ln("Hello")  <-- nothing after this
 // The tap should still fire on the transition from println to nowhere.
 
 const std = @import("std");
