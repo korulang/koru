@@ -2261,24 +2261,99 @@ pub const Parser = struct {
                     }
 
                     // Find branch name (everything before {)
-                    const branch_brace_idx = std.mem.indexOf(u8, branch_content, "{") orelse {
-                        try self.reporter.addError(
-                            .PARSE003,
-                            event_line_index + 1,
-                            1,
-                            "branch missing payload shape",
-                            .{},
-                        );
-                        return error.ParseError;
-                    };
+                    const branch_brace_idx = std.mem.indexOf(u8, branch_content, "{");
+                    if (branch_brace_idx == null) {
+                        // Identity / payloadless / wildcard single-line branch,
+                        // mirroring parseBranch's no-brace path so the compact
+                        // form `tor x {} | ok i64 | bad string` reads on one line.
+                        //
+                        // `|` cannot appear inside a type, so the next top-level
+                        // `|` cleanly ends this branch's payload.
+                        var branch_end: usize = branch_content.len;
+                        for (branch_content, 0..) |c, i| {
+                            if (c == '|') {
+                                branch_end = i;
+                                break;
+                            }
+                        }
+                        const head = branch_content[0..branch_end];
 
-                    const branch_name = lexer.trim(branch_content[0..branch_brace_idx]);
+                        // The branch name is the leading identifier token; the
+                        // rest, trimmed, is the identity type. `-` is legal kebab
+                        // name-glue, so it is part of the name, not of a type.
+                        var name_end: usize = 0;
+                        while (name_end < head.len and
+                            (std.ascii.isAlphanumeric(head[name_end]) or
+                             head[name_end] == '_' or head[name_end] == '-'))
+                        {
+                            name_end += 1;
+                        }
+                        if (name_end == 0) {
+                            try self.reporter.addError(
+                                .PARSE003,
+                                event_line_index + 1,
+                                1,
+                                "branch missing name",
+                                .{},
+                            );
+                            return error.ParseError;
+                        }
+                        const branch_name = head[0..name_end];
+                        try self.rejectSnakeName(branch_name, event_line_index, "branch");
+
+                        const type_str = lexer.trim(head[name_end..]);
+
+                        var payload: ast.Shape = undefined;
+                        if (type_str.len == 0) {
+                            // Payloadless: `| done`
+                            payload = ast.Shape{ .fields = &.{} };
+                        } else if (std.mem.eql(u8, type_str, "*")) {
+                            // Wildcard: `| c *`
+                            payload = ast.Shape{ .fields = &.{}, .is_wildcard = true };
+                        } else {
+                            // Identity: `| ok i64`. Synthesize a braced single-field
+                            // record so parseBranchPayloadShape reuses the exact type
+                            // grammar (phantom, module-qualified, pointer prefixes) as
+                            // a braced payload — the __type_ref sentinel keeps it
+                            // identity downstream.
+                            const synth = try std.fmt.allocPrint(self.allocator, "{{ __type_ref: {s} }}", .{type_str});
+                            defer self.allocator.free(synth);
+                            payload = try self.parseBranchPayloadShape(synth);
+                        }
+
+                        // Check for duplicate branch names
+                        for (branches.items) |existing| {
+                            if (std.mem.eql(u8, existing.name, branch_name)) {
+                                try self.reporter.addError(
+                                    .PARSE003,
+                                    event_line_index + 1,
+                                    1,
+                                    "duplicate branch name '{s}'",
+                                    .{branch_name},
+                                );
+                                return error.ParseError;
+                            }
+                        }
+
+                        try branches.append(self.allocator, ast.Branch{
+                            .name = try self.allocator.dupe(u8, branch_name),
+                            .payload = payload,
+                            .is_optional = is_optional,
+                            .is_panic = is_panic,
+                        });
+
+                        // Move past this branch; the loop re-checks for the next `|`.
+                        branch_content = lexer.trim(branch_content[branch_end..]);
+                        continue;
+                    }
+
+                    const branch_name = lexer.trim(branch_content[0..branch_brace_idx.?]);
                     try self.rejectSnakeName(branch_name, event_line_index, "branch");
 
                     // Find the matching closing brace for the payload
                     const payload_end = blk: {
                         var depth: i32 = 0;
-                        var i: usize = branch_brace_idx;
+                        var i: usize = branch_brace_idx.?;
                         while (i < branch_content.len) : (i += 1) {
                             if (branch_content[i] == '{') {
                                 depth += 1;
@@ -2293,7 +2368,7 @@ pub const Parser = struct {
                     };
 
                     // Parse the payload shape
-                    const payload_str = branch_content[branch_brace_idx..payload_end];
+                    const payload_str = branch_content[branch_brace_idx.?..payload_end];
                     const payload = try self.parseBranchPayloadShape(payload_str);
 
                     // Check for duplicate branch names
