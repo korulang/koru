@@ -817,6 +817,16 @@ pub const CompilerContext = struct {
     reporter.* = ErrorReporter.init(allocator, reporter_path, reporter_source) catch {
         @panic("context-create: could not initialise the compilation's diagnostic reporter");
     };
+    // Continuation/source locations were recorded by the FRONTEND in its
+    // INJECTED-buffer coordinates — it auto-prepends `~import std/compiler`
+    // (one line) and the frontend's own reporter knows to translate, while
+    // this backend reporter reads the user file raw. Apply the same user-source
+    // translation when the frontend injected (same condition as src/main.zig),
+    // or every continuation-located diagnostic (unknown branch, when-clause,
+    // missing input…) points one line past the arm (210_201).
+    const backend_injected = std.mem.indexOf(u8, reporter_source, "~import std/compiler") == null and
+        std.mem.indexOf(u8, reporter_source, "import std/compiler") == null;
+    if (backend_injected) reporter.setUserSource(reporter_source, 1) catch {};
 
     const ctx = CompilerContext{
         .ast = program_ast,
