@@ -5582,6 +5582,23 @@ pub const Parser = struct {
                 }
             }
 
+            // A multi-line CALL may leave parens open on the definition line
+            // (`~test = step-a(x:10): a |> step-b(` … `a,\n b:20,\n c:30\n)`):
+            // join the following lines until the parens balance, so
+            // parseEventInvocation sees a complete call instead of reporting
+            // "unbalanced parentheses" against a call whose args span lines.
+            // Same joiner the branch-continuation path uses (pinned by 210_019;
+            // quote-aware so literals can't fake an open paren).
+            {
+                var paren_depth: i32 = netParens(inv_str);
+                while (paren_depth > 0 and self.current < self.lines.len) {
+                    const nt = lexer.trim(self.lines[self.current]);
+                    self.current += 1;
+                    inv_str = try std.fmt.allocPrint(self.allocator, "{s} {s}", .{ inv_str, nt });
+                    paren_depth += netParens(nt);
+                }
+            }
+
             const invocation = try self.parseEventInvocation(inv_str);
 
             // If body has an inline |> chain (e.g. `head() |> tail() | branch ...`),
