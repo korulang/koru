@@ -1,0 +1,26 @@
+// Test: an abstract tor implemented by one proc per HOST — the portability
+// seam. The same port (`greet`) carries a |zig body in this file and a |js
+// body in the sibling input.kjs facet. Compiling to each target selects the
+// host's implementation; the caller (below) is target-independent.
+//
+// This is the seam argument end-to-end: a contract the compiler sees, with
+// per-host implementations chosen by target, zero runtime indirection.
+//
+// Zig lane: prints "Hello, Alice" via the |zig proc.
+// JS lane:   prints "Hello, Alice" via the |js proc (from input.kjs).
+// Both must match expected.txt — same contract, same observable behavior on
+// both hosts.
+
+const std = @import("std");
+
+// The PORT — an abstract seam. One contract, one caller.
+~[abstract] tor greet { name: string } -> string
+
+// The HOST pattern: the same port implemented for each target.
+~proc greet|zig {
+    std.debug.print("Hello, {s}\n", .{name});
+    return name;
+}
+
+// THE CALLER — addresses only the port. Target-independent.
+~greet(name: "Alice")

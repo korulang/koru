@@ -42,11 +42,20 @@ after a demo like this is to claim the grand thing ("we fixed Clean Code");
 the honest claim is the narrow thing ("the boundary actually holds —
 enforced").
 
-Open: the `|js` host leg of the swap was never run end-to-end during the
-session; the host-portability framing of the seam rests on the corpus's `|zig` /
-`|js` proc facets and was asserted, not proven. And "build-time only" is a real
-boundary — a genuinely runtime-selected strategy is a different mechanism, and
-the claim here must not be stretched to cover it.
+Host leg, now verified: an abstract seam carries per-target implementations
+(`~proc name|zig` in the `.kz`, `~proc name|js` in the sibling `.kjs` facet),
+and compiling to each target selects that host's body — the emitted JS contains
+the `|js` proc verbatim, not a fallback. One contract, identical observable
+output on both hosts, pinned by the dual-target regression
+`220_014_abstract_seam_host_facets` (Zig and JS lanes both green against one
+`expected.txt`). The one-to-one pairing rule counts implementations per host,
+so `[abstract]` + `|zig` + `|js` composes without tripping the second-claim
+refusal.
+
+Still open: "build-time only" is a real boundary — a genuinely
+runtime-selected strategy is a different mechanism, and the claim here must
+not be stretched to cover it. Also unexercised: a cross-module override
+*combined* with the JS host path.
 
 Related: [[frag-a-pass-that-can-remove-the-last-implementation-must-answer-to-the-check-that-required-one]]
 (the enforcement is real enough to have had its own defect),

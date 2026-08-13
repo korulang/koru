@@ -1,0 +1,6 @@
+// The host facet: this port's JavaScript implementation. Merged at compile
+// (sibling to input.kz); selected when the target is --lang=js.
+~proc greet|js {
+    console.log("Hello, " + name);
+    return name;
+}
