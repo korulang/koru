@@ -24,6 +24,17 @@ pub const TypeRegistry = struct {
     // Public events that can be imported by other modules
     public_events: std.StringHashMap(void),
     
+    // Declared types: name-keyed identities minted by std/types declaration
+    // tors (`~std/types:struct(Player)`, `~string(EmailAddress)`). The entry
+    // IS the identity — a stamped name (`box#i64`) carries monomorphized
+    // identity in the name itself. Rung 1 of the type registry (belief
+    // frag-type-system-design, 2026-08-13): registration from the
+    // canonicalized AST; the register/lookup Koru-surface layer arrives as
+    // the gray-zone module later. Collision policy: same name re-registered
+    // is idempotent (HashMap(void)); the loud two-registrant error is the
+    // Koru-surface layer's job when it lands.
+    declared_types: std.StringHashMap(void),
+    
     pub fn init(allocator: std.mem.Allocator) TypeRegistry {
         return .{
             .allocator = allocator,
@@ -33,6 +44,7 @@ pub const TypeRegistry = struct {
             .labels = std.StringHashMap(LabelType).init(allocator),
             .imports = std.StringHashMap([]const u8).init(allocator),
             .public_events = std.StringHashMap(void).init(allocator),
+            .declared_types = std.StringHashMap(void).init(allocator),
         };
     }
     
@@ -83,6 +95,13 @@ pub const TypeRegistry = struct {
             self.allocator.free(entry.key_ptr.*);
         }
         self.public_events.deinit();
+
+        // Free declared types
+        var declared_iter = self.declared_types.iterator();
+        while (declared_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.declared_types.deinit();
     }
 
     /// Clone this TypeRegistry with a new allocator
@@ -327,6 +346,32 @@ pub const TypeRegistry = struct {
                     defer self.allocator.free(canonical_name);
                     try self.registerImplFlow(canonical_name, &flow);
                 }
+                // Declared-type registration (rung 1 of the type registry): a
+                // flow invoking a std/types declaration tor (`struct`, nominal
+                // wrappers) declares a type under its first argument's name.
+                // Stamped identities (`box#i64`) ARE the name — the entry is the
+                // identity. Same bare-`struct` keyword form is a null qualifier;
+                // both register.
+                const inv = flow.inv();
+                const mq = inv.path.module_qualifier;
+                const types_tor = if (mq) |mqv|
+                    std.mem.eql(u8, mqv, "std.types") or std.mem.eql(u8, mqv, "std/types")
+                else
+                    true;
+                if (types_tor and inv.path.segments.len > 0) {
+                    const last_seg = inv.path.segments[inv.path.segments.len - 1];
+                    const is_decl_tor = std.mem.eql(u8, last_seg, "struct") or
+                        std.mem.eql(u8, last_seg, "string") or
+                        std.mem.eql(u8, last_seg, "int") or
+                        std.mem.eql(u8, last_seg, "float") or
+                        std.mem.eql(u8, last_seg, "bool");
+                    if (is_decl_tor and inv.args.len > 0) {
+                        var name = inv.args[0].value;
+                        if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"')
+                            name = name[1 .. name.len - 1];
+                        if (name.len > 0) try self.registerDeclaredType(name);
+                    }
+                }
             },
             .immediate_impl => |ii| {
                 const canonical_name = try self.buildCanonicalName(&ii.event_path);
@@ -343,6 +388,20 @@ pub const TypeRegistry = struct {
                 // These don't need registration in TypeRegistry
             },
         }
+    }
+
+    /// Register a declared type identity. Idempotent — the same name at two
+    /// declaration sites is one entry (the deterministic name IS the identity).
+    pub fn registerDeclaredType(self: *TypeRegistry, name: []const u8) !void {
+        if (self.declared_types.contains(name)) return;
+        const key = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(key);
+        try self.declared_types.put(key, {});
+    }
+
+    /// Is this name a declared type identity (minted by a std/types tor)?
+    pub fn isDeclaredType(self: *const TypeRegistry, name: []const u8) bool {
+        return self.declared_types.contains(name);
     }
 
     /// Build canonical name from a DottedPath (after canonicalization)
@@ -690,4 +749,26 @@ test "register and lookup event" {
     const branch = registry.getBranchType("io.read", "success");
     try std.testing.expect(branch != null);
     try std.testing.expectEqualSlices(u8, branch.?.name, "success");
+}
+
+test "declared types register and look up as name-keyed identities" {
+    var registry = TypeRegistry.init(std.testing.allocator);
+    defer registry.deinit();
+
+    try registry.registerDeclaredType("Player");
+    try registry.registerDeclaredType("box#i64");
+    try registry.registerDeclaredType("box#f64");
+
+    try std.testing.expect(registry.isDeclaredType("Player"));
+    try std.testing.expect(registry.isDeclaredType("box#i64"));
+    try std.testing.expect(registry.isDeclaredType("box#f64"));
+
+    // Primitives and the Koru surface `string` are NOT declared identities.
+    try std.testing.expect(!registry.isDeclaredType("i64"));
+    try std.testing.expect(!registry.isDeclaredType("string"));
+    try std.testing.expect(!registry.isDeclaredType("Meters"));
+
+    // Idempotent: the same stamped name at two sites is one entry.
+    try registry.registerDeclaredType("box#i64");
+    try std.testing.expect(registry.isDeclaredType("box#i64"));
 }
