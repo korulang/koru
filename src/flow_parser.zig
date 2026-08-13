@@ -253,6 +253,16 @@ fn parseInvocationLine(allocator: std.mem.Allocator, line: []const u8, line_num:
         const path_str = lexer.trim(content[0..idx]);
         const args_str = content[idx..]; // includes parens
 
+        // The event name must lex as one — identifier segments with `.`/`-`
+        // between them, never spaces. Without this, an English sentence that
+        // contains parentheses parses as a well-formed invocation whose name
+        // is prose ("I cannot delete files. My vocabulary only includes open"),
+        // and the scope lookup misreports it as `event-denied` instead of
+        // `parse-error`. Mirrors the no-args branch below. (430_055)
+        if (std.mem.indexOf(u8, path_str, " ") != null or std.mem.indexOf(u8, path_str, "\t") != null) {
+            return ParseError.InvalidInvocation;
+        }
+
         const path = lexer.parseQualifiedPath(allocator, path_str, ast) catch return ParseError.InvalidInvocation;
         const arg_pairs = lexer.parseArgs(allocator, args_str) catch return ParseError.MalformedArgs;
 
@@ -925,6 +935,43 @@ test "parseFlow: module-qualified path" {
         .flow => |f| {
             try std.testing.expectEqualStrings("math", f.inv().path.module_qualifier.?);
             try std.testing.expectEqualStrings("add", f.inv().path.segments[0]);
+        },
+        .err => return error.UnexpectedError,
+    }
+}
+
+test "parseFlow: prose with parens is rejected, not a qualified path" {
+    // 430_055 — an English sentence containing parentheses must be a
+    // parse-error, NOT an invocation whose "name" is the sentence. Without
+    // the event-name space check, this parsed as a well-formed call and the
+    // scope lookup misreported `event-denied` for what was really prose.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = parseFlow(alloc, "I cannot delete files. My vocabulary only includes open(), append(), and close().");
+    switch (result) {
+        // parseInvocationLine maps every invocation-parse failure to this
+        // generic message — the error NAME never surfaces past that site.
+        .err => |e| try std.testing.expectEqualStrings("Invalid invocation syntax", e.message),
+        .flow => return error.UnexpectedFlow,
+    }
+}
+
+test "parseFlow: dotted path with args still parses" {
+    // Guard the space check: it must not reject the legitimate qualified
+    // spellings (`.`, `:`, `-`) a real event name can use.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = parseFlow(alloc, "std.io:print.ln(text: \"hello\")");
+    switch (result) {
+        .flow => |f| {
+            try std.testing.expectEqualStrings("std.io", f.inv().path.module_qualifier.?);
+            try std.testing.expectEqual(@as(usize, 2), f.inv().path.segments.len);
+            try std.testing.expectEqualStrings("print", f.inv().path.segments[0]);
+            try std.testing.expectEqualStrings("ln", f.inv().path.segments[1]);
         },
         .err => return error.UnexpectedError,
     }
