@@ -369,6 +369,50 @@ fn findSynthDecl(its: []const ast_find.Item, want: []const u8) ?*const ast_find.
     return null;
 }
 
+fn pathsMatchStore(a: *const ast_find.DottedPath, b: *const ast_find.DottedPath) bool {
+    if (a.segments.len != b.segments.len) return false;
+    for (a.segments, b.segments) |sa, sb| {
+        if (!std.mem.eql(u8, sa, sb)) return false;
+    }
+    if (a.module_qualifier) |qa| {
+        if (b.module_qualifier) |qb| return std.mem.eql(u8, qa, qb);
+    }
+    // A missing qualifier on either side matches on segments alone.
+    return true;
+}
+
+fn findEventByPathStore(its: []const ast_find.Item, path: *const ast_find.DottedPath) ?*const ast_find.EventDecl {
+    for (its) |*pipe| {
+        switch (pipe.*) {
+            .event_decl => |*decl| {
+                if (pathsMatchStore(&decl.path, path)) return decl;
+            },
+            .module_decl => |*mod| {
+                if (findEventByPathStore(mod.items, path)) |d| return d;
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// A flow's OWN parameters shadow store names inside its body, exactly the way
+/// 690_090 extends the rule to continuation bindings (`! query items`). Without
+/// this, `~transit = reframe(goal, history)` with a store also named `history`
+/// rewrites the punned argument to the store cell (`__koru_store_history`)
+/// instead of leaving the parameter name for Zig to resolve. Resolve the flow's
+/// implementing event and return its input-field names so a walk can seed its
+/// bound-set; returns empty for a flow with no `impl_of`.
+fn flowParamNamesStore(alloc: std.mem.Allocator, prog: *const ast_find.Program, f: *const ast_find.Flow) []const []const u8 {
+    const path_val = f.impl_of orelse return &.{};
+    const path: *const ast_find.DottedPath = &path_val;
+    const decl = findEventByPathStore(prog.items, path) orelse return &.{};
+    if (decl.input.fields.len == 0) return &.{};
+    const names = alloc.alloc([]const u8, decl.input.fields.len) catch unreachable;
+    for (decl.input.fields, 0..) |field, i| names[i] = field.name;
+    return names;
+}
+
 /// Every item in the program, flattened through `.module_decl`, in tree order,
 /// as POINTERS into the program's own arrays.
 ///
@@ -1012,9 +1056,10 @@ fn storeLowerText(
             for (cont.continuations) |*c| storeRefsContH(alloc, prog, @constCast(c), scope, ident, bound_all);
         }
         fn storeRefsFlowH(alloc: std.mem.Allocator, prog: *const ast.Program, f: *ast.Flow, scope: StoreScope, ident: []const []const u8) void {
-            storeRefsContH(alloc, prog, &f.body, scope, ident, &[_][]const u8{});
+            const bound_params = flowParamNamesStore(alloc, prog, f);
+            storeRefsContH(alloc, prog, &f.body, scope, ident, bound_params);
             if (f.inline_body) |ib| {
-                @constCast(f).inline_body = storeLowerText(alloc, prog, ib, scope, ident, &[_][]const u8{});
+                @constCast(f).inline_body = storeLowerText(alloc, prog, ib, scope, ident, bound_params);
             }
         }
     };
@@ -6033,9 +6078,10 @@ fn storeLowerText(
             for (cont.continuations) |*c| rewriteCont(alloc, prog, @constCast(c), scope, idents, bound_all);
         }
         fn rewriteFlow(alloc: std.mem.Allocator, prog: *const ast.Program, f: *ast.Flow, scope: StoreScope, idents: []const []const u8) void {
-            rewriteCont(alloc, prog, &f.body, scope, idents, &[_][]const u8{});
+            const bound_params = flowParamNamesStore(alloc, prog, f);
+            rewriteCont(alloc, prog, &f.body, scope, idents, bound_params);
             if (f.inline_body) |ib| {
-                @constCast(f).inline_body = storeLowerText(alloc, prog, ib, scope, idents, &[_][]const u8{});
+                @constCast(f).inline_body = storeLowerText(alloc, prog, ib, scope, idents, bound_params);
             }
         }
         // A bare-return subflow (`peek -> s.v`) is not a Flow at all — it lands
