@@ -44,6 +44,15 @@ pub const PhantomSemanticChecker = struct {
     /// thread its field obligations across the call boundary — see
     /// seedRecordFieldObligations' caller in validateFlow.
     subflow_impl_map: std.StringHashMap(void),
+    /// Declared-type identities (registry rung 1): names minted by std/types
+    /// declaration tors. Same rule as type_registry.populateFromItem's
+    /// declared-type scan — a small consumer-side copy until the gray-zone
+    /// registry is threaded (the two-walls drift hazard, accepted for the
+    /// first green; the two scans must stay in sync). Powers the nominal
+    /// distinctness check: only when BOTH sides are registered declared
+    /// types and differ does the checker refuse (030_132/133, 340_006) —
+    /// a literal into a nominal wrapper (`string` -> Username) stays legal.
+    declared_types: std.StringHashMap(void),
 
     pub const CheckMode = enum { full, args_only };
 
@@ -61,6 +70,7 @@ pub const PhantomSemanticChecker = struct {
             .label_map = std.StringHashMap(*const ast.EventDecl).init(allocator),
             .disposal_event_map = std.StringHashMap(DisposalEventInfo).init(allocator),
             .subflow_impl_map = std.StringHashMap(void).init(allocator),
+            .declared_types = std.StringHashMap(void).init(allocator),
         };
     }
 
@@ -78,10 +88,63 @@ pub const PhantomSemanticChecker = struct {
             self.allocator.free(key.*);
         }
         self.subflow_impl_map.deinit();
+        var declared_iter = self.declared_types.keyIterator();
+        while (declared_iter.next()) |key| {
+            self.allocator.free(key.*);
+        }
+        self.declared_types.deinit();
+    }
+
+    /// Build the declared-type identity set (registry rung 1). Mirrors
+    /// type_registry.populateFromItem's declared-type scan: a flow invoking a
+    /// std/types declaration tor (`struct`, nominal wrappers) declares a type
+    /// under its first argument's name. Same rule, two copies — the drift
+    /// hazard (concepts: two walls guarding one rule) is accepted until the
+    /// gray-zone registry threads; the two scans must stay in sync.
+    fn buildDeclaredTypes(self: *PhantomSemanticChecker, declared_types_ast: *const ast.Program) !void {
+        var iter = self.declared_types.keyIterator();
+        while (iter.next()) |key| self.allocator.free(key.*);
+        self.declared_types.clearRetainingCapacity();
+        try self.scanDeclaredTypes(declared_types_ast.items);
+    }
+
+    fn scanDeclaredTypes(self: *PhantomSemanticChecker, items: []const ast.Item) !void {
+        for (items) |item| {
+            switch (item) {
+                .flow => |flow| {
+                    const inv = flow.inv();
+                    const mq = inv.path.module_qualifier;
+                    const types_tor = if (mq) |mqv|
+                        std.mem.eql(u8, mqv, "std.types") or std.mem.eql(u8, mqv, "std/types")
+                    else
+                        true;
+                    if (types_tor and inv.path.segments.len > 0) {
+                        const last_seg = inv.path.segments[inv.path.segments.len - 1];
+                        const is_decl_tor = std.mem.eql(u8, last_seg, "struct") or
+                            std.mem.eql(u8, last_seg, "string") or
+                            std.mem.eql(u8, last_seg, "int") or
+                            std.mem.eql(u8, last_seg, "float") or
+                            std.mem.eql(u8, last_seg, "bool");
+                        if (is_decl_tor and inv.args.len > 0) {
+                            var name = inv.args[0].value;
+                            if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"')
+                                name = name[1 .. name.len - 1];
+                            if (name.len > 0 and !self.declared_types.contains(name)) {
+                                const key = try self.allocator.dupe(u8, name);
+                                errdefer self.allocator.free(key);
+                                try self.declared_types.put(key, {});
+                            }
+                        }
+                    }
+                },
+                .module_decl => |module| try self.scanDeclaredTypes(module.items),
+                else => {},
+            }
+        }
     }
 
     /// Check phantom types in the entire AST
-    pub fn check(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
+    pub fn check(self: *PhantomSemanticChecker, source_ast: *const ast.Program, declared_types_ast: *const ast.Program) !void {
         log.debug("\n[PHANTOM-CHECK] Starting phantom semantic check for program with {d} items\n", .{source_ast.items.len});
         // Track if we found any errors (but continue checking to find all of them)
         var has_errors = false;
@@ -95,6 +158,11 @@ pub const PhantomSemanticChecker = struct {
         // Subflow-implemented events (their record returns don't seed field
         // obligations — see validateFlow)
         try self.buildSubflowImplMap(source_ast);
+
+        // Declared-type identities for the nominal-distinctness check — from
+        // the PRE-TRANSFORM ast: the struct declaration flows are consumed
+        // into inline_code before this pass runs, so only the original sees them.
+        try self.buildDeclaredTypes(declared_types_ast);
 
         // Reset label map for this run
         self.label_map.clearRetainingCapacity();
@@ -155,13 +223,14 @@ pub const PhantomSemanticChecker = struct {
     /// explicit discharge already present in the source (330_040, 330_100).
     /// The exit-balance walls stay in `check()` after insertion, where the
     /// inserted disposal calls exist to be credited.
-    pub fn checkArguments(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
+    pub fn checkArguments(self: *PhantomSemanticChecker, source_ast: *const ast.Program, declared_types_ast: *const ast.Program) !void {
         log.debug("\n[PHANTOM-CHECK] Starting phantom argument check for program with {d} items\n", .{source_ast.items.len});
         self.check_mode = .args_only;
         defer self.check_mode = .full;
         try self.buildModuleMap(source_ast);
         try self.buildDisposalEventMap(source_ast);
         try self.buildSubflowImplMap(source_ast);
+        try self.buildDeclaredTypes(declared_types_ast);
         self.label_map.clearRetainingCapacity();
         const flows_valid = try self.validatePhantomFlows(source_ast);
         if (!flows_valid) {
@@ -745,6 +814,16 @@ pub const PhantomSemanticChecker = struct {
         cleanup_obligations: std.StringHashMap(void), // track bindings with ! states that need cleanup
         disposed_bindings: std.StringHashMap([]const u8), // binding name -> the SITE that disposed it (event#arg=value), so re-validation of the same consuming site passes while a second consume from a DIFFERENT site is use-after-discharge
         outer_scope_obligations: std.StringHashMap(void), // track obligations from outside @scope boundary
+        /// Declared-type-only bindings (registry rung 1): a phantom-less
+        /// payload's base type, recorded so the nominal-distinctness check
+        /// (validateArgument's no-phantom gate) can compare it against the
+        /// expected param WITHOUT touching the phantom machinery. Kept apart
+        /// from `bindings` on purpose — a phantom-less value registered in
+        /// `bindings` with an empty state would leak into the phantom
+        /// comparison paths ("has no tracked phantom state" would stop firing;
+        /// an empty state would be canonicalized). Separate table, separate
+        /// life: zero risk to existing phantom behavior.
+        base_types: std.StringHashMap([]const u8),
         allocator: std.mem.Allocator,
 
         fn init(allocator: std.mem.Allocator) BindingContext {
@@ -753,6 +832,7 @@ pub const PhantomSemanticChecker = struct {
                 .cleanup_obligations = std.StringHashMap(void).init(allocator),
                 .disposed_bindings = std.StringHashMap([]const u8).init(allocator),
                 .outer_scope_obligations = std.StringHashMap(void).init(allocator),
+                .base_types = std.StringHashMap([]const u8).init(allocator),
                 .allocator = allocator,
             };
         }
@@ -765,6 +845,14 @@ pub const PhantomSemanticChecker = struct {
                 self.allocator.free(entry.value_ptr.base_type);
             }
             self.bindings.deinit();
+
+            // Free base-type-only bindings
+            var base_iter = self.base_types.iterator();
+            while (base_iter.next()) |entry| {
+                self.allocator.free(entry.key_ptr.*);
+                self.allocator.free(entry.value_ptr.*);
+            }
+            self.base_types.deinit();
 
             // Free cleanup obligation keys
             var cleanup_iter = self.cleanup_obligations.keyIterator();
@@ -787,6 +875,19 @@ pub const PhantomSemanticChecker = struct {
                 self.allocator.free(key.*);
             }
             self.outer_scope_obligations.deinit();
+        }
+
+        /// Record a phantom-less binding's declared type. See base_types doc.
+        fn setBaseType(self: *BindingContext, name: []const u8, base_type: []const u8) !void {
+            if (self.base_types.getPtr(name)) |info| {
+                const new_copy = try self.allocator.dupe(u8, base_type);
+                self.allocator.free(info.*);
+                info.* = new_copy;
+                return;
+            }
+            const name_copy = try self.allocator.dupe(u8, name);
+            const type_copy = try self.allocator.dupe(u8, base_type);
+            try self.base_types.put(name_copy, type_copy);
         }
 
         /// Set a binding with both phantom state and base type
@@ -850,6 +951,10 @@ pub const PhantomSemanticChecker = struct {
 
         /// Get the base type for a binding
         fn getBaseType(self: *BindingContext, name: []const u8) ?[]const u8 {
+            // Registry rung 1: a phantom-less binding records its declared
+            // type on the separate base_types table; consult it first, then
+            // fall back to the phantom-tracked binding.
+            if (self.base_types.get(name)) |t| return t;
             if (self.bindings.get(name)) |info| {
                 return info.base_type;
             }
@@ -870,6 +975,14 @@ pub const PhantomSemanticChecker = struct {
                     .phantom_state = phantom_copy,
                     .base_type = type_copy,
                 });
+            }
+
+            // Inherit base-type-only bindings (registry rung 1)
+            var base_iter = parent.base_types.iterator();
+            while (base_iter.next()) |entry| {
+                const key_copy = try allocator.dupe(u8, entry.key_ptr.*);
+                const type_copy = try allocator.dupe(u8, entry.value_ptr.*);
+                try child.base_types.put(key_copy, type_copy);
             }
 
             // Inherit cleanup obligations
@@ -912,6 +1025,14 @@ pub const PhantomSemanticChecker = struct {
                     .phantom_state = phantom_copy,
                     .base_type = type_copy,
                 });
+            }
+
+            // Inherit base-type-only bindings (registry rung 1)
+            var base_iter = parent.base_types.iterator();
+            while (base_iter.next()) |entry| {
+                const key_copy = try allocator.dupe(u8, entry.key_ptr.*);
+                const type_copy = try allocator.dupe(u8, entry.value_ptr.*);
+                try child.base_types.put(key_copy, type_copy);
             }
 
             // Inherit cleanup obligations AND mark them as outer scope
@@ -1315,6 +1436,16 @@ pub const PhantomSemanticChecker = struct {
                 // proc-implemented and keep seeding).
                 if (!self.subflow_impl_map.contains(qualified_name)) {
                     try self.seedRecordFieldObligations(rb, rt, module_name, flow.inv().return_destructure, &root_context);
+                }
+                // Registry rung 1: a phantom-less bare return whose type is a
+                // declared identity (not a record) records its base type so
+                // the nominal-distinctness check can compare it downstream
+                // (030_132/133, 340_006 — the bare-return spelling the parser
+                // demands for a single produced payload).
+                if (rt.len > 0 and std.mem.indexOfScalar(u8, rt, '{') == null) {
+                    const canonical_base_type = try self.canonicalizeBaseType(rt, null, module_name);
+                    defer self.allocator.free(canonical_base_type);
+                    try root_context.setBaseType(rb, canonical_base_type);
                 }
             }
         }
@@ -1949,6 +2080,27 @@ pub const PhantomSemanticChecker = struct {
 
                     // Store both phantom state AND base type (both canonicalized)
                     try context.setWithType(field_path, canonical_phantom, canonical_base_type);
+                } else if (field.type.len > 0 and !std.mem.eql(u8, field.type, "\x00")) {
+                    // Phantom-less payload — record the base type on the
+                    // separate base_types table (registry rung 1) so the
+                    // nominal-distinctness check (validateArgument's no-phantom
+                    // gate) can compare it against the expected param. Mirrors
+                    // the phantom branch's field_path shape exactly.
+                    const is_identity = std.mem.eql(u8, field.name, "__type_ref");
+                    const field_path = if (is_identity)
+                        try self.allocator.dupe(u8, binding_name)
+                    else
+                        try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ binding_name, field.name });
+                    defer self.allocator.free(field_path);
+
+                    const module_for_canon = event_module orelse event_decl.module;
+                    const canonical_base_type = try self.canonicalizeBaseType(
+                        field.type,
+                        field.module_path,
+                        module_for_canon,
+                    );
+                    defer self.allocator.free(canonical_base_type);
+                    try context.setBaseType(field_path, canonical_base_type);
                 }
             }
         }
@@ -3078,6 +3230,37 @@ pub const PhantomSemanticChecker = struct {
         }
 
         if (expected_phantom == null) {
+            // Nominal distinctness (registry rung 1): when BOTH the expected
+            // param type and the provided binding's type are registered
+            // declared types and differ, refuse at the Koru layer — pins
+            // 030_132/133, 340_006 demand a koru error naming both types. NOT
+            // a blanket name compare: a literal into a nominal wrapper
+            // (`string` -> Username) has an unregistered provided side and
+            // must stay legal (030_142), while two distinct declared types
+            // are never interchangeable regardless of shape.
+            if (expected_base_type_raw) |exp| {
+                if (context.getBaseType(arg.value)) |provided| {
+                    // Canonicalized provided types carry a module stamp
+                    // (`input:box#f64`); the registry keys BARE identities, so
+                    // strip any qualifier before comparing.
+                    const exp_bare = if (std.mem.lastIndexOfScalar(u8, exp, ':')) |ci| exp[ci + 1 ..] else exp;
+                    const prov_bare = if (std.mem.lastIndexOfScalar(u8, provided, ':')) |ci| provided[ci + 1 ..] else provided;
+                    if (self.declared_types.contains(exp_bare) and
+                        self.declared_types.contains(prov_bare) and
+                        !std.mem.eql(u8, exp_bare, prov_bare))
+                    {
+                        log.debug("[PHANTOM-FLOW] ❌ NOMINAL DISTINCTNESS: expected '{s}' got '{s}'\n", .{ exp_bare, prov_bare });
+                        try self.reporter.addError(
+                            .KORU030,
+                            location.line,
+                            location.column,
+                            "Type mismatch: expected '{s}' but got '{s}' for argument '{s}' — declared types are distinct (nominal distinctness)",
+                            .{ exp_bare, prov_bare, arg.name },
+                        );
+                        return false;
+                    }
+                }
+            }
             // No phantom state expected for this field — but disposal is a
             // property of the BINDING, not of what the consumer wants. A
             // discharged binding is stale everywhere, and the plain-typed sink

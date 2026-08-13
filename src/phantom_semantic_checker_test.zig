@@ -62,7 +62,7 @@ test "validateArgument accepts correct base type with matching phantom state" {
     defer checker.deinit();
 
     // This MUST succeed - correct type with matching phantom state
-    try checker.check(&parse_result.source_file);
+    try checker.check(&parse_result.source_file, &parse_result.source_file);
     
     // No errors expected
     try std.testing.expect(!reporter.hasErrors());
@@ -124,7 +124,7 @@ test "identity branch capture preserves phantom state literal" {
     // The checker may return error.ValidationFailed on rejection. Catch it so
     // the reporter contents still surface in the test output — otherwise we
     // just see "ValidationFailed" with no KORU code breakdown.
-    checker.check(&parse_result.source_file) catch |err| {
+    checker.check(&parse_result.source_file, &parse_result.source_file) catch |err| {
         const stderr_writer = std.debug.lockStderrWriter(&.{});
         defer std.debug.unlockStderrWriter();
         stderr_writer.print(
@@ -189,7 +189,7 @@ test "obligations track phantom states through multi-step flow" {
     defer checker.deinit();
 
     // This should succeed - begin() consumes Connection, commit() consumes Transaction
-    try checker.check(&parse_result.source_file);
+    try checker.check(&parse_result.source_file, &parse_result.source_file);
     
     // No errors expected - each obligation is properly discharged
     try std.testing.expect(!reporter.hasErrors());

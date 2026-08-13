@@ -1030,8 +1030,36 @@ pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name:
         }
 
         // Fallback
-        try emitter.write(type_name);
+        try writeTypeNameQuoted(emitter, type_name);
     }
+}
+
+/// Write a type name, quoting it ONLY if it carries a stamped identity (`#`).
+/// The `#` is valid in Koru (the monomorphized-identity marker) but forbidden
+/// in Zig type position, so a bare `box#i64` is a syntax error there — it must
+/// emit as the quoted `@"box#i64"`. Everything else — plain names, module paths
+/// (`std.mem.Allocator`), and Zig type syntax (`[]const u8`, `?T`, `*T`) —
+/// contains no `#` and passes through verbatim; quoting them would corrupt
+/// valid references. Prefixes pass through so `[]box#i64` lowers to
+/// `[]@"box#i64"`, never a mis-quote of the whole (registry rung 1).
+fn writeTypeNameQuoted(emitter: *CodeEmitter, name: []const u8) !void {
+    if (std.mem.indexOfScalar(u8, name, '#') == null) {
+        try emitter.write(name);
+        return;
+    }
+    var base = name;
+    var prefix: []const u8 = "";
+    const prefixes = [_][]const u8{ "[]const ", "[]", "?*const ", "?*", "*const ", "*", "?" };
+    for (prefixes) |c| {
+        if (std.mem.startsWith(u8, base, c)) {
+            prefix = c;
+            base = base[c.len..];
+            break;
+        }
+    }
+    const a = emitter.allocator orelse std.heap.page_allocator;
+    const quoted = std.fmt.allocPrint(a, "{s}@\"{s}\"", .{ prefix, base }) catch name;
+    try emitter.write(quoted);
 }
 
 /// Convert canonical event name to enum tag
@@ -11742,7 +11770,7 @@ pub fn writeBareReturnType(
     // into the generated Zig (a syntax error), which the top-level single strip
     // only masks for a record's FIRST phantom-bearing field (challenge 007:
     // multi-obligation records `{ h!, g! }`).
-    try emitter.write(trimmed);
+    try writeTypeNameQuoted(emitter, trimmed);
 }
 
 fn emitBranchConstructorWithEventType(

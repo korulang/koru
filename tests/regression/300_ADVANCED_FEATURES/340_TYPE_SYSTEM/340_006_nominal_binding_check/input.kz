@@ -32,11 +32,10 @@ const std = @import("std");
     v: i64,
 }
 
-~tor measure {}
-| height Meters
+~tor measure {} -> Meters
 
 ~proc measure|zig {
-    return .{ .height = Meters{ .v = 8848 } };
+    return Meters{ .v = 8848 };
 }
 
 ~tor report-feet { f: Feet }
@@ -45,5 +44,4 @@ const std = @import("std");
     std.debug.print("{d}ft\n", .{f.v});
 }
 
-~measure()
-| height h |> report-feet(f: h)
+~measure(): h |> report-feet(f: h)

@@ -32,11 +32,10 @@ const std = @import("std");
     v: i64,
 }
 
-~tor get-altitude {}
-| alt Feet
+~tor get-altitude {} -> Feet
 
 ~proc get-altitude|zig {
-    return .{ .alt = Feet{ .v = 30000 } };
+    return Feet{ .v = 30000 };
 }
 
 ~tor show-meters { m: Meters }
@@ -46,5 +45,4 @@ const std = @import("std");
 }
 
 // ERROR: Feet where Meters is expected — same shape, distinct types
-~get-altitude()
-| alt a |> show-meters(m: a)
+~get-altitude(): a |> show-meters(m: a)

@@ -167,12 +167,31 @@ const std = @import("std");
         return .{ .replacement = inline_code_item };
     }
 
-    // NORMAL STRUCT: no generics, emit as-is
+    // NORMAL STRUCT: no generics, emit as-is. A stamped identity (`box#i64`)
+    // is NOT a Zig identifier — emit the QUOTED identifier @"box#i64"
+    // (emission spelling PROVISIONAL, 030_110; the registry identity lives in
+    // the name itself, so the quoting is purely host-side presentation).
+    const valid_ident = blk: {
+        var ok = type_name.len > 0;
+        for (type_name, 0..) |c, i| {
+            const legal = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+                (c == '_') or (i > 0 and c >= '0' and c <= '9');
+            if (!legal) {
+                ok = false;
+                break;
+            }
+        }
+        break :blk ok;
+    };
+    const emit_name = if (valid_ident)
+        type_name
+    else
+        std.fmt.allocPrint(allocator, "@\"{s}\"", .{type_name}) catch unreachable;
     const body = formatBodyFn(allocator, source.text);
     const code = std.fmt.allocPrint(
         allocator,
         "{s}const {s} = struct {{\n{s}    }};",
-        .{ pub_prefix, type_name, body }
+        .{ pub_prefix, emit_name, body }
     ) catch unreachable;
 
     const inline_code_item = ast.Item{

@@ -12,6 +12,13 @@
 // `meters!`). `box#i64` vs `box#f64` is that same refusal moved up to
 // STAMPED TYPE identity — the registry's job, mirroring a power the
 // checker already has rather than inventing one. Spelling PROVISIONAL.
+//
+// SPELLING NOTE (2026-08-13): the original single-branch form
+// (`| made box#f64`) is refused at parse by PARSE003 (a lone payload
+// branch is a one-variant tag union — the parser demands the bare
+// return `-> box#f64`). The program uses the bare-return spelling the
+// parser insists on; the intent (stamped identity mismatch) is
+// unchanged.
 
 ~import std/types
 
@@ -25,11 +32,10 @@ const std = @import("std");
     value: f64,
 }
 
-~tor make-float-box {}
-| made box#f64
+~tor make-float-box {} -> box#f64
 
 ~proc make-float-box|zig {
-    return .{ .made = @"box#f64"{ .value = 3.14 } };
+    return @"box#f64"{ .value = 3.14 };
 }
 
 ~tor show-int-box { b: box#i64 }
@@ -39,5 +45,4 @@ const std = @import("std");
 }
 
 // ERROR: box#f64 where box#i64 is expected
-~make-float-box()
-| made m |> show-int-box(b: m)
+~make-float-box(): m |> show-int-box(b: m)
