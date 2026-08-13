@@ -225,6 +225,17 @@ const ast = @import("ast");
         is_optional: bool,
     };
 
+    // Local input-field specs for codegen (mirrors runtime InputFieldSpec).
+    // The input shape is the ARGUMENT vocabulary of an event — what the
+    // caller must name when invoking it (`handle: string<!open>`), as opposed
+    // to `branches`, which describe output shapes.
+    const LocalInputField = struct {
+        name: []const u8,
+        type_name: []const u8,
+        is_optional: bool,
+        phantom: ?[]const u8,  // raw phantom: "!open" discharges, "open!" creates
+    };
+
     const EventEntry = struct {
         name: []const u8,
         cost: u64,
@@ -233,6 +244,7 @@ const ast = @import("ast");
         creates_specs: []const LocalCreateSpec,     // Full specs
         discharges_specs: []const LocalDischargeSpec,
         branches: []const LocalBranchSpec,          // Branch specs for shape validation
+        input_fields: []const LocalInputField,      // Input/argument vocabulary
         symbol: []const u8,
         dispatch_name: []const u8,
         module_name: ?[]const u8,                   // Module this event belongs to
@@ -728,6 +740,29 @@ const ast = @import("ast");
         }
     }.extract;
 
+    // Helper: Extract the event's INPUT fields — its argument vocabulary. This
+    // is what makes "ask a scope what it holds" answerable for a caller that
+    // must name the arguments (`open(path: ...)`), and where the possession
+    // phantoms (`<!open>`) live. Branches above are the OUTPUT side.
+    const extractInputFields = struct {
+        fn extract(alloc: std.mem.Allocator, ed: *const ast_reg.EventDecl) []const LocalInputField {
+            var field_specs = std.ArrayList(LocalInputField){ .items = &.{}, .capacity = 0 };
+
+            for (ed.input.fields) |field| {
+                const is_optional = field.type.len > 0 and field.type[0] == '?';
+                const type_name = if (is_optional) field.type[1..] else field.type;
+                field_specs.append(alloc, .{
+                    .name = alloc.dupe(u8, field.name) catch field.name,
+                    .type_name = alloc.dupe(u8, type_name) catch type_name,
+                    .is_optional = is_optional,
+                    .phantom = if (field.phantom) |p| alloc.dupe(u8, p) catch p else null,
+                }) catch continue;
+            }
+
+            return field_specs.toOwnedSlice(alloc) catch &.{};
+        }
+    }.extract;
+
     const event_infos = RegistryHelper.collectEventInfos(allocator, program);
     const scope_defs = RegistryHelper.collectScopeDefs(allocator, program);
     const debug_enabled = CompilerEnvRt.hasFlag("debug");
@@ -762,6 +797,7 @@ const ast = @import("ast");
         const info = RegistryHelper.findEventInfoHomed(allocator, event_infos, lookup_name, resolved.home) orelse continue;
         const obligations = extractObligations(allocator, info.event_decl, info.module_name);
         const branches = extractBranches(allocator, info.event_decl);
+        const input_fields = extractInputFields(allocator, info.event_decl);
         const symbol = Helpers.buildEventSymbol(allocator, info.module_name, info.event_decl.path.segments, program.main_module_name);
         const dispatch_ident = Helpers.mangleIdentifier(allocator, resolved.name);
         const dispatch_name = std.fmt.allocPrint(allocator, "dispatch_{s}_{s}", .{ scope_ident, dispatch_ident }) catch dispatch_ident;
@@ -779,6 +815,7 @@ const ast = @import("ast");
             .creates_specs = obligations.creates_specs,
             .discharges_specs = obligations.discharges_specs,
             .branches = branches,
+            .input_fields = input_fields,
             .symbol = symbol,
             .dispatch_name = dispatch_name,
             .module_name = info.module_name,
@@ -1056,6 +1093,31 @@ const ast = @import("ast");
         }
         code.appendSlice(allocator, "}") catch unreachable;
 
+        // Emit input_fields array — the event's argument vocabulary, carrying
+        // the possession phantoms (`!open`) a caller must honor. This is what
+        // lets a running program tell a model what `open(path: ...)` and
+        // `append(handle: ...<!open>)` actually take.
+        code.appendSlice(allocator, ", .input_fields = &[_]koru_std.koru_runtime.InputFieldSpec{") catch unreachable;
+        for (event.input_fields, 0..) |field, fi| {
+            if (fi > 0) code.appendSlice(allocator, ", ") catch unreachable;
+            code.appendSlice(allocator, ".{ .name = \"") catch unreachable;
+            code.appendSlice(allocator, field.name) catch unreachable;
+            code.appendSlice(allocator, "\", .type_name = \"") catch unreachable;
+            code.appendSlice(allocator, field.type_name) catch unreachable;
+            code.appendSlice(allocator, "\", .is_optional = ") catch unreachable;
+            code.appendSlice(allocator, if (field.is_optional) "true" else "false") catch unreachable;
+            code.appendSlice(allocator, ", .phantom = ") catch unreachable;
+            if (field.phantom) |p| {
+                code.appendSlice(allocator, "\"") catch unreachable;
+                code.appendSlice(allocator, p) catch unreachable;
+                code.appendSlice(allocator, "\"") catch unreachable;
+            } else {
+                code.appendSlice(allocator, "null") catch unreachable;
+            }
+            code.appendSlice(allocator, " }") catch unreachable;
+        }
+        code.appendSlice(allocator, "}") catch unreachable;
+
         code.appendSlice(allocator, ", .dispatcher = ") catch unreachable;
         code.appendSlice(allocator, event.dispatch_name) catch unreachable;
         code.appendSlice(allocator, " },\n") catch unreachable;
@@ -1163,6 +1225,42 @@ const ast = @import("ast");
     code.appendSlice(allocator, I ++ "    return &[_]koru_std.koru_runtime.BranchSpec{};\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
+    // Generate event-name enumeration - returns the scope's whole vocabulary.
+    // This is the surface a running program needs to ask a scope what it holds
+    // (and hand that to a model as its prompt), which no event-keyed lookup can
+    // provide by itself.
+    code.appendSlice(allocator, I ++ "const ") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, "_event_names = blk: {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    @setEvalBranchQuota(1_000_000);\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    var arr: [scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, ".len][]const u8 = undefined;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    for (scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, ", 0..) |ev, i| arr[i] = ev.name;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    break :blk arr;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "};\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "pub fn get_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, "() []const []const u8 {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return &") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, "_event_names;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+
+    // Generate input-field lookup - returns an event's argument vocabulary.
+    code.appendSlice(allocator, I ++ "pub fn get_event_input_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, "(event_name: []const u8) []const koru_std.koru_runtime.InputFieldSpec {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.input_fields;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return &[_]koru_std.koru_runtime.InputFieldSpec{};\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+
     code.appendSlice(allocator, I ++ "pub const ") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "_descriptor: ScopeDescriptor = .{ .name = \"") catch unreachable;
@@ -1246,6 +1344,17 @@ pub const BranchSpec = struct {
     is_optional: bool = false,
 };
 
+// Input-field metadata — the argument vocabulary of an event, what a caller
+// must NAME when invoking it. Carries the raw possession phantom (`!open`
+// discharges, `open!` creates) so the vocabulary is renderable as
+// `handle: string<!open>` — the exact spelling the scope enforces.
+pub const InputFieldSpec = struct {
+    name: []const u8,
+    type_name: []const u8,
+    is_optional: bool = false,
+    phantom: ?[]const u8 = null,
+};
+
 pub const ScopeEvent = struct {
     name: []const u8,
     cost: u64,  // Budget cost for this event
@@ -1254,6 +1363,7 @@ pub const ScopeEvent = struct {
     creates_specs: []const CreateSpec,          // Full specs with field names
     discharges_specs: []const DischargeSpec,    // Full specs with arg names
     branches: []const BranchSpec = &.{},        // Branch specs for shape validation
+    input_fields: []const InputFieldSpec = &.{}, // Input/argument vocabulary
     dispatcher: DispatchFn,
 };
 pub const ScopeDescriptor = struct {
@@ -1263,6 +1373,10 @@ pub const ScopeDescriptor = struct {
 
 // Branches lookup function type for shape validation
 pub const BranchesLookupFn = *const fn([]const u8) []const BranchSpec;
+// Event-name enumeration type — the scope's whole vocabulary, order-preserving
+pub const EventsLookupFn = *const fn() []const []const u8;
+// Input-field lookup type — an event's argument vocabulary
+pub const InputLookupFn = *const fn([]const u8) []const InputFieldSpec;
 
 pub const ScopeRuntime = struct {
     name: []const u8,
@@ -1276,6 +1390,9 @@ pub const ScopeRuntime = struct {
     discharges_spec_fn: ?DischargesSpecFn,
     // Branch specs for shape validation
     branches_fn: ?BranchesLookupFn,
+    // Vocabulary enumeration: event names + per-event input/arg fields
+    events_fn: ?EventsLookupFn,
+    input_fn: ?InputLookupFn,
 };
 
 fn mangleScopeName(comptime name: []const u8) []const u8 {
@@ -1362,6 +1479,8 @@ fn buildScopeTable() []const ScopeRuntime {
             const creates_spec_name = std.fmt.comptimePrint("get_creates_spec_{s}", .{scope_ident});
             const discharges_spec_name = std.fmt.comptimePrint("get_discharges_spec_{s}", .{scope_ident});
             const branches_name = std.fmt.comptimePrint("get_event_branches_{s}", .{scope_ident});
+            const events_name = std.fmt.comptimePrint("get_events_{s}", .{scope_ident});
+            const input_name = std.fmt.comptimePrint("get_event_input_{s}", .{scope_ident});
 
             table[i] = .{
                 .name = desc.name,
@@ -1373,6 +1492,8 @@ fn buildScopeTable() []const ScopeRuntime {
                 .creates_spec_fn = if (@hasDecl(NS, creates_spec_name)) &@field(NS, creates_spec_name) else null,
                 .discharges_spec_fn = if (@hasDecl(NS, discharges_spec_name)) &@field(NS, discharges_spec_name) else null,
                 .branches_fn = if (@hasDecl(NS, branches_name)) &@field(NS, branches_name) else null,
+                .events_fn = if (@hasDecl(NS, events_name)) &@field(NS, events_name) else null,
+                .input_fn = if (@hasDecl(NS, input_name)) &@field(NS, input_name) else null,
             };
             i += 1;
         }
@@ -1389,7 +1510,9 @@ fn buildScopeTable() []const ScopeRuntime {
     discharges_obligations_fn: ?ObligationsArrayFn,
     discharge_event_fn: ?DischargeEventFn,
     creates_spec_fn: ?CreatesSpecFn,
-    discharges_spec_fn: ?DischargesSpecFn
+    discharges_spec_fn: ?DischargesSpecFn,
+    events_fn: ?EventsLookupFn,
+    input_fn: ?InputLookupFn
 }
 | not-found
 
@@ -1406,7 +1529,69 @@ fn buildScopeTable() []const ScopeRuntime {
                 .discharge_event_fn = scope_info.discharge_event_fn,
                 .creates_spec_fn = scope_info.creates_spec_fn,
                 .discharges_spec_fn = scope_info.discharges_spec_fn,
+                .events_fn = scope_info.events_fn,
+                .input_fn = scope_info.input_fn,
             } };
+        }
+    }
+    return .{ .not_found = .{} };
+}
+
+// ============================================================================
+// SCOPE-VOCABULARY - Render a scope's vocabulary for an external reader
+// ============================================================================
+//
+// The whole point of the enumeration surface: a model driving this interpreter
+// must be told, accurately, what it may call — and that description must come
+// from the register declaration, not a hand-typed script that can drift. This
+// renders exactly the surface the register block enforces, as one line per
+// event with its named arguments and possession phantoms:
+//
+//   open(path: string)
+//   append(handle: string<!open>, text: string)
+//   close(handle: string<!open>)
+//   say(text: string)
+//
+// No JSON schema, no second source of truth: the prompt and the enforcement
+// are the same bytes.
+
+~pub tor scope-vocabulary { name: string }
+| ok string
+| not-found
+
+~proc scope-vocabulary|zig {
+    // A local arena over page_allocator — the same substrate the interpreter's
+    // own arena and its message dupes use. ArrayList growth here allocates
+    // fresh chunks (arena realloc resolves to alloc+copy, which works in this
+    // binary; direct realloc-based growth OOMs). The arena is intentionally
+    // never freed: the returned string must outlive this call, and a few pages
+    // per vocabulary render are tolerated exactly like parse-error messages.
+    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena_state.allocator();
+    var out = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+
+    inline for (comptime buildScopeTable()) |scope_info| {
+        if (std.mem.eql(u8, name, scope_info.name)) {
+            const events = scope_info.events_fn.?();
+            for (events) |event_name| {
+                if (out.items.len > 0) out.append(allocator, '\n') catch unreachable;
+                out.appendSlice(allocator, event_name) catch unreachable;
+                out.append(allocator, '(') catch unreachable;
+                const input = if (scope_info.input_fn) |f| f(event_name) else &.{};
+                for (input, 0..) |field, i| {
+                    if (i > 0) out.appendSlice(allocator, ", ") catch unreachable;
+                    out.appendSlice(allocator, field.name) catch unreachable;
+                    out.appendSlice(allocator, ": ") catch unreachable;
+                    out.appendSlice(allocator, field.type_name) catch unreachable;
+                    if (field.phantom) |p| {
+                        out.append(allocator, '<') catch unreachable;
+                        out.appendSlice(allocator, p) catch unreachable;
+                        out.append(allocator, '>') catch unreachable;
+                    }
+                }
+                out.append(allocator, ')') catch unreachable;
+            }
+            return .{ .ok = out.toOwnedSlice(allocator) catch unreachable };
         }
     }
     return .{ .not_found = .{} };
