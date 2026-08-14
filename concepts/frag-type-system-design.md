@@ -104,3 +104,13 @@ Three rulings fall out and are now load-bearing:
   stamped name. So the enum surface can proceed now (rung 1: tagged unions +
   match; rung 2: exhaustiveness by the comprehension's totality), without
   touching the generics question at all.
+- **Types are first-class all the way down — data does not demote them.**
+  "The registry IS the type system" means the language reads a type, checks
+  it, derives from it, and composes it before Zig — which is what *first-class*
+  means, taken to its end. `std/types:struct(Player)` is not a workaround or a
+  second citizen; it is the first-class surface, and the registry is what makes
+  every declared type real the instant it exists. First-class types never
+  required a compiler grammar; they required the language to take types
+  seriously. This guard exists so the types-as-data framing is never read as
+  "we should not build `std/types`" — the library is the type system's surface,
+  and the registry is the power behind it.
