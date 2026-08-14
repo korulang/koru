@@ -30,7 +30,16 @@ Two load-bearing constraints keep this cheap instead of fragmenting:
 The growth mechanism is the REPL: the bridge `run` loop discriminates
 declaration from invocation, definitions land in the session environment, and
 the derived prompt walks that environment so the agent sees its own inventions
-next turn. New side effects are the one thing flows cannot create — they are
+next turn. The environment also grows by **runtime import**, the way every
+REPL's does: `std/runtime:import("my_dumb_library")` installs a vocabulary
+unit — a register block plus flows over the base, **no compiled code** — into
+the live session. The "dumb" constraint is load-bearing: flow-only libraries
+need no compilation, so they import live; libraries with procs (new side
+effects) are compile-time, or the rare gated native-module path. Runtime
+import and REPL-define are one mechanism — installing flow-units into the
+session — at two granularities: one flow inline, or a unit of many.
+
+New side effects are the one thing flows cannot create — they are
 compiled primitives, grown by the platform at build boundaries, with a rare
 gated native-module escape hatch for mid-session needs.
 

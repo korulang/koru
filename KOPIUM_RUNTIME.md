@@ -75,6 +75,39 @@ The derived prompt walks the session environment — compiled scopes plus
 defined flows — so the agent sees its own inventions in its vocabulary next
 turn. That visibility is the whole point of deriving the prompt.
 
+## Runtime import — the environment grows like a real interpreter's
+
+A REPL grows by `import`, and the runtime must too. `std/runtime:import` is a
+DIFFERENT act from Koru's compile-time `import app/some-lib`:
+
+- **Compile-time `import`**: the unit is a full module (events, procs, flows);
+  it may carry compiled code; it is merged into the program AST by the author
+  at build.
+- **Runtime `std/runtime:import("my_dumb_library")`**: the unit is a
+  **vocabulary** — a register block plus flows over the base, **no compiled
+  code**. A "dumb" library. Because it is flow-only, it needs no compilation
+  and can be installed into the live session environment, its verbs callable
+  next turn and visible in the derived prompt.
+
+**The dumb constraint is the load-bearing one.** Dumb libraries (vocabulary +
+composition) import live. Smart libraries (procs — new side effects) are
+compile-time, or the rare gated native-module path (R4). The agent's world is
+three layers — compiled base, runtime-imported libraries, self-defined flows —
+all walked by the same derived prompt.
+
+**Unification:** runtime-import and REPL-define are one mechanism — installing
+flow-units into the session environment. A wire declaration defines one flow;
+`import` loads a unit of many. Same registry seam, same obligation analysis
+and scope filtering at install, same result-fed-back-to-the-model loop.
+Compile-time and runtime import are two installation times on one registry.
+
+**Open decisions:** namespacing (`lib:verb` vs flat merge; namespaced keeps
+the prompt unambiguous — the default), resolution (a library path analog vs
+the session store; the store serves agent self-modification — the agent
+writes a library, then imports it), and idempotency (import once, cache;
+re-import after a change redefines — the environment is a versioned namespace,
+not a one-shot).
+
 ## The primitive boundary
 
 Flows **compose** side effects; they cannot **create** new ones. The compiled
