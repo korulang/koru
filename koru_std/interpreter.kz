@@ -608,7 +608,30 @@ pub const DefinedFlow = struct {
     body_source: []const u8,
 };
 
-pub const DefinedFlows = std.StringHashMap(DefinedFlow);
+// A PLAIN struct, not an alias to a generic instantiation: the tor
+// transformer resolves type names in signatures against the type registry,
+// which can name a plain struct (`HandlePool`) but not an alias to
+// `StringHashMap(DefinedFlow)`. The alias mangled to `Defined__koru_ast.Flows`
+// in emitted signatures. The map lives behind a named struct instead.
+pub const DefinedFlows = struct {
+    map: std.StringHashMap(DefinedFlow),
+
+    pub fn init(allocator: std.mem.Allocator) DefinedFlows {
+        return .{ .map = std.StringHashMap(DefinedFlow).init(allocator) };
+    }
+
+    pub fn put(self: *DefinedFlows, key: []const u8, value: DefinedFlow) !void {
+        try self.map.put(key, value);
+    }
+
+    pub fn get(self: *const DefinedFlows, key: []const u8) ?DefinedFlow {
+        return self.map.get(key);
+    }
+
+    pub fn deinit(self: *DefinedFlows) void {
+        self.map.deinit();
+    }
+};
 
 pub fn findDefinedFlow(defined: *const DefinedFlows, name: []const u8) ?DefinedFlow {
     return defined.get(name);
@@ -1095,7 +1118,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // possession enforcement is the floor and is already structural.
 ~[retain]pub tor define {
     source: string,
-    defined: *anyopaque
+    defined: *DefinedFlows
 }
 | defined string
 | parse-error { message: string, line: u32, column: u32 }
@@ -1191,9 +1214,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     }
 
     // Install into the durable table.
-    const dtable: *DefinedFlows = @ptrCast(@alignCast(defined));
     const name_owned = allocator.dupe(u8, name) catch name;
-    dtable.put(name_owned, .{
+    defined.put(name_owned, .{
         .name = name_owned,
         .params = params,
         .body_source = body_source,
@@ -1220,7 +1242,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     fail_fast: bool = true,
     scope_name: string = "default",  // Scope name for handle isolation
     auto_discharge: bool = true,  // Auto-discharge undischarged handles at end
-    defined: ?*anyopaque = null  // Runtime-defined flows (the REPL define)
+    defined: ?*DefinedFlows = null  // Runtime-defined flows (the REPL define)
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: string, handles: u32 }
@@ -1243,7 +1265,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     fail_fast: bool = true,
     scope_name: string = "default",  // Scope name for handle isolation
     auto_discharge: bool = true,  // Auto-discharge undischarged handles at end
-    defined: ?*anyopaque = null  // Runtime-defined flows (the REPL define)
+    defined: ?*DefinedFlows = null  // Runtime-defined flows (the REPL define)
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: string, handles: u32 }
@@ -1266,7 +1288,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
     scope_name: string = "default",  // Scope name for handle isolation
     auto_discharge: bool = true,  // Auto-discharge undischarged handles at end
-    defined: ?*anyopaque = null  // Runtime-defined flows (the REPL define)
+    defined: ?*DefinedFlows = null  // Runtime-defined flows (the REPL define)
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: string, handles: u32 }
@@ -1389,7 +1411,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         .budget = &budget_state,
         .handle_pool = active_pool,
         .scope_name = scope_name,
-        .defined = if (defined) |d| @ptrCast(@alignCast(d)) else null,
+        .defined = defined,
     };
 
     // Execute the flow!
@@ -1528,7 +1550,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         .budget = &budget_state,
         .handle_pool = active_pool,
         .scope_name = scope_name,
-        .defined = if (defined) |d| @ptrCast(@alignCast(d)) else null,
+        .defined = defined,
     };
 
     const result_value = executeFlow(cached_flow, &ctx) catch |err| {
@@ -2718,7 +2740,7 @@ fn executeFlow(
         .budget = &budget_state,
         .handle_pool = active_pool,
         .scope_name = scope_name,
-        .defined = if (defined) |d| @ptrCast(@alignCast(d)) else null,
+        .defined = defined,
     };
 
     // Execute the flow!

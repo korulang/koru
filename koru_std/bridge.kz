@@ -182,7 +182,7 @@ pub const Bridge = struct {
         .scope = br.scope,
         .handle_pool = &br.pool,
         .auto_discharge = false,
-        .defined = @ptrCast(br.defined),
+        .defined = br.defined,
     });
 
     return switch (result) {
@@ -218,7 +218,7 @@ pub const Bridge = struct {
     br.touch();
     return switch (interp.define_event.handler(.{
         .source = source,
-        .defined = @ptrCast(br.defined),
+        .defined = br.defined,
     })) {
         .defined => |d| .{ .defined = d },
         .parse_error => |e| .{ .parse_error = .{

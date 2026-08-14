@@ -1654,7 +1654,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     budget: ?u64,
     handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool,
     auto_discharge: bool = true,
-    defined: ?*anyopaque = null
+    defined: ?*@import("root").koru_std.koru_interpreter.DefinedFlows = null
 }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: string, handles: u32 }
@@ -1726,7 +1726,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     fail_fast: bool = true,
     auto_discharge: bool = true,
     shape: ?[]const u8 = null,
-    defined: ?*anyopaque = null
+    defined: ?*@import("root").koru_std.koru_interpreter.DefinedFlows = null
 }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: string, handles: u32 }

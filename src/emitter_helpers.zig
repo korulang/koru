@@ -1012,9 +1012,20 @@ pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name:
         }
 
         // AST Types -> __koru_ast.Type
-        const ast_types = [_][]const u8{ "Program", "Item", "Source", "Invocation", "ASTNode", "EventDecl", "ProcDecl", "Flow", "Branch", "Continuation" };
+        const ast_types = [_][]const u8{ "Program", "Item", "Source", "InvocationMeta", "Invocation", "ASTNode", "EventDecl", "ProcDecl", "Flow", "Branch", "Continuation" };
         inline for (ast_types) |ast_type| {
-            if (std.mem.indexOf(u8, type_name, ast_type) != null) {
+            // FINAL-SEGMENT-AWARE: the AST type must be the LAST identifier
+            // segment of the type name — the whole bare name, the word after a
+            // pointer prefix (`*const Source`), or a qualified segment
+            // (`ast.Flow`). A naive substring match corrupted user type names
+            // that merely CONTAIN an AST word — `DefinedFlows` contains "Flow"
+            // and became `Defined__koru_ast.Flows` in every emitted signature.
+            var seg_start: usize = 0;
+            for (type_name, 0..) |c, i| {
+                if (c == '.' or c == ':' or c == '*' or c == ' ' or c == '&' or c == '?') seg_start = i + 1;
+            }
+            const last_seg = type_name[seg_start..];
+            if (std.mem.eql(u8, last_seg, ast_type)) {
                 // Avoid double prefixing
                 if (std.mem.indexOf(u8, type_name, "ast.") == null and
                     std.mem.indexOf(u8, type_name, "__koru_ast") == null)
