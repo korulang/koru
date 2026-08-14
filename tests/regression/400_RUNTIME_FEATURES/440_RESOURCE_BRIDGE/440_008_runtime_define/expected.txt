@@ -1,0 +1,5 @@
+--- bridge open
+  pre-define: DENIED shout (expected)
+  defined shout
+  shout -> {"branch":"","value":"hi"}
+--- done

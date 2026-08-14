@@ -24,6 +24,7 @@ const std = @import("std");
 // Re-export interpreter types
 pub const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;
 pub const Handle = @import("root").koru_std.koru_interpreter.Handle;
+pub const DefinedFlows = @import("root").koru_std.koru_interpreter.DefinedFlows;
 
 // Bridge: persistent session state
 pub const Bridge = struct {
@@ -36,8 +37,14 @@ pub const Bridge = struct {
     scope: []const u8,
     created_at: i64,
     last_active: i64,
+    /// Runtime-defined flows (the REPL define) — durable per session, so a
+    /// verb defined on one turn is callable on the next, and its calls run
+    /// through the same possession machinery as any other dispatch.
+    defined: *DefinedFlows,
 
     pub fn init(allocator: std.mem.Allocator, session_id: []const u8, scope: []const u8) Bridge {
+        const defined = allocator.create(DefinedFlows) catch @panic("std/bridge:create: OOM minting defined-flows table");
+        defined.* = DefinedFlows.init(allocator);
         return .{
             .pool = HandlePool.init(allocator),
             .allocator = allocator,
@@ -45,6 +52,7 @@ pub const Bridge = struct {
             .scope = allocator.dupe(u8, scope) catch scope,
             .created_at = std.time.milliTimestamp(),
             .last_active = std.time.milliTimestamp(),
+            .defined = defined,
         };
     }
 
@@ -105,6 +113,8 @@ pub const Bridge = struct {
         self.allocator.free(self.session_id);
         self.allocator.free(self.scope);
         self.pool.deinit();
+        self.defined.deinit();
+        self.allocator.destroy(self.defined);
     }
 };
 
@@ -172,6 +182,7 @@ pub const Bridge = struct {
         .scope = br.scope,
         .handle_pool = &br.pool,
         .auto_discharge = false,
+        .defined = @ptrCast(br.defined),
     });
 
     return switch (result) {
@@ -183,6 +194,38 @@ pub const Bridge = struct {
         .event_denied => |e| .{ .event_denied = e },
         .dispatch_error => |e| .{ .dispatch_error = .{ .event_name = e.event_name, .message = e.message } },
         .scope_not_found => |e| .{ .scope_not_found = e },
+    };
+}
+
+// ============================================================================
+// DEFINE - install a subflow declaration as a session verb (the REPL define)
+// ============================================================================
+//
+// The vocabulary grows at runtime: `tor name { args }` + `name = <body>`
+// becomes a verb callable on subsequent runs, held in the session's durable
+// defined-flows table. The body's calls run through the same possession
+// machinery as any dispatch, so a defined flow cannot reach beyond what the
+// session holds. The agent hears "defined name" — or the parse error — fed
+// back into the transcript (the honest-diagnostics rule applies here most of
+// all: a wrong declaration needs a truthful error).
+
+~pub tor define { br: *Bridge, source: string }
+| defined string
+| parse-error { message: string, line: u32, column: u32 }
+
+~proc define|zig {
+    const interp = @import("root").koru_std.koru_interpreter;
+    br.touch();
+    return switch (interp.define_event.handler(.{
+        .source = source,
+        .defined = @ptrCast(br.defined),
+    })) {
+        .defined => |d| .{ .defined = d },
+        .parse_error => |e| .{ .parse_error = .{
+            .message = e.message,
+            .line = e.line,
+            .column = e.column,
+        } },
     };
 }
 

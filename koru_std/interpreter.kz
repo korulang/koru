@@ -576,6 +576,10 @@ pub const Environment = struct {
     pub fn get(self: *Environment, name: []const u8) ?Value {
         return self.bindings.get(name);
     }
+
+    pub fn remove(self: *Environment, name: []const u8) void {
+        _ = self.bindings.remove(name);
+    }
 };
 
 // ============================================================================
@@ -586,6 +590,29 @@ pub const DispatchResult = struct {
     branch: []const u8,
     fields: []const NamedField,  // Direct typed field values
 };
+
+// ============================================================================
+// DEFINED FLOWS - the REPL define (runtime vocabulary growth)
+// ============================================================================
+//
+// A flow the session defined at runtime (std/runtime:define): its name, its
+// signature parameters, and its body SOURCE. The body is re-parsed per
+// dispatch — cheap, and the definition stays durable text rather than a cloned
+// AST that dies with the turn's arena. Every call the body makes runs through
+// the same possession/obligation machinery as any other dispatch, so a defined
+// flow can never reach beyond what the session holds.
+
+pub const DefinedFlow = struct {
+    name: []const u8,
+    params: []const []const u8,
+    body_source: []const u8,
+};
+
+pub const DefinedFlows = std.StringHashMap(DefinedFlow);
+
+pub fn findDefinedFlow(defined: *const DefinedFlows, name: []const u8) ?DefinedFlow {
+    return defined.get(name);
+}
 
 // ============================================================================
 // INTERPRETER CONTEXT - Passed to the execution loop
@@ -612,6 +639,8 @@ pub const InterpreterContext = struct {
     handle_pool: ?*HandlePool,
     // Scope name for handle isolation
     scope_name: []const u8,
+    // Runtime-defined flows (the REPL define) — consulted before the scope
+    defined: ?*DefinedFlows,
 };
 
 pub const InterpreterThreadState = struct {
@@ -1053,6 +1082,128 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // MAIN INTERPRETER EVENTS
 // ============================================================================
 
+// The REPL define: install a subflow declaration into the session's
+// defined-flows table, making it a verb callable on subsequent runs.
+// A definition is `tor name { args }` followed by the impl flow
+// `name = <body>`. The body is stored as SOURCE (durable) and re-parsed per
+// dispatch; every call it makes runs through the same possession machinery,
+// so a defined flow can never reach beyond what the session holds.
+//
+// The definition-time analyses (declared obligations must match the body's
+// real behavior; every call must be within the session's scopes) are the
+// richer guarantee and are rungs of the stance, not this slice; call-time
+// possession enforcement is the floor and is already structural.
+~[retain]pub tor define {
+    source: string,
+    defined: *anyopaque
+}
+| defined string
+| parse-error { message: string, line: u32, column: u32 }
+
+~proc define|zig {
+    const koru_errors = @import("koru_errors");
+    const allocator = InterpreterThreadState.prepare();
+
+    var reporter = koru_errors.ErrorReporter.init(allocator, "interpreter", source) catch {
+        return .{ .parse_error = .{ .message = "OOM", .line = 0, .column = 0 } };
+    };
+    defer reporter.deinit();
+    // The `.k` suffix is load-bearing: interpreter source is PURE Koru, and
+    // the full parser derives host-embedded mode from the filename — without
+    // the suffix it demands `~` on every declaration (a host rule pure source
+    // must not have).
+    var parser = koru_parser.Parser.init(allocator, source, "runtime_input.k", &[_][]const u8{}, null) catch {
+        return .{ .parse_error = .{ .message = "OOM", .line = 0, .column = 0 }};
+    };
+    defer parser.deinit();
+    parser.fail_fast = true;
+    const parse_result = parser.parse() catch {
+        if (parser.reporter.hasErrors()) {
+            const err = parser.reporter.errors.items[0];
+            return .{ .parse_error = .{
+                .message = std.heap.page_allocator.dupe(u8, err.message) catch "parse error",
+                .line = @intCast(err.location.line),
+                .column = @intCast(err.location.column),
+            }};
+        }
+        return .{ .parse_error = .{ .message = "Parse failed", .line = 0, .column = 0 }};
+    };
+
+    // Find the tor declaration and its impl flow. A definition is exactly two
+    // items: the declaration (event_decl with the input signature) and the
+    // flow whose impl_of names it.
+    var decl: ?*const ast.EventDecl = null;
+    var impl_flow: ?*const ast.Flow = null;
+    for (parse_result.source_file.items) |*item| {
+        switch (item.*) {
+            .event_decl => |*ed| decl = ed,
+            .flow => |*f| {
+                if (f.impl_of != null) impl_flow = f;
+            },
+            else => {},
+        }
+    }
+    if (decl == null or impl_flow == null) {
+        return .{ .parse_error = .{
+            .message = "A definition must be a tor declaration followed by its flow: `tor name { args }` then `name = ...`",
+            .line = 0,
+            .column = 0,
+        }};
+    }
+    const ed = decl.?;
+    const f = impl_flow.?;
+    if (ed.path.segments.len == 0) {
+        return .{ .parse_error = .{ .message = "Definition has no name", .line = 0, .column = 0 }};
+    }
+    const name = ed.path.segments[ed.path.segments.len - 1];
+
+    // The event name must lex as one (430_055): never spaces.
+    if (std.mem.indexOfScalar(u8, name, ' ') != null or std.mem.indexOfScalar(u8, name, '\t') != null) {
+        return .{ .parse_error = .{ .message = "Definition name must not contain spaces", .line = 0, .column = 0 }};
+    }
+
+    // Params: the declaration's input field names, durable.
+    const params = allocator.alloc([]const u8, ed.input.fields.len) catch {
+        return .{ .parse_error = .{ .message = "OOM", .line = 0, .column = 0 }};
+    };
+    for (ed.input.fields, 0..) |field, i| {
+        params[i] = allocator.dupe(u8, field.name) catch field.name;
+    }
+
+    // Body source: from the impl flow's `=` separator through the end of the
+    // source (the body may span lines). The flow's location line is 1-based.
+    var body_source: []const u8 = "";
+    {
+        const start_line: usize = f.location.line;
+        var line_idx: usize = 0; // byte offset of the start of that line
+        var cur_line: usize = 1;
+        while (cur_line < start_line and line_idx < source.len) : (line_idx += 1) {
+            if (source[line_idx] == '\n') cur_line += 1;
+        }
+        const line_text = source[line_idx..];
+        if (std.mem.indexOfScalar(u8, line_text, '=')) |eq_idx| {
+            body_source = std.mem.trim(u8, line_text[eq_idx + 1 ..], " \t");
+        }
+        if (body_source.len == 0) {
+            return .{ .parse_error = .{ .message = "Definition body is empty", .line = @intCast(start_line), .column = 0 }};
+        }
+        body_source = allocator.dupe(u8, body_source) catch body_source;
+    }
+
+    // Install into the durable table.
+    const dtable: *DefinedFlows = @ptrCast(@alignCast(defined));
+    const name_owned = allocator.dupe(u8, name) catch name;
+    dtable.put(name_owned, .{
+        .name = name_owned,
+        .params = params,
+        .body_source = body_source,
+    }) catch {
+        return .{ .parse_error = .{ .message = "OOM installing definition", .line = 0, .column = 0 }};
+    };
+
+    return .{ .defined = name };
+}
+
 // Parse and execute in one step - the main interpreter entry point
 // Use get-scope to get the dispatcher first, then pass it here
 ~[retain]pub tor run {
@@ -1068,7 +1219,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
     fail_fast: bool = true,
     scope_name: string = "default",  // Scope name for handle isolation
-    auto_discharge: bool = true  // Auto-discharge undischarged handles at end
+    auto_discharge: bool = true,  // Auto-discharge undischarged handles at end
+    defined: ?*anyopaque = null  // Runtime-defined flows (the REPL define)
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: string, handles: u32 }
@@ -1090,7 +1242,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
     fail_fast: bool = true,
     scope_name: string = "default",  // Scope name for handle isolation
-    auto_discharge: bool = true  // Auto-discharge undischarged handles at end
+    auto_discharge: bool = true,  // Auto-discharge undischarged handles at end
+    defined: ?*anyopaque = null  // Runtime-defined flows (the REPL define)
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: string, handles: u32 }
@@ -1112,7 +1265,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     budget: ?u64,  // Optional budget limit (null = unlimited)
     handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
     scope_name: string = "default",  // Scope name for handle isolation
-    auto_discharge: bool = true  // Auto-discharge undischarged handles at end
+    auto_discharge: bool = true,  // Auto-discharge undischarged handles at end
+    defined: ?*anyopaque = null  // Runtime-defined flows (the REPL define)
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: string, handles: u32 }
@@ -1235,6 +1389,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         .budget = &budget_state,
         .handle_pool = active_pool,
         .scope_name = scope_name,
+        .defined = if (defined) |d| @ptrCast(@alignCast(d)) else null,
     };
 
     // Execute the flow!
@@ -1373,6 +1528,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         .budget = &budget_state,
         .handle_pool = active_pool,
         .scope_name = scope_name,
+        .defined = if (defined) |d| @ptrCast(@alignCast(d)) else null,
     };
 
     const result_value = executeFlow(cached_flow, &ctx) catch |err| {
@@ -2210,16 +2366,61 @@ fn executeFlow(
             var evaluated_inv = inv.*;
             evaluated_inv.args = evaluated_args;
 
-            // POSSESSION IS THE AUTHORITY. A discharge event may only name a
-            // handle this pool actually holds, and the check runs BEFORE the
-            // proc, because the proc is the irreversible half — close(fd) on an
-            // fd you were never handed cannot be undone by noticing afterwards
-            // that the counter did not move.
-            if (ctx.handle_pool) |pool| {
-                try assertHandlesHeld(ctx, pool, event_name, evaluated_inv.args);
+            // REPL-DEFINED FLOW (the runtime define). An event the session
+            // defined at runtime dispatches to its body: params bound into the
+            // env, body re-parsed and executed. Every call the body makes runs
+            // through THIS dispatch path — possession and obligations enforced
+            // per call, so a defined flow cannot reach beyond what the session
+            // holds. The outer obligation tracking below is a no-op for the
+            // defined flow itself (scope fns don't know it); the body's calls
+            // tracked theirs.
+            var dispatched_defined = false;
+            if (ctx.defined) |defined| {
+                if (findDefinedFlow(defined, event_name)) |df| {
+                    for (df.params) |pname| {
+                        var pval: []const u8 = "";
+                        for (evaluated_inv.args) |arg| {
+                            if (std.mem.eql(u8, arg.name, pname)) {
+                                pval = arg.value;
+                                break;
+                            }
+                        }
+                        try ctx.env.bind(pname, .{
+                            .branch = try ctx.allocator.dupe(u8, pval),
+                            .fields = &[_]NamedField{},
+                        });
+                    }
+                    switch (flow_parser.parseFlow(ctx.allocator, df.body_source)) {
+                        .flow => |*body_flow| {
+                            const body_value = try executeFlow(body_flow, ctx);
+                            dispatch_result = .{
+                                .branch = body_value.branch,
+                                .fields = body_value.fields,
+                            };
+                            dispatched_defined = true;
+                        },
+                        .err => |_| {
+                            // The body was validated at define time; a parse
+                            // failure here is an internal inconsistency, not
+                            // the model's. Surface it as a validation error.
+                            return error.ValidationFailed;
+                        },
+                    }
+                    for (df.params) |pname| ctx.env.remove(pname);
+                }
             }
+            if (!dispatched_defined) {
+                // POSSESSION IS THE AUTHORITY. A discharge event may only name a
+                // handle this pool actually holds, and the check runs BEFORE the
+                // proc, because the proc is the irreversible half — close(fd) on an
+                // fd you were never handed cannot be undone by noticing afterwards
+                // that the counter did not move.
+                if (ctx.handle_pool) |pool| {
+                    try assertHandlesHeld(ctx, pool, event_name, evaluated_inv.args);
+                }
 
-            try dispatcher(&evaluated_inv, &dispatch_result);
+                try dispatcher(&evaluated_inv, &dispatch_result);
+            }
 
             // Track obligations for handle pool using full specs (with field/arg names)
             if (ctx.handle_pool) |pool| {
@@ -2517,6 +2718,7 @@ fn executeFlow(
         .budget = &budget_state,
         .handle_pool = active_pool,
         .scope_name = scope_name,
+        .defined = if (defined) |d| @ptrCast(@alignCast(d)) else null,
     };
 
     // Execute the flow!

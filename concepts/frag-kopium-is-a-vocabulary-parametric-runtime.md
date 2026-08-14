@@ -51,6 +51,12 @@ session-scoped and re-acquired. Persisting possession is the
 ambient-resources failure; persisting vocabulary is cumulative
 self-improvement.
 
+R1 (the REPL define) is LANDED and pinned: `std/bridge:define` installs a
+subflow declaration into the session's durable defined-flows table; a later
+`run` dispatches it with params bound and every body call through the same
+possession machinery. Pinned at 440_008_runtime_define — the belief's
+growth-mechanism half is now code, not prose.
+
 New side effects are the one thing flows cannot create — they are
 compiled primitives, grown by the platform at build boundaries, with a rare
 gated native-module escape hatch for mid-session needs.
