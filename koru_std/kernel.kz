@@ -195,6 +195,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
 
     var has_kernel_continuation = false;
     var has_computed_continuation = false;
+    var has_reduce_continuation = false;
     for (flow.body.continuations) |cont| {
         const branch = std.mem.trim(u8, cont.branch, " ");
         if (std.mem.eql(u8, branch, "kernel")) {
@@ -202,6 +203,9 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
         }
         if (std.mem.eql(u8, branch, "computed")) {
             has_computed_continuation = true;
+        }
+        if (std.mem.eql(u8, branch, "reduce")) {
+            has_reduce_continuation = true;
         }
     }
 
@@ -267,7 +271,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                     continuation: ?*const ast.Continuation,
                     construct_name: []const u8,
                 ) ast_functional.LexicalSubtreeWalkControl {
-                    const allowed = "kernel scope currently allows only std.kernel:pairwise, std.kernel:self and std.kernel:step";
+                    const allowed = "kernel scope currently allows only std.kernel:pairwise, std.kernel:self, std.kernel:step and std.kernel:reduce";
                     self.violation = if (continuation) |cont|
                         std.fmt.allocPrint(
                             self.allocator,
@@ -307,17 +311,18 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                         .continuation => return .continue_walk,
                         .invocation => |info| {
                             const inv = info.invocation;
-                            // ALLOWLIST, closed. The kernel subtree admits exactly the
-                            // three kernel ops; every other invocation is refused by
-                            // name. A fallthrough here is what let a nested
-                            // `std/kernel:init` reach `claims_descendants` and be
-                            // swallowed whole — its dataset never emitted, its binding
-                            // never substituted, the failure surfacing as an undeclared
-                            // host identifier. Pinned: 390_052, 390_053, 390_055.
+                            // ALLOWLIST, closed. The kernel subtree admits exactly these
+                            // kernel ops; every other invocation is refused by name. A
+                            // fallthrough here is what let a nested `std/kernel:init`
+                            // reach `claims_descendants` and be swallowed whole — its
+                            // dataset never emitted, its binding never substituted, the
+                            // failure surfacing as an undeclared host identifier. Pinned:
+                            // 390_052, 390_053, 390_055.
                             if (
                                 isNamedInvocation(inv, "std.kernel", "pairwise") or
                                 isNamedInvocation(inv, "std.kernel", "self") or
-                                isNamedInvocation(inv, "std.kernel", "step")
+                                isNamedInvocation(inv, "std.kernel", "step") or
+                                isNamedInvocation(inv, "std.kernel", "reduce")
                             ) {
                                 return .continue_walk;
                             }
@@ -385,6 +390,17 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
         variant: ?[]const u8 = null,
     };
 
+    // A named scalar produced by `std/kernel:reduce` (e.g. `total_mass += k.mass`
+    // yields accumulator `total_mass` of the shape field's type). The init
+    // synthesizes one of these per `| reduce <name> |>` exit so the accumulated
+    // value can reach the caller — the raw result never escapes the kernel scope
+    // otherwise (the `computed` exit binds the kernel ARRAY as a single-field
+    // identity; a scalar is a second output, so it gets its own branch).
+    const ReduceAccumulator = struct {
+        name: []const u8,
+        type: []const u8,
+    };
+
     const KernelPlan = struct {
         step_range: ?[]const u8,
         step_invocation: ?*const ast.Invocation,
@@ -444,8 +460,12 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                                         std.mem.eql(u8, inv.path.segments[0], "self") and
                                         inv.path.module_qualifier != null and
                                         std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+                                    const is_reduce = inv.path.segments.len == 1 and
+                                        std.mem.eql(u8, inv.path.segments[0], "reduce") and
+                                        inv.path.module_qualifier != null and
+                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
 
-                                    if (is_pairwise or is_self) {
+                                    if (is_pairwise or is_self or is_reduce) {
                                         var body_text: ?[]const u8 = null;
                                         for (inv.args) |arg| {
                                             if (arg.source_value) |src_val| {
@@ -454,7 +474,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                                         }
                                         if (body_text) |bt| {
                                             ops_list.append(a, .{
-                                                .op_type = if (is_pairwise) "pairwise" else "self",
+                                                .op_type = if (is_pairwise) "pairwise" else if (is_self) "self" else "reduce",
                                                 .body_text = bt,
                                                 .variant = inv.variant,
                                             }) catch unreachable;
@@ -479,8 +499,12 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                                         std.mem.eql(u8, inv.path.segments[0], "self") and
                                         inv.path.module_qualifier != null and
                                         std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+                                    const is_reduce = inv.path.segments.len == 1 and
+                                        std.mem.eql(u8, inv.path.segments[0], "reduce") and
+                                        inv.path.module_qualifier != null and
+                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
 
-                                    if (is_pairwise or is_self) {
+                                    if (is_pairwise or is_self or is_reduce) {
                                         var body_text: ?[]const u8 = null;
                                         for (inv.args) |arg| {
                                             if (arg.source_value) |src_val| {
@@ -489,7 +513,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                                         }
                                         if (body_text) |bt| {
                                             ops_list.append(a, .{
-                                                .op_type = if (is_pairwise) "pairwise" else "self",
+                                                .op_type = if (is_pairwise) "pairwise" else if (is_self) "self" else "reduce",
                                                 .body_text = bt,
                                                 .variant = inv.variant,
                                             }) catch unreachable;
@@ -518,8 +542,12 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                         std.mem.eql(u8, inv.path.segments[0], "self") and
                         inv.path.module_qualifier != null and
                         std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+                    const is_reduce = inv.path.segments.len == 1 and
+                        std.mem.eql(u8, inv.path.segments[0], "reduce") and
+                        inv.path.module_qualifier != null and
+                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
 
-                    if (is_pairwise or is_self) {
+                    if (is_pairwise or is_self or is_reduce) {
                         var body_text: ?[]const u8 = null;
                         for (inv.args) |arg| {
                             if (arg.source_value) |src_val| {
@@ -528,7 +556,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                         }
                         if (body_text) |bt| {
                             ops.append(alloc, .{
-                                .op_type = if (is_pairwise) "pairwise" else "self",
+                                .op_type = if (is_pairwise) "pairwise" else if (is_self) "self" else "reduce",
                                 .body_text = bt,
                                 .variant = inv.variant,
                             }) catch unreachable;
@@ -575,11 +603,11 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
     // becomes per-init-form: that form may make | computed optional. The rule
     // carves by init form, NEVER by position — position stays irrelevant.
     // Pinned: 390_054 (top level), 390_023 (in pipeline).
-    if (has_kernel_continuation and !has_computed_continuation) {
-        reporter.addErrorAtLocation(.KORU170, flow.location, "kernel:init requires | computed |> branch — without it, kernel results are trapped inside the kernel scope", .{}) catch {};
+    if (has_kernel_continuation and !has_computed_continuation and !has_reduce_continuation) {
+        reporter.addErrorAtLocation(.KORU170, flow.location, "kernel:init requires a | computed |> exit or a | reduce |> exit — without one, kernel results are trapped inside the kernel scope", .{}) catch {};
         const computed_error = std.fmt.allocPrint(
             allocator,
-            "comptime {{ @compileError(\"kernel:init requires | computed |> branch — without it, kernel results are trapped inside the kernel scope\"); }}",
+            "comptime {{ @compileError(\"kernel:init requires a | computed |> exit or a | reduce |> exit — without one, kernel results are trapped inside the kernel scope\"); }}",
             .{},
         ) catch unreachable;
 
@@ -731,6 +759,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             elem_count: usize,
             shape_fields: []const ast.Field,
             is_js: bool,
+            reduce_out: *std.ArrayList(ReduceAccumulator),
         ) []const u8 {
             if (ops.len == 0) return "";
 
@@ -747,6 +776,58 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             else
                 std.fmt.allocPrint(alloc, "const {s} = {s}[0..].ptr;", .{ ptr_name, static_name_ref }) catch unreachable;
             code.appendSlice(alloc, ptr_line) catch unreachable;
+
+            // PRE-PASS: declare reduce accumulators (zero-initialized) at the top
+            // of the fused body, so they outlive any step loop and the `| reduce |>`
+            // exit sees the final values. Discovery happens here (not in the op
+            // loop) so declarations land before any reduction is emitted.
+            for (ops) |*rop| {
+                if (!std.mem.eql(u8, rop.op_type, "reduce")) continue;
+                var stmts = std.mem.splitSequence(u8, rop.body_text, ";");
+                while (stmts.next()) |stmt_raw| {
+                    const stmt = std.mem.trim(u8, stmt_raw, " \t\n\r");
+                    if (stmt.len == 0) continue;
+                    const eq = std.mem.indexOfScalar(u8, stmt, '=') orelse {
+                        std.debug.print("error[KORU123]: std/kernel:reduce body must be `<name> <op>= <expr>` statements — got `{s}`\n", .{stmt});
+                        std.process.exit(1);
+                    };
+                    const compound = eq > 0 and (stmt[eq - 1] == '+' or stmt[eq - 1] == '-' or stmt[eq - 1] == '*' or stmt[eq - 1] == '/');
+                    const acc_name = std.mem.trim(u8, if (compound) stmt[0 .. eq - 1] else stmt[0..eq], " \t");
+                    const rhs = std.mem.trim(u8, stmt[eq + 1 ..], " \t");
+                    if (acc_name.len == 0) {
+                        std.debug.print("error[KORU123]: std/kernel:reduce needs `{s}` to name an accumulator\n", .{stmt});
+                        std.process.exit(1);
+                    }
+                    // Type: if the RHS reduces a shape field (`<binding>.<field>`),
+                    // the accumulator takes that field's declared type; otherwise f64.
+                    var rtype: []const u8 = "f64";
+                    if (std.mem.indexOf(u8, rhs, binding)) |bi| {
+                        if (bi + binding.len < rhs.len and rhs[bi + binding.len] == '.') {
+                            var r = rhs[bi + binding.len + 1 ..];
+                            var fe: usize = 0;
+                            while (fe < r.len and (std.ascii.isAlphanumeric(r[fe]) or r[fe] == '_')) fe += 1;
+                            const fname = r[0..fe];
+                            for (shape_fields) |fld| {
+                                if (std.mem.eql(u8, fld.name, fname)) {
+                                    rtype = fld.type;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    var seen = false;
+                    for (reduce_out.items) |acc| {
+                        if (std.mem.eql(u8, acc.name, acc_name)) {
+                            seen = true;
+                            break;
+                        }
+                    }
+                    if (!seen) {
+                        reduce_out.append(alloc, .{ .name = acc_name, .type = rtype }) catch unreachable;
+                        code.appendSlice(alloc, std.fmt.allocPrint(alloc, "\nvar {s}: {s} = 0;", .{ acc_name, rtype }) catch unreachable) catch unreachable;
+                    }
+                }
+            }
 
             if (step_range) |range| {
                 // `0..3` is a Zig range expression; JS has no such value, so the
@@ -1327,6 +1408,46 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                             .{ elem_count, op_src }
                         ) catch unreachable;
                     code.appendSlice(alloc, self_loop) catch unreachable;
+                } else if (std.mem.eql(u8, op.op_type, "reduce")) {
+                    // Accumulate over every element once: the body (`<name> +=
+                    // <k>.field`) has been collected with the binding reference
+                    // intact, so rewrite `<k>.field` → `ptr[i].field` and emit a
+                    // single pass loop. Accumulator names are untouched by the
+                    // rewrite (identifier-boundary guard, same as `self`).
+                    if (op.variant) |vt| {
+                        std.debug.print("error[KORU122]: kernel op `reduce` supports no variants yet (got `|{s}`)\n", .{vt});
+                        std.process.exit(1);
+                    }
+                    const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
+                    var body = std.ArrayList(u8).initCapacity(alloc, op.body_text.len * 2) catch unreachable;
+                    var ridx: usize = 0;
+                    while (ridx < op.body_text.len) {
+                        if (ridx + binding.len <= op.body_text.len and std.mem.eql(u8, op.body_text[ridx .. ridx + binding.len], binding)) {
+                            const at_end = (ridx + binding.len >= op.body_text.len);
+                            const next_ok = at_end or (!std.ascii.isAlphanumeric(op.body_text[ridx + binding.len]) and op.body_text[ridx + binding.len] != '_');
+                            const prev_ok = (ridx == 0) or (!std.ascii.isAlphanumeric(op.body_text[ridx - 1]) and op.body_text[ridx - 1] != '_');
+                            if (next_ok and prev_ok) {
+                                body.appendSlice(alloc, self_ref) catch unreachable;
+                                ridx += binding.len;
+                            } else {
+                                body.append(alloc, op.body_text[ridx]) catch unreachable;
+                                ridx += 1;
+                            }
+                        } else {
+                            body.append(alloc, op.body_text[ridx]) catch unreachable;
+                            ridx += 1;
+                        }
+                    }
+                    const body_trimmed = std.mem.trimRight(u8, body.items, " \t\n\r");
+                    if (body_trimmed.len == 0 or body_trimmed[body_trimmed.len - 1] != ';') {
+                        body.append(alloc, ';') catch unreachable;
+                    }
+                    const op_src = kernelLowerOpBody(alloc, body.items, is_js);
+                    const reduce_loop = if (is_js)
+                        std.fmt.allocPrint(alloc, "\nfor (let i = 0; i < {d}; i++) {{\n    {s}\n}}", .{ elem_count, op_src }) catch unreachable
+                    else
+                        std.fmt.allocPrint(alloc, "\nfor (0..{d}) |i| {{\n    {s}\n}}", .{ elem_count, op_src }) catch unreachable;
+                    code.appendSlice(alloc, reduce_loop) catch unreachable;
                 }
             }
 
@@ -1340,6 +1461,13 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
 
     var proc_body: []const u8 = undefined;
     var static_decl: []const u8 = "";
+
+    // ========================================================================
+    // REDUCE: the op pass appends an accumulator per `std/kernel:reduce`
+    // accumulator. A non-empty list means the kernel wants a `| reduce |>` exit.
+    // ========================================================================
+    var reduce_acc = std.ArrayList(ReduceAccumulator).initCapacity(allocator, 2) catch unreachable;
+    var fused_code: []const u8 = "";
 
     if (is_array_mode) {
         // Array mode: parse multiple { ... } blocks
@@ -1371,14 +1499,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             std.fmt.allocPrint(allocator, "var {s} = [_]{s}{{ {s} }};", .{ static_name, type_name, elements.items }) catch unreachable;
 
         // Generate static-backed initialization (proof-of-concept)
-        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, count, type_fields, host_is_js);
-        const return_branch = if (has_computed_continuation) "computed" else "kernel";
-        // A branch return is a tagged union on Zig and the emitter's
-        // `{ tag, <branch> }` object on JS; the slice `[0..]` is just the array.
-        proc_body = if (host_is_js)
-            std.fmt.allocPrint(allocator, "{s}\nreturn {{ tag: \"{s}\", {s}: {s} }};", .{ fused_code, return_branch, return_branch, static_name }) catch unreachable
-        else
-            std.fmt.allocPrint(allocator, "{s}\nreturn .{{ .{s} = {s}[0..] }};", .{ fused_code, return_branch, static_name }) catch unreachable;
+        fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, count, type_fields, host_is_js, &reduce_acc);
     } else {
         // Single mode: just one struct instance
         const fields = transformFields(allocator, source.text, host_is_js);
@@ -1387,10 +1508,49 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             std.fmt.allocPrint(allocator, "let {s} = [{s}];", .{ static_name, single_init }) catch unreachable
         else
             std.fmt.allocPrint(allocator, "var {s} = [_]{s}{{ {s} }};", .{ static_name, type_name, single_init }) catch unreachable;
-        const fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 1, type_fields, host_is_js);
-        const return_branch = if (has_computed_continuation) "computed" else "kernel";
-        proc_body = if (host_is_js)
-            std.fmt.allocPrint(allocator, "{s}\nreturn {{ tag: \"{s}\", {s}: {s} }};", .{ fused_code, return_branch, return_branch, static_name }) catch unreachable
+        fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 1, type_fields, host_is_js, &reduce_acc);
+    }
+
+    // Guard the reduce exit (v1 semantics): a reduce op needs a `| reduce |>` exit
+    // (otherwise its accumulated value is silently trapped), and it is not yet
+    // combinable with `| computed |>` in one init — refusing beats both a dropped
+    // value and a mistyped two-branch return.
+    if (reduce_acc.items.len > 0 and !has_reduce_continuation) {
+        std.debug.print("error[KORU123]: std/kernel:reduce needs a `| reduce <name> |>` exit continuation — its accumulated value cannot reach the caller otherwise\n  --> {s}:{d}:{d}\n  hint: end the kernel scope with e.g. `| reduce r |> std/io:print.ln(r.<name>)`\n", .{ flow.location.file, flow.location.line, flow.location.column });
+        std.process.exit(1);
+    }
+    if (has_reduce_continuation and has_computed_continuation) {
+        std.debug.print("error[KORU123]: a kernel:init cannot exit through both `| computed |>` and `| reduce |>` yet — use one exit in this init\n  --> {s}:{d}:{d}\n", .{ flow.location.file, flow.location.line, flow.location.column });
+        std.process.exit(1);
+    }
+
+    // Build the single return statement. The exit is the kernel array
+    // (`| computed |>`), a bare `kernel` binding, or — when a reduce op
+    // produced accumulators and the flow carries a `| reduce |>` continuation —
+    // a reduce struct carrying each accumulated scalar as a named field.
+    const reduce_active = has_reduce_continuation and reduce_acc.items.len > 0;
+    var reduce_returns = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+    if (reduce_active) {
+        for (reduce_acc.items, 0..) |racc, ri| {
+            if (ri > 0) reduce_returns.appendSlice(allocator, ", ") catch unreachable;
+            const seg = if (host_is_js)
+                std.fmt.allocPrint(allocator, "{s}: {s}", .{ racc.name, racc.name }) catch unreachable
+            else
+                std.fmt.allocPrint(allocator, ".{s} = {s}", .{ racc.name, racc.name }) catch unreachable;
+            reduce_returns.appendSlice(allocator, seg) catch unreachable;
+        }
+    }
+    const return_branch = if (reduce_active) "reduce" else if (has_computed_continuation) "computed" else "kernel";
+    // A branch return is a tagged union on Zig and the emitter's
+    // `{ tag, <branch> }` object on JS; the slice `[0..]` is just the array.
+    if (host_is_js) {
+        proc_body = if (reduce_active)
+            std.fmt.allocPrint(allocator, "{s}\nreturn {{ tag: \"reduce\", reduce: {{ {s} }} }};", .{ fused_code, reduce_returns.items }) catch unreachable
+        else
+            std.fmt.allocPrint(allocator, "{s}\nreturn {{ tag: \"{s}\", {s}: {s} }};", .{ fused_code, return_branch, return_branch, static_name }) catch unreachable;
+    } else {
+        proc_body = if (reduce_active)
+            std.fmt.allocPrint(allocator, "{s}\nreturn .{{ .reduce = .{{ {s} }} }};", .{ fused_code, reduce_returns.items }) catch unreachable
         else
             std.fmt.allocPrint(allocator, "{s}\nreturn .{{ .{s} = {s}[0..] }};", .{ fused_code, return_branch, static_name }) catch unreachable;
     }
@@ -1426,10 +1586,11 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
     var new_item: ast.Item = undefined;
     {
         // Clone continuations (shallow clone of the array is fine if we don't mutate elements).
-        // When fusion folded the kernel ops into the init proc (it now returns `.computed`),
-        // the consumed `| kernel` continuation MUST be dropped — otherwise it survives as a
-        // dead `.kernel =>` switch arm holding a duplicate of the fused pairwise+self loops.
-        const drop_kernel_cont = has_computed_continuation;
+        // When fusion folded the kernel ops into the init proc (it now returns
+        // `.computed`/`.reduce`), the consumed `| kernel` continuation MUST be dropped —
+        // otherwise it survives as a dead `.kernel =>` switch arm holding a duplicate of
+        // the fused loops.
+        const drop_kernel_cont = has_computed_continuation or has_reduce_continuation;
         var kept_count: usize = 0;
         for (flow.body.continuations) |cont| {
             if (drop_kernel_cont and std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) continue;
@@ -1477,14 +1638,28 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             .type = slice_type,
         };
 
-        // Declare ONLY the branch the init proc actually returns (`.computed` once fusion
-        // folds the kernel ops, else `.kernel`). Declaring both left an unused `kernel`
-        // variant that forced the emitter to keep a dead `.kernel =>` switch arm in the
-        // calling flow. The `kernel`-return case (e.g. init with no continuation at all)
-        // must stay OPTIONAL so branch-coverage (KORU022) doesn't demand a handler that
-        // isn't there; the `computed`-return case always has its `| computed` continuation.
+        // Declare ONLY the branch the init proc actually returns — `.reduce` when
+        // a reduce op synthesized accumulators, `.computed` when fusion folds the
+        // kernel ops, else `.kernel`. (Declaring both computed+reduce left unused
+        // variants that forced the emitter to keep dead switch arms in the calling
+        // flow.) The `kernel`-return case (e.g. init with no continuation at all)
+        // must stay OPTIONAL so branch-coverage (KORU022) doesn't demand a handler
+        // that isn't there; the computed/reduce-return cases always have their
+        // continuation.
+        const reduce_fields = allocator.alloc(ast.Field, reduce_acc.items.len) catch unreachable;
+        for (reduce_acc.items, 0..) |racc, j| {
+            reduce_fields[j] = ast.Field{
+                .name = allocator.dupe(u8, racc.name) catch unreachable,
+                .type = allocator.dupe(u8, racc.type) catch unreachable,
+            };
+        }
         const branches = allocator.alloc(ast.Branch, 1) catch unreachable;
-        branches[0] = if (has_computed_continuation) ast.Branch{
+        branches[0] = if (reduce_active) ast.Branch{
+            .name = allocator.dupe(u8, "reduce") catch unreachable,
+            .payload = ast.Shape{ .fields = reduce_fields },
+            .is_optional = false,
+            .annotations = &[_][]const u8{},
+        } else if (has_computed_continuation) ast.Branch{
             .name = allocator.dupe(u8, "computed") catch unreachable,
             .payload = ast.Shape{ .fields = computed_fields },
             .is_optional = false,

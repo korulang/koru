@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-08-11T15:32:14.360Z",
+  "timestamp": "2026-08-14T11:07:30.636Z",
   "summary": {
-    "passed": 327,
+    "passed": 311,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
-    "compileErrors": 0,
-    "total": 339,
+    "compileErrors": 1,
+    "total": 323,
     "suiteCount": 41,
-    "status": "success"
+    "status": "failure"
   },
   "suites": [
     {
@@ -141,10 +141,10 @@
     },
     {
       "name": "flow_parser_tests",
-      "passed": 19,
+      "passed": 21,
       "failed": 0,
       "skipped": 0,
-      "total": 19,
+      "total": 21,
       "status": "success"
     },
     {
@@ -205,11 +205,12 @@
     },
     {
       "name": "phantom_semantic_checker_tests",
-      "passed": 18,
+      "passed": 0,
       "failed": 0,
       "skipped": 0,
-      "total": 18,
-      "status": "success"
+      "total": 0,
+      "compileErrors": 3,
+      "status": "compile_error"
     },
     {
       "name": "purity_analyzer_tests",

@@ -1,1 +1,1 @@
-kernel:init requires | computed |> branch
+kernel:init requires a | computed |> exit or a | reduce |> exit
