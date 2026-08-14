@@ -108,6 +108,43 @@ writes a library, then imports it), and idempotency (import once, cache;
 re-import after a change redefines — the environment is a versioned namespace,
 not a one-shot).
 
+## Permanence — the environment is a directory; vocabulary persists, possession does not
+
+The bridge's world is a **directory**. Its vocabulary IS the flows on disk:
+
+- **Define** a subflow → write a flow file into the world.
+- **Import** a library → read one from the world.
+- **Derive the prompt** → walk the world directory.
+
+Permanence is free because the filesystem is permanent: the agent's growth is
+**cumulative across sessions**, not per-bridge. `std/bridge:create(id, scope,
+world: "/path/to/world")` — the vocabulary-parametric stance made literal: the
+parameter is a directory. Every new session starts with the agent's whole
+accumulated world.
+
+**The deep simplification:** the agent's growth mechanism uses the same verbs
+as its ordinary work. The agent already has open/append/close on files; define
+= append a flow to the world file. The object level (working with files) and
+the meta level (growing its own vocabulary) are the same primitives — the
+recursion is literal, and no meta-toolset exists.
+
+**The line that keeps it safe — definitions persist, possession does not:**
+
+- **Vocabulary persists** — flow files, imported libraries, the world
+  directory. Durable capability.
+- **Possession does not** — open fds, live handles stay session-scoped,
+  bridge-held, re-acquired next session. The restart problem only ever
+  threatened possession; vocabulary was never the thing that died.
+
+Persisting possession is the ambient-resources failure. Persisting only
+vocabulary is cumulative self-improvement for free. The world directory is
+capability; the bridge's handle pool is authority-in-the-moment. Capability
+mutates — durably; authority doesn't.
+
+This dissolves the open decisions into file layout: resolution = the world
+directory is the library path; idempotency = the filesystem's natural;
+namespacing = directory structure (`world/lib/`, `world/agent/`).
+
 ## The primitive boundary
 
 Flows **compose** side effects; they cannot **create** new ones. The compiled

@@ -39,6 +39,18 @@ effects) are compile-time, or the rare gated native-module path. Runtime
 import and REPL-define are one mechanism — installing flow-units into the
 session — at two granularities: one flow inline, or a unit of many.
 
+The environment is **permanent, as a directory**: the bridge's world is a
+folder, the vocabulary IS the flows on disk, defining writes a file, importing
+reads one, and the derived prompt walks the directory. Permanence is free
+because the filesystem is permanent — the agent's growth is cumulative across
+sessions, and the growth mechanism uses the SAME verbs as the agent's ordinary
+work (open/append/close on the world file): the meta level and the object
+level are one. The line that keeps it safe: **definitions persist, possession
+does not** — vocabulary is durable capability; held resources stay
+session-scoped and re-acquired. Persisting possession is the
+ambient-resources failure; persisting vocabulary is cumulative
+self-improvement.
+
 New side effects are the one thing flows cannot create — they are
 compiled primitives, grown by the platform at build boundaries, with a rare
 gated native-module escape hatch for mid-session needs.
