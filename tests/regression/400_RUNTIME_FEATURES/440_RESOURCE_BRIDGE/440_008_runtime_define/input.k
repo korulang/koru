@@ -25,6 +25,7 @@ std/runtime:register(scope: "api") {
 tor check-pre { br: *std/bridge:Bridge }
 check-pre = std/bridge:run(br, source: "shout(text: \"hi\")")
 | result r |> std/io:print.ln("  pre-define: {{ r.value.branch:s }}")
+| defined d |> std/io:print.ln("  pre-define: DEFINED {{ d:s }} (unexpected)")
 | event-denied ev |> std/io:print.ln("  pre-define: DENIED {{ ev:s }} (expected)")
 | shape-error _ |> std/io:print.ln("  pre-define: SHAPE")
 | dispatch-error e |> std/io:print.ln("  pre-define: DISPATCH {{ e.message:s }}")
@@ -41,6 +42,7 @@ do-define = std/bridge:define(br, source: "tor shout { text: string }\nshout = e
 tor check-post { br: *std/bridge:Bridge }
 check-post = std/bridge:run(br, source: "shout(text: \"hi\")")
 | result r |> std/interpreter:value.stringify(r.value): j |> std/io:print.ln("  shout -> {{ j:s }}")
+| defined d |> std/io:print.ln("  shout DEFINED {{ d:s }} (unexpected)")
 | event-denied ev |> std/io:print.ln("  shout DENIED {{ ev:s }}")
 | shape-error _ |> std/io:print.ln("  shout SHAPE")
 | dispatch-error e |> std/io:print.ln("  shout DISPATCH {{ e.message:s }}")

@@ -1555,7 +1555,9 @@ fn buildScopeTable() []const ScopeRuntime {
 // No JSON schema, no second source of truth: the prompt and the enforcement
 // are the same bytes.
 
-~pub tor scope-vocabulary { name: string }
+// @retain: scope_vocabulary_event is referenced from generated Zig code in user
+// pipelines (std/bridge:vocabulary compiles to scope_vocabulary_event.handler).
+~[retain]pub tor scope-vocabulary { name: string }
 | ok string
 | not-found
 

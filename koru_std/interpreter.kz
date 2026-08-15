@@ -605,6 +605,14 @@ pub const DispatchResult = struct {
 pub const DefinedFlow = struct {
     name: []const u8,
     params: []const []const u8,
+    /// Declared types per param, in order — `tor shout { text: string }`
+    /// stores `["string"]`; a phantom carries through as `string<!open>`. The
+    /// vocabulary renderer consumes these so a defined flow appears as
+    /// `shout(text: string)` in the derived prompt; the interpreter itself
+    /// needs only the names (params bind positionally at dispatch) and this
+    /// stays a rendering concern until a rung needs the types for
+    /// definition-time analysis.
+    param_types: []const []const u8,
     body_source: []const u8,
 };
 
@@ -1189,8 +1197,20 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     const params = allocator.alloc([]const u8, ed.input.fields.len) catch {
         return .{ .parse_error = .{ .message = "OOM", .line = 0, .column = 0 }};
     };
+    const param_types = allocator.alloc([]const u8, ed.input.fields.len) catch {
+        return .{ .parse_error = .{ .message = "OOM", .line = 0, .column = 0 }};
+    };
     for (ed.input.fields, 0..) |field, i| {
         params[i] = allocator.dupe(u8, field.name) catch field.name;
+        // The declared type as the vocabulary will render it — with the
+        // phantom suffix, so `handle: string<!open>` in the prompt matches
+        // `string<!open>` in the enforcement table byte for byte.
+        if (field.phantom) |p| {
+            const joined = std.fmt.allocPrint(allocator, "{s}<{s}>", .{ field.type, p }) catch field.type;
+            param_types[i] = joined;
+        } else {
+            param_types[i] = allocator.dupe(u8, field.type) catch field.type;
+        }
     }
 
     // Body source: from the impl flow's `=` separator through the end of the
@@ -1218,6 +1238,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     defined.put(name_owned, .{
         .name = name_owned,
         .params = params,
+        .param_types = param_types,
         .body_source = body_source,
     }) catch {
         return .{ .parse_error = .{ .message = "OOM installing definition", .line = 0, .column = 0 }};

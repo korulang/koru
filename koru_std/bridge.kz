@@ -164,6 +164,7 @@ pub const Bridge = struct {
 
 ~pub tor run { br: *Bridge, source: string }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
+| defined string
 | exhausted { used: u64, last_event: string, handles: u32 }
 | parse-error { message: string, line: u32, column: u32 }
 | validation-error string
@@ -174,8 +175,33 @@ pub const Bridge = struct {
 
 ~proc run|zig {
     const rt = @import("root").koru_std.koru_runtime;
+    const interp = @import("root").koru_std.koru_interpreter;
 
     br.touch();
+
+    // RUN DISCRIMINATION (the REPL rule): a declaration is not a dispatch.
+    // If the source is a subflow definition (`tor name { args }` +
+    // `name = <body>`, identifiable by its leading `tor`), install it into
+    // the session's durable defined-flows table and report `defined <name>`
+    // instead of routing it into the dispatcher where it would parse-error
+    // as an invocation. One verb, two meanings — exactly as a REPL's def.
+    // This is the R1 rung of KOPIUM_RUNTIME.md: the bridge run loop is a REPL.
+    {
+        const trimmed = std.mem.trim(u8, source, " \t\r\n");
+        if (std.mem.startsWith(u8, trimmed, "tor ")) {
+            return switch (interp.define_event.handler(.{
+                .source = source,
+                .defined = br.defined,
+            })) {
+                .defined => |d| .{ .defined = d },
+                .parse_error => |e| .{ .parse_error = .{
+                    .message = e.message,
+                    .line = e.line,
+                    .column = e.column,
+                } },
+            };
+        }
+    }
 
     const result = rt.run_event.handler(.{
         .source = source,
@@ -227,6 +253,57 @@ pub const Bridge = struct {
             .column = e.column,
         } },
     };
+}
+
+// ============================================================================
+// VOCABULARY - the derived prompt, session-shaped
+// ============================================================================
+//
+// `std/runtime:scope-vocabulary` renders a scope's COMPILED events — the
+// base vocabulary the program was built with. This tor grows that with the
+// session's DEFINED flows, so the prompt walks the whole environment a REPL
+// accumulates: compiled scopes plus the verbs the agent invented on earlier
+// turns. That visibility is the second half of the R1 claim — an invention
+// the agent never sees in its own prompt is an invention it will not use.
+//
+// The same arena discipline as scope-vocabulary: the returned string is
+// page-backed and intentionally never freed, because it must outlive this
+// call and land in the caller's prompt buffer.
+
+~pub tor vocabulary { br: *Bridge }
+| ok string
+| not-found string
+
+~proc vocabulary|zig {
+    const rt = @import("root").koru_std.koru_runtime;
+
+    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena_state.allocator();
+    var out = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+
+    switch (rt.scope_vocabulary_event.handler(.{ .name = br.scope })) {
+        .ok => |v| out.appendSlice(allocator, v) catch unreachable,
+        .not_found => return .{ .not_found = br.scope },
+    }
+
+    // The session's own inventions, one line each, same syntax as the scope
+    // renderer: `name(param: type<!phantom>, ...)`.
+    var it = br.defined.map.iterator();
+    while (it.next()) |entry| {
+        const flow = entry.value_ptr.*;
+        if (out.items.len > 0) out.append(allocator, '\n') catch unreachable;
+        out.appendSlice(allocator, flow.name) catch unreachable;
+        out.append(allocator, '(') catch unreachable;
+        for (flow.params, 0..) |pname, i| {
+            if (i > 0) out.appendSlice(allocator, ", ") catch unreachable;
+            out.appendSlice(allocator, pname) catch unreachable;
+            out.appendSlice(allocator, ": ") catch unreachable;
+            out.appendSlice(allocator, flow.param_types[i]) catch unreachable;
+        }
+        out.append(allocator, ')') catch unreachable;
+    }
+
+    return .{ .ok = out.toOwnedSlice(allocator) catch unreachable };
 }
 
 // ============================================================================
