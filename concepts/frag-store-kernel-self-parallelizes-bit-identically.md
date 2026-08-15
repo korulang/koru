@@ -50,7 +50,21 @@ structurally cannot have (the length is a runtime store property). The
 literal form exists only for small hand-written N; the store form is the one
 that scales, and its comparison at N=5 understates it by construction.
 
-What would correct this belief: a compute-bound body (transcendentals,
-pairwise sums with a deterministic reduction) showing multi-core scaling
-that a bandwidth-bound column sweep cannot, at a store scale where the
-kernel dominates the process.
+The decisive experiment (2026-08-15) is in and answers the value question.
+Store-backed pairwise got a DISJOINT lowering at the parallel floor (each
+row computes its own side; the k.other writes stripped; per-row work
+threaded over the pool): serial and threaded are BIT-IDENTICAL (measured
+exactly equal outputs at 512 rows x 512 pairs x 50 frames), so the
+determinism claim holds. But the timing verdict: threaded 74ms vs serial
+48ms — threading LOSES ~1.5x at the reachable scale. The 512-row store fits
+in L2, the per-frame sync exceeds the per-frame compute, and the regime
+where cores could pay (10k+ rows, working-set beyond cache) is UNREACHABLE:
+the store+kor transform pipeline stops scaling around 1k flows
+(TransformInfiniteLoop at 1024 inserts; 31s compile at 512) and a
+loop-populated store cannot sit in front of a kernel (KORU010, pinned
+390_116). The verdict: the parallelization pursuit as measured has no
+positive value at the achievable scale, and the path to where it could is
+blocked by toolchain scale gaps, not by the determinism question. The
+CAPABILITY pursuit (store-backed kernels, bit-identical threading where it
+applies) remains real. The disjoint pairwise lowering was reverted to keep
+the serial form from regressing.

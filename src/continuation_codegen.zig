@@ -168,6 +168,7 @@ fn generatePipelineCode(
     result_counter: *usize,
     indent_level: usize,
     var_prefix: []const u8,
+    is_root: bool,
 ) CodegenError![]const u8 {
     var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
 
@@ -261,6 +262,29 @@ fn generatePipelineCode(
                     );
                     defer allocator.free(switch_code);
                     try buf.appendSlice(allocator, switch_code);
+                } else if (is_root and nested.len == 0) {
+                    // Bare produce: a root leaf invocation IS the produced value.
+                    // `-> craft(req)` must RETURN the handler's response, not
+                    // silently drop it; the generic call path saw every chained
+                    // tor as a side effect (`_ =`) and the response vanished.
+                    const result_var = try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
+                    defer allocator.free(result_var);
+                    result_counter.* += 1;
+                    const call_code = try generateHandlerCallWithResult(
+                        allocator,
+                        &inv,
+                        main_module_name,
+                        result_var,
+                        indent_level,
+                    );
+                    defer allocator.free(call_code);
+                    try buf.appendSlice(allocator, call_code);
+                    const ind = try indent(allocator, indent_level);
+                    defer allocator.free(ind);
+                    try buf.appendSlice(allocator, ind);
+                    try buf.appendSlice(allocator, "return ");
+                    try buf.appendSlice(allocator, result_var);
+                    try buf.appendSlice(allocator, ";\n");
                 } else {
                     // Simple invocation - ignore result
                     const call_code = try generateHandlerCall(
@@ -598,6 +622,7 @@ fn generateBranchSwitch(
             result_counter,
             indent_level + 2,
             var_prefix,
+            false,
         );
         defer allocator.free(pipeline_code);
         try buf.appendSlice(allocator, pipeline_code);
@@ -665,5 +690,6 @@ pub fn generateContinuationChainWithPrefix(
         result_counter,
         indent_level,
         var_prefix,
+        true, // root: the continuation's own node is a bare produce when leaf
     );
 }
