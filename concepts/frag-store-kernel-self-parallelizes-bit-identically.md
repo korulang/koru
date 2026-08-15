@@ -47,16 +47,32 @@ for this layout sits beyond every reachable point measured. The pairwise
 disjoint experiment repeated the same tie (threaded 74ms vs serial 48ms was
 a 1.5x LOSS at 512 rows — the only case that separated at all).
 
-The HUGE-DATA tilt test (2026-08-15, requested explicitly): rows pushed to
-1,048,576 with a compute-heavy 264-flop body (~4.7 flops/byte, past the
-~3 flops/byte crossover) at 50 frames — serial still 1.04x faster, in the
-noise band. The full matrix (rows 8k to 1M, bodies 9-op to 264-op, frames
-1 to 500) never separates by more than 6%, sign oscillating with noise. The
-crossover exists as a DIRECTIONAL effect (at 524k rows the compute-heavy
-sign briefly favored parallel) but its magnitude never escapes noise:
-the process baseline runs user-time 6x its wall time even in the serial
-build — the insert/store machinery already saturates the cores, so the
-pool has no additive capacity. Huge data does not tilt the result.
+The HUGE-DATA test (2026-08-15) was doing it right, and its earlier
+"tie-machine" conclusion was MY ARTIFACT and is REPUDIATED: the comparison
+"serial" binaries had been compiled under the threaded floor (build
+hygiene failure — both halves of a batch built from the same kernel.kz
+state), so the ties were parallel-vs-parallel. With a TRUE serial build
+(floor pushed out), user time collapses to wall time (single core,
+measured) and the correct matrix is:
+
+  rows x frames, 40-op body   parallel   serial    win
+  8192 x 500                  14.0 ms    13.2 ms   serial ~1.06x (overhead)
+  65536 x 500                 38.8 ms    83.8 ms   PARALLEL 2.2x
+  524288 x 500                141 ms     657 ms    PARALLEL 4.65x
+  1048576 x 500               258 ms     1.318 s   PARALLEL 5.1x
+  (9-op light body @524k: 2.71x; 264-op: 4.79x at 524k)
+
+Outputs are BIT-IDENTICAL at every tested point (section 1's disjoint
+guarantee holds at 524k rows). The crossover sits just below the 65536
+floor: serial wins at 8k (pool overhead), parallel takes over by ~16k-65k
+and the win grows with N.
+
+Corrected mechanism: the serial path is limited by a PER-CORE slice of the
+DRAM bus (~12GB/s), and parallel leases the machine's aggregate bandwidth
+(~50-60GB/s), which caps the win near 4-5x — consistent with the
+measurements. The machine-level bus ceiling is real; the correct reading
+of it is that parallel APPROACHES it while serial sits at the per-core
+fraction. Compile-time floor tuning by body work is now a real lever.
 
 And the frame loop (step over store) is shipped and measured, which found
 the real ceiling: for simple per-column updates the serial loop is already
