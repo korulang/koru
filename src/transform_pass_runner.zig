@@ -753,7 +753,19 @@ pub fn walkAndTransformStages(
     ctx: ?*anyopaque,
 ) !*Program {
     var current_program = program;
-    const MAX_ITERATIONS: usize = 1000; // Circuit breaker to prevent infinite loops
+    // Pass budget, not a loop detector. The fixed point applies ONE transform
+    // per pass (walkOnce returns after the first found — deterministic
+    // single-write ordering), so a program with N transform sites needs N
+    // passes. Measured 2026-08-15: a store with 512 literal `insert` flows
+    // needs ~512 passes (~21s); 1024 flows needs >1000 passes and DIED with
+    // a misleading "infinite loop" at the old cap of 1000 — it was not
+    // diverging, it was just past the budget. 100_000 allows ~100k-site
+    // programs (impractical wall-clock below: the per-pass cost makes >5k
+    // sites take minutes) while a GENUINE loop — a transform re-firing on
+    // its own output — still terminates the build, loudly, after a bounded
+    // burn. The blessed bulk path for large data is the loop form
+    // (`for(0..N) ! each i |> insert(...)`) — ONE flow, ONE pass.
+    const MAX_ITERATIONS: usize = 100_000; // Circuit breaker to prevent infinite loops
 
     // STAGED fixed-point: run the fixed-point iteration once per stage, in the
     // declared order (pre → main → post). A `.pre` transform reaches fixed
@@ -779,7 +791,7 @@ pub fn walkAndTransformStages(
 
             // Circuit breaker: prevent infinite loops
             if (iteration > MAX_ITERATIONS) {
-                log.debug("ERROR: Transform infinite loop after {d} iterations\n", .{MAX_ITERATIONS});
+                log.debug("ERROR: Transform pass budget exceeded ({d} single-transform passes) — either a transform re-fires on its own output (a true loop) or the program has more transform sites than the budget allows\n", .{MAX_ITERATIONS});
                 return error.TransformInfiniteLoop;
             }
 
