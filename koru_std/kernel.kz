@@ -1544,6 +1544,19 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                         // spawn failure or empty tail falling back INLINE so no row
                         // is ever silently skipped.
                         const par_body = std.mem.replaceOwned(u8, alloc, op_src, "[i]", "[__koru_i]") catch unreachable;
+                        // BODY-AWARE FLOOR: the parallel win amortizes the pool
+                        // overhead against per-row work, so the floor scales
+                        // inversely with the body's size (a compile-time proxy
+                        // for flops/row). Calibrated 2026-08-15 against the
+                        // LOWERED op_src length (the light 9-op body lowers to
+                        // ~614 chars): its crossover sits at/beyond the old
+                        // fixed floor, so 614 maps to 65536. The 40-op body
+                        // (~1.4k chars) gets ~29k and the 264-op (~4.4k) gets
+                        // ~9k. floor = 65536 * 614 / len, clamped.
+                        const body_len = op_src.len;
+                        var par_floor: usize = 65536 * 614 / @max(body_len, @as(usize, 614));
+                        if (par_floor < 4096) par_floor = 4096;
+                        if (par_floor > 65536) par_floor = 65536;
                         const par_fn_name = std.fmt.allocPrint(alloc, "__koru_par_{s}_{d}", .{ static_name_ref, op_idx }) catch unreachable;
                         const par_fn = std.fmt.allocPrint(alloc,
                             \\const {s} = struct {{
@@ -1561,7 +1574,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                         const adaptive = std.fmt.allocPrint(alloc,
                             \\{{
                             \\    const __koru_n = {s}.len;
-                            \\    if (__koru_n >= 65536) {{
+                            \\    if (__koru_n >= {d}) {{
                             \\        const __koru_p = __koru_pool_ensure();
                             \\        const __koru_nc = @max(@as(usize, 1), @min(@import("std").Thread.getCpuCount() catch 1, (__koru_n + 4095) / 4096));
                             \\        var __koru_wg: @import("std").Thread.WaitGroup = .{{}};
@@ -1580,7 +1593,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                             \\    }}
                             \\}}
                             ,
-                            .{ store_ref, par_fn_name, store_ref, op_src }
+                            .{ store_ref, par_floor, par_fn_name, store_ref, op_src }
                         ) catch unreachable;
                         code.appendSlice(alloc, par_fn) catch unreachable;
                         code.appendSlice(alloc, adaptive) catch unreachable;

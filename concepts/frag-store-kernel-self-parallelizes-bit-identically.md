@@ -72,7 +72,19 @@ DRAM bus (~12GB/s), and parallel leases the machine's aggregate bandwidth
 (~50-60GB/s), which caps the win near 4-5x — consistent with the
 measurements. The machine-level bus ceiling is real; the correct reading
 of it is that parallel APPROACHES it while serial sits at the per-core
-fraction. Compile-time floor tuning by body work is now a real lever.
+fraction. Compile-time floor tuning by body work is now a REAL lever and
+is implemented: the store-backed self floor scales inversely with the
+lowered op-body length (65536 * 614 / len, clamped [4096, 65536]), so the
+40-op body parallelizes from ~29k rows and the 264-op from ~9k, capturing
+wins the fixed 65536 floor left stranded (verified vs TRUE serial: 1.77x
+at 32768 heavy, 2.01x at 16384 horner; the light 9-op body keeps 65536,
+its crossover still at/behind the old floor).
+
+The flip-side discipline hardened with the second benchmark-hygiene
+failure: when the floor became a computed literal, the legacy replace
+stopped matching and the "serial" comparison builds stayed threaded
+silently. A floor flip now asserts its effect in the source before
+building.
 
 And the frame loop (step over store) is shipped and measured, which found
 the real ceiling: for simple per-column updates the serial loop is already
