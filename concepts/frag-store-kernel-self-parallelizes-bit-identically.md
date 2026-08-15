@@ -25,14 +25,27 @@ deterministic-reduction contract (fixed-order chunks or compensated
 accumulators) lands.
 
 Constraint discovered with the pool: the pool is process-lifetime and never
-freed, so it must allocate from an UNTRACKED allocator — koru's leak checker
-accounts every `koru_allocator()` byte, and a pool holding thread stacks in
-the tracked GPA trips the gate at exit. The first untracked choice,
+freed, so it must allocate from an UNTRACKED allocator — musl's leaky
+`koru_allocator()` accounting trips the gate at exit if a process-lifetime
+pool leaks into the tracked GPA. The first untracked choice,
 `page_allocator`, measured far too slow: the pool allocates a TASK NODE per
-spawn, and 200 frames x 10 tasks became 2000 mmap/munmap syscalls
-(pool-parallel 50ms vs serial 40ms). `smp_allocator` is the fix — fast
-small-node allocation, still untracked — and parallel then beat serial
-(35ms vs 39ms).
+spawn, and 200 frames x 10 tasks became 2000 mmap/munmap syscalls. The pool
+uses `smp_allocator` — fast small-node allocation, still untracked.
+
+The ARITY HUNT (2026-08-15) — the honest threshold inquiry, three axes:
+rows (8k to 262k), body weight (9-op to 40-op with @sqrt), frames per
+process (1 to 500). Result: the store-backed `self` threading NEVER leaves
+the noise band at ANY reachable configuration — deltas oscillate 0-6% and
+change sign with noise (earlier single-point "wins" like 35 vs 39ms were in
+this same band). The convergence is a tie everywhere. The baseline is the
+story: the serial path is already near the machine's ceilings (memory
+bandwidth ~48GB/s measured, and the process's user-time runs 4x wall even
+in the serial build — the insert/store baseline already soaks available
+cores), so the thread pool adds nothing separable. The GPU-style arity
+(dispatch overhead vs task work) exists in theory, but its honest crossover
+for this layout sits beyond every reachable point measured. The pairwise
+disjoint experiment repeated the same tie (threaded 74ms vs serial 48ms was
+a 1.5x LOSS at 512 rows — the only case that separated at all).
 
 And the frame loop (step over store) is shipped and measured, which found
 the real ceiling: for simple per-column updates the serial loop is already

@@ -1,1 +1,0 @@
-KORU010 stray continuation line without Koru construct
