@@ -55,11 +55,23 @@ measured 0%: 20.41s pre vs 20.43s post) nor generic interpreted comptime:
 it is the STORE transform's per-site WHOLE-PROGRAM scans
 (`storeCollectWriteSet` / `storeScanCont` / `storeCollectAliases`,
 walking every flow + continuation per stored site — store.kz), each
-application paying O(program) in scans. The fix lives in koru_std/store.kz:
-memoize those scan results per pass/collection (invalidated when the
-program changes), or narrow the scans to the touched store. The
+application paying O(program) in scans. The naive fix is REJECTED on honesty grounds (ruled 2026-08-15): MEMOIZING
+those scans is not acceptable unless extremely honestly bounded. The scans
+feed CORRECTNESS-CRITICAL emission (per-column-set write specializations,
+store-name and write-set resolution across the whole subtree), and the
+program MUTATES EVERY PASS — so any memo's invalidation is either as
+expensive as the program itself (content-verify the key, which costs
+roughly the scan) or stale-behavior hazard (a cache served against a
+per-pass-mutating input = silently wrong emitted code, the exact class of
+quiet green this repo refuses). A cache keyed on less than the full
+program state is a correctness lie wearing a speed patch. The honest
+alternatives: (a) accept the cost and keep the LOOP-form population as the
+blessed path for large literal data (one flow, one pass, fast); (b) narrow
+a scan ONLY if it is proven semantically equivalent under the full-program
+view (short-circuiting an answer the scan itself defines — not a cache and
+not an abbreviation of a genuine whole-program answer). The
 100_000-site-budget fix and the backend-binary (content-keyed) cache are
-the landed wins; the store-scan memoization is the named next rung.
+the landed wins; the store scans stay uncached by design.
 
 The backend cache gained one hardening requirement from use: it is keyed on
 file mtimes, and a mid-edit rebuild can cache POISON (a backend built from
