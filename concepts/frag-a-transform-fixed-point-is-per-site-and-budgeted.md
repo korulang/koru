@@ -46,7 +46,18 @@ emitted artifact — a 1,048,576-row store compiles near-instantly while a
 literal-1024 population takes ~68s. Literal per-flow population is the
 anti-pattern for large data.
 
-What would correct this belief: the runner batching sites per pass would
-only matter past the budget, which is already fixed; the time wall would
-correct by emitting less per flow (the insert flow's ~12KB/flow machinery)
-or by not forcing -O ReleaseFast on the intermediate build.
+The pass cost was profiled FOR REAL (a set-hoist A/B, hyperfine-stable:
+pre-fix 20.41s vs post-fix 20.43s on a 512-flow compile — identical, so the
+runner's matching scans measure ZERO). The remaining wall lives in the
+BACKEND-INTERPRETED koru_std comptime machinery: sampling the backend child
+shows `evaluate_comptime -> elaborate -> coordinate -> RuntimeEmitter.emit`
+as the hot chain. The 100_000 site-budget fix and the backend-binary cache
+are the real, landed wins; the interpreted-comptime layer is a deeper
+performance project, and the LOOP-form population remains the blessed path.
+
+The backend cache gained one hardening requirement from use: it is keyed on
+file mtimes, and a mid-edit rebuild can cache POISON (a backend built from
+half-written sources) that later runs serve — a rebuild with mtimes that
+happen to match serves the poisoned binary until the cache is cleared.
+The key must incorporate file CONTENT (hashes), not just mtimes, so a
+partially-written source can never match the future clean state.

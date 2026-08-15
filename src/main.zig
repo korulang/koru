@@ -226,10 +226,16 @@ fn backendCacheKey(allocator: std.mem.Allocator, koru_home: []const u8) ?[]const
         h.update(root);
         while (wlk.next() catch return null) |entry| {
             if (entry.kind != .file) continue;
-            const st = entry.dir.statFile(entry.basename) catch return null;
+            // CONTENT hash, not mtime: a mid-edit rebuild can cache POISON
+            // (a backend built from half-written sources); mtimes that happen
+            // to match across the edit would then serve it forever. Content
+            // bytes of the partially-written file can never equal the clean
+            // state, so the poison key cannot be reproduced. Reading ~200
+            // files is a few ms against the ~11.6s build being skipped.
+            const contents = entry.dir.readFileAlloc(allocator, entry.basename, 64 * 1024 * 1024) catch return null;
             h.update(entry.path);
-            h.update(std.mem.asBytes(&st.size));
-            h.update(std.mem.asBytes(&st.mtime));
+            h.update(contents);
+            allocator.free(contents);
             count += 1;
         }
     }
