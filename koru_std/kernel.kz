@@ -1419,10 +1419,6 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                             std.debug.print("error[KORU122]: kernel op `self|{s}` has no store-mode lowering yet — a store-backed kernel runs plain `self` only this rung\n", .{vt});
                             std.process.exit(1);
                         }
-                        if (step_range != null) {
-                            std.debug.print("error[KORU122]: std/kernel:step is not wired for store-backed kernels yet — a store kernel runs plain `self` per call this rung\n", .{});
-                            std.process.exit(1);
-                        }
                         const store_ref = std.fmt.allocPrint(alloc, "__koru_store_{s}", .{store_name}) catch unreachable;
                         var body = std.ArrayList(u8).initCapacity(alloc, op.body_text.len * 2) catch unreachable;
                         var sidx: usize = 0;
@@ -1931,7 +1927,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                 \\var __koru_pool_ready: bool = false;
                 \\fn __koru_pool_ensure() *@import("std").Thread.Pool {
                 \\    if (!__koru_pool_ready) {
-                \\        @import("std").Thread.Pool.init(&__koru_pool, .{ .allocator = @import("std").heap.page_allocator }) catch @panic("koru: thread pool init failed");
+                \\        @import("std").Thread.Pool.init(&__koru_pool, .{ .allocator = @import("std").heap.smp_allocator }) catch @panic("koru: thread pool init failed");
                 \\        __koru_pool_ready = true;
                 \\    }
                 \\    return &__koru_pool;

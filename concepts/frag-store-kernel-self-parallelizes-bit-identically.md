@@ -6,7 +6,7 @@ ts: 2026-08-15
 tags: [koru, kernel, store, parallelism]
 ---
 
-# A store-backed `self` kernel parallelizes bit-identically; the decision is cost, not just row count (belief)
+# A store-backed `self` kernel parallelizes bit-identically; the ceiling is body compute per byte, not rows or cores (belief)
 
 `self` over a store writes DISJOINT rows — one thread owns `[lo, hi)` and no
 thread touches another's rows — so splitting the row range across threads
@@ -22,26 +22,26 @@ that sums across rows reorders FP additions per thread, so it needs the
 deterministic-reduction contract (fixed-order chunks or compensated
 accumulators) before it can parallelize under the byte-identical oracle.
 
-Second half of the belief, from measurement: the speedup is not a row-count
-function. With PER-CALL thread spawn, a tiny 2-op body at 131k rows ran
-SLOWER parallel (40ms) than serial (22ms) — spawn overhead exceeded the
-per-row work. The fix was amortization: a PERSISTENT worker pool (std
-Thread.Pool, lazily created once per process, reused per call) collapsed the
-per-call cost to queue-µs and flipped the total-window measurement on the
-heavy 9-op / 200k-row body: pool-parallel 21ms vs serial 25ms, even inside
-an insert-dominated single-call process. The healthy decision remains
-per-call over BODY COST × ROWS vs pool-queue cost, and the full scaling
-curve still waits on an in-process frame loop (a step-over-store rung) so
-the kernel dominates the process.
-
 Constraint discovered with the pool: the pool is process-lifetime and never
-freed, so it must allocate from an UNTRACKED allocator
-(`@import("std").heap.page_allocator`) — koru's leak checker accounts every
-`koru_allocator()` byte, and a pool holding thread stacks in the tracked GPA
-would trip the gate at exit. A process-lifetime object on the page allocator
-is not a leak by construction.
+freed, so it must allocate from an UNTRACKED allocator — koru's leak checker
+accounts every `koru_allocator()` byte, and a pool holding thread stacks in
+the tracked GPA trips the gate at exit. The first untracked choice,
+`page_allocator`, measured far too slow: the pool allocates a TASK NODE per
+spawn, and 200 frames x 10 tasks became 2000 mmap/munmap syscalls
+(pool-parallel 50ms vs serial 40ms). `smp_allocator` is the fix — fast
+small-node allocation, still untracked — and parallel then beat serial
+(35ms vs 39ms).
 
-What would correct this belief: a frame-looped store kernel measurement
-showing the expected multi-core scaling (the step-over-store rung), or a
-body-work estimate entering the compile-time decision so the threshold
-adapts to the op count.
+And the frame loop (step over store) is shipped and measured, which found
+the real ceiling: for simple per-column updates the serial loop is already
+MEMORY-BANDWIDTH-saturated. 100k rows x 5 f64 columns x 200 frames moves
+~960MB of cache-line traffic in ~20ms ~ 48GB/s, near the M2 Pro's practical
+limit — more cores cannot beat the bus for a bandwidth-bound body, which is
+exactly why parallel gains stayed ~10% even at 180M ops. Parallelism pays
+for COMPUTE-bound bodies (heavy math per row, or the pairwise aggregate once
+it gets its determinism contract), and the compile-time decision must
+therefore weight body compute per byte of traffic, not row count.
+
+What would correct this belief: a compute-bound body (transcendentals,
+pairwise sums) showing multi-core scaling that a bandwidth-bound column
+sweep cannot, at a store scale where the kernel dominates the process.
