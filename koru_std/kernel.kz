@@ -1451,25 +1451,84 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                             body.append(alloc, ';') catch unreachable;
                         }
                         const op_src = kernelLowerOpBody(alloc, body.items, is_js);
-                        const store_loop = if (is_js)
-                            std.fmt.allocPrint(alloc,
+                        if (is_js) {
+                            // JavaScript is single-threaded by contract this rung
+                            // (Web Workers are a later one): serial is the honest
+                            // lowering, not a degraded one.
+                            const js_loop = std.fmt.allocPrint(alloc,
                                 \\
                                 \\for (let i = 0; i < {s}.len; i++) {{
                                 \\    {s}
                                 \\}}
                                 ,
                                 .{ store_ref, op_src }
-                            ) catch unreachable
-                        else
-                            std.fmt.allocPrint(alloc,
-                                \\
-                                \\for (0..{s}.len) |i| {{
-                                \\    {s}
-                                \\}}
-                                ,
-                                .{ store_ref, op_src }
                             ) catch unreachable;
-                        code.appendSlice(alloc, store_loop) catch unreachable;
+                            code.appendSlice(alloc, js_loop) catch unreachable;
+                            continue;
+                        }
+                        // PARALLEL (Zig): `self` writes DISJOINT rows — one thread
+                        // owns `[lo, hi)` and no thread touches another's rows, so
+                        // the result is bit-identical to the serial loop at any
+                        // thread split (no FP reassociation, no oracle change).
+                        // Adaptive per call: live length below a floor runs the
+                        // serial loop; above it, up to cpu-count threads, with a
+                        // spawn failure or empty tail falling back INLINE so no row
+                        // is ever silently skipped.
+                        const par_body = std.mem.replaceOwned(u8, alloc, op_src, "[i]", "[__koru_i]") catch unreachable;
+                        const par_fn_name = std.fmt.allocPrint(alloc, "__koru_par_{s}_{d}", .{ static_name_ref, op_idx }) catch unreachable;
+                        const par_fn = std.fmt.allocPrint(alloc,
+                            \\const {s} = struct {{
+                            \\    fn run(lo: usize, hi: usize) void {{
+                            \\        var __koru_i: usize = lo;
+                            \\        while (__koru_i < hi) : (__koru_i += 1) {{
+                            \\            {s}
+                            \\        }}
+                            \\    }}
+                            \\}};
+                            \\
+                            ,
+                            .{ par_fn_name, par_body }
+                        ) catch unreachable;
+                        const adaptive = std.fmt.allocPrint(alloc,
+                            \\{{
+                            \\    const __koru_n = {s}.len;
+                            \\    if (__koru_n >= 65536) {{
+                            \\        const __koru_nc = @import("std").Thread.getCpuCount() catch 1;
+                            \\        if (__koru_nc > 1) {{
+                            \\            var __koru_th: [64]@import("std").Thread = undefined;
+                            \\            var __koru_used: usize = 0;
+                            \\            var __koru_from: usize = __koru_n;
+                            \\            var __koru_t: usize = 0;
+                            \\            while (__koru_t < __koru_nc) : (__koru_t += 1) {{
+                            \\                const __koru_lo = __koru_t * __koru_n / __koru_nc;
+                            \\                const __koru_hi = if (__koru_t + 1 == __koru_nc) __koru_n else (__koru_t + 1) * __koru_n / __koru_nc;
+                            \\                if (__koru_hi <= __koru_lo) break;
+                            \\                __koru_th[__koru_used] = @import("std").Thread.spawn(.{{}}, {s}.run, .{{ __koru_lo, __koru_hi }}) catch break;
+                            \\                __koru_used += 1;
+                            \\                __koru_from = __koru_hi;
+                            \\            }}
+                            \\            var __koru_k: usize = 0;
+                            \\            while (__koru_k < __koru_used) : (__koru_k += 1) __koru_th[__koru_k].join();
+                            \\            var __koru_i: usize = __koru_from;
+                            \\            while (__koru_i < __koru_n) : (__koru_i += 1) {{
+                            \\                {s}
+                            \\            }}
+                            \\        }} else {{
+                            \\            for (0..{s}.len) |i| {{
+                            \\                {s}
+                            \\            }}
+                            \\        }}
+                            \\    }} else {{
+                            \\        for (0..{s}.len) |i| {{
+                            \\            {s}
+                            \\        }}
+                            \\    }}
+                            \\}}
+                            ,
+                            .{ store_ref, par_fn_name, par_body, store_ref, op_src, store_ref, op_src }
+                        ) catch unreachable;
+                        code.appendSlice(alloc, par_fn) catch unreachable;
+                        code.appendSlice(alloc, adaptive) catch unreachable;
                         continue;
                     }
                     const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
