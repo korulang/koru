@@ -897,8 +897,8 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             }
 
             for (ops, 0..) |op, op_idx| {
-                if (store_name.len > 0 and !std.mem.eql(u8, op.op_type, "self")) {
-                    std.debug.print("error[KORU122]: kernel op `{s}` has no store-backed lowering yet — a store kernel runs `self` only this rung\n", .{op.op_type});
+                if (store_name.len > 0 and !std.mem.eql(u8, op.op_type, "self") and !std.mem.eql(u8, op.op_type, "pairwise")) {
+                    std.debug.print("error[KORU122]: kernel op `{s}` has no store-backed lowering yet — a store kernel runs `self` and `pairwise` only this rung\n", .{op.op_type});
                     std.process.exit(1);
                 }
                 if (std.mem.eql(u8, op.op_type, "pairwise")) {
@@ -906,6 +906,79 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                     if (op.variant) |vt| {
                         std.debug.print("error[KORU122]: kernel op `pairwise` supports no variants yet (got `|{s}`) — |mlir generation lands on `self` first\n", .{vt});
                         std.process.exit(1);
+                    }
+                    if (store_name.len > 0) {
+                        // STORE MODE PAIRWISE: k.<f> -> __koru_store_<n>.<f>[i],
+                        // k.other.<f> -> __koru_store_<n>.<f>[j]. SERIAL ONLY this
+                        // rung: pairwise writes BOTH endpoints per pair, so the
+                        // rows are not disjoint and the parallel machinery
+                        // (proven for `self`) must stay off until the
+                        // deterministic-reduction contract lands.
+                        const store_ref = std.fmt.allocPrint(alloc, "__koru_store_{s}", .{store_name}) catch unreachable;
+                        const binding_other = std.fmt.allocPrint(alloc, "{s}.other", .{binding}) catch unreachable;
+                        var body = std.ArrayList(u8).initCapacity(alloc, op.body_text.len * 3) catch unreachable;
+                        var pidx: usize = 0;
+                        while (pidx < op.body_text.len) {
+                            if (pidx + binding_other.len <= op.body_text.len and std.mem.eql(u8, op.body_text[pidx .. pidx + binding_other.len], binding_other)) {
+                                const nxt = pidx + binding_other.len;
+                                if (nxt < op.body_text.len and op.body_text[nxt] == '.') {
+                                    var fe = nxt + 1;
+                                    while (fe < op.body_text.len and (std.ascii.isAlphanumeric(op.body_text[fe]) or op.body_text[fe] == '_')) fe += 1;
+                                    const fld = op.body_text[nxt + 1 .. fe];
+                                    const repl = std.fmt.allocPrint(alloc, "{s}.{s}[j]", .{ store_ref, fld }) catch unreachable;
+                                    body.appendSlice(alloc, repl) catch unreachable;
+                                    pidx = fe;
+                                } else {
+                                    body.appendSlice(alloc, op.body_text[pidx .. pidx + binding_other.len]) catch unreachable;
+                                    pidx += binding_other.len;
+                                }
+                            } else if (pidx + binding.len <= op.body_text.len and std.mem.eql(u8, op.body_text[pidx .. pidx + binding.len], binding)) {
+                                const nxt = pidx + binding.len;
+                                if (nxt < op.body_text.len and op.body_text[nxt] == '.') {
+                                    var fe = nxt + 1;
+                                    while (fe < op.body_text.len and (std.ascii.isAlphanumeric(op.body_text[fe]) or op.body_text[fe] == '_')) fe += 1;
+                                    const fld = op.body_text[nxt + 1 .. fe];
+                                    const repl = std.fmt.allocPrint(alloc, "{s}.{s}[i]", .{ store_ref, fld }) catch unreachable;
+                                    body.appendSlice(alloc, repl) catch unreachable;
+                                    pidx = fe;
+                                } else {
+                                    body.appendSlice(alloc, op.body_text[pidx .. pidx + binding.len]) catch unreachable;
+                                    pidx += binding.len;
+                                }
+                            } else {
+                                body.append(alloc, op.body_text[pidx]) catch unreachable;
+                                pidx += 1;
+                            }
+                        }
+                        const body_trimmed = std.mem.trimRight(u8, body.items, " \t\n\r");
+                        if (body_trimmed.len == 0 or body_trimmed[body_trimmed.len - 1] != ';') {
+                            body.append(alloc, ';') catch unreachable;
+                        }
+                        const op_src = kernelLowerOpBody(alloc, body.items, is_js);
+                        const store_pair_loop = if (is_js)
+                            std.fmt.allocPrint(alloc,
+                                \\
+                                \\for (let i = 0; i < {s}.len; i++) {{
+                                \\    for (let j = i + 1; j < {s}.len; j++) {{
+                                \\        {s}
+                                \\    }}
+                                \\}}
+                                ,
+                                .{ store_ref, store_ref, op_src }
+                            ) catch unreachable
+                        else
+                            std.fmt.allocPrint(alloc,
+                                \\
+                                \\for (0..{s}.len) |i| {{
+                                \\    for (i + 1..{s}.len) |j| {{
+                                \\        {s}
+                                \\    }}
+                                \\}}
+                                ,
+                                .{ store_ref, store_ref, op_src }
+                            ) catch unreachable;
+                        code.appendSlice(alloc, store_pair_loop) catch unreachable;
+                        continue;
                     }
                     // Transform body: k.other.X -> ptr[j].X, k.X -> ptr[i].X
                     const binding_other = std.fmt.allocPrint(alloc, "{s}.other", .{binding}) catch unreachable;
