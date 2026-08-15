@@ -21,15 +21,24 @@ they have different fixes and different shapes:
    naming both readings; 1024 flows compile (~68s); a genuine re-firing loop
    still terminates loudly after a bounded burn.
 
-2. THE TIME WALL (measured, NOT the passes). The passes themselves are
-   FAST: at 512 flows the transform phase completes in ~0.7s. The other
-   ~19s of a 20.4s compile is the FINAL `zig build-exe output_emitted.zig
-   -O ReleaseFast` of the emitted program, which grows with the flow count
-   (512 literal inserts emit a ~6.5MB file — ~12KB per insert flow's
-   synthesized event+proc machinery). So the compile time for literal
-   per-flow population is dominated by Zig's ReleaseFast build of the big
-   emitted artifact — near-linear in emitted size, not a transform-pass
-   quadratic. Any "batching" fix to the runner would NOT move this wall.
+2. THE TIME WALL (measured, FINAL): three components, and the pass cost
+   IS the quadratic. Sampling koruc and its backend child (2026-08-15):
+   (a) the transform PASSES run in the backend child and take ~16s at 512
+   literal flows, hot in `transform_pass_runner.countMatchingInFlow` under
+   the koru_std comptime events (evaluate_comptime/elaborate) — whole-flow
+   counting per transform site, O(N²)-ish. (b) the FINAL `zig build-exe
+   output_emitted.zig -O ReleaseFast` adds ~4.4s (the emitted file is only
+   ~190KB at 512 flows — ~370B/flow, not 12KB; the 6.5MB was the BACKEND's
+   embedded koru_std). (c) the backend ITSELF is rebuilt per run by
+   `zig build --build-file build_backend.zig` (~11.6s) — a reusable
+   artifact whose own design comment says it is reusable — now CACHED (a
+   binary cache keyed on src/ + koru_std/ file mtimes; hit copies
+   zig-out/bin/backend and skips the build; ~33s → ~21s per run). Earlier
+   in this session a "passes are fast (0.43s)" reading was an artifact of
+   a run that aborted at a failed zig spawn: the passes were never that
+   fast. The pass cost (countMatchingInFlow's repeated whole-flow counting)
+   is the remaining blocker for literal per-flow population; batching or
+   count-caching is now the correct target.
 
 The blessed bulk path stands and bypasses BOTH: the LOOP population form
 (`for(0..N) ! each i |> insert(...)`) is ONE flow, ONE pass, and a small

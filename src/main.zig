@@ -202,6 +202,63 @@ fn describeTerm(buf: []u8, term: std.process.Child.Term) []const u8 {
 /// The teaching for a PIPELINE subprocess (backend build, backend run) that
 /// never got to exit. A signal here is a fact about the machine, not about
 /// the program being compiled — say which subprocess, what ended it, where
+/// BACKEND BINARY CACHE (2026-08-15): the backend executable (compiled from
+/// src/*.zig plus the koru_std files embedded via backend_output_emitted.zig)
+/// is byte-reusable across user programs — its Design comment says so, and
+/// rebuilding it dominates every compile (~11.6s measured on a 512-flow
+/// store program; the transform passes themselves are ~0.4s). Cache the
+/// produced binary keyed on the compiler-side inputs' (path, size, mtime):
+/// a hit copies the cached backend and skips the zig build entirely. The
+/// cache is a SPEED optimization — any doubt (IO error, missing dir,
+/// zero files) disables it and the normal build runs; the key covers every
+/// file that can change the backend, so a stale binary cannot be served.
+fn backendCacheKey(allocator: std.mem.Allocator, koru_home: []const u8) ?[]const u8 {
+    var h = std.hash.Fnv1a_64.init();
+    var count: usize = 0;
+    const roots = [_][]const u8{ "src", "koru_std" };
+    for (roots) |root| {
+        const root_path = std.fs.path.join(allocator, &[_][]const u8{ koru_home, root }) catch return null;
+        defer allocator.free(root_path);
+        var dir = std.fs.cwd().openDir(root_path, .{ .iterate = true }) catch return null;
+        defer dir.close();
+        var wlk = dir.walk(allocator) catch return null;
+        defer wlk.deinit();
+        h.update(root);
+        while (wlk.next() catch return null) |entry| {
+            if (entry.kind != .file) continue;
+            const st = entry.dir.statFile(entry.basename) catch return null;
+            h.update(entry.path);
+            h.update(std.mem.asBytes(&st.size));
+            h.update(std.mem.asBytes(&st.mtime));
+            count += 1;
+        }
+    }
+    if (count == 0) return null;
+    return std.fmt.allocPrint(allocator, "{x}", .{h.final()}) catch null;
+}
+
+/// The backend cache directory: $ZIG_GLOBAL_CACHE when set (the convention
+/// the regression harness uses), else $HOME/.cache/koru-backend-cache.
+/// ALWAYS returns an owned allocation (callers free); the fallback chain
+/// never yields a literal that a caller could free.
+fn backendCacheDir(allocator: std.mem.Allocator) []const u8 {
+    if (std.process.getEnvVarOwned(allocator, "ZIG_GLOBAL_CACHE")) |z| {
+        if (std.fs.path.join(allocator, &[_][]const u8{ z, "koru-backend-cache" })) |p| {
+            allocator.free(z);
+            return p;
+        } else |_| allocator.free(z);
+    } else |_| {}
+    if (std.process.getEnvVarOwned(allocator, "HOME")) |h| {
+        if (std.fs.path.join(allocator, &[_][]const u8{ h, ".cache", "koru-backend-cache" })) |p| {
+            allocator.free(h);
+            return p;
+        } else |_| allocator.free(h);
+    } else |_| {}
+    // Last resort: an owned copy of a relative name. Only an allocator
+    // failure can reach here, and freeing a fresh dup is always safe.
+    return allocator.dupe(u8, ".koru-backend-cache") catch ".koru-backend-cache";
+}
+
 /// that usually comes from, and what to do. Not for running the USER's own
 /// binary: a SIGSEGV there is the program's own crash and must not be
 /// blamed on the machine.
@@ -6397,7 +6454,11 @@ pub fn main() !void {
             return;
         }
         try printStderr(allocator, "Error: no input file specified\n\n{s}", .{usage});
-        return;
+        // A printed error that exits 0 is indistinguishable from success to
+        // anything scripting koruc. The `deps <module>` sibling already
+        // refuses with exit(1); this path used to `return` from `main` and
+        // look the same as `koruc --help`.
+        std.process.exit(1);
     }
 
     // Resolve the input. A user may name a concrete facet (`pump.kz`) or the
@@ -7764,6 +7825,38 @@ pub fn main() !void {
         // This ensures all module dependencies are properly linked
         const output_dir_for_build = std.fs.path.dirname(output) orelse ".";
 
+        // BACKEND BINARY CACHE: the backend is reusable across programs (its
+        // own design note says so), and rebuilding it measured ~11.6s of every
+        // compile at scale — the passes themselves are sub-second. On a cache
+        // hit the produced binary is copied into place and the zig build is
+        // skipped; on any doubt (IO error, missing inputs) we fall through to
+        // the full build. The key covers every compiler-side input file.
+        var backend_cached = false;
+        if (backendCacheKey(allocator, koru_lib_path)) |bkey| {
+            defer allocator.free(bkey);
+            const cache_dir_path = backendCacheDir(allocator);
+            defer allocator.free(cache_dir_path);
+            const bkey_path = std.fs.path.join(allocator, &[_][]const u8{ cache_dir_path, bkey }) catch null;
+            if (bkey_path) |bp_| {
+                defer allocator.free(bp_);
+                const bin_dir = std.fs.path.join(allocator, &[_][]const u8{ output_dir_for_build, "zig-out", "bin" }) catch null;
+                if (bin_dir) |bd_| {
+                    defer allocator.free(bd_);
+                    const backend_dest = std.fs.path.join(allocator, &[_][]const u8{ bd_, "backend" }) catch null;
+                    if (backend_dest) |bdest_| {
+                        defer allocator.free(bdest_);
+                        if (std.fs.cwd().access(bp_, .{})) |_| {
+                            std.fs.cwd().makePath(bd_) catch {};
+                            if (std.fs.cwd().copyFile(bp_, std.fs.cwd(), bdest_, .{})) |_| {
+                                try printStdout(allocator, "✓ Backend cache hit (skipped zig build)\n", .{});
+                                backend_cached = true;
+                            } else |_| {}
+                        } else |_| {}
+                    }
+                }
+            }
+        }
+
         // When running with cwd set to output_dir, build-file should be relative to that dir
         const zig_build_args = [_][]const u8{
             "zig",
@@ -7773,27 +7866,47 @@ pub fn main() !void {
         };
 
         // Run zig build in the output directory so zig-out/ is created there
-        const compile_result = try std.process.Child.run(.{
-            .allocator = allocator,
-            .argv = &zig_build_args,
-            .cwd = output_dir_for_build,
-        });
-        defer allocator.free(compile_result.stdout);
-        defer allocator.free(compile_result.stderr);
+        if (!backend_cached) {
+            const compile_result = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &zig_build_args,
+                .cwd = output_dir_for_build,
+            });
+            defer allocator.free(compile_result.stdout);
+            defer allocator.free(compile_result.stderr);
 
-        // The full Term union, not a bare `.Exited` access — this is the exact
-        // site that panicked under memory pressure (2026-07-31): `zig build`
-        // was OOM-killed, the active field was `.Signal`, and the union access
-        // took koruc down in a way that read as a compiler crash.
-        switch (compile_result.term) {
-            .Exited => |code| if (code != 0) {
-                try printStderr(allocator, "✗ Failed to compile backend:\n{s}\n", .{compile_result.stderr});
-                std.process.exit(1);
-            },
-            else => {
-                try reportAbnormalTerm(allocator, "The backend build (zig build)", compile_result.term);
-                std.process.exit(1);
-            },
+            // The full Term union, not a bare `.Exited` access — this is the exact
+            // site that panicked under memory pressure (2026-07-31): `zig build`
+            // was OOM-killed, the active field was `.Signal`, and the union access
+            // took koruc down in a way that read as a compiler crash.
+            switch (compile_result.term) {
+                .Exited => |code| if (code != 0) {
+                    try printStderr(allocator, "✗ Failed to compile backend:\n{s}\n", .{compile_result.stderr});
+                    std.process.exit(1);
+                },
+                else => {
+                    try reportAbnormalTerm(allocator, "The backend build (zig build)", compile_result.term);
+                    std.process.exit(1);
+                },
+            }
+
+            // Store the freshly built backend into the cache so the next run
+            // skips this build. Failure to store only costs a future rebuild.
+            if (backendCacheKey(allocator, koru_lib_path)) |bkey2| {
+                defer allocator.free(bkey2);
+                const cache_dir_path = backendCacheDir(allocator);
+                defer allocator.free(cache_dir_path);
+                std.fs.cwd().makePath(cache_dir_path) catch {};
+                const bkey2_path = std.fs.path.join(allocator, &[_][]const u8{ cache_dir_path, bkey2 }) catch null;
+                if (bkey2_path) |bp2_| {
+                    defer allocator.free(bp2_);
+                    const built_backend = std.fs.path.join(allocator, &[_][]const u8{ output_dir_for_build, "zig-out", "bin", "backend" }) catch null;
+                    if (built_backend) |bb_| {
+                        defer allocator.free(bb_);
+                        std.fs.cwd().copyFile(bb_, std.fs.cwd(), bp2_, .{}) catch {};
+                    }
+                }
+            }
         }
 
         // Backend is now at zig-out/bin/backend (from zig build)
