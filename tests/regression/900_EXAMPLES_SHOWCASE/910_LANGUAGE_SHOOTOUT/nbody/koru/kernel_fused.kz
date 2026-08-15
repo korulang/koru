@@ -46,10 +46,8 @@ var iterations: usize = 50000000;
     { x: 1.28943695621391310e+01, y: -1.51111514016986312e+01, z: -2.23307578892655734e-01, vx: 2.96460137564761618e-03 * DAYS_PER_YEAR, vy: 2.37847173959480950e-03 * DAYS_PER_YEAR, vz: -2.96589568540237556e-05 * DAYS_PER_YEAR, mass: 4.36624404335156298e-05 * SOLAR_MASS },
     { x: 1.53796971148509165e+01, y: -2.59193146099879641e+01, z: 1.79258772950371181e-01, vx: 2.68067772490389322e-03 * DAYS_PER_YEAR, vy: 1.62824170038242295e-03 * DAYS_PER_YEAR, vz: -9.51592254519715870e-05 * DAYS_PER_YEAR, mass: 5.15138902046611451e-05 * SOLAR_MASS },
 }
-| kernel k |>
-    std/kernel:step(0..iterations)
-    | step |>
-        std/kernel:pairwise {
+| kernel k |> std/kernel:step(0..iterations)
+    | step |> std/kernel:pairwise {
         const dx = k.x - k.other.x;
         const dy = k.y - k.other.y;
         const dz = k.z - k.other.z;
@@ -67,16 +65,11 @@ var iterations: usize = 50000000;
         k.y += DT * k.vy;
         k.z += DT * k.vz;
     }
-| computed c |>
-    capture({ energy: @as(f64, 0) })
-    | as acc |>
-        for(0..5)
-        | each i |>
-            captured { energy: acc.energy + 0.5*c[i].mass*(c[i].vx*c[i].vx+c[i].vy*c[i].vy+c[i].vz*c[i].vz) }
+| computed c |> capture { energy: @as(f64, 0) }
+    ! as acc |> for(0..5)
+        ! each i |> captured { energy: acc.energy + 0.5*c[i].mass*(c[i].vx*c[i].vx+c[i].vy*c[i].vy+c[i].vz*c[i].vz) }
             |> for(i+1..5)
-                | each j |>
-                    captured { energy: acc.energy - c[i].mass*c[j].mass / @sqrt((c[i].x-c[j].x)*(c[i].x-c[j].x)+(c[i].y-c[j].y)*(c[i].y-c[j].y)+(c[i].z-c[j].z)*(c[i].z-c[j].z)) }
-    | captured final |>
-        std/io:print.blk {
+                ! each j |> captured { energy: acc.energy - c[i].mass*c[j].mass / @sqrt((c[i].x-c[j].x)*(c[i].x-c[j].x)+(c[i].y-c[j].y)*(c[i].y-c[j].y)+(c[i].z-c[j].z)*(c[i].z-c[j].z)) }
+    | captured final |> std/io:print.blk {
             {{ final.energy:d:.9 }}
         }
