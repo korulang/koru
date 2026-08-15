@@ -165,6 +165,46 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
         }
     }.call;
 
+    // Helper to recover a store's SoA column schema. The `std/store:new` flow is
+    // consumed by the store transform BEFORE this init transform runs (measured
+    // 2026-08-14: zero `new` flows remain at init time), so the declaration is
+    // gone. What survives is the per-store apply event the store transform
+    // synthesizes — `__store_apply_<name>` — whose BRANCHES are exactly the
+    // typed column list in declaration order (`x : f64` branch, `vx : f64`
+    // branch, …). Returns a shape-source `{ x: f64, vx: f64, mass: f64 }` or
+    // null when `expr` names no store.
+    const findStoreDecl = struct {
+        fn call(alloc: std.mem.Allocator, prog_internal: *const ast.Program, target_store: []const u8) ?[]const u8 {
+            const want = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{target_store}) catch unreachable;
+            return scan(alloc, prog_internal.items, want);
+        }
+
+        fn scan(alloc: std.mem.Allocator, items_internal: []const ast.Item, want: []const u8) ?[]const u8 {
+            for (items_internal) |item_internal| {
+                if (item_internal == .module_decl) {
+                    if (scan(alloc, item_internal.module_decl.items, want)) |s| return s;
+                    continue;
+                }
+                if (item_internal != .event_decl) continue;
+                const ed = item_internal.event_decl;
+                if (ed.path.segments.len != 1) continue;
+                if (!std.mem.eql(u8, ed.path.segments[0], want)) continue;
+                var buf = std.ArrayList(u8).initCapacity(alloc, 64) catch unreachable;
+                buf.append(alloc, '{') catch unreachable;
+                for (ed.branches, 0..) |br, bi| {
+                    if (bi > 0) buf.appendSlice(alloc, ", ") catch unreachable;
+                    var ftype: []const u8 = "f64";
+                    if (br.payload.fields.len > 0) ftype = br.payload.fields[0].type;
+                    const piece = std.fmt.allocPrint(alloc, "{s}: {s}", .{ br.name, ftype }) catch unreachable;
+                    buf.appendSlice(alloc, piece) catch unreachable;
+                }
+                buf.append(alloc, '}') catch unreachable;
+                return buf.toOwnedSlice(alloc) catch unreachable;
+            }
+            return null;
+        }
+    }.call;
+
     // Helper to transform Koru shape source "x: f64, y: f64" to Zig struct fields "x: f64, y: f64,"
     const parseShapeFields = struct {
         fn call(alloc: std.mem.Allocator, shape_source: []const u8) []const u8 {
@@ -209,6 +249,17 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
         }
     }
 
+    // STORE MODE (early — the KORU170 exit check below needs it): the init
+    // arg may name a `std/store:new` store whose SoA columns are the kernel
+    // shape, instead of a `std/kernel:shape` + literal dataset. The store is
+    // the observable, so `| computed |>` is not required in this form
+    // (per-init-form ruling, ratified 2026-06-10).
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+    const store_src = findStoreDecl(allocator, program, type_name);
+    const is_store_mode = store_src != null;
     const validateKernelSubtree = struct {
         fn call(
             alloc: std.mem.Allocator,
@@ -603,7 +654,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
     // becomes per-init-form: that form may make | computed optional. The rule
     // carves by init form, NEVER by position — position stays irrelevant.
     // Pinned: 390_054 (top level), 390_023 (in pipeline).
-    if (has_kernel_continuation and !has_computed_continuation and !has_reduce_continuation) {
+    if (has_kernel_continuation and !has_computed_continuation and !has_reduce_continuation and !is_store_mode) {
         reporter.addErrorAtLocation(.KORU170, flow.location, "kernel:init requires a | computed |> exit or a | reduce |> exit — without one, kernel results are trapped inside the kernel scope", .{}) catch {};
         const computed_error = std.fmt.allocPrint(
             allocator,
@@ -638,18 +689,12 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
     const static_name = std.fmt.allocPrint(allocator, "kernel_init_{d}_data", .{hash}) catch unreachable;
 
     // ========================================================================
-    // STEP 3: Parse type name from expr
-    // ========================================================================
-    var type_name = expr;
-    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
-        type_name = type_name[1 .. type_name.len - 1];
-    }
-
-    // ========================================================================
     // STEP 4: Get struct fields (dynamic lookup or fallback)
     // ========================================================================
-    const shape_src = findShapeSource(program, type_name);
-    const struct_fields = if (shape_src) |s| parseShapeFields(allocator, s) else "x: f64, y: f64, mass: f64";
+    // STORE MODE was detected early (the KORU170 exit check needs it); here the
+    // shape fields resolve from the store's declared columns or the shape decl.
+    const shape_src = if (is_store_mode) null else findShapeSource(program, type_name);
+    const struct_fields = if (shape_src) |s| parseShapeFields(allocator, s) else if (store_src) |s_| parseShapeFields(allocator, s_) else "x: f64, y: f64, mass: f64";
 
     // ========================================================================
     // STEP 5: Transform source to Zig struct initialization
@@ -735,7 +780,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             return false;
         }
     };
-    const has_host_type = HostTypeScan.has(program.items, type_name);
+    const has_host_type = if (is_store_mode) true else HostTypeScan.has(program.items, type_name);
 
     const type_fields = if (!has_host_type)
         parseShapeAstFields(allocator, shape_src orelse struct_fields)
@@ -760,6 +805,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             shape_fields: []const ast.Field,
             is_js: bool,
             reduce_out: *std.ArrayList(ReduceAccumulator),
+            store_name: []const u8,
         ) []const u8 {
             if (ops.len == 0) return "";
 
@@ -775,7 +821,11 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                 std.fmt.allocPrint(alloc, "const {s} = {s};", .{ ptr_name, static_name_ref }) catch unreachable
             else
                 std.fmt.allocPrint(alloc, "const {s} = {s}[0..].ptr;", .{ ptr_name, static_name_ref }) catch unreachable;
-            code.appendSlice(alloc, ptr_line) catch unreachable;
+            // STORE MODE binds the store's columns directly — no static dataset,
+            // so the `static_name` pointer line would dangle. Skip it.
+            if (store_name.len == 0) {
+                code.appendSlice(alloc, ptr_line) catch unreachable;
+            }
 
             // PRE-PASS: declare reduce accumulators (zero-initialized) at the top
             // of the fused body, so they outlive any step loop and the `| reduce |>`
@@ -847,6 +897,10 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             }
 
             for (ops, 0..) |op, op_idx| {
+                if (store_name.len > 0 and !std.mem.eql(u8, op.op_type, "self")) {
+                    std.debug.print("error[KORU122]: kernel op `{s}` has no store-backed lowering yet — a store kernel runs `self` only this rung\n", .{op.op_type});
+                    std.process.exit(1);
+                }
                 if (std.mem.eql(u8, op.op_type, "pairwise")) {
                     // Loud wall (KORU122): pairwise has no backend variants yet.
                     if (op.variant) |vt| {
@@ -1355,7 +1409,69 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                         }
                         continue;
                     }
-                    // Transform body: k.X -> ptr[i].X
+                    // Transform body: k.X -> ptr[i].X (literal mode) or
+                    // k.<field> -> __koru_store_<name>.<field>[i] (store mode:
+                    // raw SoA column access, non-reactive by construction).
+                    if (store_name.len > 0) {
+                        // STORE MODE: reject the ops that would need a family view
+                        // beyond the store's columns on this rung.
+                        if (op.variant) |vt| {
+                            std.debug.print("error[KORU122]: kernel op `self|{s}` has no store-mode lowering yet — a store-backed kernel runs plain `self` only this rung\n", .{vt});
+                            std.process.exit(1);
+                        }
+                        if (step_range != null) {
+                            std.debug.print("error[KORU122]: std/kernel:step is not wired for store-backed kernels yet — a store kernel runs plain `self` per call this rung\n", .{});
+                            std.process.exit(1);
+                        }
+                        const store_ref = std.fmt.allocPrint(alloc, "__koru_store_{s}", .{store_name}) catch unreachable;
+                        var body = std.ArrayList(u8).initCapacity(alloc, op.body_text.len * 2) catch unreachable;
+                        var sidx: usize = 0;
+                        while (sidx < op.body_text.len) {
+                            if (sidx + binding.len <= op.body_text.len and std.mem.eql(u8, op.body_text[sidx .. sidx + binding.len], binding)) {
+                                const nxt = sidx + binding.len;
+                                if (nxt < op.body_text.len and op.body_text[nxt] == '.') {
+                                    var fe = nxt + 1;
+                                    while (fe < op.body_text.len and (std.ascii.isAlphanumeric(op.body_text[fe]) or op.body_text[fe] == '_')) fe += 1;
+                                    const fld = op.body_text[nxt + 1 .. fe];
+                                    const repl = std.fmt.allocPrint(alloc, "{s}.{s}[i]", .{ store_ref, fld }) catch unreachable;
+                                    body.appendSlice(alloc, repl) catch unreachable;
+                                    sidx = fe;
+                                } else {
+                                    // bare binding with no field: no kernel view on a store
+                                    body.appendSlice(alloc, op.body_text[sidx .. sidx + binding.len]) catch unreachable;
+                                    sidx += binding.len;
+                                }
+                            } else {
+                                body.append(alloc, op.body_text[sidx]) catch unreachable;
+                                sidx += 1;
+                            }
+                        }
+                        const body_trimmed = std.mem.trimRight(u8, body.items, " \t\n\r");
+                        if (body_trimmed.len == 0 or body_trimmed[body_trimmed.len - 1] != ';') {
+                            body.append(alloc, ';') catch unreachable;
+                        }
+                        const op_src = kernelLowerOpBody(alloc, body.items, is_js);
+                        const store_loop = if (is_js)
+                            std.fmt.allocPrint(alloc,
+                                \\
+                                \\for (let i = 0; i < {s}.len; i++) {{
+                                \\    {s}
+                                \\}}
+                                ,
+                                .{ store_ref, op_src }
+                            ) catch unreachable
+                        else
+                            std.fmt.allocPrint(alloc,
+                                \\
+                                \\for (0..{s}.len) |i| {{
+                                \\    {s}
+                                \\}}
+                                ,
+                                .{ store_ref, op_src }
+                            ) catch unreachable;
+                        code.appendSlice(alloc, store_loop) catch unreachable;
+                        continue;
+                    }
                     const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
 
                     var body = std.ArrayList(u8).initCapacity(alloc, op.body_text.len * 2) catch unreachable;
@@ -1469,7 +1585,17 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
     var reduce_acc = std.ArrayList(ReduceAccumulator).initCapacity(allocator, 2) catch unreachable;
     var fused_code: []const u8 = "";
 
-    if (is_array_mode) {
+    if (is_store_mode) {
+        // STORE MODE: the kernel iterates the store's live rows in place — no
+        // dataset static, no `| computed |>` exit, the store IS the observable.
+        static_decl = "";
+        fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 0, type_fields, host_is_js, &reduce_acc, type_name);
+        if (host_is_js) {
+            proc_body = std.fmt.allocPrint(allocator, "{s}\nreturn {{ tag: \"kernel\", kernel: {{}} }};", .{fused_code}) catch unreachable;
+        } else {
+            proc_body = std.fmt.allocPrint(allocator, "{s}\nreturn .{{ .kernel = .{{}} }};", .{fused_code}) catch unreachable;
+        }
+    } else if (is_array_mode) {
         // Array mode: parse multiple { ... } blocks
         var elements = __koru_std.ArrayList(u8).initCapacity(allocator, source.text.len * 2) catch unreachable;
         var count: usize = 0;
@@ -1499,7 +1625,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             std.fmt.allocPrint(allocator, "var {s} = [_]{s}{{ {s} }};", .{ static_name, type_name, elements.items }) catch unreachable;
 
         // Generate static-backed initialization (proof-of-concept)
-        fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, count, type_fields, host_is_js, &reduce_acc);
+        fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, count, type_fields, host_is_js, &reduce_acc, "");
     } else {
         // Single mode: just one struct instance
         const fields = transformFields(allocator, source.text, host_is_js);
@@ -1508,7 +1634,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             std.fmt.allocPrint(allocator, "let {s} = [{s}];", .{ static_name, single_init }) catch unreachable
         else
             std.fmt.allocPrint(allocator, "var {s} = [_]{s}{{ {s} }};", .{ static_name, type_name, single_init }) catch unreachable;
-        fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 1, type_fields, host_is_js, &reduce_acc);
+        fused_code = generateKernelOpsCode(allocator, kernel_plan.ops, kernel_plan.step_range, kernel_binding_name, static_name, 1, type_fields, host_is_js, &reduce_acc, "");
     }
 
     // Guard the reduce exit (v1 semantics): a reduce op needs a `| reduce |>` exit
@@ -1524,12 +1650,14 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
         std.process.exit(1);
     }
 
-    // Build the single return statement. The exit is the kernel array
+// Build the single return statement. The exit is the kernel array
     // (`| computed |>`), a bare `kernel` binding, or — when a reduce op
     // produced accumulators and the flow carries a `| reduce |>` continuation —
     // a reduce struct carrying each accumulated scalar as a named field.
+    // STORE MODE built its own return above (the store is the observable).
     const reduce_active = has_reduce_continuation and reduce_acc.items.len > 0;
-    var reduce_returns = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+    if (!is_store_mode) {
+        var reduce_returns = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
     if (reduce_active) {
         for (reduce_acc.items, 0..) |racc, ri| {
             if (ri > 0) reduce_returns.appendSlice(allocator, ", ") catch unreachable;
@@ -1553,6 +1681,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             std.fmt.allocPrint(allocator, "{s}\nreturn .{{ .reduce = .{{ {s} }} }};", .{ fused_code, reduce_returns.items }) catch unreachable
         else
             std.fmt.allocPrint(allocator, "{s}\nreturn .{{ .{s} = {s}[0..] }};", .{ fused_code, return_branch, static_name }) catch unreachable;
+    }
     }
 
     // ========================================================================
@@ -1590,7 +1719,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
         // `.computed`/`.reduce`), the consumed `| kernel` continuation MUST be dropped —
         // otherwise it survives as a dead `.kernel =>` switch arm holding a duplicate of
         // the fused loops.
-        const drop_kernel_cont = has_computed_continuation or has_reduce_continuation;
+        const drop_kernel_cont = has_computed_continuation or has_reduce_continuation or (is_store_mode and has_kernel_continuation);
         var kept_count: usize = 0;
         for (flow.body.continuations) |cont| {
             if (drop_kernel_cont and std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) continue;
@@ -1666,7 +1795,10 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
             .annotations = &[_][]const u8{},
         } else ast.Branch{
             .name = allocator.dupe(u8, "kernel") catch unreachable,
-            .payload = ast.Shape{ .fields = branch_fields },
+            // STORE MODE returns `.{ .kernel = .{} }` — no array payload, the
+            // store is the observable; the branch stays optional so the bare
+            // `init(world)` flow compiles without a handler.
+            .payload = ast.Shape{ .fields = if (is_store_mode) &[_]ast.Field{} else branch_fields },
             .is_optional = true,
             .annotations = &[_][]const u8{},
         };
