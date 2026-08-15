@@ -46,14 +46,20 @@ emitted artifact — a 1,048,576-row store compiles near-instantly while a
 literal-1024 population takes ~68s. Literal per-flow population is the
 anti-pattern for large data.
 
-The pass cost was profiled FOR REAL (a set-hoist A/B, hyperfine-stable:
-pre-fix 20.41s vs post-fix 20.43s on a 512-flow compile — identical, so the
-runner's matching scans measure ZERO). The remaining wall lives in the
-BACKEND-INTERPRETED koru_std comptime machinery: sampling the backend child
-shows `evaluate_comptime -> elaborate -> coordinate -> RuntimeEmitter.emit`
-as the hot chain. The 100_000 site-budget fix and the backend-binary cache
-are the real, landed wins; the interpreted-comptime layer is a deeper
-performance project, and the LOOP-form population remains the blessed path.
+The pass cost was profiled FOR REAL with a decisive control: 512 plain
+`std/io:print` flows compile in 0.9s, while 512 literal `std/store:insert`
+flows take 22.1s — a ~25x STORE-SPECIFIC cost with a superlinear slope
+(7.4s at 128, 11.0 at 256, 22.1 at 512, hyperfine-stable, cached
+backend). The wall is neither the runner's matching (a set-hoist A/B
+measured 0%: 20.41s pre vs 20.43s post) nor generic interpreted comptime:
+it is the STORE transform's per-site WHOLE-PROGRAM scans
+(`storeCollectWriteSet` / `storeScanCont` / `storeCollectAliases`,
+walking every flow + continuation per stored site — store.kz), each
+application paying O(program) in scans. The fix lives in koru_std/store.kz:
+memoize those scan results per pass/collection (invalidated when the
+program changes), or narrow the scans to the touched store. The
+100_000-site-budget fix and the backend-binary (content-keyed) cache are
+the landed wins; the store-scan memoization is the named next rung.
 
 The backend cache gained one hardening requirement from use: it is keyed on
 file mtimes, and a mid-edit rebuild can cache POISON (a backend built from
