@@ -3,31 +3,41 @@ type: belief
 id: frag-a-transform-fixed-point-is-per-site-and-budgeted
 provenance: session 2026-08-15 — the store scale wall (game world population)
 ts: 2026-08-15
-tags: [koru, transform-runner, scale]
+tags: [koru, transform-runner, scale, emitted-size]
 ---
 
-# The transform fixed point is ONE transform per pass, and the budget was a latent wall (belief)
+# The transform fixed point is per-site and budgeted; the TIME wall is the final Zig ReleaseFast build (belief)
 
-The transform runner's fixed point applies exactly ONE transform per pass
-(`walkOnce` returns after the first found, for deterministic single-write
-ordering), so a program with N transformable sites needs N passes — and a
-fixed 1000-iteration cap silently banned every legitimate program with more
-than ~1000 sites. Measured 2026-08-15: a store with 128/256/512 literal
-`insert` flows compiled in 6/10/21s (superlinear per-pass cost, O(N²)-ish);
-1024 flows died with `TransformInfiniteLoop` after 58s — it was not
-diverging, it was past the budget. The cap is now 100_000 and the message
-says "budget," so 1024 compiles (68s) and a true re-firing loop still
-terminates loudly after a bounded burn. The genuine fix — the quadratic
-cost — is batching independent sites into one pass, which the single-write
-ordering discipline currently forbids.
+Two separate scale costs on a program with N literal transform flows, and
+they have different fixes and different shapes:
 
-The blessed bulk path for large data is the LOOP form
-(`for(0..N) ! each i |> insert(...)`): a single flow, a single pass, and
-STILL O(runtime) rows — a 1,000,000-row store compiles as one site. Literal
-per-flow population (1024 `insert` lines) is the anti-pattern that exposes
-the wall.
+1. THE PASS BUDGET (crash, FIXED 2026-08-15). The transform fixed point
+   applies ONE transform per pass (`walkOnce` returns after the first found;
+   deterministic single-write ordering), so N transformable sites need N
+   passes, and the loop breaker was a FIXED 1000. A store with 1024 literal
+   `std/store:insert` flows (no kernel) is a finite program needing >1000
+   passes — it died with a misleading `TransformInfiniteLoop` after 58s of
+   finite work. The breaker is now an honest budget (100_000) with a message
+   naming both readings; 1024 flows compile (~68s); a genuine re-firing loop
+   still terminates loudly after a bounded burn.
 
-What would correct or retire this belief: the runner learning to batch
-independent transform sites per pass (killing the quadratic barrier), or
-site-limit becoming irrelevant because the loop form fully covers bulk
-population and the literal form is deprecated.
+2. THE TIME WALL (measured, NOT the passes). The passes themselves are
+   FAST: at 512 flows the transform phase completes in ~0.7s. The other
+   ~19s of a 20.4s compile is the FINAL `zig build-exe output_emitted.zig
+   -O ReleaseFast` of the emitted program, which grows with the flow count
+   (512 literal inserts emit a ~6.5MB file — ~12KB per insert flow's
+   synthesized event+proc machinery). So the compile time for literal
+   per-flow population is dominated by Zig's ReleaseFast build of the big
+   emitted artifact — near-linear in emitted size, not a transform-pass
+   quadratic. Any "batching" fix to the runner would NOT move this wall.
+
+The blessed bulk path stands and bypasses BOTH: the LOOP population form
+(`for(0..N) ! each i |> insert(...)`) is ONE flow, ONE pass, and a small
+emitted artifact — a 1,048,576-row store compiles near-instantly while a
+literal-1024 population takes ~68s. Literal per-flow population is the
+anti-pattern for large data.
+
+What would correct this belief: the runner batching sites per pass would
+only matter past the budget, which is already fixed; the time wall would
+correct by emitting less per flow (the insert flow's ~12KB/flow machinery)
+or by not forcing -O ReleaseFast on the intermediate build.
