@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-kopium-is-a-vocabulary-parametric-runtime
-provenance: 2026-08-13 session — the KOPIUM arc resolved into a stance; spec in KOPIUM_RUNTIME.md
+provenance: 2026-08-13 session — the KOPIUM arc resolved into a stance; spec in github.com/korulang/kopium (KOPIUM_RUNTIME.md)
 ts: 2026-08-13
 ---
 
