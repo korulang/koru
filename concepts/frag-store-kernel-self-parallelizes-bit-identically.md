@@ -47,6 +47,17 @@ for this layout sits beyond every reachable point measured. The pairwise
 disjoint experiment repeated the same tie (threaded 74ms vs serial 48ms was
 a 1.5x LOSS at 512 rows — the only case that separated at all).
 
+The HUGE-DATA tilt test (2026-08-15, requested explicitly): rows pushed to
+1,048,576 with a compute-heavy 264-flop body (~4.7 flops/byte, past the
+~3 flops/byte crossover) at 50 frames — serial still 1.04x faster, in the
+noise band. The full matrix (rows 8k to 1M, bodies 9-op to 264-op, frames
+1 to 500) never separates by more than 6%, sign oscillating with noise. The
+crossover exists as a DIRECTIONAL effect (at 524k rows the compute-heavy
+sign briefly favored parallel) but its magnitude never escapes noise:
+the process baseline runs user-time 6x its wall time even in the serial
+build — the insert/store machinery already saturates the cores, so the
+pool has no additive capacity. Huge data does not tilt the result.
+
 And the frame loop (step over store) is shipped and measured, which found
 the real ceiling: for simple per-column updates the serial loop is already
 MEMORY-BANDWIDTH-saturated. 100k rows x 5 f64 columns x 200 frames moves
