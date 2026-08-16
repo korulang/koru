@@ -417,6 +417,14 @@ fn printJson(v: []const u8) void {
     const flows = ast.allFlows(aa, program);
     defer _ = aa.free(flows);
 
+    // One owner->callee edge of the reach graph, recorded while a flow body
+    // is walked. `Edge` must be declared BEFORE walkBody (its signature names
+    // it), which is why it lives beside headKey rather than at the grade step.
+    const Edge = struct {
+        from: []const u8,
+        to: []const u8,
+    };
+
     const headKey = struct {
         fn call(f: *const ast.Flow, aa_param: std.mem.Allocator) []const u8 {
             // A flow item's contract is its `impl_of` (the event it
@@ -471,12 +479,14 @@ fn printJson(v: []const u8) void {
     const walkBody = struct {
         fn call(
             f: *const ast.Flow,
+            owner: []const u8,
             aa_param: std.mem.Allocator,
             visited_param: *std.StringHashMapUnmanaged(void),
             order_param: *std.ArrayList([]const u8),
             frontier_param: *std.ArrayList([]const u8),
             event_keys_param: []const []const u8,
             proc_keys_param: []const []const u8,
+            edges_param: *std.ArrayList(Edge),
         ) void {
             var cont_stack = std.ArrayList(ast.Continuation){};
             cont_stack.append(aa_param, f.body) catch unreachable;
@@ -486,10 +496,12 @@ fn printJson(v: []const u8) void {
                     .invocation => |inv| {
                         const k = pathKey(aa_param, inv.path.module_qualifier, &inv.path);
                         visitKey(k, aa_param, visited_param, order_param, frontier_param, event_keys_param, proc_keys_param);
+                        edges_param.append(aa_param, .{ .from = owner, .to = k }) catch unreachable;
                     },
                     .label_with_invocation => |lwi| {
                         const k = pathKey(aa_param, lwi.invocation.path.module_qualifier, &lwi.invocation.path);
                         visitKey(k, aa_param, visited_param, order_param, frontier_param, event_keys_param, proc_keys_param);
+                        edges_param.append(aa_param, .{ .from = owner, .to = k }) catch unreachable;
                     },
                     .foreach => |fe| for (fe.branches) |br| for (br.body) |cc| cont_stack.append(aa_param, cc) catch unreachable,
                     .conditional => |cd| for (cd.branches) |br| for (br.body) |cc| cont_stack.append(aa_param, cc) catch unreachable,
@@ -498,6 +510,7 @@ fn printJson(v: []const u8) void {
                         .invocation => |inv| {
                             const k = pathKey(aa_param, inv.path.module_qualifier, &inv.path);
                             visitKey(k, aa_param, visited_param, order_param, frontier_param, event_keys_param, proc_keys_param);
+                            edges_param.append(aa_param, .{ .from = owner, .to = k }) catch unreachable;
                         },
                         else => {},
                     },
@@ -508,25 +521,125 @@ fn printJson(v: []const u8) void {
         }
     }.call;
 
+    // ── the effective grade: what the closure RESTS ON ────────────────────
+    // The authored stamp is a fact about one declaration in isolation. The
+    // effective grade is a fact about the closure: the weakest claim anywhere
+    // beneath a key, computed over the reach edges just walked. Lean's
+    // `#print axioms` shows `[sorryAx]` under a theorem that uses `sorry`;
+    // this is the Koru analogue — a `proven` claim whose closure contains an
+    // `aspirational` or `unclaimed` callee presents an effective grade below
+    // `proven`. The authored stamp is never overridden.
+    var edges = std.ArrayList(Edge){};
+
     // seed the subject, then expand the frontier: every flow whose head key
-    // matches a frontier key gets its body walked (enqueuing real callees).
+    // matches a frontier key gets its body walked (enqueuing real callees
+    // and recording the owner->callee edge for the grade computation).
     visitKey(subject_full, aa, &visited, &order, &frontier, event_keys.items, proc_keys.items);
     while (frontier.items.len > 0) {
         const key = frontier.pop().?;
         for (flows) |*f| {
             if (!std.mem.eql(u8, headKey(f, aa), key)) continue;
-            walkBody(f, aa, &visited, &order, &frontier, event_keys.items, proc_keys.items);
+            walkBody(f, key, aa, &visited, &order, &frontier, event_keys.items, proc_keys.items, &edges);
         }
     }
 
-    // ── render ─────────────────────────────────────────────────────────────
+    // ── the effective grade: what the closure RESTS ON ─────────────────
+    // The authored stamp is a fact about ONE declaration in isolation. The
+    // effective grade is a fact about the CLOSURE: the weakest claim anywhere
+    // beneath a key, per Lean's `#print axioms` showing [sorryAx]. A
+    // `proven` claim whose closure contains an aspirational/unclaimed callee
+    // presents an effective grade below `proven` — the authored stamp is
+    // never overridden.
+    //
+    // Ladder, weakest first: unclaimed(0) < aspirational(1) < inferred(2) <
+    // measured(3) < proven(4). effective(key) = min(own rank, effective of
+    // every callee in the reach edges). The walk visited each key ONCE, so
+    // the edge graph is a DAG and the memo needs no cycle guard.
+
+    const LADDER = [_][]const u8{ "unclaimed", "aspirational", "inferred", "measured", "proven" };
+    const rankOf = struct {
+        fn call(stamp: []const u8) usize {
+            for (LADDER, 0..) |label, r| {
+                if (std.mem.eql(u8, stamp, label)) return r;
+            }
+            return 0;
+        }
+    }.call;
+    const labelOf = struct {
+        fn call(r: usize) []const u8 {
+            if (r < LADDER.len) return LADDER[r];
+            return "unclaimed";
+        }
+    }.call;
+
+    const Grade = struct {
+        aa_param: std.mem.Allocator,
+        keys_param: []const []const u8,
+        edges_param: []const Edge,
+        claims_param: []const Claim,
+    };
+    // The grade is the weak link of a key's SUBTREE. The walk visited each
+    // key exactly once in `order`, so the edges form a DAG; a post-order
+    // fold over that DAG computes every grade without recursion (Zig nested
+    // consts cannot self-reference, and an iterative fold needs no cycle
+    // guard for the same DAG reason). DFS with an explicit exit stack.
+    const gradeOfAll = struct {
+        fn call(
+            g: *const Grade,
+            memo: *std.StringHashMapUnmanaged(usize),
+        ) void {
+            // enter/exit phases; only leaf keys (no outgoing edges) finalise
+            // first, so every callee's grade is final before its caller's.
+            var stack = std.ArrayList(struct { key: []const u8, done: bool }){};
+            var visit = std.StringHashMapUnmanaged(void){};
+            for (g.keys_param) |root| {
+                if (memo.contains(root)) continue;
+                visit.put(g.aa_param, root, {}) catch unreachable;
+                stack.append(g.aa_param, .{ .key = root, .done = false }) catch unreachable;
+                while (stack.items.len > 0) {
+                    const top = stack.pop().?;
+                    if (top.done) {
+                        // finalise: min over own rank + final callee grades
+                        var best: usize = 0;
+                        for (g.claims_param) |c| {
+                            if (!std.mem.eql(u8, claimFull(g.aa_param, c), top.key)) continue;
+                            const r = rankOf(c.stamp);
+                            if (r > best) best = r;
+                        }
+                        var through: usize = best;
+                        for (g.edges_param) |e| {
+                            if (!std.mem.eql(u8, e.from, top.key)) continue;
+                            const cr = memo.get(e.to) orelse continue;
+                            if (cr < through) through = cr;
+                        }
+                        memo.put(g.aa_param, top.key, through) catch unreachable;
+                    } else {
+                        stack.append(g.aa_param, .{ .key = top.key, .done = true }) catch unreachable;
+                        for (g.edges_param) |e| {
+                            if (!std.mem.eql(u8, e.from, top.key)) continue;
+                            if (memo.contains(e.to)) continue;
+                            if (visit.contains(e.to)) continue;
+                            visit.put(g.aa_param, e.to, {}) catch unreachable;
+                            stack.append(g.aa_param, .{ .key = e.to, .done = false }) catch unreachable;
+                        }
+                    }
+                }
+            }
+        }
+    }.call;
+
+    var eff_memo = std.StringHashMapUnmanaged(usize){};
+    gradeOfAll(&.{ .aa_param = aa, .keys_param = order.items, .edges_param = edges.items, .claims_param = claims }, &eff_memo);
+
+    // ── render ─────────────────────────────
     if (std.mem.eql(u8, format, "json")) {
-        std.debug.print("{{", .{});
-        std.debug.print("\"subject\":", .{});
+        std.debug.print("{{\"subject\":", .{});
         printJson(subject_full);
         std.debug.print(",\"reaches\":[", .{});
         var first = true;
         for (order.items) |key| {
+            const eff = eff_memo.get(key) orelse 0;
+            const eff_label = labelOf(eff);
             var any_claim = false;
             for (claims) |c| {
                 if (!std.mem.eql(u8, claimFull(aa, c), key)) continue;
@@ -537,6 +650,8 @@ fn printJson(v: []const u8) void {
                 printJson(key);
                 std.debug.print(",\"stamp\":", .{});
                 printJson(c.stamp);
+                std.debug.print(",\"effective\":", .{});
+                printJson(eff_label);
                 std.debug.print("}}", .{});
             }
             if (!any_claim) {
@@ -546,6 +661,8 @@ fn printJson(v: []const u8) void {
                 printJson(key);
                 std.debug.print(",\"stamp\":", .{});
                 printJson("unclaimed");
+                std.debug.print(",\"effective\":", .{});
+                printJson(eff_label);
                 std.debug.print("}}", .{});
             }
         }
@@ -560,6 +677,8 @@ fn printJson(v: []const u8) void {
     }
     for (order.items) |key| {
         var stamped = false;
+        const eff = eff_memo.get(key) orelse 0;
+        const eff_label = labelOf(eff);
         for (claims) |c| {
             if (std.mem.eql(u8, claimFull(aa, c), key)) {
                 std.debug.print("  {s}:{s}  [{s}] {s}\n", .{ c.module, c.subject, c.stamp, c.rule });
@@ -567,5 +686,6 @@ fn printJson(v: []const u8) void {
             }
         }
         if (!stamped) std.debug.print("  {s}  [unclaimed]\n", .{key});
+        std.debug.print("  ↓ effective: {s}\n", .{eff_label});
     }
 }

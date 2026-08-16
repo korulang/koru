@@ -1,0 +1,32 @@
+// `assumes` grades by closure, not by stamp alone. A declaration's EFFECTIVE
+// grade is the weakest claim anywhere beneath it (Lean's `#print axioms`
+// showing [sorryAx] under a theorem that uses `sorry`). The authored stamp is
+// never overridden, but the effective grade tells the truth about what the
+// claim rests on:
+//
+//   claimed  [proven] bought-with-debt      <- authored stamp
+//   ↓ effective: unclaimed                 <- the closure contains no claim
+//
+// This chains: claimed calls bought (unclaimed), which calls stream
+// (aspirational — honest admitted debt). The proven claim's effective grade
+// must NOT be proven; the aspirational's own effective is aspirational
+// (admitted debt shows as itself), and the unclaimed middleman is the silence
+// the audit exists to surface.
+//
+//   koruc <file> assumes claimed
+
+~import std/rules
+
+~[
+- aspirational someday-streams
+  Honest admitted debt: this slurps, not built yet.
+]tor stream { n: i64 } -> i64
+
+~tor bought { n: i64 }
+~bought = stream(n: 1)
+
+~[
+- proven bought-with-debt
+  Claims proven, but its closure rests on the aspirational above.
+]tor claimed { n: i64 }
+~claimed = bought(n: 2)
