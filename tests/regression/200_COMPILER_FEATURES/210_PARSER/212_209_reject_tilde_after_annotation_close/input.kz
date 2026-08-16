@@ -1,0 +1,14 @@
+// ============================================================================
+// Test 210_209: Reject a `~` after a closing annotation-bracket
+//
+// `~[ ... ]tor name` — the `~[` already switched into Koru. A construct after
+// the `]` needs no second tilde: the accepted spelling is `]tor name` / `]pub
+// tor name` (the corpus truth, seen in koru_std/fs.kz and every claim block).
+// `]~tor` is TWO switches from one block, a second spelling the surface must
+// not carry — drift between two accepted spellings is how walls rot.
+// ============================================================================
+
+~[
+- aspirational some-debt
+  A claim to show the switch already happened.
+]~tor greet { name: string } -> string

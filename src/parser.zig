@@ -1498,6 +1498,10 @@ pub const Parser = struct {
                 try annotations.append(self.allocator, try self.allocator.dupe(u8, entry));
             }
             const remaining = content_with_bracket[close_bracket + 1 ..];
+            if (remaining.len > 0 and remaining[0] == '~') {
+                try self.reporter.addError(.PARSE008, opening_line_idx + 1, close_bracket + 2, "a `~` after a closing `]` is a second switch — the `~[` already entered Koru; write the declaration directly after `]`", .{});
+                return error.ParseError;
+            }
             prose_buf.deinit(self.allocator); // inline blocks are one line: no room for prose
             return AnnotationBlockResult{
                 .annotations = try annotations.toOwnedSlice(self.allocator),
@@ -1537,6 +1541,15 @@ pub const Parser = struct {
                     }
                 }
                 const remaining = lexer.trim(trimmed[bracket_idx + 1 ..]); // Content after ]
+                if (remaining.len > 0 and remaining[0] == '~') {
+                    // `]~` is TWO switches from one block: the `~[` already
+                    // entered Koru, so a construct after `]` needs no second
+                    // tilde. Refuse it so the surface has exactly one
+                    // spelling (`]pub tor`, never `]~pub tor`) — drift between
+                    // two accepted spellings is how walls rot.
+                    try self.reporter.addError(.PARSE008, self.current + 1, bracket_idx + 2, "a `~` after a closing `]` is a second switch — the `~[` already entered Koru; write the declaration directly after `]`", .{});
+                    return error.ParseError;
+                }
                 self.current += 1;
                 return AnnotationBlockResult{
                     .annotations = try annotations.toOwnedSlice(self.allocator),

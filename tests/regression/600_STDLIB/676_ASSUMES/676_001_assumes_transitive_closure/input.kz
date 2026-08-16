@@ -18,7 +18,7 @@
 ~[
 - proven contract-honest
   Declared by the same shape checker that discharges the obligation.
-]~tor leaf { v: i64 } -> i64
+]tor leaf { v: i64 } -> i64
 
 ~tor mid { n: i64 }
 

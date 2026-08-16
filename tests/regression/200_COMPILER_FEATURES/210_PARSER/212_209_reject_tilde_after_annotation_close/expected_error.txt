@@ -1,0 +1,1 @@
+a `~` after a closing `]` is a second switch

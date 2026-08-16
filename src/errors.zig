@@ -75,6 +75,7 @@ pub const ErrorCode = enum(u16) {
     PARSE005, // Redundant explicit label where punning would produce the same name
     PARSE006, // Bare argument does not name a parameter — explicit `name: value` label required
     PARSE007, // Invalid annotation separator — annotations delimit on `|`, not `,`
+    PARSE008, // `~` after a closing `]` — the annotation block's `[` already entered Koru; write the declaration directly after `]`
 
     // Type inference errors
     TYPE001, // Branch not found in expected union
