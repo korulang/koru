@@ -653,8 +653,8 @@ pub fn build(b: *std.Build) void {
     parser_module.addImport("struct_literal", struct_literal_module);
     emitter_helpers_module.addImport("struct_literal", struct_literal_module);
 
-    // Template processor: walks AST, renders `|template|...` proc bodies
-    // through Liquid, strips the `template` tag from the variant chain.
+    // Template processor: walks AST, renders `[template]` proc bodies
+    // through Liquid.
     const template_processor_module = b.createModule(.{
         .root_source_file = b.path("src/template_processor.zig"),
         .target = target,

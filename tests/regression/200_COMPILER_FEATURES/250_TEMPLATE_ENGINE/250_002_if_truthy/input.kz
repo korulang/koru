@@ -5,7 +5,7 @@
 
 ~pub tor maybe { flag: usize }
 
-~proc maybe|template|zig {
+~[template]proc maybe|zig {
     @import("std").debug.print("always\n", .{});
     {% if flag %}
     @import("std").debug.print("flag-set\n", .{});
@@ -16,7 +16,7 @@
 // text), and the engine is target-blind: the same liquid render decides the same
 // way for both variants. Only the guarded/unguarded statements are host text.
 // `console.log` supplies the trailing newline.
-~proc maybe|template|js {
+~[template]proc maybe|js {
     console.log("always");
     {% if flag %}
     console.log("flag-set");

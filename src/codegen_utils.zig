@@ -717,7 +717,7 @@ pub const HostTarget = enum { zig, js };
 /// broke 390_020, which is what taught this mode to exist.
 ///
 /// Everything else is lowered in all three — a `when` guard arrives as Koru text
-/// while the identical condition, baked into a `for|template|js` body, arrives
+/// while the identical condition, baked into a `~[template]proc for|js` body, arrives
 /// as host text, and lowering only one door leaves the other emitting `a and b`.
 pub const ExprMode = enum { koru_expr, koru_body, host_text };
 
@@ -971,7 +971,7 @@ fn exprIdentChar(c: u8) bool {
 /// The one case a character test alone gets wrong is a preceding KEYWORD. In
 /// `for (const x of &items)` the char before is `f`, which looks exactly like the
 /// end of an identifier — but `of` cannot END an operand, it demands one. That is
-/// the shape the `for|template|js` body renders for every `~for(&xs)` in the
+/// the shape the `~[template]proc for|js` body renders for every `~for(&xs)` in the
 /// corpus, so the scan reads back a whole WORD and asks what the word is.
 fn exprPrefixPosition(text: []const u8, at: usize) bool {
     var j = at;

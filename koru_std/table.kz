@@ -16,18 +16,18 @@
 //
 // Signature precedent: std/types:enum/union take `{ expr: Expression, source:
 // Source }` (the `name(paren) { block }` shape); emission precedent: `const`
-// (declarations.kz), a `[keyword|declaration]` |template that splices a const
+// (declarations.kz), a `[keyword|declaration]` `[template]` proc that splices a const
 // decl into the enclosing scope where sibling flows see it.
 
 ~[comptime]
 
 ~[keyword|declaration]pub tor from { expr: Expression, source: Source }
 
-~proc from|template|zig {
+~[template]proc from|zig {
 {% const rows = table_from(source) %}{% const ty = table_type(source) %}const {{ expr }} = [_]{{ ty }}{ {% for r in rows %}{{ r.v }}, {% endfor %}};
 }
 
-~proc from|template|js {
+~[template]proc from|js {
 {% const rows = table_from(source) %}const {{ expr }} = [{% for r in rows %}{{ r.v }}, {% endfor %}];
 }
 
@@ -38,11 +38,11 @@
 // `comptime` fold vs a JS `.reduce`, but the surface is one declaration.
 ~[keyword|declaration]pub tor sum { expr: Expression, source: Source }
 
-~proc sum|template|zig {
+~[template]proc sum|zig {
 const {{ expr }} = blk: { @setEvalBranchQuota(1_000_000); var __acc: i64 = 0; for ({{ source }}) |__v| __acc += __v; break :blk __acc; };
 }
 
-~proc sum|template|js {
+~[template]proc sum|js {
 const {{ expr }} = {{ source }}.reduce((__a, __v) => __a + __v, 0);
 }
 
@@ -53,10 +53,10 @@ const {{ expr }} = {{ source }}.reduce((__a, __v) => __a + __v, 0);
 // ships hand-written for the big wheels — here, one line, derived at compile time.
 ~[keyword|declaration]pub tor gaps { expr: Expression, source: Source }
 
-~proc gaps|template|zig {
+~[template]proc gaps|zig {
 {% const rows = table_gaps(source) %}{% const ty = table_type(source) %}const {{ expr }} = [_]{{ ty }}{ {% for r in rows %}{{ r.v }}, {% endfor %}};
 }
 
-~proc gaps|template|js {
+~[template]proc gaps|js {
 {% const rows = table_gaps(source) %}const {{ expr }} = [{% for r in rows %}{{ r.v }}, {% endfor %}];
 }

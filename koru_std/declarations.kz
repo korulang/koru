@@ -24,7 +24,7 @@
 //
 // Syntax: const { name: "Claude", count: 42 }   (newline- OR comma-separated)
 //
-// ARCHITECTURE: `const` is a |template| proc over a `source: Source` block —
+// ARCHITECTURE: `const` is a `[template]` proc over a `source: Source` block —
 // NOT a transform. The block is captured WHOLE as a Source (no first-field
 // truncation), and the `parse_fields` Zig FILTER (template_processor.zig) splits
 // it into `{ name, value }` records. Both the |zig| and |js| variants call that
@@ -46,12 +46,12 @@
 // too — `["a", "b"]` is valid JS but Zig needs `[_][]const u8{ … }` — so the Zig
 // value is pre-lowered by parse_fields into `f.zig` (arrays → `[_]T{…}`, typed
 // scalars → `@as(T, v)`, everything else verbatim). JS emits the value as-is.
-~proc const|template|zig {
+~[template]proc const|zig {
 {% const fields = parse_fields(source) %}{% for f in fields %}const {{ f.name }} = {{ f.zig }};
 {% endfor %}
 }
 
-~proc const|template|js {
+~[template]proc const|js {
 {% const fields = parse_fields(source) %}{% for f in fields %}const {{ f.name }} = {{ f.value }};
 {% endfor %}
 }

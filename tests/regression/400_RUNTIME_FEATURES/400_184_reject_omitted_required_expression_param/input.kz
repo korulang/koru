@@ -14,7 +14,7 @@
 
 ~[expand]pub tor shout { expr: Expression, suffix: Expression }
 
-~proc shout|template|zig {
+~[template]proc shout|zig {
 {{ expr }}
 }
 
