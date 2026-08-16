@@ -28,6 +28,20 @@ names the capacity to build (guarded withdrawal), it is not a reason to stop.
 
 ## Considered
 
+**`EX-002-RESOLUTION` — LIFO release order landed 2026-08-16.**
+Status: CLOSED (probe discharged).
+`dischargeAllHandles` walks the pool in REVERSE acquisition order among
+independent handles — LIFO, matching Cordis's `disposables.splice(0).reverse()`
+(the paper's Theorem 16: effects revert in reverse application order). The
+dependency guard (EX-001-RESOLUTION) still dominates: providers outlive
+dependents regardless of LIFO.
+- Implemented in `koru_std/interpreter.kz` (reverse walk in the guarded loop).
+- Pinned by `440_011_lifo_release_order`: two independent opens, the
+  second-opened file releases first.
+- Falsified 2026-08-16: forward iteration (pre-LIFO) releases a.txt before
+  b.txt and the test FAILS; LIFO passes.
+- Cluster sweep after both rounds: 11/11 bridge tests green.
+
 **`EX-001-RESOLUTION` — guarded withdrawal landed 2026-08-16.**
 Status: CLOSED (the gap is closed, the exclusion is discharged).
 The dependency edge is **derived, never authored** — no register-block or

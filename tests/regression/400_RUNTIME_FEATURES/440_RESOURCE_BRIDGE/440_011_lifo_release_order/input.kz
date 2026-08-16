@@ -1,0 +1,58 @@
+// Test: LIFO RELEASE ORDER for independent handles.
+//
+// Cordis's accumulator reverts effects in the reverse of the order they
+// were applied (Theorem 16): `disposables.splice(0).reverse()`. The bridge
+// pool walks in REVERSE acquisition order among independent handles — the
+// second-opened file is released first, the first-opened file last.
+//
+// The dependency guard (440_010) dominates: a provider still outlives its
+// dependents even under LIFO. This test pins the ordering *between*
+// independent handles, which the flat pool released in acquisition order.
+
+~import std/bridge
+~import std/runtime
+~import std/io
+
+const std = @import("std");
+
+~pub tor open { path: string } -> string<opened!>
+
+~proc open|zig {
+    std.debug.print("open({s})\n", .{path});
+    return path;
+}
+
+~pub tor close-file { handle: string<!opened> }
+
+~proc close-file|zig {
+    std.debug.print("close-file() ran for '{s}'\n", .{handle});
+}
+
+~std/runtime:register(scope: "files") {
+    open(10)
+    close-file(1)
+}
+
+~std/bridge:create(id: "session-1", scope: "files"): br |> open-two(br): held |> std/bridge:close(br) |> std/io:print.ln("held before hang-up: {{ held:d }}")
+
+// Two independent opens on the SAME bridge pool: a.txt then b.txt.
+~tor open-two { br: *std/bridge:Bridge } -> u32
+
+~proc open-two|zig {
+    const rt = @import("root").koru_std.koru_runtime;
+    _ = rt.run_event.handler(.{
+        .source = "open(path: \"a.txt\")",
+        .scope = "files",
+        .budget = 100,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+    });
+    _ = rt.run_event.handler(.{
+        .source = "open(path: \"b.txt\")",
+        .scope = "files",
+        .budget = 100,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+    });
+    return br.getHandleCount();
+}

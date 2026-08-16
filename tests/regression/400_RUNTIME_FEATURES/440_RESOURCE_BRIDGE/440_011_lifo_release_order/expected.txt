@@ -1,0 +1,7 @@
+open(a.txt)
+open(b.txt)
+close-file() ran for 'b.txt'
+[BRIDGE] Invoked 'close-file' for handle 'b.txt' [main:opened]
+close-file() ran for 'a.txt'
+[BRIDGE] Invoked 'close-file' for handle 'a.txt' [main:opened]
+held before hang-up: 2

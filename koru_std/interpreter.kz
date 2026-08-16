@@ -1774,16 +1774,23 @@ pub fn dischargeAllHandles(
     const scratch_alloc = scratch.allocator();
 
 
-    // Guarded release loop (Cordis Theorem 63 ordering, mirror side): a
-    // handle may be released only when no undischarged handle depends on it.
-    // Dependents go first, providers last — the provider outlives its
-    // consumers. The pass is repeated because releasing a dependent may
-    // unblock its provider; each pass scans the pool, so a handle blocked by
-    // a dependent is simply skipped until that dependent is gone.
+    // Guarded release loop (Cordis Theorem 63 + Theorem 16 ordering, mirror
+    // side): a handle may be released only when no undischarged handle
+    // depends on it, and among independent handles the pool is walked in
+    // REVERSE acquisition order — LIFO, exactly as Cordis's accumulator does
+    // (`disposables.splice(0).reverse()`, the paper's Theorem 16: effects
+    // revert in the reverse of the order they were applied). Dependents go
+    // first, providers last; the provider outlives its consumers. The pass
+    // is repeated because releasing a dependent may unblock its provider;
+    // each pass scans the pool, so a handle blocked by a dependent is
+    // simply skipped until that dependent is gone.
     var progressed = true;
     while (progressed) {
         progressed = false;
-        for (pool.handles.items) |handle| {
+        var i = pool.handles.items.len;
+        while (i > 0) {
+            i -= 1;
+            const handle = pool.handles.items[i];
             if (handle.discharged) continue;
             if (pool.hasUndischargedDependents(handle.id)) continue;
 

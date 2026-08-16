@@ -50,6 +50,14 @@ Bridge cluster: 10/10 green.
 **can't-tell on withdrawal-ordering: 100% → 0%.** The First Pull scenario is
 now expressible, runnable, and diffable — the gauntlet has its first real rung.
 
+## ROUND TWO — the LIFO rung (2026-08-16)
+
+Second probe from the First Pull discharged: release order among
+*independent* handles is now LIFO (reverse acquisition), matching Cordis's
+accumulator (`disposables.splice(0).reverse()`, Theorem 16). Pinned by
+`440_011_lifo_release_order`, falsified (forward iteration → red), guard
+still dominates. Bridge cluster 11/11.
+
 ## Why the reference is trustable as an oracle
 
 - It is a passing, version-controlled implementation (not prose or a benchmark
