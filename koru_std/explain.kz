@@ -17,14 +17,32 @@
 // dispatches it before koru_coordinate, so no pipeline pass fires. It sees the
 // freshly-parsed, pre-analysis AST (closest to original source).
 //
-// STATUS: item 1 of the build — the command registers and dispatches, and can
-// reach the program AST. Explainer *discovery* (walking for [explainer] events)
-// and output dispatch (json/html/text) are the next rungs; today it reports what
-// it can already see and names the not-yet-wired path.
+// STATUS: the command registers and dispatches; koruc generates
+// `koru_explain_gather` (calls every discovered `[explainer]` once), and
+// `std/runtime` ships the first explainer — the scope registry's manifest,
+// reported per registered scope as the served contract bytes.
 
 ~import std/compiler
 
 ~[comptime]
+
+// Escape a string for JSON output. The catalog keys are identifiers and stay
+// raw; VALUES are arbitrary library bytes and must be quoted honestly.
+fn printJsonString(v: []const u8) void {
+    const std = @import("std");
+    std.debug.print("\"", .{});
+    for (v) |c| {
+        switch (c) {
+            '"' => std.debug.print("\\\"", .{}),
+            '\\' => std.debug.print("\\\\", .{}),
+            '\n' => std.debug.print("\\n", .{}),
+            '\r' => std.debug.print("\\r", .{}),
+            '\t' => std.debug.print("\\t", .{}),
+            else => std.debug.print("{c}", .{c}),
+        }
+    }
+    std.debug.print("\"", .{});
+}
 
 // ============================================================
 // EXPLAIN COMMAND — report how libraries interpret this program
@@ -35,7 +53,7 @@
     "description": "Explain how libraries interpret this program's use of their facilities"
 }
 
-~[comptime|command]pub event explain {
+~[comptime|command]pub tor explain {
     program: *const Program,
     allocator: __koru_std.mem.Allocator,
     argv: []const []const u8,
@@ -106,7 +124,14 @@
                             .integer => |i| std.debug.print("\"{s}\":{d}", .{ p.key, i }),
                             .float => |f| std.debug.print("\"{s}\":{d}", .{ p.key, f }),
                             .bool => |b| std.debug.print("\"{s}\":{}", .{ p.key, b }),
-                            .string => |s| std.debug.print("\"{s}\":\"{s}\"", .{ p.key, s }),
+                            // String values are escaped here, never trustingly
+                            // spliced: the scope-manifest property embeds a full
+                            // JSON document (quotes and all), and an unescaped
+                            // splice would break the enclosing catalog.
+                            .string => |s| {
+                                std.debug.print("\"{s}\":", .{p.key});
+                                printJsonString(s);
+                            },
                         }
                     },
                 };

@@ -26,9 +26,12 @@ const ast = @import("ast");
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~proc register|zig {
-    const ast_reg = @import("ast");
-    const CompilerEnvRt = @import("root").CompilerEnv;
+// ============================================================================
+// REGISTRY COMMON - shared comptime machinery: register's emission, the
+// scope-manifest builder, and the [explainer] all derive from these
+// ============================================================================
+const ast_reg = @import("ast");
+
     const registry_helpers_marker = "__KORU_RUNTIME_REGISTRY_HELPERS__";
 
     const Helpers = struct {
@@ -179,26 +182,6 @@ const ast = @import("ast");
         }
     };
 
-    // Get the flow from the item
-    const flow = if (item.* == .flow) &item.flow else return .{};
-
-    // Extract scope name from args or registry annotations
-    const scope_name = Helpers.extractScopeName(invocation, flow.annotations);
-
-    std.debug.print("[REGISTRY] Creating dispatcher for scope '{s}'\n", .{scope_name});
-
-    // Parse events from source block with optional costs and composition
-    // Syntax:
-    //   event_name              - default cost 1
-    //   event_name(cost)        - custom cost
-    //   scope(other)            - include another scope
-    //   module:*                - include all events under module prefix
-    //
-    // Obligations are extracted from event signatures using phantom types:
-    //   <state!> in output = creates obligation (! suffix)
-    //   <!state> in input = discharges obligation (! prefix)
-
-    // Local CreateSpec/DischargeSpec for codegen (mirrors runtime types)
     const LocalCreateSpec = struct {
         obligation_module: []const u8,
         obligation_name: []const u8,
@@ -763,6 +746,28 @@ const ast = @import("ast");
         }
     }.extract;
 
+~proc register|zig {
+    const CompilerEnvRt = @import("root").CompilerEnv;
+    // Get the flow from the item
+    const flow = if (item.* == .flow) &item.flow else return .{};
+
+    // Extract scope name from args or registry annotations
+    const scope_name = Helpers.extractScopeName(invocation, flow.annotations);
+
+    std.debug.print("[REGISTRY] Creating dispatcher for scope '{s}'\n", .{scope_name});
+
+    // Parse events from source block with optional costs and composition
+    // Syntax:
+    //   event_name              - default cost 1
+    //   event_name(cost)        - custom cost
+    //   scope(other)            - include another scope
+    //   module:*                - include all events under module prefix
+    //
+    // Obligations are extracted from event signatures using phantom types:
+    //   <state!> in output = creates obligation (! suffix)
+    //   <!state> in input = discharges obligation (! prefix)
+
+    // Local CreateSpec/DischargeSpec for codegen (mirrors runtime types)
     const event_infos = RegistryHelper.collectEventInfos(allocator, program);
     const scope_defs = RegistryHelper.collectScopeDefs(allocator, program);
     const debug_enabled = CompilerEnvRt.hasFlag("debug");
@@ -1277,35 +1282,17 @@ const ast = @import("ast");
     code.appendSlice(allocator, " };\n") catch unreachable;
 
     // The scope manifest: the register block minted as DATA, beside the
-    // descriptor. Reshaped from the same EventEntry records the dispatch
-    // tables above were emitted from — a served contract that cannot drift
-    // from enforcement because it IS the same bytes.
-    //
-    // Direct includes: `scope(other)` entries named in THIS register block,
-    // in declaration order, deduped. Transitive closures stay implicit.
-    var includes = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
-    if (RegistryHelper.findScopeDef(scope_defs, scope_name)) |def| {
-        const own_entries = RegistryHelper.parseEntries(allocator, def.source_text, debug_enabled);
-        for (own_entries) |entry| {
-            if (entry.kind == .scope_ref) {
-                var already = false;
-                for (includes.items) |inc| {
-                    if (std.mem.eql(u8, inc, entry.name)) {
-                        already = true;
-                        break;
-                    }
-                }
-                if (!already) includes.append(allocator, entry.name) catch {};
-            }
-        }
-    }
+    // descriptor. Built by the SAME shared producer the explainer and the
+    // served JSON use (scopeManifestForScope) — one record, three views, and
+    // the contract can never drift from enforcement.
+    const scope_manifest = scopeManifestForScope(allocator, program, scope_name, debug_enabled);
 
     code.appendSlice(allocator, I ++ "pub const ") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "_manifest: ScopeManifest = .{ .scope = \"") catch unreachable;
     code.appendSlice(allocator, scope_name) catch unreachable;
     code.appendSlice(allocator, "\", .events = &[_]ManifestEvent{\n") catch unreachable;
-    for (events_list.items) |event| {
+    for (scope_manifest.events) |event| {
         code.appendSlice(allocator, I ++ "    .{ .name = \"") catch unreachable;
         code.appendSlice(allocator, event.name) catch unreachable;
         code.appendSlice(allocator, "\", .cost = ") catch unreachable;
@@ -1313,7 +1300,7 @@ const ast = @import("ast");
         const manifest_cost_str = std.fmt.bufPrint(&manifest_cost_buf, "{d}", .{event.cost}) catch "1";
         code.appendSlice(allocator, manifest_cost_str) catch unreachable;
         code.appendSlice(allocator, ", .home = ") catch unreachable;
-        if (event.module_name) |event_home| {
+        if (event.home) |event_home| {
             code.appendSlice(allocator, "\"") catch unreachable;
             code.appendSlice(allocator, event_home) catch unreachable;
             code.appendSlice(allocator, "\"") catch unreachable;
@@ -1323,7 +1310,7 @@ const ast = @import("ast");
 
         // Argument vocabulary — the caller's side of the surface.
         code.appendSlice(allocator, ", .args = &[_]ManifestArg{") catch unreachable;
-        for (event.input_fields, 0..) |arg_field, ai| {
+        for (event.args, 0..) |arg_field, ai| {
             if (ai > 0) code.appendSlice(allocator, ", ") catch unreachable;
             code.appendSlice(allocator, ".{ .name = \"") catch unreachable;
             code.appendSlice(allocator, arg_field.name) catch unreachable;
@@ -1345,14 +1332,14 @@ const ast = @import("ast");
 
         // Possession: what the event mints.
         code.appendSlice(allocator, ", .creates = &[_]ManifestCreate{") catch unreachable;
-        for (event.creates_specs, 0..) |create_spec, ci| {
+        for (event.creates, 0..) |create_spec, ci| {
             if (ci > 0) code.appendSlice(allocator, ", ") catch unreachable;
             code.appendSlice(allocator, ".{ .obligation = \"") catch unreachable;
-            code.appendSlice(allocator, create_spec.obligation_name) catch unreachable;
+            code.appendSlice(allocator, create_spec.obligation) catch unreachable;
             code.appendSlice(allocator, "\", .module = \"") catch unreachable;
-            code.appendSlice(allocator, create_spec.obligation_module) catch unreachable;
+            code.appendSlice(allocator, create_spec.module) catch unreachable;
             code.appendSlice(allocator, "\", .field = \"") catch unreachable;
-            code.appendSlice(allocator, create_spec.field_name) catch unreachable;
+            code.appendSlice(allocator, create_spec.field) catch unreachable;
             code.appendSlice(allocator, "\", .resource_type = \"") catch unreachable;
             code.appendSlice(allocator, create_spec.resource_type) catch unreachable;
             code.appendSlice(allocator, "\" }") catch unreachable;
@@ -1361,14 +1348,14 @@ const ast = @import("ast");
 
         // Possession: what the event consumes.
         code.appendSlice(allocator, ", .discharges = &[_]ManifestDischarge{") catch unreachable;
-        for (event.discharges_specs, 0..) |discharge_spec, di| {
+        for (event.discharges, 0..) |discharge_spec, di| {
             if (di > 0) code.appendSlice(allocator, ", ") catch unreachable;
             code.appendSlice(allocator, ".{ .obligation = \"") catch unreachable;
-            code.appendSlice(allocator, discharge_spec.obligation_name) catch unreachable;
+            code.appendSlice(allocator, discharge_spec.obligation) catch unreachable;
             code.appendSlice(allocator, "\", .module = \"") catch unreachable;
-            code.appendSlice(allocator, discharge_spec.obligation_module) catch unreachable;
+            code.appendSlice(allocator, discharge_spec.module) catch unreachable;
             code.appendSlice(allocator, "\", .arg = \"") catch unreachable;
-            code.appendSlice(allocator, discharge_spec.arg_name) catch unreachable;
+            code.appendSlice(allocator, discharge_spec.arg) catch unreachable;
             code.appendSlice(allocator, "\" }") catch unreachable;
         }
         code.appendSlice(allocator, "}") catch unreachable;
@@ -1398,7 +1385,7 @@ const ast = @import("ast");
     }
     code.appendSlice(allocator, I ++ "},\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    .includes = &[_][]const u8{") catch unreachable;
-    for (includes.items, 0..) |inc, ii| {
+    for (scope_manifest.includes, 0..) |inc, ii| {
         if (ii > 0) code.appendSlice(allocator, ", ") catch unreachable;
         code.appendSlice(allocator, "\"") catch unreachable;
         code.appendSlice(allocator, inc) catch unreachable;
@@ -1854,6 +1841,71 @@ fn buildScopeTable() []const ScopeRuntime {
     return .{ .not_found = .{} };
 }
 
+// ============================================================================
+// EXPLAIN-RUNTIME - the `[explainer]` for the scope registry
+// ============================================================================
+//
+// koruc's `koru_explain_gather` calls every discovered `[explainer]` once with
+// the program AST; the `explain` command renders whatever this returns. This
+// explainer builds every registered scope's manifest through the SAME shared
+// producer (`scopeManifestForScope`) the register emission uses, then reports:
+// a note (the human vocabulary lines) plus a `manifest` property carrying the
+// EXACT JSON the `scope-manifest` tor serves — so `explain` shows the served
+// contract bytes, never a hand-written copy.
+
+// @retain: explain_runtime_event is referenced from generated code (koruc's
+// koru_explain_gather invokes every discovered [explainer]).
+~[comptime|explainer]pub tor explain-runtime {
+    program: *const ast.Program,
+    allocator: std.mem.Allocator
+} -> ExplainReport
+
+~proc explain-runtime|zig {
+    const ast_mod = @import("ast");
+    const CompilerEnvRt = @import("root").CompilerEnv;
+    const debug_enabled = CompilerEnvRt.hasFlag("debug");
+
+    const scope_defs = RegistryHelper.collectScopeDefs(allocator, program);
+    var names = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+    for (scope_defs) |def| {
+        var dup = false;
+        for (names.items) |n| if (std.mem.eql(u8, n, def.name)) {
+            dup = true;
+            break;
+        };
+        if (!dup) names.append(allocator, def.name) catch continue;
+    }
+
+    if (names.items.len == 0) {
+        var entries = std.ArrayList(ast_mod.ExplainReport.Entry){ .items = &.{}, .capacity = 0 };
+        entries.append(allocator, .{ .note = "no scopes registered — declare one with std/runtime:register(scope: \"...\") { open(1) close(1) }" }) catch {};
+        var sections = std.ArrayList(ast_mod.ExplainReport.Section){ .items = &.{}, .capacity = 0 };
+        sections.append(allocator, .{ .heading = "scopes", .entries = entries.toOwnedSlice(allocator) catch &.{} }) catch {};
+        return .{ .title = "std/runtime", .sections = sections.toOwnedSlice(allocator) catch &.{} };
+    }
+
+    var sections = std.ArrayList(ast_mod.ExplainReport.Section){ .items = &.{}, .capacity = 0 };
+    for (names.items) |name| {
+        const manifest = scopeManifestForScope(allocator, program, name, debug_enabled);
+        const text = scopeManifestToText(allocator, &manifest);
+        const json = scopeManifestToJson(allocator, &manifest) catch "";
+
+        var entries = std.ArrayList(ast_mod.ExplainReport.Entry){ .items = &.{}, .capacity = 0 };
+        entries.append(allocator, .{ .note = text }) catch continue;
+        entries.append(allocator, .{ .property = .{ .key = "manifest", .value = .{ .string = json } } }) catch continue;
+
+        sections.append(allocator, .{
+            .heading = name,
+            .entries = entries.toOwnedSlice(allocator) catch &.{},
+        }) catch continue;
+    }
+
+    return .{
+        .title = "std/runtime",
+        .sections = sections.toOwnedSlice(allocator) catch &.{},
+    };
+}
+
 fn jsonAppendString(out: *std.ArrayList(u8), alloc: std.mem.Allocator, s: []const u8) void {
     // Identifiers, module paths and obligation names cannot carry quotes or
     // control bytes in Koru; the escape keeps caller-supplied scope names
@@ -1963,6 +2015,113 @@ fn scopeManifestToJson(alloc: std.mem.Allocator, m: *const ScopeManifest) ![]con
     }
     try out.appendSlice(alloc, "]}");
     return out.toOwnedSlice(alloc);
+}
+
+/// Build ONE scope's manifest record from the program AST — the shared
+/// producer. `register` walks the returned record to emit its embedded const;
+/// the `[explainer]` renders it. Both derive from the same lifted RegistryHelper
+/// + extraction machinery as the dispatch tables, so the record can never drift
+/// from what is actually enforced.
+pub fn scopeManifestForScope(
+    alloc: std.mem.Allocator,
+    program: *const ast.Program,
+    scope_name: []const u8,
+    debug_enabled: bool,
+) ScopeManifest {
+    const event_infos = RegistryHelper.collectEventInfos(alloc, program);
+    const scope_defs = RegistryHelper.collectScopeDefs(alloc, program);
+
+    var resolved_events = std.ArrayList(ResolvedEvent){ .items = &.{}, .capacity = 0 };
+    var visited = std.StringHashMap(void).init(alloc);
+    RegistryHelper.resolveScope(alloc, scope_defs, event_infos, scope_name, debug_enabled, &visited, &resolved_events);
+
+    var events = std.ArrayList(ManifestEvent){ .items = &.{}, .capacity = 0 };
+    for (resolved_events.items) |resolved| {
+        const lookup_name = resolved.internal_name orelse resolved.name;
+        const info = RegistryHelper.findEventInfoHomed(alloc, event_infos, lookup_name, resolved.home) orelse continue;
+        const obligations = extractObligations(alloc, info.event_decl, info.module_name);
+        const branches = extractBranches(alloc, info.event_decl);
+        const input_fields = extractInputFields(alloc, info.event_decl);
+
+        var args = std.ArrayList(ManifestArg){ .items = &.{}, .capacity = 0 };
+        for (input_fields) |f| args.append(alloc, .{
+            .name = f.name, .type_name = f.type_name, .is_optional = f.is_optional, .phantom = f.phantom,
+        }) catch continue;
+        var creates = std.ArrayList(ManifestCreate){ .items = &.{}, .capacity = 0 };
+        for (obligations.creates_specs) |spec| creates.append(alloc, .{
+            .obligation = spec.obligation_name, .module = spec.obligation_module, .field = spec.field_name, .resource_type = spec.resource_type,
+        }) catch continue;
+        var discharges = std.ArrayList(ManifestDischarge){ .items = &.{}, .capacity = 0 };
+        for (obligations.discharges_specs) |spec| discharges.append(alloc, .{
+            .obligation = spec.obligation_name, .module = spec.obligation_module, .arg = spec.arg_name,
+        }) catch continue;
+        var branch_records = std.ArrayList(ManifestBranch){ .items = &.{}, .capacity = 0 };
+        for (branches) |spec| {
+            var fields = std.ArrayList(ManifestBranchField){ .items = &.{}, .capacity = 0 };
+            for (spec.fields) |f| fields.append(alloc, .{
+                .name = f.name, .type_name = f.type_name, .is_optional = f.is_optional,
+            }) catch continue;
+            branch_records.append(alloc, .{
+                .name = spec.name, .fields = fields.toOwnedSlice(alloc) catch &.{}, .is_optional = spec.is_optional,
+            }) catch continue;
+        }
+
+        events.append(alloc, .{
+            .name = resolved.name,
+            .cost = resolved.cost,
+            .home = info.module_name,
+            .args = args.toOwnedSlice(alloc) catch &.{},
+            .creates = creates.toOwnedSlice(alloc) catch &.{},
+            .discharges = discharges.toOwnedSlice(alloc) catch &.{},
+            .branches = branch_records.toOwnedSlice(alloc) catch &.{},
+        }) catch continue;
+    }
+
+    // Direct `scope(other)` includes named in THIS register block, in order, deduped.
+    var includes = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+    if (RegistryHelper.findScopeDef(scope_defs, scope_name)) |def| {
+        for (RegistryHelper.parseEntries(alloc, def.source_text, debug_enabled)) |entry| {
+            if (entry.kind == .scope_ref) {
+                var dup = false;
+                for (includes.items) |inc| if (std.mem.eql(u8, inc, entry.name)) {
+                    dup = true;
+                    break;
+                };
+                if (!dup) includes.append(alloc, entry.name) catch {};
+            }
+        }
+    }
+
+    return .{
+        .scope = scope_name,
+        .events = events.toOwnedSlice(alloc) catch &.{},
+        .includes = includes.toOwnedSlice(alloc) catch &.{},
+    };
+}
+
+/// Human text projection of a scope manifest — the same `open(path: string)`
+/// shape the model prompt uses, so a person reading `explain` sees exactly the
+/// vocabulary the runtime serves.
+pub fn scopeManifestToText(alloc: std.mem.Allocator, m: *const ScopeManifest) []const u8 {
+    var out = std.ArrayList(u8).initCapacity(alloc, 256) catch return "";
+    for (m.events, 0..) |ev, i| {
+        if (i > 0) out.append(alloc, '\n') catch continue;
+        out.appendSlice(alloc, ev.name) catch continue;
+        out.append(alloc, '(') catch continue;
+        for (ev.args, 0..) |arg, ai| {
+            if (ai > 0) out.appendSlice(alloc, ", ") catch continue;
+            out.appendSlice(alloc, arg.name) catch continue;
+            out.appendSlice(alloc, ": ") catch continue;
+            out.appendSlice(alloc, arg.type_name) catch continue;
+            if (arg.phantom) |p| {
+                out.append(alloc, '<') catch continue;
+                out.appendSlice(alloc, p) catch continue;
+                out.append(alloc, '>') catch continue;
+            }
+        }
+        out.append(alloc, ')') catch continue;
+    }
+    return out.toOwnedSlice(alloc) catch "";
 }
 
 // Internal helper: Look up event branches for shape validation
