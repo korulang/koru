@@ -4,38 +4,35 @@
 // argument types rendered here are the ones the interpreter checks before
 // dispatch, from the same EventEntry records the dispatch tables are emitted
 // from. Feeds the Orisha .json endpoint and the `explain` host downstream.
-~import std/runtime
-~import std/io
+//
+// Pure-surface form (.k): the tilde does not exist here — a pure-Koru file
+// rejects it outright (PARSE003), which is exactly the point of the spelling.
+import std/runtime
+import std/io
 
-const std = @import("std");
+pub tor open { path: string } -> string<open!>
+open -> { "note_0" }
 
-~pub tor open { path: string } -> string<open!>
-~proc open|zig {
-    return "note_0";
-}
+pub tor append { handle: string<!open>, text: string } -> string<open!>
+append -> { handle }
 
-~pub tor append { handle: string<!open>, text: string } -> string<open!>
-~proc append|zig {
-    return handle;
-}
+pub tor close { handle: string<!open> }
+close -> {}
 
-~pub tor close { handle: string<!open> }
-~proc close|zig {}
+pub tor say { text: string }
+say -> {}
 
-~pub tor say { text: string }
-~proc say|zig {}
-
-~std/runtime:register(scope: "notes") {
+std/runtime:register(scope: "notes") {
     open(10)
     append(1)
     close(1)
     say(1)
 }
 
-~std/runtime:scope-manifest(name: "notes")
+std/runtime:scope-manifest(name: "notes")
 | ok json |> std/io:print.ln("{{ json:s }}")
 | not-found |> std/io:print.ln("NOT FOUND")
 
-~std/runtime:scope-manifest(name: "no-such-scope")
+std/runtime:scope-manifest(name: "no-such-scope")
 | ok json |> std/io:print.ln("UNEXPECTED: {{ json:s }}")
 | not-found |> std/io:print.ln("NOT FOUND")

@@ -2,7 +2,7 @@
 type: belief
 id: frag-tilde-marks-the-host-boundary
 provenance: ruled while orienting on the budgeted interpreter / resource bridge / shell direction; settles the design question 430_047's TODO had carried open since 2026-05-15. Corrected 2026-08-07 after Lars asked whether the interpreter still accepted `~` and the answer turned out to be "on one route it is mandatory". Evolved later the same day by a four-repo sweep for the forbidden spelling: the corpus came back clean, but the enforcement did not — the compiler half of the rule had no pin, and the interpreter's flow parser still documents and unit-tests the tilde as optional beneath every guarded door. Evolved 2026-08-12 by the corpus-presentation sweep: the by-example generator embedded raw `.kz` verbatim into every context-facing artifact, teaching `~tor`/`~import`/`~hello()` as the surface for months — a door that taught the negation; the generator now strips the marker at presentation and the corpus sources' comment prose was swept
-ts: 2026-08-12
+ts: 2026-08-16
 ---
 
 # `~` marks the host boundary, and nothing else
@@ -129,6 +129,38 @@ assumptions with it. The generator answered "present the source as-is"; the
 doctrine demanded "present the pure surface". Nothing executed the output, so
 nothing complained — the doctrine's own line: *an unguarded path is not the
 neutral absence of a guard; it runs whatever its borrowed machinery believes.*
+
+## The blog door (2026-08-16)
+
+The published blog was the by-example door's twin, unmeasured. Measured before
+the sweep: 1,857 tilde-lines across 139 posts — `~tor`, `~import`, `~hello()`
+in the top context-facing artifact the language writes for humans, teaching
+the negation of the rule for a year, green because nothing executes prose.
+Half the lines sat inside ```` ```koru ```` fences; a further 30 were Koru
+constructs rendered as unfenced prose. Stripped in one sweep: the line-start
+marker (the only position it occupies), matching the by-example generator's
+mechanism. Kept: strings (`~/notes.txt`), markdown strikethrough, benchmark
+data (`~1.25 ns/iter`), other-language fences — the doctrine's axis is code
+position vs data, and this sweep kept it.
+
+Two things were new here and are worth carrying:
+
+- **The enforcement is the facet.** A pure-Koru `.k` file Rejects the tilde —
+  PARSE003, at the parser, with a teaching message. The strongest wall a
+  presentation context can have is to live in a file the lexer itself policed.
+  The registry tests (`430_057`/`430_058`) moved from `.kz` to `input.k` —
+  the harness runs both — so the corpus's pure surface is now compiler-held,
+  not convention-held. Any future regression to `~` in a pure test is a parse
+  error, discovered in the same commit that writes it.
+- **The post-door needed its own guard-shaped wall, not a one-time sweep.**
+  Unlike corpus files, posts have no lexer — they are prose. A check
+  (`korulang_org/scripts/check-post-tildes.mjs`, run by `bun run blog:index`)
+  walks every post with the corrected fence parser and fails on a tilde in
+  code position: inside ```koru fences always; in prose only when the next
+  character is a letter/`*`/`[`/`(` (the Koru-construct shapes), so benchmark
+  data and markdown survive. The guard is at the generation door, like the
+  by-example generator's — the third door in this fragment's log, and the
+  first one enforced by failing the toolchain rather than by editing output.
 
 Related: [[frag-k-file-is-a-full-program]] (the `.k` half of the same rule),
 [[frag-a-watcher-off-the-normal-path-is-not-a-wall]] (the general shape).

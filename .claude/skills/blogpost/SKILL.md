@@ -64,6 +64,17 @@ alone.** Lead with the concrete subject — the feature or concept, by name.
    compile, and it contradicted the post's own claim two sections later that you
    cannot forget an outcome. Lars caught it on the live page.)
 
+   **Samples are pure Koru — the tilde does not exist in a post.** The `~` is
+   the host→Koru switch and has meaning only inside host-embedded (`.kz`)
+   files; a post is a pure-Koru context, where the marker is rejected outright
+   (PARSE003 — `frag-tilde-marks-the-host-boundary`). Write every sample in the
+   pure surface — `pub tor`, `import`, `name -> { … }` impls, bare calls — even
+   when the test you cite lives in a `.kz` (host) file. Prefer citing a pure
+   `.k` test so sample and test are the same bytes with no normalization. Host
+   residue (`proc x|zig { … }`) is the old spelling; rewrite it to a pure impl.
+   The blog pipeline now FAILS on a tilde in code position (`bun run blog:index`
+   runs the wall), so this rule is enforced, not aspirational.
+
 2. **Read the two or three most recent posts** in
    `src/routes/blog/*/+page.svx` (sort by `date` in frontmatter) before writing.
    They set the house voice and show the current component usage. The most
