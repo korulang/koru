@@ -55,7 +55,7 @@ const std = @import("std");
 // `inline for` (reflected fields are heterogeneous — each `.type` differs — so it
 // must comptime-unroll). INSIDE a constructor the `.pre` struct terminal consumes
 // `fields-of` before this template ever runs, so the two paths never collide.
-~proc fields-of|template|zig {
+~[template]proc fields-of|zig {
     inline for (@typeInfo({{ expr }}).@"struct".fields) |__koru_item| {
         {% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);
         {% endfor %}

@@ -2950,6 +2950,27 @@ pub const VisitorEmitter = struct {
                             try self.code_emitter.writeIndent();
                             try self.code_emitter.write("_ = &__koru_event_input;\n");
 
+                            // `[template]` procs are rendered per-invocation and inlined
+                            // at call sites (Stage C `template_processor`); this decl-site
+                            // handler is never called, and its body is template text
+                            // (`{% %}`, `{{ }}`), not valid host code. Emit an unreachable
+                            // stub instead — the same shape the variant path uses below.
+                            {
+                                var is_template = false;
+                                for (proc.annotations) |ann| {
+                                    if (eql(u8, ann, "template")) {
+                                        is_template = true;
+                                        break;
+                                    }
+                                }
+                                if (is_template) {
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("unreachable; // [template] proc — inlined at call sites\n");
+                                    found_impl = true;
+                                    break;
+                                }
+                            }
+
                             // Rewrite proc body: replace shadowed field names with __koru_event_input.field
                             var proc_body: []const u8 = proc.body.text;
                             for (event.input.fields) |field| {
@@ -4049,18 +4070,22 @@ pub const VisitorEmitter = struct {
                         try self.code_emitter.writeIndent();
                         try self.code_emitter.write("_ = &__koru_event_input;\n");
 
-                        // `|template|` procs are rendered per-invocation and inlined
+                        // `[template]` procs are rendered per-invocation and inlined
                         // at call sites (Stage C `template_processor`); this decl-site
                         // handler is never called. Its body is template text (`{% %}`,
                         // `{{ }}`), not valid host code — and when this proc lives in
                         // the stdlib/compiler, no Stage-C pass blanks it before Stage-A
                         // emission. Emit an `unreachable` stub instead of the raw template.
-                        const is_template_variant = eql(u8, target, "template") or
-                            std.mem.startsWith(u8, target, "template|") or
-                            std.mem.startsWith(u8, target, "template(");
+                        // The kind is an ANNOTATION, never a variant tag (ruling 2026-08-16).
+                        const is_template_variant = blk: {
+                            for (proc.annotations) |ann| {
+                                if (eql(u8, ann, "template")) break :blk true;
+                            }
+                            break :blk false;
+                        };
                         if (is_template_variant) {
                             try self.code_emitter.writeIndent();
-                            try self.code_emitter.write("unreachable; // |template| proc — inlined at call sites\n");
+                            try self.code_emitter.write("unreachable; // [template] proc — inlined at call sites\n");
                         } else if (is_mlir_variant) {
                             // Thin wrapper: call the AOT-linked MLIR symbol, wrap the
                             // scalar result in the terminal branch.
@@ -5057,6 +5082,17 @@ pub const VisitorEmitter = struct {
             log.debug("  has_comptime={} has_norun={}\n", .{has_comptime, has_norun});
 
             if (has_comptime or has_norun) {
+                // A `[template]` proc is the one comptime event whose body is
+                // NOT produced here: it is rendered per-invocation by the
+                // backend's per-call pass. A comptime_flowN would be emitted
+                // from the UNRENDERED AST and executed at Stage-C comptime —
+                // reaching the decl-site unreachable stub. Such a flow belongs
+                // in the RUNTIME emission, where the render already spliced
+                // its body. (340_013; ruling 2026-08-16.)
+                if (self.eventHasTemplateProc(&decl.path)) {
+                    log.debug("  Returning FALSE - event is a [template] proc\n", .{});
+                    return false;
+                }
                 log.debug("  Returning TRUE from AST check\n", .{});
                 return true;  // Event is comptime-only (should not be emitted to runtime)
             }
@@ -5101,6 +5137,53 @@ pub const VisitorEmitter = struct {
         // TypeRegistry event doesn't have comptime parameters
         // (Note: TypeRegistry doesn't store annotations, so we can't check those)
         log.debug("  Returning FALSE - TypeRegistry event is runtime\n", .{});
+        return false;
+    }
+
+
+    /// Does any proc implementing `event_path` carry the `[template]` annotation?
+    /// Event-level comptime classification consults proc shape (the same way
+    /// `findTransformProc` keys on proc annotations): a template proc renders
+    /// per-invocation at the backend, so its flows are runtime-emitted.
+    fn eventHasTemplateProc(self: *VisitorEmitter, event_path: *const ast.DottedPath) bool {
+        for (self.all_items) |*item| {
+            switch (item.*) {
+                .proc_decl => |*pd| {
+                    if (pd.path.segments.len != event_path.segments.len) continue;
+                    var same = true;
+                    for (pd.path.segments, event_path.segments) |a, b| {
+                        if (!std.mem.eql(u8, a, b)) {
+                            same = false;
+                            break;
+                        }
+                    }
+                    if (!same) continue;
+                    for (pd.annotations) |ann| {
+                        if (std.mem.eql(u8, ann, "template")) return true;
+                    }
+                },
+                .module_decl => |*md| {
+                    for (md.items) |*mod_item| {
+                        if (mod_item.* != .proc_decl) continue;
+                        const pd = &mod_item.proc_decl;
+                        if (pd.path.segments.len != event_path.segments.len) continue;
+                        var same = true;
+                        for (pd.path.segments, event_path.segments) |a, b| {
+                            if (!std.mem.eql(u8, a, b)) {
+                                same = false;
+                                break;
+                            }
+                        }
+                        if (same) {
+                            for (pd.annotations) |ann| {
+                                if (std.mem.eql(u8, ann, "template")) return true;
+                            }
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
         return false;
     }
 

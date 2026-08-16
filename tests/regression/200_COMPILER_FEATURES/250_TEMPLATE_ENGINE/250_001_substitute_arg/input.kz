@@ -5,7 +5,7 @@
 
 ~pub tor show { n: usize }
 
-~proc show|template|zig {
+~[template]proc show|zig {
     @import("std").debug.print("n={{ n }}\n", .{});
 }
 
@@ -15,7 +15,7 @@
 // target, so the variant is chosen by build language and each variant emits its
 // own host text. Divergence: `console.log` appends the newline the Zig format
 // string carries explicitly, so `\n` is dropped here rather than escaped.
-~proc show|template|js {
+~[template]proc show|js {
     console.log("n={{ n }}");
 }
 

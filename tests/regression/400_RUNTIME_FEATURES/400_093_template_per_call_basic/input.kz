@@ -12,11 +12,11 @@ const std = @import("std");
 
 ~pub tor ping {}
 
-~proc ping|template|zig {
+~[template]proc ping|zig {
     std.debug.print("hello from per-call template\n", .{});
 }
 
-~proc ping|template|js {
+~[template]proc ping|js {
     console.log("hello from per-call template");
 }
 

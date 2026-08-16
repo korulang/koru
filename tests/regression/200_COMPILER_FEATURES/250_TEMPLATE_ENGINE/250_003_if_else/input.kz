@@ -6,7 +6,7 @@
 
 ~pub tor pick { }
 
-~proc pick|template|zig {
+~[template]proc pick|zig {
     {% if missing %}
     @import("std").debug.print("has-missing\n", .{});
     {% else %}
@@ -18,7 +18,7 @@
 // reading that selects the else arm is the engine's, not the host's, so a
 // divergence between these two variants could only be a host-text bug.
 // `console.log` supplies the trailing newline.
-~proc pick|template|js {
+~[template]proc pick|js {
     {% if missing %}
     console.log("has-missing");
     {% else %}

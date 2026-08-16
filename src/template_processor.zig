@@ -1,22 +1,16 @@
 // Template processor pass.
 //
-// Two modes, distinguished by variant-arg:
+// One mode: PER-CALL. A proc annotated `[template]` is a template: its body
+// is rendered per invocation with call-site captured args in the Liquid
+// context and spliced inline at the call site. The build-language variant
+// stays in the bar — `~[template]proc foo|zig`, `~[template]proc foo|js` —
+// so the variant slot keeps its one meaning ("which build/impl"), and the
+// declaration kind lives in the annotation.
 //
-//   `~proc foo|template|zig {...}`       — PER-CALL (default, not yet built):
-//                                          render the body per invocation
-//                                          with call-site captured args in
-//                                          the context, inline at call site.
-//   `~proc foo|template(once)|zig {...}` — PER-DECL (one-shot): render the
-//                                          body once at proc-decl time with
-//                                          proc-decl context; result shared
-//                                          across all invocations.
-//
-// Per-call subsumes per-decl semantically, but per-decl is preserved as an
-// opt-in for the (probably rare) case where the user wants the contract
-// guarantee that the template doesn't depend on call args.
-//
-// This implements the variant-with-args story already established for
-// `|zig(reference)` / `|zig(optimized)` in the suite.
+// This is the spelling ruling of 2026-08-16 (docs/TEMPLATE_SPELLING.md): the
+// former variant-slot spellings (a `template` tag in the `|`-chain, incl.
+// `template(once)`) put a declaration kind in the variant slot, and the
+// per-decl one-shot mode (zero users anywhere) is removed with them.
 
 const std = @import("std");
 const ast = @import("ast");
@@ -26,8 +20,7 @@ const errors = @import("errors");
 const struct_literal = @import("struct_literal");
 const codegen_utils = @import("codegen_utils");
 
-const TEMPLATE_TAG = "template";
-const ONCE_MODE = "once";
+const TEMPLATE_ANNOTATION = "template";
 
 /// A `{% comp error %}` reached during template rendering is a template-author
 /// contract violation (e.g. a required branch the consumer didn't provide).
@@ -93,7 +86,7 @@ fn findTopLevelRange(s: []const u8) ?usize {
 }
 
 /// `parse_range(expr)` filter: classify an iterable expression as a range.
-/// Returns a record node `{ is_range, lo, hi }` the `for|template|js` body
+/// Returns a record node `{ is_range, lo, hi }` the `~[template]proc for|js` body
 /// branches on — a range becomes a JS counting loop, anything else stays a
 /// `for…of`. This is the simplified-range path that unblocks cross-target `~for`
 /// (140_014); it deliberately handles only `LO..HI`, leaving array literals etc.
@@ -494,9 +487,11 @@ fn tableGapsFilter(allocator: std.mem.Allocator, args: []const liquid.Value) any
     return valuesToRecords(allocator, gaps);
 }
 
-/// Walk the AST and process every proc whose variant chain begins with
-/// `template(once)|...`. Mutates ProcDecl.body and ProcDecl.target in place.
-/// Also runs the per-call template pass for bare `|template|...` procs:
+/// Run the per-call template pass: each invocation of a `[template]` proc
+/// gets its template body rendered with that call's captured args, the result
+/// stored on the flow's `inline_body` so the emitter inlines it instead of
+/// calling a handler. (The former `template(once)` per-decl variant and its
+/// variant-slot spelling are gone with the ruling.)
 /// each invocation site gets its template body rendered with that call's
 /// captured args, the result stored on the flow's `inline_body` so the
 /// emitter inlines it instead of calling a handler.
@@ -506,19 +501,9 @@ pub fn processTemplateProcs(
     build_lang: []const u8,
 ) !void {
     const items = @constCast(program.items);
-    try processItems(items, allocator);
     try processPerCallInvocations(items, items, build_lang, allocator);
 }
 
-fn processItems(items: []ast.Item, allocator: std.mem.Allocator) !void {
-    for (items) |*item| {
-        switch (item.*) {
-            .proc_decl => |*pd| try processProc(pd, allocator),
-            .module_decl => |*md| try processItems(@constCast(md.items), allocator),
-            else => {},
-        }
-    }
-}
 
 /// Walk all flows, rendering per-call templates at the invocation site.
 /// `all_items` is the full program root (for cross-module proc lookup);
@@ -575,7 +560,7 @@ fn processPerCallInvocations(
 /// compiler otherwise.
 ///
 /// A third target reaching here is walled upstream: a render only happens after
-/// selectPerCallTemplateProc found a `<name>|template|<build_lang>` proc, and
+/// selectPerCallTemplateProc found a `~[template]proc <name>|<build_lang>` proc, and
 /// only `zig` and `js` declare any — KORU121 refuses every other lang first.
 const HostLang = enum {
     zig,
@@ -740,7 +725,7 @@ fn buildCondBinds(
     return buf.toOwnedSlice(allocator);
 }
 
-/// Render a bare `|template|` proc for one invocation, returning the rendered
+/// Render a `[template]` proc for one invocation, returning the rendered
 /// inline_body (with the inline_stmt marker), or null if the invocation doesn't
 /// resolve to a per-call template proc. Shared by top-level flows and nested
 /// continuations so inline-template lowering works at every depth.
@@ -756,7 +741,7 @@ fn renderTemplateInvocation(
     // The per-call inline render happens UPSTREAM of the emitter's variant pick
     // (the template is spliced inline, not left as a surviving proc), so the
     // selection of `|zig` vs `|js` must happen HERE, keyed on the build language.
-    // selectPerCallTemplateProc returns the bare-`|template|<build_lang>` proc,
+    // selectPerCallTemplateProc returns the `~[template]proc <name>|<build_lang>` proc,
     // or null if the invocation isn't a per-call template at all. A missing
     // lang variant for an event that DOES have a per-call template is a loud
     // compile error (never a silent fall-through to the `|zig` body on a JS
@@ -814,7 +799,7 @@ fn renderTemplateInvocation(
     // consumer. See buildCondBinds for why this is hoisted and deduped.
     //
     // ONE key, rendered in the BUILD language — not a `binds`/`binds_js` pair.
-    // The two `cond|template|<lang>` variants share every structural decision
+    // The two `[template]` cond variants share every structural decision
     // (which arms bind, dedup by name, hoisting ahead of the cascade); only the
     // declaration syntax differs, and that is what HostLang selects. A second
     // context key would have let the next person improve one host's binder and
@@ -953,7 +938,7 @@ fn renderTemplateInvocation(
 
     // Prepend the `inline_stmt` marker so the emitter knows the rendered body is
     // statement-shaped (no trailing `;`). NOTE: we do NOT blank `proc.body` —
-    // the emitter stubs `|template|` handlers (`unreachable`), and blanking
+    // the emitter stubs `[template]` handlers (`unreachable`), and blanking
     // would corrupt rendering for any *second* invocation of the same template.
     const inline_marker = "//@koru:inline_stmt\n";
     return try std.fmt.allocPrint(allocator, "{s}{s}", .{ inline_marker, rendered });
@@ -1139,43 +1124,43 @@ fn findEventDeclByLastSegment(items: []ast.Item, path: *const ast.DottedPath) ?*
     return null;
 }
 
-/// The build-language variant of a bare `|template|<lang>` proc, e.g. `zig`
-/// for `for|template|zig` or `js` for `for|template|js`. Returns null if the
-/// proc is not a bare per-call template (no `template` tag, OR `template(once)`
-/// per-decl, OR a `template|` with no trailing lang segment).
+/// Is this proc a `[template]`? The declaration kind lives in the bracket —
+/// never in the variant slot (ruling 2026-08-16).
+fn isTemplateProc(proc: *const ast.ProcDecl) bool {
+    for (proc.annotations) |ann| {
+        if (std.mem.eql(u8, ann, TEMPLATE_ANNOTATION)) return true;
+    }
+    return false;
+}
+
+/// The build-language variant of a `[template]` proc, e.g. `zig` for
+/// `~[template]proc for|zig` or `js` for `~[template]proc for|js`. Returns
+/// null unless the proc is a template with an explicit `|lang` target (the
+/// old variant-slot spelling required the lang segment too — that stays).
 fn perCallTemplateLang(proc: *const ast.ProcDecl) ?[]const u8 {
+    if (!isTemplateProc(proc)) return null;
     const target = proc.target orelse return null;
-    const first_sep = firstTagEnd(target);
-    const parts = parseTag(target[0..first_sep]);
-    if (!std.mem.eql(u8, parts.name, TEMPLATE_TAG)) return null;
-    if (parts.args.len != 0) return null; // `template(once)` is per-decl, not per-call.
-    if (first_sep >= target.len) return null; // bare `template` with no lang segment.
-    // Lang is the segment immediately after `template|`, up to the next `|`.
-    const rest = target[first_sep + 1 ..];
-    const lang_end = firstTagEnd(rest);
-    const lang = parseTag(rest[0..lang_end]).name;
+    const lang = parseTag(target[0..firstTagEnd(target)]).name;
     if (lang.len == 0) return null;
     return lang;
 }
-
 /// Surface a missing-target-variant as a fantastic, located Koru diagnostic
 /// (KORU121), then fail the compile. This is the loud failure that replaces the
 /// old silent `|zig`-body leak onto a non-Zig target: a per-call template
 /// construct (`~for`, `~if`, …) was invoked on a `--lang=<build_lang>` build,
-/// but the construct only declares `<event>|template|<other-lang>` variants.
+/// but the construct only declares `~[template]proc <event>|<other-lang>`.
 fn emitMissingVariantAndExit(
     location: errors.SourceLocation,
     event_name: []const u8,
     build_lang: []const u8,
 ) noreturn {
     std.debug.print(
-        \\error[{s}]: control-flow construct `~{s}` has no `|template|{s}` variant for the `--lang={s}` build
+        \\error[{s}]: control-flow construct `~{s}` has no `[template] proc {s}` for the `--lang={s}` build
         \\  --> {s}:{d}:{d}
         \\  `~{s}` is a per-call template: its body is spliced inline at the call
-        \\  site BEFORE the emitter picks a target, so the variant must be chosen
-        \\  here, by build language. This build is `{s}`, but `{s}|template|{s}`
-        \\  is not declared.
-        \\  fix: add `~proc {s}|template|{s} {{ ... }}` next to the existing
+        \\  site BEFORE the emitter picks a target, so the body must be chosen
+        \\  here, by build language. This build is `{s}`, but `~[template]proc {s}|{s}` is not declared.
+        \\  fix: add `~[template]proc {s}|{s} {{ ... }}` next to the existing
         \\  variants in the construct's source (e.g. koru_std/control.kz), emitting
         \\  a {s}-native body.
         \\
@@ -1293,81 +1278,6 @@ fn parseTag(tag: []const u8) TagParts {
     return .{ .name = tag, .args = "" };
 }
 
-fn processProc(pd: *ast.ProcDecl, allocator: std.mem.Allocator) !void {
-    const target = pd.target orelse return;
-
-    const first_sep = firstTagEnd(target);
-    const first_tag = target[0..first_sep];
-    const parts = parseTag(first_tag);
-
-    if (!std.mem.eql(u8, parts.name, TEMPLATE_TAG)) return;
-
-    // Bare `template` (no args) = per-call mode. Handled by
-    // processPerCallInvocations later; skip here.
-    if (parts.args.len == 0) return;
-
-    if (!std.mem.eql(u8, parts.args, ONCE_MODE)) {
-        std.debug.panic(
-            "Unknown template mode '({s})' on proc '{s}'. " ++
-                "Supported: |template(once)|...",
-            .{ parts.args, first_tag },
-        );
-    }
-
-    // Build Liquid context. First-cut data: the proc's PATH segments are
-    // available as `{{ proc_name }}`. Future extensions: input field names
-    // (from the matching event_decl), types, annotation flags, comptime
-    // values from the call site.
-    var ctx = liquid.Context.init(allocator);
-    defer ctx.deinit();
-
-    var proc_name_buf: [256]u8 = undefined;
-    var name_len: usize = 0;
-    for (pd.path.segments, 0..) |seg, i| {
-        if (i > 0 and name_len < proc_name_buf.len) {
-            proc_name_buf[name_len] = '.';
-            name_len += 1;
-        }
-        const remaining = proc_name_buf.len -| name_len;
-        const copy_len = @min(seg.len, remaining);
-        @memcpy(proc_name_buf[name_len .. name_len + copy_len], seg[0..copy_len]);
-        name_len += copy_len;
-    }
-    const proc_name = try allocator.dupe(u8, proc_name_buf[0..name_len]);
-    // Leak — context only outlives the render call.
-    try ctx.put("proc_name", .{ .string = proc_name });
-
-    var comp_err: ?[]const u8 = null;
-    const rendered = liquid.renderCollectDiag(allocator, pd.body.text, &ctx, &comp_err) catch |err| {
-        if (err == error.CompError) {
-            emitCompErrorAndExit(pd.location, comp_err orelse "template comp error");
-        }
-        if (err == error.InvalidIfCondition) {
-            emitInvalidConditionAndExit(pd.location, comp_err orelse "");
-        }
-        return err;
-    };
-
-    // Replace body text with rendered output, preserving the Source's
-    // location/scope/phantom_type provenance. NOTE: do NOT free the old slice —
-    // the backend's AST lives in program_ast.zig as a static const value
-    // and isn't allocator-owned. Leak is acceptable here (one-shot compile).
-    pd.body.text = rendered;
-
-    // Strip the `template|` prefix from the variant chain. Same ownership
-    // caveat — don't free the old target slice.
-    if (first_sep == target.len) {
-        pd.target = null;
-    } else {
-        const remaining = target[first_sep + 1 ..];
-        const new_target = try allocator.dupe(u8, remaining);
-        pd.target = new_target;
-    }
-
-    log.debug("[TEMPLATE] processed proc body, new target: {s}\n", .{
-        if (pd.target) |t| t else "<none>",
-    });
-}
 
 test "parse_fields: splits brace-optional, comma/newline-separated field lists" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

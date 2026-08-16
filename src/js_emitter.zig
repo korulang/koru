@@ -438,6 +438,12 @@ const Emitter = struct {
             // no-JS-implementation refusal — which is the honest answer for a
             // compile-time construct that is already gone by runtime.
             if (annotation_parser.hasPart(proc.annotations, "transform")) continue;
+            // A `[template]` proc has no runtime body either: it is rendered
+            // per-invocation at call sites (Stage C) and this decl-site handler
+            // is a throw-stub. Under the old `|template|js` spelling the target
+            // never equaled "js" exactly, so the default selection skipped it by
+            // accident; the `[template]` annotation makes the skip explicit.
+            if (annotation_parser.hasPart(proc.annotations, "template")) continue;
             return proc;
         }
         return null;
@@ -530,8 +536,7 @@ const Emitter = struct {
             if (item.* != .proc_decl) continue;
             const proc = &item.proc_decl;
             if (!pathsEqual(&proc.path, event_path)) continue;
-            const target = proc.target orelse continue;
-            if (templateProcTargetsJs(target)) return .{ .template_stub = proc };
+            if (templateProcTargetsJs(proc)) return .{ .template_stub = proc };
         }
 
         return null;
@@ -2868,28 +2873,21 @@ const Emitter = struct {
     }
 };
 
-/// Does this proc target string name a `|template|` proc that applies to the JS
-/// build? The first `|`-segment names the mechanism (`template`, or
-/// `template(<arg>)`); a later segment, when present, names the HOST. So:
-///
-///   `template`         → target-agnostic, applies everywhere
-///   `template|js`      → ours
-///   `template|zig`     → the other target's; NOT ours, so a JS build with only
-///                        this variant still has no body and says so
-///
-/// The mechanism-name test mirrors visitor_emitter.zig:3730.
-fn templateProcTargetsJs(target: []const u8) bool {
-    var it = std.mem.splitScalar(u8, target, '|');
-    const mechanism = it.next() orelse return false;
-    if (!std.mem.eql(u8, mechanism, "template") and
-        !std.mem.startsWith(u8, mechanism, "template(")) return false;
-
-    var saw_host = false;
-    while (it.next()) |seg| {
-        saw_host = true;
-        if (std.mem.eql(u8, seg, JS_TARGET)) return true;
+/// Does this proc declare `[template]` (ANNOTATION — the kind never lives in
+/// the variant slot; ruling 2026-08-16) and apply to the JS build? A null
+/// target is target-agnostic (applies everywhere), `|js` is ours, `|zig` is
+/// not — a JS build with only the zig body still has no body and says so.
+fn templateProcTargetsJs(proc: *const ast.ProcDecl) bool {
+    var annotated = false;
+    for (proc.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "template")) {
+            annotated = true;
+            break;
+        }
     }
-    return !saw_host;
+    if (!annotated) return false;
+    const target = proc.target orelse return true;
+    return std.mem.eql(u8, target, JS_TARGET);
 }
 
 /// Strip the leading `//@koru:inline_stmt\n` marker that template_processor

@@ -23,7 +23,7 @@ const std = @import("std");
 
 ~[expand]pub tor shout { expr: ?Expression }
 
-~proc shout|template|zig {
+~[template]proc shout|zig {
 {% if expr %}std.debug.print("{s}\n", .{ {{ expr }} });{% else %}std.debug.print("silent\n", .{});{% endif %}
 }
 
@@ -32,7 +32,7 @@ const std = @import("std");
 // apart. Presence is decided by the engine, so both variants take the same arm;
 // `{{ expr }}` splices the captured text, which here is a quoted string literal
 // and needs no per-host translation.
-~proc shout|template|js {
+~[template]proc shout|js {
 {% if expr %}console.log({{ expr }});{% else %}console.log("silent");{% endif %}
 }
 

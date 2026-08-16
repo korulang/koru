@@ -14,7 +14,7 @@
 ! each usize
 | done
 
-~proc probe|template|zig {
+~[template]proc probe|zig {
     for (0..{{ n }}) |__i| {
         {% for h in effects["each"] %}
         {% if h.guard %}if ({{ h.guard }}) {% endif %}{{ h.link }}(__i);

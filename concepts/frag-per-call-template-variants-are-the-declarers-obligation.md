@@ -8,20 +8,20 @@ tags: [js-parity, templates, per-call, corpus]
 
 # A per-call template's target variants are an obligation on WHOEVER DECLARES the construct — the stdlib is only the most visible declarer (belief)
 
-A per-call template (`~proc <name>|template|<lang>`) is spliced inline at the
+A per-call template (`~[template]proc <name>|<lang>`) is spliced inline at the
 call site, **upstream of the emitter's variant pick**. That is why
 `selectPerCallTemplateProc` must choose by BUILD LANGUAGE rather than let the
-emitter choose later, and why a construct with no `|template|<build_lang>`
-sibling is KORU121 rather than a silent `|zig`-body leak onto a JS target.
+emitter choose later, and why a construct with no `[template]` proc for the
+build lang is KORU121 rather than a silent `|zig`-body leak onto a JS target.
 
 The consequence nobody had drawn: **the set of per-call template constructs a
 program uses is not bounded by koru_std.** Any `.kz` file may declare one, and
 each declaration carries a per-target obligation that only its own author can
 discharge — the body is opaque host text, so no compiler pass can translate
 `std.debug.print("n={{ n }}\n", .{})` into a `console.log`. KORU121's own
-fix-hint says exactly this and says it in the right place: *"add `~proc
-<name>|template|<lang>` next to the existing variants in the construct's
-source"*. For a construct declared in a test, the construct's source **is the
+fix-hint says exactly this and says it in the right place: *"add
+`~[template]proc <name>|<lang>` next to the existing variants in the
+construct's source"*. For a construct declared in a test, the construct's source **is the
 test**.
 
 Cluster `D_template_variant` was scoped as one gap — sixteen tests, one missing
@@ -106,3 +106,13 @@ lowering or be **retired** in favour of `inlined_link[scope]`. Zero library
 consumers argues for retiring it and rewriting the three engine tests. Nobody has
 asked what the isolated-fn flavour buys that the splice flavour does not, which
 is the question that decides it.
+
+## The spelling move (2026-08-16, docs/TEMPLATE_SPELLING.md)
+
+The `|template|` VARIANT spelling was a category error — a declaration KIND
+lives in the bracket, the bar means "which build/impl" only. The construct is
+now `~[template]proc <name>|<lang>`. The belief here is untouched: the
+per-target obligation on the declarer, the upstream build-language selection,
+and KORU121 all survive verbatim — only the surface being spelled changed.
+The `|template(once)|` per-decl mode had zero users anywhere and was removed
+with its three regression pins rather than re-spelled.

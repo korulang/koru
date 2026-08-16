@@ -9,7 +9,7 @@
 ~pub tor loop { r: i32 }
 ! each usize
 
-~proc loop|template|zig {
+~[template]proc loop|zig {
     for ({{ r }}) |item| {
         each(item);
     }
@@ -30,7 +30,7 @@
 // emitter emits no such alias, so the marker IS the JS spelling of "call the
 // handler here" — again what `for|template|js` uses. What is pinned is the
 // templated iterable either way; the handler call is the machinery around it.
-~proc loop|template|js {
+~[template]proc loop|js {
     {% const __r = parse_range(r) %}{% if __r.is_range %}for (let item = {{ __r.lo }}; item < {{ __r.hi }}; item++) {% else %}for (const item of {{ r }}) {% endif %}{
         {% for h in effects["each"] %}{{ h.inlined_link[scope] }}(item);
         {% endfor %}

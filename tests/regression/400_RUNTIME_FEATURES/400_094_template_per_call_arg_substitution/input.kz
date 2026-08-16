@@ -8,7 +8,7 @@ const std = @import("std");
 
 ~pub tor count-to { n: i32 }
 
-~proc count-to|template|zig {
+~[template]proc count-to|zig {
     var i: i32 = 0;
     while (i < {{ n }}) : (i += 1) {
         std.debug.print("{d}\n", .{i});
@@ -19,7 +19,7 @@ const std = @import("std");
 // loop bound, which is what makes macro-shaped events possible. The Zig half
 // spells the loop `while (i < n) : (i += 1)`; the JS half is a counting `for`,
 // the form that hands the engine a known trip count.
-~proc count-to|template|js {
+~[template]proc count-to|js {
     for (let i = 0; i < {{ n }}; i++) {
         console.log(i);
     }

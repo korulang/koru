@@ -4935,7 +4935,7 @@ pub fn emitInlineBodyNode(
     if (inline_is_statement or only_void_continuations) {
         // Effect-branch template pump: when the invoked event declares `!`
         // effect branches, the template body (inline_code) references the
-        // effect symbols by name — e.g. a `|template|zig` `for` loop body
+        // effect symbols by name — e.g. a `~[template]proc for|zig` loop body
         // that calls `each(item)`. Unlike a plain `|zig` proc (whose body
         // lives inside the event handler, where `const each = __H.each`
         // aliases resolve), a template body is substituted directly into

@@ -11,7 +11,7 @@
 
 ~pub tor probe-bad { n: usize }
 
-~proc probe-bad|template|zig {
+~[template]proc probe-bad|zig {
     {% if n and n %}@import("std").debug.print("never\n", .{});{% endif %}
 }
 

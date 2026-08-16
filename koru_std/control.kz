@@ -19,7 +19,7 @@ const std = @import("std");
 //         | else |> ...      // optional: runs when cond is false
 //
 // ARCHITECTURE:
-// - if is a |template|zig proc, NOT a dedicated AST node (no ConditionalNode).
+// - `if` is a `[template]` proc, NOT a dedicated AST node (no ConditionalNode).
 //   The body is a literal Zig if/else. `then` / `else` are TERMINAL
 //   continuations, CONTINUED by the template via `{{ continuations["X"].continue }}`
 //   — the same producer→consumer dispatch every branched event uses. Where
@@ -32,7 +32,7 @@ const std = @import("std");
 | ?then
 | ?else
 
-~proc if|template|zig {
+~[template]proc if|zig {
     if ({{ expr }}) {
         {{ continuations["then"].continue }}
     } else {
@@ -47,7 +47,7 @@ const std = @import("std");
 // not a Zig-body leak that happened to also be valid JS. The
 // `__koru_continue_N` markers it mints are resolved by js_emitter's
 // emitInlineBodyResolvingContinuations.
-~proc if|template|js {
+~[template]proc if|js {
     if ({{ expr }}) {
         {{ continuations["then"].continue }}
     } else {
@@ -64,7 +64,7 @@ const std = @import("std");
 //         | c _ -> <default>              // guardless catch-all (the else)
 //
 // ARCHITECTURE:
-// - cond is a |template|zig proc, like if. `| c *` is a single VARIADIC
+// - `cond` is a `[template]` proc, like `if`. `| c *` is a single VARIADIC
 //   terminal branch — the wildcard `*` legalizes the lone declaration (parser
 //   single-branch exemption) and marks it as filled by N guarded arms at the
 //   use site. The template renders continuations["c"] as ONE `if / else if /
@@ -85,7 +85,7 @@ const std = @import("std");
 ~[keyword]pub tor cond { expr: Expression }
 | c *
 
-~proc cond|template|zig {
+~[template]proc cond|zig {
     {{ binds }}
     {% for arm in continuations["c"] %}{% if arm.guard != "" %}if ({{ arm.guard }}) {
         {{ arm.continue[unguarded] }}
@@ -102,7 +102,7 @@ const std = @import("std");
 // shared, not re-derived. `arm.continue[unguarded]` mints the same
 // `__koru_continue_bare_N` marker the Zig path uses; js_emitter resolves it via
 // emitInlineBodyResolvingContinuations (mirroring the Zig
-// emitInlineCodeResolvingSplices), exactly as if|template|js does.
+// emitInlineCodeResolvingSplices), exactly as `~[template]proc if|js` does.
 //
 // The ONE divergence is `{{ binds }}`, and it is not in this file: the binder
 // preamble is host DECLARATION syntax (`const v = <scrutinee>;`), so
@@ -112,7 +112,7 @@ const std = @import("std");
 // an unused const is legal there and `_ = &v;` does not parse. Keeping it one
 // key means a future improvement to which arms bind lands on both targets at
 // once.
-~proc cond|template|js {
+~[template]proc cond|js {
     {{ binds }}
     {% for arm in continuations["c"] %}{% if arm.guard != "" %}if ({{ arm.guard }}) {
         {{ arm.continue[unguarded] }}
@@ -130,7 +130,7 @@ const std = @import("std");
 //         | done |> finalize()        // optional: runs once after the loop
 //
 // ARCHITECTURE:
-// - for is a |template|zig proc, NOT a dedicated AST node. The body is a
+// - `for` is a `[template]` proc, NOT a dedicated AST node. The body is a
 //   literal Zig `for`; each `! each` effect handler is called inside it
 //   (guarded by its `when`, if any). The optional `| done` terminal is RETURNED
 //   via `{{ continuations["done"].continue }}` — the producer→consumer dispatch,
@@ -159,7 +159,7 @@ const std = @import("std");
 ! each *
 | ?done
 
-~proc for|template|zig {
+~[template]proc for|zig {
     for ({{ expr }}) |__koru_item| {
         {% if keep != "" %}if (!({{ keep }})) break;
         {% endif %}{% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);
@@ -187,7 +187,7 @@ const std = @import("std");
 // translator (array literals, `@builtins`, …) is the deferred follow-up
 // (docs/PARSER_PALETTE.md §8.4); for now JS `for` supports ranges + JS-shaped
 // iterables.
-~proc for|template|js {
+~[template]proc for|js {
     {% const __koru_range = parse_range(expr) %}{% if __koru_range.is_range %}for (let __koru_item = {{ __koru_range.lo }}; __koru_item < {{ __koru_range.hi }}; __koru_item++) {% else %}for (const __koru_item of {{ expr }}) {% endif %}{
         {% if keep != "" %}if (!({{ keep }})) break;
         {% endif %}{% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);

@@ -11,7 +11,7 @@
 
 ~pub tor probe-cmp { n: usize }
 
-~proc probe-cmp|template|zig {
+~[template]proc probe-cmp|zig {
     {% if n == "3" %}@import("std").debug.print("eq-match\n", .{});{% endif %}
     {% if n == "4" %}@import("std").debug.print("eq-nonmatch\n", .{});{% endif %}
     {% if n != "" %}@import("std").debug.print("ne-bound\n", .{});{% endif %}
@@ -22,7 +22,7 @@
 // fire is decided entirely by the engine (bound vs missing key, `==` vs `!=`),
 // so the two variants MUST select the same four; the host text is only what the
 // selected cells print. `console.log` supplies the trailing newline.
-~proc probe-cmp|template|js {
+~[template]proc probe-cmp|js {
     {% if n == "3" %}console.log("eq-match");{% endif %}
     {% if n == "4" %}console.log("eq-nonmatch");{% endif %}
     {% if n != "" %}console.log("ne-bound");{% endif %}

@@ -8,7 +8,7 @@
 ~pub tor probe2 { n: usize }
 ! each usize
 
-~proc probe2|template|zig {
+~[template]proc probe2|zig {
     {% if continuations["done"] %}{% else %}{% comp error %}probe2 requires a `done` branch{% endcomp %}{% endif %}
     for (0..{{ n }}) |__i| {
         {% for h in effects["each"] %}

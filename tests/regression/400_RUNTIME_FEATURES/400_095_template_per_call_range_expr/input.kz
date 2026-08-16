@@ -8,7 +8,7 @@ const std = @import("std");
 
 ~pub tor each-in { r: i32 }
 
-~proc each-in|template|zig {
+~[template]proc each-in|zig {
     for ({{ r }}) |item| std.debug.print("{d}\n", .{item});
 }
 
@@ -19,7 +19,7 @@ const std = @import("std");
 // a range lowers to a counting loop, anything else flows through as `for…of`.
 // Identical treatment to koru_std's own `for|template|js` — one filter, one
 // classification, both consumers.
-~proc each-in|template|js {
+~[template]proc each-in|js {
 {% const __r = parse_range(r) %}{% if __r.is_range %}for (let item = {{ __r.lo }}; item < {{ __r.hi }}; item++) console.log(item);{% else %}for (const item of {{ r }}) console.log(item);{% endif %}
 }
 

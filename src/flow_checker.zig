@@ -545,7 +545,7 @@ pub const FlowChecker = struct {
         // BUT ONLY for a genuine quoting proc: the text is captured verbatim
         // and handed to a normal proc as inert []const u8 DATA, never executed
         // in this flow (210_036/210_046 pin that verbatim-capture contract).
-        // A `|template|` proc is different in kind: its Expression field's
+        // A `[template]` proc is different in kind: its Expression field's
         // text is SPLICED VERBATIM INTO THE EMITTED CODE and DOES execute
         // there (if/for's zero-overhead `expr` condition — control.kz). A call
         // hiding in that text is exactly as illegal as one in a nested
@@ -875,22 +875,23 @@ pub const FlowChecker = struct {
         return self.invocationResolvesToTemplateProc(&inv.path);
     }
 
-    /// True if `path` resolves to a proc whose variant chain begins with
-    /// `template` (`|template|zig`, `|template(once)|js`, …). The proc body is a
-    /// template rendered in a later pass, so any binding it consumes is not yet
-    /// visible to the frontend unused-binding check. Matches on the path's last
-    /// segment — sufficient for the single-module programs this guards.
+    /// True if `path` resolves to a proc carrying the `[template]` ANNOTATION
+    /// (the declaration kind lives in the bracket, never the variant slot —
+    /// ruling 2026-08-16). The proc body is a template rendered in a later
+    /// pass, so any binding it consumes is not yet visible to the frontend
+    /// unused-binding check. Matches on the path's last segment — sufficient
+    /// for the single-module programs this guards.
     fn invocationResolvesToTemplateProc(self: *FlowChecker, path: *const ast.DottedPath) bool {
         const items = self.ast_items orelse return false;
         if (path.segments.len == 0) return false;
         const target_name = path.segments[path.segments.len - 1];
 
-        const isTemplateTarget = struct {
-            fn check(target: ?[]const u8) bool {
-                const t = target orelse return false;
-                if (!std.mem.startsWith(u8, t, "template")) return false;
-                // Must be the whole first tag: `template` then `|`, `(`, or end.
-                return t.len == "template".len or t["template".len] == '|' or t["template".len] == '(';
+        const isTemplateProc = struct {
+            fn check(pd: *const ast.ProcDecl) bool {
+                for (pd.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "template")) return true;
+                }
+                return false;
             }
         }.check;
 
@@ -901,7 +902,7 @@ pub const FlowChecker = struct {
                         .proc_decl => |*pd| {
                             if (pd.path.segments.len == 0) continue;
                             const pd_name = pd.path.segments[pd.path.segments.len - 1];
-                            if (std.mem.eql(u8, pd_name, name) and isTmpl(pd.target)) return true;
+                            if (std.mem.eql(u8, pd_name, name) and isTmpl(pd)) return true;
                         },
                         .module_decl => |*md| {
                             if (check(md.items, name, isTmpl)) return true;
@@ -913,7 +914,7 @@ pub const FlowChecker = struct {
             }
         }.check;
 
-        return matchProc(items, target_name, isTemplateTarget);
+        return matchProc(items, target_name, isTemplateProc);
     }
 
     /// Check if a flow's top-level invocation is a transform event (like ~tap)
