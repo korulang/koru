@@ -119,3 +119,38 @@ reverse.
 - Ours: `koru_std/bridge.kz` `create`/`run`/`define`/`vocabulary`/`close`;
   `koru_std/interpreter.kz:1733` `dischargeAllHandles`.
 - First Pull date: 2026-08-16.
+## R5-R7 phase (2026-08-16, worktree branch gauntlet/r567)
+
+**`EX-005-RESOLUTION` — transitive chain releases leaf-first.**
+Pinned by `440_014_transitive_chain` (file → q1 → q2; release q2, q1, file).
+Falsified by the pre-R1 flat shape: forward acquisition order releases the
+file under its live chain — red. A second falsification (single-pass reverse)
+had NO bite: LIFO + in-pass marking unblocks each provider within the same
+pass. The re-scan is retry logic, not depth propagation.
+
+**`EX-006-RESOLUTION` — the diamond is not a distinct theorem.**
+The two-dependents-on-one-provider shape releases correctly with the guard
+DELETED entirely — pure LIFO carries it, both dependents being leaves. The
+diamond is R2 restated with two leaves, not a new property. Recorded as a
+finding; no separate pin manufactured.
+Attempted failed-teardown pin abandoned: a discharge dispatch that errors is
+not expressible through a void discharge signature (the only honest proc
+return), and no runtime panic idiom exists for the tester. The guard's
+load-bearing case is unreachable in the current surface.
+
+**`EX-007-RESOLUTION` — dual provider: both edges outlive the dependent.**
+Pinned by `440_015_dual_provider` (merge over a.txt + b.txt mints one handle
+depending on both; release merged, then both files).
+Falsified attempts: first-dep-only guard — NO bite (LIFO reaches the
+dual-dependent first and in-pass marking clears both edges). Again LIFO.
+
+**META-FINDING (the phase's real result):** LIFO release + in-pass discharge
+marking makes ordered release structurally correct for ANY acyclic dependency
+set. The dependency guard is redundant given LIFO: it earned its keep when
+release was FIFO (post-R1), and R2's LIFO flip made it defense-in-depth that
+no reachable shape can turn red. Even 440_010 (R1) is LIFO-carried — its
+falsification flipped to forward-order, never consulted the guard.
+Implication for the gauntlet: three candidate theorems (chain, diamond,
+dual-provider) reduce to ONE mechanism (LIFO) plus retry logic. The paper's
+ordering theorems, mirrored on this pool, are satisfied by R2's one-line flip
+void. Guard is a belt that never has to fire.

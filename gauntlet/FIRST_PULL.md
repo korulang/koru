@@ -103,3 +103,13 @@ which is exactly what the paper's invariant says it must not be. Cluster
 closer calibrated at can't-tell=100% on withdrawal-ordering. Rung-1 self-oracle
 (path to a wall) exists on KOPIUM's own seam: LIFO-recovery exactness and
 close-panics-on-strand are already bool/byte properties `invariants/` can hold.
+## ROUNDS FIVE-SEVEN — the LIFO convergence (2026-08-16, worktree)
+
+Three candidate theorems, one mechanism. Chain, diamond, and dual-provider
+shapes all release correctly — and all three falsification attempts (single
+pass, guard deleted, first-dep-only) had NO bite, because LIFO + in-pass
+marking makes ordered release structurally correct for any acyclic set. The
+diamond is R2 restated with two leaves; the guard is defense-in-depth that
+cannot be turned red after R2's LIFO flip. The catch: 440_014 + 440_015 pin
+the shapes (regression value), EX-005/006/007 record the discovery — the
+gauntlet's ordering theorems on this pool are carried by R2's one line.

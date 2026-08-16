@@ -1,0 +1,12 @@
+--- bridge open
+  open a: held=1
+  open b: held=2
+  merge: held=3
+--- hang up; merged first, both providers after, never under it
+close-merge() ran for 'merged_1'
+[BRIDGE] Invoked 'close-merge' for handle 'merged_1' [app.session:merge]
+close-file() ran for 'b.txt'
+[BRIDGE] Invoked 'close-file' for handle 'b.txt' [app.session:open]
+close-file() ran for 'a.txt'
+[BRIDGE] Invoked 'close-file' for handle 'a.txt' [app.session:open]
+--- done

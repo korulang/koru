@@ -1,0 +1,44 @@
+// R7 session — one handle depending on TWO providers.
+//
+// merge takes two held handles and mints a third that depends on both.
+// At hang-up the merged handle must release before EITHER provider: a
+// provider may not withdraw while a handle that depends on it is still
+// held, and this handle depends on both files.
+
+~import std/runtime
+
+const std = @import("std");
+
+~pub tor open { path: string } -> string<open!>
+
+~proc open|zig {
+    _ = path;
+    return path;
+}
+
+~pub tor merge { left: string, right: string } -> string<merge!>
+
+~proc merge|zig {
+    _ = left;
+    _ = right;
+    return "merged_1";
+}
+
+~pub tor close-file { handle: string<!open> }
+
+~proc close-file|zig {
+    std.debug.print("close-file() ran for '{s}'\n", .{handle});
+}
+
+~pub tor close-merge { handle: string<!merge> }
+
+~proc close-merge|zig {
+    std.debug.print("close-merge() ran for '{s}'\n", .{handle});
+}
+
+~std/runtime:register(scope: "files") {
+    open(10)
+    merge(10)
+    close-file(1)
+    close-merge(1)
+}
