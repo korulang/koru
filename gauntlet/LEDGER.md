@@ -28,6 +28,35 @@ names the capacity to build (guarded withdrawal), it is not a reason to stop.
 
 ## Considered
 
+**`EX-003-RESOLUTION` — re-resolution is a memory bug, not a feature gap.
+Landed 2026-08-16.**
+Status: CLOSED (the third rung found the property already "worked" — by
+arena-reuse luck).
+The spatial rung: a DEFINED FLOW is a provider of a verb; when the agent
+redefines it, the next dispatch must resolve against the NEW body —
+Cordis's notify cascade (provider replaced → dependents re-resolve,
+Theorem 63/64) in the REPL's own mechanism.
+The finding: redefinition only appeared to work. `DefinedFlows` stored
+name/params/body as pointers into the interpreter's per-call thread arena,
+which resets on every interpreter call and clobbers the stored bytes — a
+probe read the stored key as `'xt)sh'`. `define` never truly replaced; it
+re-hit the same offsets by luck.
+The fix: `DefinedFlows` owns its memory — dupes key/name/params/types/body
+into its own session allocator, fetchRemoves + frees the previous entry on
+redefine, and deinit frees everything it owns.
+- Pinned by `440_012_redefine_resolves` (define → shout → redefine →
+  shout must see the NEW body).
+- Falsified twice in a clean worktree (at fabadd8f; the working tree
+  carried a concurrent uncommitted `transform_pass_runner.zig` edit —
+  another session's, not ours): (1) pre-fix, the stored key reads
+  clobbered arena garbage; (2) with owned memory + stale-first-wins, the
+  test fails on the stale `echo:hi` body. With the fix, 12/12 bridge
+  cluster green.
+- The rung's shape refined: the paper's theorems are discovery engines
+  for our BUGS as well as our features — the oracle named a property that
+  was already "true", and proving the test caught its opposite surfaced
+  the dangling pointers underneath.
+
 **`EX-002-RESOLUTION` — LIFO release order landed 2026-08-16.**
 Status: CLOSED (probe discharged).
 `dischargeAllHandles` walks the pool in REVERSE acquisition order among

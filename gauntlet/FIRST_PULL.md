@@ -58,6 +58,18 @@ accumulator (`disposables.splice(0).reverse()`, Theorem 16). Pinned by
 `440_011_lifo_release_order`, falsified (forward iteration → red), guard
 still dominates. Bridge cluster 11/11.
 
+## ROUND THREE — the re-resolution rung (2026-08-16)
+
+The spatial half: a defined flow is a provider of a verb; redefining it
+must re-resolve the next dispatch (Cordis's notify cascade, Theorem
+63/64). The outcome was not a new capacity — it was a **memory bug
+behind an already-true surface**: the "durable" defined-flows table
+stored thread-arena pointers that the next interpreter call clobbers;
+redefinition only worked by arena-reuse coincidence (probe: stored key
+read as `'xt)sh'`). Fixed by making `DefinedFlows` own its memory.
+Pinned by `440_012_redefine_resolves`, falsified twice in a clean
+worktree, cluster 12/12.
+
 ## Why the reference is trustable as an oracle
 
 - It is a passing, version-controlled implementation (not prose or a benchmark
