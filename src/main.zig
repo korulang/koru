@@ -207,12 +207,22 @@ fn describeTerm(buf: []u8, term: std.process.Child.Term) []const u8 {
 /// is byte-reusable across user programs — its Design comment says so, and
 /// rebuilding it dominates every compile (~11.6s measured on a 512-flow
 /// store program; the transform passes themselves are ~0.4s). Cache the
-/// produced binary keyed on the compiler-side inputs' (path, size, mtime):
-/// a hit copies the cached backend and skips the zig build entirely. The
-/// cache is a SPEED optimization — any doubt (IO error, missing dir,
-/// zero files) disables it and the normal build runs; the key covers every
-/// file that can change the backend, so a stale binary cannot be served.
-fn backendCacheKey(allocator: std.mem.Allocator, koru_home: []const u8) ?[]const u8 {
+/// produced binary keyed on the compiler-side inputs' content: a hit copies
+/// the cached backend and skips the zig build entirely. The cache is a SPEED
+/// optimization — any doubt (IO error, missing dir, zero files) disables it
+/// and the normal build runs.
+///
+/// The key covers every file that can change the backend, INCLUDING the
+/// generated compiler_env.zig that the backend compilation unit embeds
+/// (CompilerEnv.lang, .library, flags): that file is written per invocation
+/// into the OUTPUT directory (not under koru_home), and the backend's build
+/// imports it via `b.path("compiler_env.zig")`. Before 2026-08-16 the key
+/// hashed only src/ + koru_std/, so a backend built with `--lang=js` was
+/// served to a later zig build under the same key — the cached binary carried
+/// the old lang baked into CompilerEnv and silently emitted JS for zig
+/// programs. Proof: `koruc input.k --lang=js` then `koruc input.k` with a
+/// shared cache produced output_emitted.js from the zig invocation.
+fn backendCacheKey(allocator: std.mem.Allocator, koru_home: []const u8, output_dir: []const u8) ?[]const u8 {
     var h = std.hash.Fnv1a_64.init();
     var count: usize = 0;
     const roots = [_][]const u8{ "src", "koru_std" };
@@ -239,6 +249,19 @@ fn backendCacheKey(allocator: std.mem.Allocator, koru_home: []const u8) ?[]const
             count += 1;
         }
     }
+    // The per-invocation CompilerEnv (lang, library, flags) is generated into
+    // output_dir and EMBEDDED into the backend by its build. It is the one
+    // compiler-side input the roots above cannot see — leaving it out of the
+    // key lets one --lang's backend serve another's run. FAIL LOUD: if the
+    // file is unreadable, disable the cache (return null) rather than risk a
+    // cross-invocation serve.
+    const env_path = std.fs.path.join(allocator, &[_][]const u8{ output_dir, "compiler_env.zig" }) catch return null;
+    defer allocator.free(env_path);
+    const env_contents = std.fs.cwd().readFileAlloc(allocator, env_path, 64 * 1024 * 1024) catch return null;
+    defer allocator.free(env_contents);
+    h.update("compiler_env.zig");
+    h.update(env_contents);
+    count += 1;
     if (count == 0) return null;
     return std.fmt.allocPrint(allocator, "{x}", .{h.final()}) catch null;
 }
@@ -7838,7 +7861,7 @@ pub fn main() !void {
         // skipped; on any doubt (IO error, missing inputs) we fall through to
         // the full build. The key covers every compiler-side input file.
         var backend_cached = false;
-        if (backendCacheKey(allocator, koru_lib_path)) |bkey| {
+        if (backendCacheKey(allocator, koru_lib_path, output_dir_for_build)) |bkey| {
             defer allocator.free(bkey);
             const cache_dir_path = backendCacheDir(allocator);
             defer allocator.free(cache_dir_path);
@@ -7898,7 +7921,7 @@ pub fn main() !void {
 
             // Store the freshly built backend into the cache so the next run
             // skips this build. Failure to store only costs a future rebuild.
-            if (backendCacheKey(allocator, koru_lib_path)) |bkey2| {
+            if (backendCacheKey(allocator, koru_lib_path, output_dir_for_build)) |bkey2| {
                 defer allocator.free(bkey2);
                 const cache_dir_path = backendCacheDir(allocator);
                 defer allocator.free(cache_dir_path);
