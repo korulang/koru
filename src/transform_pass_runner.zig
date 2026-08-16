@@ -814,57 +814,6 @@ const WalkResult = struct {
     program: *const Program, // Updated program (if found=true) or original (if found=false)
 };
 
-/// Per-pass snapshot of the program's `[expand]` event declarations.
-///
-/// The fixed point applies ONE transform per pass (walkOnce returns at the
-/// first match), so the program is immutable for the entire walk: every
-/// `handleExpandIfMatches` query in the pass answers from this list with
-/// identical results to the per-node whole-program scan it replaces — same
-/// program, same predicate, same program order, first match wins. Rebuilt at
-/// the top of EVERY pass, so this is not a cache over a mutating input: the
-/// list never outlives the snapshot it was built from, and a pass that has
-/// not applied a transform cannot have changed the set it was built from.
-///
-/// Measured 2026-08-16: the per-node scan was the ~44% hot spot of the
-/// 512-literal-store backend run (~20s), mostly the whole-program walk per
-/// un-transformed invocation with a 256-byte stack copy per candidate. The
-/// common case — zero `[expand]` decls — now costs an empty-list check.
-///
-/// `expand` is threaded BY VALUE (not `&expand`): taking the address of the
-/// local and passing a pointer down the deep self-recursive walk was observed
-/// (2026-08-16) to be corrupted to a code-segment address in one build layout,
-/// flipping 115_047_vendor_bindings_in_module to a deterministic failure.
-/// A 24-byte value copy per node visit is trivial next to the scan it replaces
-/// and cannot alias across recursion frames.
-fn buildExpandList(
-    allocator: std.mem.Allocator,
-    program: *const Program,
-) !std.ArrayList([]const []const u8) {
-    var list: std.ArrayList([]const []const u8) = .empty;
-    errdefer list.deinit(allocator);
-    for (program.items) |item| {
-        switch (item) {
-            .event_decl => |decl| {
-                if (annotation_parser.hasPart(decl.annotations, "expand")) {
-                    try list.append(allocator, decl.path.segments);
-                }
-            },
-            .module_decl => |module| {
-                for (module.items) |mod_item| {
-                    if (mod_item != .event_decl) continue;
-                    const decl = mod_item.event_decl;
-                    if (annotation_parser.hasPart(decl.annotations, "expand")) {
-                        try list.append(allocator, decl.path.segments);
-                    }
-                }
-            },
-            else => {},
-        }
-    }
-    return list;
-}
-
-
 /// Walk the AST once, applying the FIRST transform found and returning immediately
 fn walkOnce(
     program: *const Program,
@@ -872,14 +821,9 @@ fn walkOnce(
     allocator: std.mem.Allocator,
     ctx: ?*anyopaque,
 ) !WalkResult {
-    // Per-pass snapshot of the [expand] decl set (see ExpandIndex): the walk
-    // applies at most one transform, so this index is valid for every query
-    // in the pass by construction.
-    var expand = try buildExpandList(allocator, program);
-    defer expand.deinit(allocator);
     // Start from the program root
     const root = ASTNode{ .program = @constCast(program) };
-    return try walkNode(root, program, transforms, allocator, .none, ctx, expand);
+    return try walkNode(root, program, transforms, allocator, .none, ctx);
 }
 
 /// Compute the SitePosition each child of `node` should be walked with.
@@ -933,7 +877,6 @@ fn walkNode(
     allocator: std.mem.Allocator,
     position: SitePosition,
     ctx: ?*anyopaque,
-    expand: std.ArrayList([]const []const u8),
 ) anyerror!WalkResult {
     // Claimed-region transforms are checked BEFORE children on the nearest
     // lexical container that owns the invocation. This is the one place where
@@ -959,7 +902,7 @@ fn walkNode(
     defer allocator.free(children);
 
     for (children) |child| {
-        const result = try walkNode(child, program, transforms, allocator, childPosition(node, child, position), ctx, expand);
+        const result = try walkNode(child, program, transforms, allocator, childPosition(node, child, position), ctx);
         if (result.found) {
             return result; // Found deeper transform, use it
         }
@@ -968,10 +911,20 @@ fn walkNode(
     // Only check self if no deeper transforms found
     // Only invocations can be transforms
     if (node == .invocation) {
-        // NOTE 2026-08-16: a per-invocation `debug_path` buffer used to be
-        // built here (from `node.invocation`) for a commented-out log line.
-        // Measured as unconditional memmove churn (per invocation, per pass)
-        // in the 512-literal-store profile and removed; the log line was dead.
+        const inv = node.invocation;
+
+        // Debug: print what invocation we're checking
+        var debug_path: [256]u8 = undefined;
+        var debug_len: usize = 0;
+        for (inv.path.segments, 0..) |seg, idx| {
+            if (idx > 0) {
+                debug_path[debug_len] = '.';
+                debug_len += 1;
+            }
+            @memcpy(debug_path[debug_len..][0..seg.len], seg);
+            debug_len += seg.len;
+        }
+        // log.debug("[WALK] Checking invocation: {s} (module: {s})\n", .{ debug_path[0..debug_len], inv.path.module_qualifier orelse "<none>" });
 
         // Skip if already transformed
         if (node.isAlreadyTransformed()) {
@@ -989,7 +942,7 @@ fn walkNode(
 
         // Check if this invocation matches an [expand] event
         // log.debug("[WALK] -> Checking for [expand] match\n", .{});
-        const expand_result = try handleExpandIfMatches(node, position, program, allocator, expand);
+        const expand_result = try handleExpandIfMatches(node, position, program, allocator);
         if (expand_result.found) {
             // log.debug("[WALK] -> Found [expand] match!\n", .{});
             return expand_result;
@@ -1252,7 +1205,6 @@ fn handleExpandIfMatches(
     position: SitePosition,
     program: *const Program,
     allocator: std.mem.Allocator,
-    expand: std.ArrayList([]const []const u8),
 ) !WalkResult {
     const invocation = node.invocation;
 
@@ -1269,27 +1221,56 @@ fn handleExpandIfMatches(
     }
     const inv_path = path_buf[0..path_len];
 
-    // Per-pass snapshot, not a per-node whole-program scan: the fixed point
-    // applies at most one transform per pass, so the program — and therefore
-    // this list — is immutable for the entire walk. Same predicate, same
-    // program order, first match wins: a member hit here is exactly the decl
-    // the old scan would have found for this path.
-    for (expand.items) |segments| {
-        var event_path_buf: [256]u8 = undefined;
-        var event_path_len: usize = 0;
-        for (segments, 0..) |segment, i| {
-            if (i > 0) {
-                event_path_buf[event_path_len] = '.';
-                event_path_len += 1;
-            }
-            @memcpy(event_path_buf[event_path_len..][0..segment.len], segment);
-            event_path_len += segment.len;
-        }
-        const event_path = event_path_buf[0..event_path_len];
+    // Search for matching [expand] event declaration
+    for (program.items) |item| {
+        switch (item) {
+            .event_decl => |event_decl| {
+                if (annotation_parser.hasPart(event_decl.annotations, "expand")) {
+                    // Build event path for matching
+                    var event_path_buf: [256]u8 = undefined;
+                    var event_path_len: usize = 0;
+                    for (event_decl.path.segments, 0..) |segment, i| {
+                        if (i > 0) {
+                            event_path_buf[event_path_len] = '.';
+                            event_path_len += 1;
+                        }
+                        @memcpy(event_path_buf[event_path_len..][0..segment.len], segment);
+                        event_path_len += segment.len;
+                    }
+                    const event_path = event_path_buf[0..event_path_len];
 
-        if (std.mem.eql(u8, inv_path, event_path)) {
-            // Found matching [expand] event - apply template
-            return try applyExpandAtSite(node, position, program, inv_path, allocator);
+                    if (std.mem.eql(u8, inv_path, event_path)) {
+                        // Found matching [expand] event - apply template
+                        return try applyExpandAtSite(node, position, program, inv_path, allocator);
+                    }
+                }
+            },
+            .module_decl => |module| {
+                for (module.items) |mod_item| {
+                    if (mod_item == .event_decl) {
+                        const event_decl = mod_item.event_decl;
+                        if (annotation_parser.hasPart(event_decl.annotations, "expand")) {
+                            // Build event path for matching
+                            var event_path_buf: [256]u8 = undefined;
+                            var event_path_len: usize = 0;
+                            for (event_decl.path.segments, 0..) |segment, i| {
+                                if (i > 0) {
+                                    event_path_buf[event_path_len] = '.';
+                                    event_path_len += 1;
+                                }
+                                @memcpy(event_path_buf[event_path_len..][0..segment.len], segment);
+                                event_path_len += segment.len;
+                            }
+                            const event_path = event_path_buf[0..event_path_len];
+
+                            if (std.mem.eql(u8, inv_path, event_path)) {
+                                return try applyExpandAtSite(node, position, program, inv_path, allocator);
+                            }
+                        }
+                    }
+                }
+            },
+            else => {},
         }
     }
 
