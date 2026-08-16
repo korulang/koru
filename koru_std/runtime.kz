@@ -842,6 +842,13 @@ const ast = @import("ast");
         code.appendSlice(allocator, I ++ "pub const DispatchResult = koru_std.koru_runtime.DispatchResult;\n") catch unreachable;
         code.appendSlice(allocator, I ++ "const ScopeEvent = koru_std.koru_runtime.ScopeEvent;\n") catch unreachable;
         code.appendSlice(allocator, I ++ "const ScopeDescriptor = koru_std.koru_runtime.ScopeDescriptor;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ScopeManifest = koru_std.koru_runtime.ScopeManifest;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ManifestEvent = koru_std.koru_runtime.ManifestEvent;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ManifestArg = koru_std.koru_runtime.ManifestArg;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ManifestCreate = koru_std.koru_runtime.ManifestCreate;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ManifestDischarge = koru_std.koru_runtime.ManifestDischarge;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ManifestBranch = koru_std.koru_runtime.ManifestBranch;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ManifestBranchField = koru_std.koru_runtime.ManifestBranchField;\n") catch unreachable;
         code.appendSlice(allocator, I ++ "const FieldValue = koru_std.koru_runtime.FieldValue;\n") catch unreachable;
         code.appendSlice(allocator, I ++ "const NamedField = koru_std.koru_runtime.NamedField;\n\n") catch unreachable;
 
@@ -1269,6 +1276,137 @@ const ast = @import("ast");
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, " };\n") catch unreachable;
 
+    // The scope manifest: the register block minted as DATA, beside the
+    // descriptor. Reshaped from the same EventEntry records the dispatch
+    // tables above were emitted from — a served contract that cannot drift
+    // from enforcement because it IS the same bytes.
+    //
+    // Direct includes: `scope(other)` entries named in THIS register block,
+    // in declaration order, deduped. Transitive closures stay implicit.
+    var includes = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+    if (RegistryHelper.findScopeDef(scope_defs, scope_name)) |def| {
+        const own_entries = RegistryHelper.parseEntries(allocator, def.source_text, debug_enabled);
+        for (own_entries) |entry| {
+            if (entry.kind == .scope_ref) {
+                var already = false;
+                for (includes.items) |inc| {
+                    if (std.mem.eql(u8, inc, entry.name)) {
+                        already = true;
+                        break;
+                    }
+                }
+                if (!already) includes.append(allocator, entry.name) catch {};
+            }
+        }
+    }
+
+    code.appendSlice(allocator, I ++ "pub const ") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, "_manifest: ScopeManifest = .{ .scope = \"") catch unreachable;
+    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, "\", .events = &[_]ManifestEvent{\n") catch unreachable;
+    for (events_list.items) |event| {
+        code.appendSlice(allocator, I ++ "    .{ .name = \"") catch unreachable;
+        code.appendSlice(allocator, event.name) catch unreachable;
+        code.appendSlice(allocator, "\", .cost = ") catch unreachable;
+        var manifest_cost_buf: [32]u8 = undefined;
+        const manifest_cost_str = std.fmt.bufPrint(&manifest_cost_buf, "{d}", .{event.cost}) catch "1";
+        code.appendSlice(allocator, manifest_cost_str) catch unreachable;
+        code.appendSlice(allocator, ", .home = ") catch unreachable;
+        if (event.module_name) |event_home| {
+            code.appendSlice(allocator, "\"") catch unreachable;
+            code.appendSlice(allocator, event_home) catch unreachable;
+            code.appendSlice(allocator, "\"") catch unreachable;
+        } else {
+            code.appendSlice(allocator, "null") catch unreachable;
+        }
+
+        // Argument vocabulary — the caller's side of the surface.
+        code.appendSlice(allocator, ", .args = &[_]ManifestArg{") catch unreachable;
+        for (event.input_fields, 0..) |arg_field, ai| {
+            if (ai > 0) code.appendSlice(allocator, ", ") catch unreachable;
+            code.appendSlice(allocator, ".{ .name = \"") catch unreachable;
+            code.appendSlice(allocator, arg_field.name) catch unreachable;
+            code.appendSlice(allocator, "\", .type_name = \"") catch unreachable;
+            code.appendSlice(allocator, arg_field.type_name) catch unreachable;
+            code.appendSlice(allocator, "\", .is_optional = ") catch unreachable;
+            code.appendSlice(allocator, if (arg_field.is_optional) "true" else "false") catch unreachable;
+            code.appendSlice(allocator, ", .phantom = ") catch unreachable;
+            if (arg_field.phantom) |phantom_str| {
+                code.appendSlice(allocator, "\"") catch unreachable;
+                code.appendSlice(allocator, phantom_str) catch unreachable;
+                code.appendSlice(allocator, "\"") catch unreachable;
+            } else {
+                code.appendSlice(allocator, "null") catch unreachable;
+            }
+            code.appendSlice(allocator, " }") catch unreachable;
+        }
+        code.appendSlice(allocator, "}") catch unreachable;
+
+        // Possession: what the event mints.
+        code.appendSlice(allocator, ", .creates = &[_]ManifestCreate{") catch unreachable;
+        for (event.creates_specs, 0..) |create_spec, ci| {
+            if (ci > 0) code.appendSlice(allocator, ", ") catch unreachable;
+            code.appendSlice(allocator, ".{ .obligation = \"") catch unreachable;
+            code.appendSlice(allocator, create_spec.obligation_name) catch unreachable;
+            code.appendSlice(allocator, "\", .module = \"") catch unreachable;
+            code.appendSlice(allocator, create_spec.obligation_module) catch unreachable;
+            code.appendSlice(allocator, "\", .field = \"") catch unreachable;
+            code.appendSlice(allocator, create_spec.field_name) catch unreachable;
+            code.appendSlice(allocator, "\", .resource_type = \"") catch unreachable;
+            code.appendSlice(allocator, create_spec.resource_type) catch unreachable;
+            code.appendSlice(allocator, "\" }") catch unreachable;
+        }
+        code.appendSlice(allocator, "}") catch unreachable;
+
+        // Possession: what the event consumes.
+        code.appendSlice(allocator, ", .discharges = &[_]ManifestDischarge{") catch unreachable;
+        for (event.discharges_specs, 0..) |discharge_spec, di| {
+            if (di > 0) code.appendSlice(allocator, ", ") catch unreachable;
+            code.appendSlice(allocator, ".{ .obligation = \"") catch unreachable;
+            code.appendSlice(allocator, discharge_spec.obligation_name) catch unreachable;
+            code.appendSlice(allocator, "\", .module = \"") catch unreachable;
+            code.appendSlice(allocator, discharge_spec.obligation_module) catch unreachable;
+            code.appendSlice(allocator, "\", .arg = \"") catch unreachable;
+            code.appendSlice(allocator, discharge_spec.arg_name) catch unreachable;
+            code.appendSlice(allocator, "\" }") catch unreachable;
+        }
+        code.appendSlice(allocator, "}") catch unreachable;
+
+        // Output shapes.
+        code.appendSlice(allocator, ", .branches = &[_]ManifestBranch{") catch unreachable;
+        for (event.branches, 0..) |branch_spec, bi| {
+            if (bi > 0) code.appendSlice(allocator, ", ") catch unreachable;
+            code.appendSlice(allocator, ".{ .name = \"") catch unreachable;
+            code.appendSlice(allocator, branch_spec.name) catch unreachable;
+            code.appendSlice(allocator, "\", .fields = &[_]ManifestBranchField{") catch unreachable;
+            for (branch_spec.fields, 0..) |branch_field, fi| {
+                if (fi > 0) code.appendSlice(allocator, ", ") catch unreachable;
+                code.appendSlice(allocator, ".{ .name = \"") catch unreachable;
+                code.appendSlice(allocator, branch_field.name) catch unreachable;
+                code.appendSlice(allocator, "\", .type_name = \"") catch unreachable;
+                code.appendSlice(allocator, branch_field.type_name) catch unreachable;
+                code.appendSlice(allocator, "\", .is_optional = ") catch unreachable;
+                code.appendSlice(allocator, if (branch_field.is_optional) "true" else "false") catch unreachable;
+                code.appendSlice(allocator, " }") catch unreachable;
+            }
+            code.appendSlice(allocator, "}, .is_optional = ") catch unreachable;
+            code.appendSlice(allocator, if (branch_spec.is_optional) "true" else "false") catch unreachable;
+            code.appendSlice(allocator, " }") catch unreachable;
+        }
+        code.appendSlice(allocator, "} },\n") catch unreachable;
+    }
+    code.appendSlice(allocator, I ++ "},\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    .includes = &[_][]const u8{") catch unreachable;
+    for (includes.items, 0..) |inc, ii| {
+        if (ii > 0) code.appendSlice(allocator, ", ") catch unreachable;
+        code.appendSlice(allocator, "\"") catch unreachable;
+        code.appendSlice(allocator, inc) catch unreachable;
+        code.appendSlice(allocator, "\"") catch unreachable;
+    }
+    code.appendSlice(allocator, "}\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "};\n\n") catch unreachable;
+
     code.appendSlice(allocator, I ++ "pub fn dispatch_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.koru_runtime.DispatchResult) !void {\n") catch unreachable;
@@ -1393,6 +1531,87 @@ pub const ScopeRuntime = struct {
     // Vocabulary enumeration: event names + per-event input/arg fields
     events_fn: ?EventsLookupFn,
     input_fn: ?InputLookupFn,
+    // The scope's manifest record — minted at scope creation (register) from
+    // the same EventEntry data the dispatch tables are emitted from. null
+    // never occurs for a descriptor register built: the two are emitted side
+    // by side. Defined flows (session growth) are absent by construction.
+    manifest: ?*const ScopeManifest = null,
+};
+
+// ============================================================================
+// SCOPE MANIFEST - the vocabulary minted as a data structure at scope creation
+// ============================================================================
+//
+// `register` reshapes the EventEntry records it emits dispatch tables from
+// into this record and embeds it beside the descriptor. One minting, many
+// served views: the `scope-manifest` tor serializes it to JSON for a running
+// contract endpoint (Orisha), `explain` will consume the same record at
+// compile time, and neither view is ever hand-written. Defined flows (session
+// growth) are absent by construction: the record is minted when the scope is
+// created, before any session exists — it is the compiled base.
+
+/// One event's argument — the caller's side of the surface.
+pub const ManifestArg = struct {
+    name: []const u8,
+    type_name: []const u8,
+    is_optional: bool = false,
+    /// Raw possession spelling: `"!open"` discharges, `"open!"` creates.
+    phantom: ?[]const u8 = null,
+};
+
+/// An obligation an event MINTS — carried by an output field (or
+/// `__type_ref` for a bare return). Fields mirror CreateSpec so the contract
+/// and the enforcement are the same bytes.
+pub const ManifestCreate = struct {
+    obligation: []const u8,
+    module: []const u8,
+    field: []const u8,
+    resource_type: []const u8,
+};
+
+/// An obligation an event CONSUMES — discharged by a named input arg.
+pub const ManifestDischarge = struct {
+    obligation: []const u8,
+    module: []const u8,
+    arg: []const u8,
+};
+
+/// An output branch's payload field.
+pub const ManifestBranchField = struct {
+    name: []const u8,
+    type_name: []const u8,
+    is_optional: bool = false,
+};
+
+/// An output branch ("shape") an event can end in.
+pub const ManifestBranch = struct {
+    name: []const u8,
+    fields: []const ManifestBranchField = &.{},
+    is_optional: bool = false,
+};
+
+/// One surface verb: what it takes, what it mints, what it consumes.
+pub const ManifestEvent = struct {
+    name: []const u8,
+    cost: u64 = 1,
+    /// Module that DECLARED the event (the home that closes the bare-name
+    /// gap), or null for a top-level event.
+    home: ?[]const u8 = null,
+    args: []const ManifestArg = &.{},
+    creates: []const ManifestCreate = &.{},
+    discharges: []const ManifestDischarge = &.{},
+    branches: []const ManifestBranch = &.{},
+};
+
+/// The served contract for one scope: the register block as data.
+pub const ScopeManifest = struct {
+    kind: []const u8 = "koru/scope-manifest",
+    version: u32 = 1,
+    scope: []const u8,
+    events: []const ManifestEvent = &.{},
+    /// Direct `scope(other)` includes named in THIS register block, in
+    /// declaration order. Transitive closures stay implicit.
+    includes: []const []const u8 = &.{},
 };
 
 fn mangleScopeName(comptime name: []const u8) []const u8 {
@@ -1481,6 +1700,7 @@ fn buildScopeTable() []const ScopeRuntime {
             const branches_name = std.fmt.comptimePrint("get_event_branches_{s}", .{scope_ident});
             const events_name = std.fmt.comptimePrint("get_events_{s}", .{scope_ident});
             const input_name = std.fmt.comptimePrint("get_event_input_{s}", .{scope_ident});
+            const manifest_name = std.fmt.comptimePrint("{s}_manifest", .{scope_ident});
 
             table[i] = .{
                 .name = desc.name,
@@ -1494,6 +1714,7 @@ fn buildScopeTable() []const ScopeRuntime {
                 .branches_fn = if (@hasDecl(NS, branches_name)) &@field(NS, branches_name) else null,
                 .events_fn = if (@hasDecl(NS, events_name)) &@field(NS, events_name) else null,
                 .input_fn = if (@hasDecl(NS, input_name)) &@field(NS, input_name) else null,
+                .manifest = if (@hasDecl(NS, manifest_name)) &@field(NS, manifest_name) else null,
             };
             i += 1;
         }
@@ -1597,6 +1818,151 @@ fn buildScopeTable() []const ScopeRuntime {
         }
     }
     return .{ .not_found = .{} };
+}
+
+// ============================================================================
+// SCOPE-MANIFEST - Serve a scope's vocabulary as a data contract (JSON)
+// ============================================================================
+//
+// The manifest record is minted at scope creation (register) from the same
+// EventEntry data the dispatch tables are emitted from; this tor serializes
+// it to JSON so a running program can serve it as a contract endpoint
+// (Orisha) or hand it to a tool. The emitted JSON has no hand-authored bytes:
+// every field derives from the scope declaration, so the served contract and
+// the enforcement cannot drift. Defined flows (session growth) are NOT part
+// of this record — it is the compiled base, minted before any session exists.
+
+// @retain: scope_manifest_event is referenced from generated Zig code in user
+// pipelines (Orisha serves it as the .json endpoint; explain consumes it).
+~[retain]pub tor scope-manifest { name: string }
+| ok string
+| not-found
+
+~proc scope-manifest|zig {
+    inline for (comptime buildScopeTable()) |scope_info| {
+        if (std.mem.eql(u8, name, scope_info.name)) {
+            const m = scope_info.manifest orelse {
+                std.debug.print("[RUNTIME] scope '{s}' has no manifest record\n", .{name});
+                return .{ .not_found = .{} };
+            };
+            var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            const allocator = arena_state.allocator();
+            const json = scopeManifestToJson(allocator, m) catch return .{ .not_found = .{} };
+            return .{ .ok = json };
+        }
+    }
+    return .{ .not_found = .{} };
+}
+
+fn jsonAppendString(out: *std.ArrayList(u8), alloc: std.mem.Allocator, s: []const u8) void {
+    // Identifiers, module paths and obligation names cannot carry quotes or
+    // control bytes in Koru; the escape keeps caller-supplied scope names
+    // honest anyway (the only string in the manifest not shaped by the
+    // language).
+    out.append(alloc, '"') catch return;
+    for (s) |c| {
+        switch (c) {
+            '"' => out.appendSlice(alloc, "\\\"") catch return,
+            '\\' => out.appendSlice(alloc, "\\\\") catch return,
+            // All control bytes escape as \u — including \t/\n/\r, which the
+            // (valid, but longer) named forms would overlap in switch terms.
+            0...0x1f => |cc| {
+                var buf: [7]u8 = undefined;
+                const code = std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{cc}) catch continue;
+                out.appendSlice(alloc, code) catch return;
+            },
+            else => out.append(alloc, c) catch return,
+        }
+    }
+    out.append(alloc, '"') catch return;
+}
+
+fn jsonAppendNumber(out: *std.ArrayList(u8), alloc: std.mem.Allocator, n: anytype) void {
+    var buf: [32]u8 = undefined;
+    const s = std.fmt.bufPrint(&buf, "{d}", .{n}) catch return;
+    out.appendSlice(alloc, s) catch return;
+}
+
+/// Serialize a scope manifest to JSON. The record is the contract; this is
+/// one projection of it (the `explain` host and the Orisha endpoint consume
+/// the same record — or this same function — never a hand-written copy).
+fn scopeManifestToJson(alloc: std.mem.Allocator, m: *const ScopeManifest) ![]const u8 {
+    var out = std.ArrayList(u8).initCapacity(alloc, 512) catch return error.OutOfMemory;
+
+    try out.appendSlice(alloc, "{");
+    try out.appendSlice(alloc, "\"kind\":"); jsonAppendString(&out, alloc, m.kind);
+    try out.appendSlice(alloc, ",\"version\":"); jsonAppendNumber(&out, alloc, m.version);
+    try out.appendSlice(alloc, ",\"scope\":"); jsonAppendString(&out, alloc, m.scope);
+
+    try out.appendSlice(alloc, ",\"events\":[");
+    for (m.events, 0..) |ev, i| {
+        if (i > 0) try out.append(alloc, ',');
+        try out.append(alloc, '{');
+        try out.appendSlice(alloc, "\"name\":"); jsonAppendString(&out, alloc, ev.name);
+        try out.appendSlice(alloc, ",\"cost\":"); jsonAppendNumber(&out, alloc, ev.cost);
+        try out.appendSlice(alloc, ",\"home\":");
+        if (ev.home) |h| jsonAppendString(&out, alloc, h) else try out.appendSlice(alloc, "null");
+        try out.appendSlice(alloc, ",\"args\":[");
+        for (ev.args, 0..) |arg, ai| {
+            if (ai > 0) try out.append(alloc, ',');
+            try out.append(alloc, '{');
+            try out.appendSlice(alloc, "\"name\":"); jsonAppendString(&out, alloc, arg.name);
+            try out.appendSlice(alloc, ",\"type\":"); jsonAppendString(&out, alloc, arg.type_name);
+            try out.appendSlice(alloc, ",\"optional\":"); if (arg.is_optional) try out.appendSlice(alloc, "true") else try out.appendSlice(alloc, "false");
+            try out.appendSlice(alloc, ",\"phantom\":");
+            if (arg.phantom) |p| jsonAppendString(&out, alloc, p) else try out.appendSlice(alloc, "null");
+            try out.append(alloc, '}');
+        }
+        try out.append(alloc, ']');
+        try out.appendSlice(alloc, ",\"creates\":[");
+        for (ev.creates, 0..) |create, ci| {
+            if (ci > 0) try out.append(alloc, ',');
+            try out.append(alloc, '{');
+            try out.appendSlice(alloc, "\"obligation\":"); jsonAppendString(&out, alloc, create.obligation);
+            try out.appendSlice(alloc, ",\"module\":"); jsonAppendString(&out, alloc, create.module);
+            try out.appendSlice(alloc, ",\"field\":"); jsonAppendString(&out, alloc, create.field);
+            try out.appendSlice(alloc, ",\"resource_type\":"); jsonAppendString(&out, alloc, create.resource_type);
+            try out.append(alloc, '}');
+        }
+        try out.append(alloc, ']');
+        try out.appendSlice(alloc, ",\"discharges\":[");
+        for (ev.discharges, 0..) |discharge, di| {
+            if (di > 0) try out.append(alloc, ',');
+            try out.append(alloc, '{');
+            try out.appendSlice(alloc, "\"obligation\":"); jsonAppendString(&out, alloc, discharge.obligation);
+            try out.appendSlice(alloc, ",\"module\":"); jsonAppendString(&out, alloc, discharge.module);
+            try out.appendSlice(alloc, ",\"arg\":"); jsonAppendString(&out, alloc, discharge.arg);
+            try out.append(alloc, '}');
+        }
+        try out.append(alloc, ']');
+        try out.appendSlice(alloc, ",\"branches\":[");
+        for (ev.branches, 0..) |branch, bi| {
+            if (bi > 0) try out.append(alloc, ',');
+            try out.append(alloc, '{');
+            try out.appendSlice(alloc, "\"name\":"); jsonAppendString(&out, alloc, branch.name);
+            try out.appendSlice(alloc, ",\"optional\":"); if (branch.is_optional) try out.appendSlice(alloc, "true") else try out.appendSlice(alloc, "false");
+            try out.appendSlice(alloc, ",\"fields\":[");
+            for (branch.fields, 0..) |bf, fi| {
+                if (fi > 0) try out.append(alloc, ',');
+                try out.append(alloc, '{');
+                try out.appendSlice(alloc, "\"name\":"); jsonAppendString(&out, alloc, bf.name);
+                try out.appendSlice(alloc, ",\"type\":"); jsonAppendString(&out, alloc, bf.type_name);
+                try out.appendSlice(alloc, ",\"optional\":"); if (bf.is_optional) try out.appendSlice(alloc, "true") else try out.appendSlice(alloc, "false");
+                try out.append(alloc, '}');
+            }
+            try out.append(alloc, ']');
+            try out.append(alloc, '}');
+        }
+        try out.append(alloc, ']');
+        try out.append(alloc, '}');
+    }
+    try out.appendSlice(alloc, "],\"includes\":[");
+    for (m.includes, 0..) |inc, ii| {
+        if (ii > 0) try out.append(alloc, ',');
+        jsonAppendString(&out, alloc, inc);
+    }
+    try out.appendSlice(alloc, "]}");
+    return out.toOwnedSlice(alloc);
 }
 
 // Internal helper: Look up event branches for shape validation
