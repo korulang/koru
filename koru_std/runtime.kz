@@ -530,6 +530,34 @@ const ast_reg = @import("ast");
             }
             return true;
         }
+
+        // An event is IMPLEMENTED when a proc_decl or a flow with impl_of
+        // matches its path. A discharge spec that names an unimplemented
+        // event must not be emitted: the pool would trust a release with no
+        // body and "succeed" without releasing anything (440_016 probe).
+        fn eventHasImpl(prog: *const ast_reg.Program, ed: *const ast_reg.EventDecl) bool {
+            return hasImplInItems(prog.items, ed);
+        }
+
+        fn hasImplInItems(items: []const ast_reg.Item, ed: *const ast_reg.EventDecl) bool {
+            for (items) |*ast_item| {
+                switch (ast_item.*) {
+                    .proc_decl => |*pd| {
+                        if (pathsMatch(&ed.path, &pd.path)) return true;
+                    },
+                    .flow => |*f| {
+                        if (f.impl_of) |imp| {
+                            if (pathsMatch(&ed.path, &imp)) return true;
+                        }
+                    },
+                    .module_decl => |mod| {
+                        if (hasImplInItems(mod.items, ed)) return true;
+                    },
+                    else => {},
+                }
+            }
+            return false;
+        }
     };
 
     // Helper: Parse phantom string to extract obligation name and optional module qualifier
@@ -800,12 +828,29 @@ const ast_reg = @import("ast");
     for (resolved_events.items) |resolved| {
         const lookup_name = resolved.internal_name orelse resolved.name;
         const info = RegistryHelper.findEventInfoHomed(allocator, event_infos, lookup_name, resolved.home) orelse continue;
-        const obligations = extractObligations(allocator, info.event_decl, info.module_name);
+        var obligations = extractObligations(allocator, info.event_decl, info.module_name);
         const branches = extractBranches(allocator, info.event_decl);
         const input_fields = extractInputFields(allocator, info.event_decl);
         const symbol = Helpers.buildEventSymbol(allocator, info.module_name, info.event_decl.path.segments, program.main_module_name);
         const dispatch_ident = Helpers.mangleIdentifier(allocator, resolved.name);
         const dispatch_name = std.fmt.allocPrint(allocator, "dispatch_{s}_{s}", .{ scope_ident, dispatch_ident }) catch dispatch_ident;
+
+        // A discharge claim (input phantom `<!state>`) on an event with NO
+        // implementation is a lie the pool would otherwise trust: the
+        // synthesized no-op handler "releases" the handle without releasing
+        // anything, and close reports success with the resource still held
+        // (440_016 probe). Refuse to emit the discharge claim — the
+        // obligation then strands at hang-up and close panics honestly,
+        // naming the leak instead of papering over it.
+        if ((obligations.discharges.len > 0 or obligations.discharges_specs.len > 0) and
+            !RegistryHelper.eventHasImpl(program, info.event_decl))
+        {
+            std.debug.print("[REGISTRY] WARNING: '{s}' declares a discharge "
+                ++ "phantom but has no implementation — discharge claim refused; "
+                ++ "its obligation strands at hang-up.\n", .{resolved.name});
+            obligations.discharges = &.{};
+            obligations.discharges_specs = &.{};
+        }
 
         if (obligations.creates.len > 0 or obligations.discharges.len > 0) {
             std.debug.print("[REGISTRY] Event '{s}': creates={d} specs, discharges={d} specs\n",

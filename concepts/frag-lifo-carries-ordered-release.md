@@ -34,6 +34,19 @@ environment where release order must respect a constraint LIFO cannot
 express. Both are outside the current surface; the bridge's acquire-then-use
 protocol makes the divergence impossible.
 
+**Corrected 2026-08-16 (EX-006 probe):** the earlier companion claim — that
+the guard's failed-teardown case is "unreachable in the current surface" —
+was wrong in a specific, worse way. An unimplemented discharge event
+(phantom `<!query>` declared, no proc, no flow) receives a synthesized
+no-op handler: the pool prints `[BRIDGE] Invoked`, marks the handle
+discharged, and close reports SUCCESS while the resource was never
+released. No failure ever reaches the guard because nothing fails — the
+release succeeds emptily. The register transform now refuses discharge
+claims without an implementation (proc or flow), so the obligation strands
+and close panics with a count. The guard's case is not unreachable; it was
+masked by a false-success defect upstream of the guard entirely. Pinned by
+`440_016_failed_teardown_blocks_provider`.
+
 Related: [[frag-an-obligation-is-a-liveness-interval]] — obligations as
 liveness intervals is the adjacent belief; this one names the mechanism that
 respects them at release.

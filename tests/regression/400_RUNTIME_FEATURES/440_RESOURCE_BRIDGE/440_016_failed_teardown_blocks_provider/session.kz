@@ -1,0 +1,39 @@
+// probe: registered + phantom-declared discharge WITHOUT a proc.
+// close-query is in the register block and carries <!query>, so the
+// discharge-spec table knows to call it for queried! handles — but the
+// scope's dispatcher has NO entry for it (@hasDecl skips it). The
+// discharge attempt must fail honestly.
+
+~import std/runtime
+
+const std = @import("std");
+
+~pub tor open { path: string } -> string<open!>
+
+~proc open|zig {
+    _ = path;
+    return "a.txt";
+}
+
+~pub tor query { conn: string, handle: string } -> string<query!>
+
+~proc query|zig {
+    _ = conn;
+    return handle;
+}
+
+~pub tor close-file { handle: string<!open> }
+
+~proc close-file|zig {
+    std.debug.print("close-file() ran for '{s}'\n", .{handle});
+}
+
+// Declared with the discharge phantom, NO proc — no dispatcher entry.
+~pub tor close-query { handle: string<!query> }
+
+~std/runtime:register(scope: "files") {
+    open(10)
+    query(10)
+    close-file(1)
+    close-query(1)
+}

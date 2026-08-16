@@ -136,7 +136,28 @@ finding; no separate pin manufactured.
 Attempted failed-teardown pin abandoned: a discharge dispatch that errors is
 not expressible through a void discharge signature (the only honest proc
 return), and no runtime panic idiom exists for the tester. The guard's
-load-bearing case is unreachable in the current surface.
+load-bearing case was NOT reached in this phase's search — the arity route
+(a discharge proc requiring one arg the synthesized invocation lacks) does
+not fail, because the dispatcher accepts it; the failed-teardown case
+remains OPEN, not proven false. A follow-up path exists: the interpreter's
+dispatch path carries NoBranchMatch / UnsupportedNode errors a discharge
+could reach — the void-signature route was the wrong one, not proof of
+inexpressibility.
+
+**`EX-006-RESOLVED` — the failed-teardown case was found, and it was worse
+than unreachable: a silent false release. (2026-08-16)**
+The follow-up probe revealed a defect: a discharge event declared with the
+discharge phantom (`<!query>`) but NO implementation (no proc, no flow
+impl) gets a synthesized no-op handler, so the pool calls it, prints
+`[BRIDGE] Invoked`, marks the handle discharged, and close reports SUCCESS
+— while the resource was never released. The guard never fires because the
+release never fails; it succeeds emptily. Releasing nothing while claiming
+released is the one failure the recovery-exactness invariant forbids most.
+Fix: the register transform now refuses to emit a discharge claim for an
+unimplemented event (proc or flow impl required); the obligation strands at
+hang-up and close panics honestly. Pinned by `440_016_failed_teardown_blocks_provider`
+(EXPECT_TRAP + assertions: No-spec refusal, no silent Invoked, stranded
+count named). Cluster 16/16 green with the gate in place.
 
 **`EX-007-RESOLUTION` — dual provider: both edges outlive the dependent.**
 Pinned by `440_015_dual_provider` (merge over a.txt + b.txt mints one handle
