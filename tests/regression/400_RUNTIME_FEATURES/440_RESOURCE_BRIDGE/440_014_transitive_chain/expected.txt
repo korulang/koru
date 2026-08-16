@@ -1,0 +1,13 @@
+--- bridge open
+open(a.txt)
+  open: held=1
+  q1: held=2
+  q2: held=3
+--- hang up; chain must release leaf-first, all three
+close-query() ran for 'q2.txt'
+[BRIDGE] Invoked 'close-query' for handle 'q2.txt' [main:queried]
+close-query() ran for 'q1.txt'
+[BRIDGE] Invoked 'close-query' for handle 'q1.txt' [main:queried]
+close-file() ran for 'a.txt'
+[BRIDGE] Invoked 'close-file' for handle 'a.txt' [main:opened]
+--- done
