@@ -1,0 +1,29 @@
+// `assumes` walks the CALL GRAPH: the transitive closure of flows a
+// declaration's implementation can reach, graded by the claims each reached
+// declaration carries about itself — and conspicuously WITHOUT one when it
+// carries none.
+//
+//   koruc <file> assumes <subject>
+//
+// This program declares a measured CONTRACTED tor that the runner flow calls,
+// and an UNCLAIMED middleman between them. The audit of `root` must show:
+//   - the unclaimed middleman (the finding: a reachable declaration that
+//     asserts nothing),
+//   - the claimed leaf, with its stamp,
+// and it must NOT fabricate claims for anything else. The absence is the
+// test: `mid` is reached and reported `unclaimed`, never silently dropped.
+
+~import std/compiler
+
+~[
+- proven contract-honest
+  Declared by the same shape checker that discharges the obligation.
+]~tor leaf { v: i64 } -> i64
+
+~tor mid { n: i64 }
+
+~mid = leaf(v: 42)
+
+~tor root { n: i64 }
+
+~root = mid(n: 7)

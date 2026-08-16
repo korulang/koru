@@ -15,6 +15,8 @@
 //
 //   koruc main.k claims          # the census, per stamp
 //   koruc main.k claims json     # the export
+//   koruc main.k assumes build   # what a declaration's flows rest on
+//   koruc main.k assumes build json
 //
 // WHO OWNS WHAT. The compiler carries an opaque entry list and, since the prose
 // change, the prose beside it; it does not know the word "claim". This module
@@ -29,13 +31,151 @@
 // external engine the author points at the export. This module only guarantees
 // that every claim has a unique key, so an engine that judges one can say which
 // one it judged.
+//
+// `assumes` walks the CALL GRAPH instead of the annotation list. Literature:
+// Lean's `#print axioms`. Point at a declaration; get the transitive set of
+// declarations its flows can reach, graded by what each callee asserts about
+// itself — and, first-class, which reached declarations assert NOTHING. A
+// `measured` flow that calls five unclaimed things is telling you its
+// measurement did not cover them. The audit never judges truth; it reports
+// reach, and reach is a fact about the program, not a belief about it.
 
 ~import std/compiler
 
 ~[comptime]
 
+const std = @import("std");
+const ast = @import("ast");
+
 // ============================================================
-// THE CLAIMS COMMAND
+// SHARED VOCABULARY — one definition, every command
+// ============================================================
+
+/// The stamps THIS module ships. A stamp says how well the claim is currently
+/// known, never whether it holds. The ladder runs proven (the type system
+/// discharged it) → measured (something ran) → inferred (something declared
+/// it) → aspirational (nothing yet — the honest undischarged claim).
+const STAMPS = [_][]const u8{ "proven", "measured", "inferred", "aspirational" };
+
+const Claim = struct {
+    kind: []const u8, // "tor" (the contract) or "proc" (one implementation)
+    module: []const u8,
+    subject: []const u8,
+    variant: []const u8, // proc target, e.g. "zig(optimized)"; "" for a tor
+    stamp: []const u8,
+    rule: []const u8, // "" when the stamp names no rule
+    prose: []const u8,
+    file: []const u8,
+    line: usize,
+};
+
+/// An entry is a claim when its first word is one of our stamps. Every other
+/// entry belongs to some other consumer and is passed over in silence — the
+/// layering forbids this module having an opinion about `pure`, `comptime`,
+/// or anything else it did not define.
+const ClaimSplit = struct {
+    stamp: []const u8,
+    rule: []const u8,
+};
+
+fn claimSplit(entry: []const u8) ?ClaimSplit {
+    const trimmed = std.mem.trim(u8, entry, " \t");
+    const space = std.mem.indexOfAny(u8, trimmed, " \t");
+    const head = if (space) |si| trimmed[0..si] else trimmed;
+    for (STAMPS) |stamp| {
+        if (std.mem.eql(u8, head, stamp)) {
+            const rule = if (space) |si| std.mem.trim(u8, trimmed[si..], " \t") else "";
+            return .{ .stamp = stamp, .rule = rule };
+        }
+    }
+    return null;
+}
+
+fn dottedPath(alloc: std.mem.Allocator, p: *const ast.DottedPath) []const u8 {
+    var buf = std.ArrayList(u8){};
+    for (p.segments, 0..) |seg, i| {
+        if (i > 0) buf.append(alloc, '.') catch unreachable;
+        buf.appendSlice(alloc, seg) catch unreachable;
+    }
+    return buf.items;
+}
+
+/// "module:subject" for a dotted path — the canonical key every consumer
+/// compares on.
+fn pathKey(alloc: std.mem.Allocator, module: ?[]const u8, p: *const ast.DottedPath) []const u8 {
+    const subj = dottedPath(alloc, p);
+    var buf = std.ArrayList(u8){};
+    if (module) |mq| {
+        buf.appendSlice(alloc, mq) catch unreachable;
+        buf.append(alloc, ':') catch unreachable;
+    }
+    buf.appendSlice(alloc, subj) catch unreachable;
+    return buf.items;
+}
+
+fn claimFull(alloc: std.mem.Allocator, c: Claim) []const u8 {
+    var buf = std.ArrayList(u8){};
+    buf.appendSlice(alloc, c.module) catch unreachable;
+    buf.append(alloc, ':') catch unreachable;
+    buf.appendSlice(alloc, c.subject) catch unreachable;
+    return buf.items;
+}
+
+/// Collect every claim on every declaration, descending through module_decl
+/// (an imported library's claims are visible, never silently dropped).
+fn collectClaims(alloc: std.mem.Allocator, list: []const ast.Item, out: *std.ArrayList(Claim)) void {
+    for (list) |*it| switch (it.*) {
+        .module_decl => |m| collectClaims(alloc, m.items, out),
+        .event_decl => |e| {
+            for (e.annotations) |entry| {
+                const parts = claimSplit(entry) orelse continue;
+                out.append(alloc, .{
+                    .kind = "tor",
+                    .module = e.module,
+                    .subject = dottedPath(alloc, &e.path),
+                    .variant = "",
+                    .stamp = parts.stamp,
+                    .rule = parts.rule,
+                    .prose = e.prose,
+                    .file = e.location.file,
+                    .line = e.location.line,
+                }) catch unreachable;
+            }
+        },
+        .proc_decl => |p| {
+            for (p.annotations) |entry| {
+                const parts = claimSplit(entry) orelse continue;
+                out.append(alloc, .{
+                    .kind = "proc",
+                    .module = p.module,
+                    .subject = dottedPath(alloc, &p.path),
+                    .variant = p.target orelse "",
+                    .stamp = parts.stamp,
+                    .rule = parts.rule,
+                    .prose = p.prose,
+                    .file = p.location.file,
+                    .line = p.location.line,
+                }) catch unreachable;
+            }
+        },
+        else => {},
+    };
+}
+
+fn printJson(v: []const u8) void {
+    std.debug.print("\"", .{});
+    for (v) |c| switch (c) {
+        '"' => std.debug.print("\\\"", .{}),
+        '\\' => std.debug.print("\\\\", .{}),
+        '\n' => std.debug.print("\\n", .{}),
+        '\t' => std.debug.print("\\t", .{}),
+        else => std.debug.print("{c}", .{c}),
+    };
+    std.debug.print("\"", .{});
+}
+
+// ============================================================
+// THE CLAIMS COMMAND — the census
 // ============================================================
 
 ~std/compiler:command.declare {
@@ -50,9 +190,6 @@
 }
 
 ~proc claims|zig {
-    const std = @import("std");
-    const ast = @import("ast");
-
     var format: []const u8 = "text";
     if (argv.len > 0) {
         const fmt = argv[0];
@@ -64,102 +201,12 @@
         }
     }
 
-    // The stamps THIS module ships. A stamp says how well the claim is
-    // currently known, never whether it holds. The ladder runs proven (the type
-    // system discharged it) → measured (something ran) → inferred (something
-    // declared it) → aspirational (nothing yet — the honest undischarged claim).
-    const STAMPS = [_][]const u8{ "proven", "measured", "inferred", "aspirational" };
-
-    const Claim = struct {
-        kind: []const u8, // "tor" (the contract) or "proc" (one implementation)
-        module: []const u8,
-        subject: []const u8,
-        variant: []const u8, // proc target, e.g. "zig(optimized)"; "" for a tor
-        stamp: []const u8,
-        rule: []const u8, // "" when the stamp names no rule
-        prose: []const u8,
-        file: []const u8,
-        line: usize,
-    };
-
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
     var claims_found = std.ArrayList(Claim){};
-
-    const Collect = struct {
-        /// An entry is a claim when its first word is one of our stamps. Every
-        /// other entry belongs to some other consumer and is passed over in
-        /// silence — the layering forbids this module having an opinion about
-        /// `pure`, `comptime`, or anything else it did not define.
-        fn split(entry: []const u8) ?struct { stamp: []const u8, rule: []const u8 } {
-            const trimmed = std.mem.trim(u8, entry, " \t");
-            const space = std.mem.indexOfAny(u8, trimmed, " \t");
-            const head = if (space) |s| trimmed[0..s] else trimmed;
-            for (STAMPS) |stamp| {
-                if (std.mem.eql(u8, head, stamp)) {
-                    const rule = if (space) |s| std.mem.trim(u8, trimmed[s..], " \t") else "";
-                    return .{ .stamp = stamp, .rule = rule };
-                }
-            }
-            return null;
-        }
-
-        fn path(alloc: std.mem.Allocator, p: *const ast.DottedPath) []const u8 {
-            var buf = std.ArrayList(u8){};
-            for (p.segments, 0..) |seg, i| {
-                if (i > 0) buf.append(alloc, '.') catch unreachable;
-                buf.appendSlice(alloc, seg) catch unreachable;
-            }
-            return buf.items;
-        }
-
-        fn items(
-            alloc: std.mem.Allocator,
-            list: []const ast.Item,
-            out: *std.ArrayList(Claim),
-        ) void {
-            for (list) |*it| switch (it.*) {
-                .module_decl => |m| items(alloc, m.items, out),
-                .event_decl => |e| {
-                    for (e.annotations) |entry| {
-                        const parts = split(entry) orelse continue;
-                        out.append(alloc, .{
-                            .kind = "tor",
-                            .module = e.module,
-                            .subject = path(alloc, &e.path),
-                            .variant = "",
-                            .stamp = parts.stamp,
-                            .rule = parts.rule,
-                            .prose = e.prose,
-                            .file = e.location.file,
-                            .line = e.location.line,
-                        }) catch unreachable;
-                    }
-                },
-                .proc_decl => |p| {
-                    for (p.annotations) |entry| {
-                        const parts = split(entry) orelse continue;
-                        out.append(alloc, .{
-                            .kind = "proc",
-                            .module = p.module,
-                            .subject = path(alloc, &p.path),
-                            .variant = p.target orelse "",
-                            .stamp = parts.stamp,
-                            .rule = parts.rule,
-                            .prose = p.prose,
-                            .file = p.location.file,
-                            .line = p.location.line,
-                        }) catch unreachable;
-                    }
-                },
-                else => {},
-            };
-        }
-    };
-
-    Collect.items(arena_alloc, program.items, &claims_found);
+    collectClaims(arena_alloc, program.items, &claims_found);
     const found = claims_found.items;
 
     // ── the key, and the crash ────────────────────────────────────────────
@@ -190,15 +237,10 @@
                 "error: duplicate claim key — {s} {s}:{s}{s}{s} already claims rule '{s}'\n" ++
                     "  first  --> {s}:{d}  [{s}]\n" ++
                     "  second --> {s}:{d}  [{s}]\n" ++
-                    "  a claim key is kind + module + subject + variant + rule; two claims on one key\n" ++
-                    "  cannot both be answered, and an external judgment could not say which it judged.\n",
-                .{
-                    claim.kind,          claim.module, claim.subject,
-                    if (claim.variant.len > 0) "|" else "",
-                    claim.variant,       rule_label,
-                    earlier.file,        earlier.line, earlier.stamp,
-                    claim.file,          claim.line,   claim.stamp,
-                },
+                    "  a claim key is kind + module + subject + variant + rule; two claims on one\n" ++
+                    "  key cannot both be answered, and an external judgment could not say which it\n" ++
+                    "  judged. Make them distinct.\n",
+                .{ claim.kind, claim.module, claim.subject, if (claim.variant.len > 0) "|" else "", claim.variant, rule_label, earlier.file, earlier.line, earlier.stamp, claim.file, claim.line, claim.stamp },
             );
         }
     }
@@ -209,17 +251,11 @@
             if (i > 0) std.debug.print(",", .{});
             std.debug.print(
                 "{{\"kind\":\"{s}\",\"module\":\"{s}\",\"subject\":\"{s}\",\"variant\":\"{s}\"," ++
-                    "\"stamp\":\"{s}\",\"rule\":\"{s}\",\"file\":\"{s}\",\"line\":{d},\"prose\":\"",
+                    "\"stamp\":\"{s}\",\"rule\":\"{s}\",\"file\":\"{s}\",\"line\":{d},\"prose\":",
                 .{ c.kind, c.module, c.subject, c.variant, c.stamp, c.rule, c.file, c.line },
             );
-            for (c.prose) |ch| switch (ch) {
-                '"' => std.debug.print("\\\"", .{}),
-                '\\' => std.debug.print("\\\\", .{}),
-                '\n' => std.debug.print("\\n", .{}),
-                '\t' => std.debug.print("\\t", .{}),
-                else => std.debug.print("{c}", .{ch}),
-            };
-            std.debug.print("\"}}", .{});
+            printJson(c.prose);
+            std.debug.print("}}", .{});
         }
         std.debug.print("],\"key_collisions\":{d}}}\n", .{crashes});
         if (crashes > 0) std.process.exit(1);
@@ -242,7 +278,7 @@
         std.debug.print("{s} ({d})\n", .{ stamp, count });
         for (found) |c| {
             if (!std.mem.eql(u8, c.stamp, stamp)) continue;
-            const sep: []const u8 = if (c.variant.len > 0) "|" else "";
+            const sep = if (c.variant.len > 0) "|" else "";
             const rule_label = if (c.rule.len == 0) "" else c.rule;
             std.debug.print("  {s} {s}:{s}{s}{s}", .{ c.kind, c.module, c.subject, sep, c.variant });
             if (rule_label.len > 0) std.debug.print("  → {s}", .{rule_label});
@@ -256,7 +292,280 @@
     }
 
     if (crashes > 0) {
-        std.debug.print("{d} duplicate claim key(s) — the export cannot be trusted until they are distinct.\n", .{crashes});
+        std.debug.print("{d} duplicate claim key(s) — the export cannot be trusted until they\n", .{crashes});
+        std.debug.print("are distinct. Fix the claims, then re-run.\n", .{});
         std.process.exit(1);
+    }
+}
+
+// ============================================================
+// THE ASSUMES COMMAND — the transitive closure
+// ============================================================
+
+~std/compiler:command.declare {
+    "name": "assumes",
+    "description": "List the transitive call closure of a declaration, graded by claims"
+}
+
+~[comptime|command]pub tor assumes {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []const []const u8,
+}
+
+~proc assumes|zig {
+    // `assumes <subject> [text|json]`
+    //
+    // SUBJECT. A dotted path, or a bare name when unambiguous across modules:
+    //
+    //   koruc main.k assumes build              # any module's build, else error
+    //   koruc main.k assumes main:build         # qualified
+    //
+    // WALK. The scope of "rests on" is the program's flows: resolve the
+    // subject to a declaration key; expand that key to the flows that
+    // implement it (a flow item's `impl_of` names the event it implements —
+    // the subflow `build = ...` carries impl_of = build; for flows without an
+    // impl_of, the head invocation names the contract); walk every flow body
+    // for invocations; every reached declaration is reported with its stamp —
+    // or conspicuously without one. visited guards the cycles a transitive
+    // closure always contains.
+    //
+    // It does not judge. It does not gate. It reports reach; what to do
+    // about an unclaimed callee belongs to a consumer.
+
+    if (argv.len == 0) {
+        std.debug.print("assumes: a subject is required — e.g. `koruc main.k assumes build`\n", .{});
+        std.process.exit(2);
+    }
+    var format: []const u8 = "text";
+    const subject_arg = argv[0];
+    if (argv.len > 1) {
+        const fmt = argv[1];
+        if (std.mem.eql(u8, fmt, "text") or std.mem.eql(u8, fmt, "json")) {
+            format = fmt;
+        } else {
+            std.debug.print("assumes: unknown format '{s}' — expected text | json\n", .{fmt});
+            std.process.exit(2);
+        }
+    }
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    // Index: every event and proc key (the reachable declarations).
+    var event_keys = std.ArrayList([]const u8){};
+    var proc_keys = std.ArrayList([]const u8){};
+    var claims_all = std.ArrayList(Claim){};
+    collectClaims(aa, program.items, &claims_all);
+    const claims = claims_all.items;
+
+    const keyAdd = struct {
+        fn call(list: *std.ArrayList([]const u8), alloc: std.mem.Allocator, key: []const u8) void {
+            for (list.items) |k| if (std.mem.eql(u8, k, key)) return;
+            list.append(alloc, key) catch unreachable;
+        }
+    }.call;
+    {
+        var stack = std.ArrayList([]const ast.Item){};
+        stack.append(aa, program.items) catch unreachable;
+        while (stack.items.len > 0) {
+            const items = stack.pop().?;
+            for (items) |*it| switch (it.*) {
+                .module_decl => |m| stack.append(aa, m.items) catch unreachable,
+                .event_decl => |e| keyAdd(&event_keys, aa, pathKey(aa, e.module, &e.path)),
+                .proc_decl => |p| keyAdd(&proc_keys, aa, pathKey(aa, p.module, &p.path)),
+                else => {},
+            };
+        }
+    }
+
+    // Subject: bare name (last path segment) or full key, unambiguous.
+    var subject_full: []const u8 = "";
+    {
+        const isCandidate = struct {
+            fn call(k: []const u8, subj: []const u8) bool {
+                const colon = std.mem.lastIndexOfScalar(u8, k, ':');
+                const tail = if (colon) |ci| k[ci + 1 ..] else k;
+                return std.mem.eql(u8, tail, subj) or std.mem.eql(u8, k, subj);
+            }
+        }.call;
+        var matches: usize = 0;
+        for (event_keys.items) |k| {
+            if (isCandidate(k, subject_arg)) {
+                matches += 1;
+                subject_full = k;
+            }
+        }
+        for (proc_keys.items) |k| {
+            if (isCandidate(k, subject_arg)) {
+                matches += 1;
+                subject_full = k;
+            }
+        }
+        if (matches == 0) {
+            std.debug.print("assumes: no declaration '{s}' in this program\n", .{subject_arg});
+            std.process.exit(2);
+        }
+        if (matches > 1) {
+            std.debug.print("assumes: '{s}' is ambiguous ({d} candidates) — qualify it (module:name)\n", .{ subject_arg, matches });
+            std.process.exit(2);
+        }
+    }
+
+    // ── reachability over flows ────────────────────────────────────────────
+    const flows = ast.allFlows(aa, program);
+    defer _ = aa.free(flows);
+
+    const headKey = struct {
+        fn call(f: *const ast.Flow, aa_param: std.mem.Allocator) []const u8 {
+            // A flow item's contract is its `impl_of` (the event it
+            // implements); for flows without one, the head invocation names
+            // it. The head itself is the FIRST CALL in the body (the `~for`
+            // in `build = ~for(...)`), so it is the contract only for
+            // head-less flows.
+            if (f.impl_of) |io| {
+                return pathKey(aa_param, io.module_qualifier, &io);
+            }
+            const head = f.inv();
+            return pathKey(aa_param, head.path.module_qualifier, &head.path);
+        }
+    }.call;
+
+    var visited = std.StringHashMapUnmanaged(void){};
+    var order = std.ArrayList([]const u8){};
+    var frontier = std.ArrayList([]const u8){};
+
+    // visit — mark a key reached in discovery order; declared keys that may
+    // have bodies of their own go to the frontier for expansion. Everything
+    // comes in as parameters: nested structs cannot capture the proc's locals.
+    const visitKey = struct {
+        fn call(
+            key: []const u8,
+            aa_param: std.mem.Allocator,
+            visited_param: *std.StringHashMapUnmanaged(void),
+            order_param: *std.ArrayList([]const u8),
+            frontier_param: *std.ArrayList([]const u8),
+            event_keys_param: []const []const u8,
+            proc_keys_param: []const []const u8,
+        ) void {
+            if (key.len == 0) return;
+            if (visited_param.contains(key)) return;
+            visited_param.put(aa_param, key, {}) catch unreachable;
+            order_param.append(aa_param, key) catch unreachable;
+            var declared = false;
+            for (event_keys_param) |k| {
+                if (std.mem.eql(u8, k, key)) declared = true;
+            }
+            for (proc_keys_param) |k| {
+                if (std.mem.eql(u8, k, key)) declared = true;
+            }
+            if (declared) frontier_param.append(aa_param, key) catch unreachable;
+        }
+    }.call;
+
+    // walkBody — walk one flow's body as a continuation worklist; every
+    // invocation inside becomes a callee key (via visitKey). Branch bodies
+    // join the worklist; labelled invocations and legacy conditional blocks
+    // pass their inner invocation through.
+    const walkBody = struct {
+        fn call(
+            f: *const ast.Flow,
+            aa_param: std.mem.Allocator,
+            visited_param: *std.StringHashMapUnmanaged(void),
+            order_param: *std.ArrayList([]const u8),
+            frontier_param: *std.ArrayList([]const u8),
+            event_keys_param: []const []const u8,
+            proc_keys_param: []const []const u8,
+        ) void {
+            var cont_stack = std.ArrayList(ast.Continuation){};
+            cont_stack.append(aa_param, f.body) catch unreachable;
+            while (cont_stack.items.len > 0) {
+                const c = cont_stack.pop().?;
+                if (c.node) |n| switch (n) {
+                    .invocation => |inv| {
+                        const k = pathKey(aa_param, inv.path.module_qualifier, &inv.path);
+                        visitKey(k, aa_param, visited_param, order_param, frontier_param, event_keys_param, proc_keys_param);
+                    },
+                    .label_with_invocation => |lwi| {
+                        const k = pathKey(aa_param, lwi.invocation.path.module_qualifier, &lwi.invocation.path);
+                        visitKey(k, aa_param, visited_param, order_param, frontier_param, event_keys_param, proc_keys_param);
+                    },
+                    .foreach => |fe| for (fe.branches) |br| for (br.body) |cc| cont_stack.append(aa_param, cc) catch unreachable,
+                    .conditional => |cd| for (cd.branches) |br| for (br.body) |cc| cont_stack.append(aa_param, cc) catch unreachable,
+                    .switch_result => |sr| for (sr.branches) |br| for (br.body) |cc| cont_stack.append(aa_param, cc) catch unreachable,
+                    .conditional_block => |cb| for (cb.nodes) |nd| switch (nd) {
+                        .invocation => |inv| {
+                            const k = pathKey(aa_param, inv.path.module_qualifier, &inv.path);
+                            visitKey(k, aa_param, visited_param, order_param, frontier_param, event_keys_param, proc_keys_param);
+                        },
+                        else => {},
+                    },
+                    else => {},
+                };
+                for (c.continuations) |cc| cont_stack.append(aa_param, cc) catch unreachable;
+            }
+        }
+    }.call;
+
+    // seed the subject, then expand the frontier: every flow whose head key
+    // matches a frontier key gets its body walked (enqueuing real callees).
+    visitKey(subject_full, aa, &visited, &order, &frontier, event_keys.items, proc_keys.items);
+    while (frontier.items.len > 0) {
+        const key = frontier.pop().?;
+        for (flows) |*f| {
+            if (!std.mem.eql(u8, headKey(f, aa), key)) continue;
+            walkBody(f, aa, &visited, &order, &frontier, event_keys.items, proc_keys.items);
+        }
+    }
+
+    // ── render ─────────────────────────────────────────────────────────────
+    if (std.mem.eql(u8, format, "json")) {
+        std.debug.print("{{", .{});
+        std.debug.print("\"subject\":", .{});
+        printJson(subject_full);
+        std.debug.print(",\"reaches\":[", .{});
+        var first = true;
+        for (order.items) |key| {
+            var any_claim = false;
+            for (claims) |c| {
+                if (!std.mem.eql(u8, claimFull(aa, c), key)) continue;
+                if (!first) std.debug.print(",", .{});
+                first = false;
+                any_claim = true;
+                std.debug.print("{{\"key\":", .{});
+                printJson(key);
+                std.debug.print(",\"stamp\":", .{});
+                printJson(c.stamp);
+                std.debug.print("}}", .{});
+            }
+            if (!any_claim) {
+                if (!first) std.debug.print(",", .{});
+                first = false;
+                std.debug.print("{{\"key\":", .{});
+                printJson(key);
+                std.debug.print(",\"stamp\":", .{});
+                printJson("unclaimed");
+                std.debug.print("}}", .{});
+            }
+        }
+        std.debug.print("]}}\n", .{});
+        return;
+    }
+
+    std.debug.print("📋 assumes — {s}\n", .{subject_full});
+    if (order.items.len == 0) {
+        std.debug.print("  (nothing reachable)\n", .{});
+        return;
+    }
+    for (order.items) |key| {
+        var stamped = false;
+        for (claims) |c| {
+            if (std.mem.eql(u8, claimFull(aa, c), key)) {
+                std.debug.print("  {s}:{s}  [{s}] {s}\n", .{ c.module, c.subject, c.stamp, c.rule });
+                stamped = true;
+            }
+        }
+        if (!stamped) std.debug.print("  {s}  [unclaimed]\n", .{key});
     }
 }
