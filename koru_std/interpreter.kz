@@ -653,13 +653,62 @@ pub const DefinedFlow = struct {
 // in emitted signatures. The map lives behind a named struct instead.
 pub const DefinedFlows = struct {
     map: std.StringHashMap(DefinedFlow),
+    allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) DefinedFlows {
-        return .{ .map = std.StringHashMap(DefinedFlow).init(allocator) };
+        return .{ .map = std.StringHashMap(DefinedFlow).init(allocator), .allocator = allocator };
     }
 
+    /// Replace (or insert) a definition, owning all of its memory. The
+    /// callers hand in arena-scratch slices from the interpreter thread
+    /// state; the table must NOT retain them — the arena resets on the next
+    /// interpreter call and would clobber the stored key/body. Everything is
+    /// duped here into the table's own durable allocator, and the previous
+    /// definition (if any) is freed: a redefine fully replaces.
     pub fn put(self: *DefinedFlows, key: []const u8, value: DefinedFlow) !void {
-        try self.map.put(key, value);
+        if (self.map.fetchRemove(key)) |old| {
+            self.free(old.key, old.value);
+        }
+        const key_owned = try self.allocator.dupe(u8, key);
+        const name_owned = try self.allocator.dupe(u8, value.name);
+        const body_owned = try self.allocator.dupe(u8, value.body_source);
+        const params = try self.allocator.alloc([]const u8, value.params.len);
+        var params_duped: usize = 0;
+        for (value.params, 0..) |p, i| {
+            params[i] = try self.allocator.dupe(u8, p);
+            params_duped += 1;
+        }
+        const param_types = try self.allocator.alloc([]const u8, value.param_types.len);
+        var types_duped: usize = 0;
+        for (value.param_types, 0..) |p, i| {
+            param_types[i] = try self.allocator.dupe(u8, p);
+            types_duped += 1;
+        }
+        errdefer {
+            self.allocator.free(key_owned);
+            self.allocator.free(name_owned);
+            self.allocator.free(body_owned);
+            for (params[0..params_duped]) |p| self.allocator.free(p);
+            self.allocator.free(params);
+            for (param_types[0..types_duped]) |p| self.allocator.free(p);
+            self.allocator.free(param_types);
+        }
+        try self.map.put(key_owned, .{
+            .name = name_owned,
+            .params = params,
+            .param_types = param_types,
+            .body_source = body_owned,
+        });
+    }
+
+    fn free(self: *DefinedFlows, key: []const u8, value: DefinedFlow) void {
+        self.allocator.free(key);
+        self.allocator.free(value.name);
+        self.allocator.free(value.body_source);
+        for (value.params) |p| self.allocator.free(p);
+        self.allocator.free(value.params);
+        for (value.param_types) |p| self.allocator.free(p);
+        self.allocator.free(value.param_types);
     }
 
     pub fn get(self: *const DefinedFlows, key: []const u8) ?DefinedFlow {
@@ -667,6 +716,10 @@ pub const DefinedFlows = struct {
     }
 
     pub fn deinit(self: *DefinedFlows) void {
+        var it = self.map.iterator();
+        while (it.next()) |entry| {
+            self.free(entry.key_ptr.*, entry.value_ptr.*);
+        }
         self.map.deinit();
     }
 };
@@ -1263,7 +1316,9 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         body_source = allocator.dupe(u8, body_source) catch body_source;
     }
 
-    // Install into the durable table.
+    // Install into the durable table. The table OWNS its memory (defined.put
+    // dupes into the session allocator), so a redefine fully replaces the
+    // previous definition rather than being masked by arena reuse.
     const name_owned = allocator.dupe(u8, name) catch name;
     defined.put(name_owned, .{
         .name = name_owned,

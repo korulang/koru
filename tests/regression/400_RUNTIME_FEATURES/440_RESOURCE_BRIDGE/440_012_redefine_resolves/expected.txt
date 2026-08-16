@@ -1,0 +1,7 @@
+--- bridge open
+  defined shout
+  shout -> {"branch":"","value":"echo:hi"}
+  defined shout
+--- redefined
+  shout -> {"branch":"","value":"exclaim:hi"}
+--- done
