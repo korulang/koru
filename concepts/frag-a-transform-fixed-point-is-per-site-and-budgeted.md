@@ -79,3 +79,42 @@ half-written sources) that later runs serve — a rebuild with mtimes that
 happen to match serves the poisoned binary until the cache is cleared.
 The key must incorporate file CONTENT (hashes), not just mtimes, so a
 partially-written source can never match the future clean state.
+
+## The first blessed instance — the per-pass snapshot index (2026-08-16)
+
+The rejection above names the one allowed speedup: a scan narrowed ONLY if
+provably equivalent under the full-program view. The first such narrowing
+is live. `walkOnce` builds the program's `[expand]` event-decl set ONCE per
+pass, and `handleExpandIfMatches` queries it per node instead of scanning
+the whole program per un-transformed invocation. This is NOT the rejected
+cache: the fixed point applies one transform per pass, so the program is
+byte-immutable for the entire walk, and the index is rebuilt at the top of
+every pass — it can never be served against a program it was not built
+from. Same predicate, same program order, first match wins: the answers
+ARE the scan's own answers, demonstrated, not argued — old vs new backend
+on the same 512-flow AST emit byte-identical output_emitted.zig (the exes
+differ only in the Mach-O UUID). The index is threaded down the walk BY
+VALUE rather than by `&expand` pointer: address-taking + a passed pointer
+down the deep self-recursive walk was observed to be corrupted to a
+code-segment address in one layout, deterministically flipping
+115_047_vendor_bindings_in_module; the value copy (24 bytes) is trivial
+next to the scan it replaces and cannot alias across recursion frames.
+
+Measured (512-literal store, backend runs, shared binary per column):
+128 flows 7.44 -> 5.64s · 256 9.68 -> 7.63s · 512 19.87 -> 10.1s; the
+512-print control went 0.81 -> 0.46s. The superlinear slope flattening
+(256->512 was 2.05x, now 1.42x) is the per-node scan collapsing to an
+empty-list check in the common no-`[expand]` program.
+
+The attribution correction that came with it: the measured top layer of
+the wall was the RUNNER's per-node full-program scan in
+`handleExpandIfMatches` (~44% of samples) — not the store transforms'
+own scans (`storeCollectWriteSet`/`storeScanCont`/`storeCollectAliases`
+sat at ~0.5% in the same profile) — amplified by per-pass program growth
+(inserts append machinery; prints do not). A dead 256-byte `debug_path`
+buffer built per invocation for a commented-out log line went with it.
+After the fix the store's OWN per-site machinery resurfaces as the next
+layer: the `stored`/`insert` whole-program probes and text rewrites (BMH
+preprocess churn, the `flatItems` clusters) — the same per-pass-snapshot
+proof applies to transform handlers once the snapshot reaches them through
+the handler ctx.
