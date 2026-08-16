@@ -28,7 +28,21 @@ names the capacity to build (guarded withdrawal), it is not a reason to stop.
 
 ## Considered
 
-**`EX-003-RESOLUTION` — re-resolution is a memory bug, not a feature gap.
+**`EX-004-RESOLUTION` — recovery exactness landed 2026-08-16.**
+Status: CLOSED (the soundness invariant φ(γ)=γ₀, pinned).
+The accumulator applies each inverse exactly once: a handle explicitly
+discharged mid-session must NOT be released again at hang-up. Double-release
+is a doubled inverse — the exact thing the accumulator exists to prevent.
+- Pinned by `440_013_recovery_exactness`: open a.txt, open b.txt, close
+  a.txt explicitly, hang up → only b.txt is released; `close-file()` for
+  a.txt appears exactly once.
+- Falsified 2026-08-16 with the discharged-check removed: the loop
+  re-released both handles forever — 12M `close-file()` lines before the
+  30s timeout. Timeout-red is the verdict; recovery-inexactness is a
+  non-terminating double-inverse, exactly the paper says it is.
+- Cluster after R4: 13/13 green in a clean worktree.
+
+**`EX-003-RESOLUTION` — re-resolution is a memory bug, not a feature gap.**
 Landed 2026-08-16.**
 Status: CLOSED (the third rung found the property already "worked" — by
 arena-reuse luck).

@@ -1,0 +1,11 @@
+--- bridge open
+open(a.txt)
+  open a: held=1
+open(b.txt)
+  open b: held=2
+close-file() ran for 'a.txt'
+  close a: held=1
+--- hang up; only b.txt may be released
+close-file() ran for 'b.txt'
+[BRIDGE] Invoked 'close-file' for handle 'b.txt' [main:opened]
+--- done

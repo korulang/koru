@@ -70,6 +70,18 @@ read as `'xt)sh'`). Fixed by making `DefinedFlows` own its memory.
 Pinned by `440_012_redefine_resolves`, falsified twice in a clean
 worktree, cluster 12/12.
 
+## ROUND FOUR — the recovery-exactness rung (2026-08-16)
+
+The soundness invariant, φ(γ)=γ₀: the accumulator applies each inverse
+exactly once. A handle explicitly discharged mid-session must not be
+released again at hang-up. Pinned by `440_013_recovery_exactness` (only
+b.txt released after a.txt is explicitly closed). The falsification was
+the run's most dramatic: remove the discharged-check and the loop
+re-releases both handles forever — 12M `close-file()` lines before the
+30s timeout. Recovery-inexactness is a non-terminating doubled inverse,
+which is exactly what the paper's invariant says it must not be. Cluster
+13/13, ledger EX-004 closed.
+
 ## Why the reference is trustable as an oracle
 
 - It is a passing, version-controlled implementation (not prose or a benchmark
