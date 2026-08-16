@@ -13,7 +13,7 @@ Ours is the KOPIUM bridge + `std/runtime` in this repo.
 ## Add
 
 **`EX-001` — FLAT possession: the dependent-provider graph has no seat in KOPIUM.**
-Status: OPEN (a gap, not a refusal).
+Status: **CLOSED 2026-08-16** (see `EX-001-RESOLUTION` below).
 The withdrawal-ordering property (Cordis Theorem 63: a provider finishes
 withdrawing only after every dependent that resolved to it has deactivated) is
 inexpressible in `std/bridge`: one session, one `create(id, scope)`, all
@@ -23,6 +23,29 @@ undischarged handle with no dependency edge between handles. There is no
 withdrawal-ordering, KOPIUM is can't-tell at 100% — not wrong, **unnamed**.
 Rationale: this is the skill's "bar too high, worth more than parity" exit; it
 names the capacity to build (guarded withdrawal), it is not a reason to stop.
+
+---
+
+## Considered
+
+**`EX-001-RESOLUTION` — guarded withdrawal landed 2026-08-16.**
+Status: CLOSED (the gap is closed, the exclusion is discharged).
+The dependency edge is **derived, never authored** — no register-block or
+grammar change. When an event creates a handle while one of its evaluated
+input args names a currently-held handle in the same pool/scope
+(`findByHandleId`), the new handle records that provider's pool id in
+`depends_on`. `dischargeAllHandles` is now a guarded loop: a handle is
+released only when no undischarged handle depends on it; dependents release
+first, providers last — mirroring Cordis's `await Promise.allSettled(...)` in
+reverse.
+- Implemented in `koru_std/interpreter.kz` (Handle.depends_on, HandlePool.acquire,
+  HandlePool.hasUndischargedDependents, dischargeAllHandles guarded loop).
+- Pinned by `440_010_guarded_withdrawal`: `query(conn: file_1)` mints a
+  dependent; the test asserts `close-query` fires before `close-file`.
+- Falsified 2026-08-16: with the guard neutered (stash, rebuild, run), the
+  pre-guard interpreter releases `file_1` first — provider under a live
+  dependent — and the test FAILS on output. With the guard it passes.
+- Cluster sweep: 10/10 bridge tests green (440_001…440_010).
 
 ---
 

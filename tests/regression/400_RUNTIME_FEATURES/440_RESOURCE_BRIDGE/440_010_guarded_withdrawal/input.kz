@@ -1,0 +1,83 @@
+// Test: GUARDED WITHDRAWAL — a provider outlives its dependents.
+//
+// The bridge pool is flat: every handle is released on close. The guard
+// (Cordis Theorem 63 ordering, mirror side) is derived, never authored:
+// when an event creates a handle while one of its input args names a
+// currently-held handle in the same pool, that new handle is a dependent
+// of the provider. Release order follows — dependents first, providers
+// last — so `close` never withdraws a provider under a live dependent.
+//
+// This is the shape the First Pull of the cordis gauntlet declared
+// inexpressible: "the dependent-provider graph has no seat in KOPIUM".
+// It now has one, derived from the phantom-registered args.
+//
+// The observable assertion is the release ORDER in the [BRIDGE] lines:
+// `close-query` (the dependent) MUST fire before `close-file` (the
+// provider). A flat pool releases in acquisition order — file first —
+// which is exactly the violation this test pins.
+
+~import std/bridge
+~import std/runtime
+~import std/io
+
+const std = @import("std");
+
+~pub tor open { path: string } -> string<opened!>
+
+~proc open|zig {
+    _ = path;
+    return "file_1";
+}
+
+~pub tor query { conn: string } -> string<queried!>
+
+~proc query|zig {
+    _ = conn;
+    return "query_1";
+}
+
+~pub tor close-file { handle: string<!opened> }
+
+~proc close-file|zig {
+    std.debug.print("close-file() ran for '{s}'\n", .{handle});
+}
+
+~pub tor close-query { handle: string<!queried> }
+
+~proc close-query|zig {
+    std.debug.print("close-query() ran for '{s}'\n", .{handle});
+}
+
+// The bridge's scope IS its vocabulary. `query` takes a held handle id in
+// its args, so the handle it mints depends on the file it names.
+~std/runtime:register(scope: "files") {
+    open(10)
+    query(10)
+    close-file(1)
+    close-query(1)
+}
+
+~std/bridge:create(id: "session-1", scope: "files"): br |> two-shots(br): held |> std/bridge:close(br) |> std/io:print.ln("held before hang-up: {{ held:d }}")
+
+// Two turns: open a file (held), then query it (the minted handle depends
+// on file_1). Both run on the same bridge pool.
+~tor two-shots { br: *std/bridge:Bridge } -> u32
+
+~proc two-shots|zig {
+    const rt = @import("root").koru_std.koru_runtime;
+    _ = rt.run_event.handler(.{
+        .source = "open(path: \"a.txt\")",
+        .scope = "files",
+        .budget = 100,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+    });
+    _ = rt.run_event.handler(.{
+        .source = "query(conn: \"file_1\")",
+        .scope = "files",
+        .budget = 100,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+    });
+    return br.getHandleCount();
+}

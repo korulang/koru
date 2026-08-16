@@ -37,6 +37,19 @@ out of reach on one named axis. This is the ledger-grew-faster-than-score exit:
 the finding (a missing capacity, worth more than the parity) is the deliverable
 of this pull.
 
+## POSTSCRIPT — the First Real Round (2026-08-16, same day)
+
+The missing capacity is built. Guarded withdrawal landed in
+`koru_std/interpreter.kz`: dependency edges derived at acquire time from
+input args naming held handles, `dischargeAllHandles` now a guarded loop.
+Pinned by `440_010_guarded_withdrawal` — and **falsified**: with the guard
+neutered, the interpreter releases the provider `file_1` first (the exact
+violation) and the test fails; with the guard, dependents-first and it passes.
+Bridge cluster: 10/10 green.
+
+**can't-tell on withdrawal-ordering: 100% → 0%.** The First Pull scenario is
+now expressible, runnable, and diffable — the gauntlet has its first real rung.
+
 ## Why the reference is trustable as an oracle
 
 - It is a passing, version-controlled implementation (not prose or a benchmark

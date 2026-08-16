@@ -1,0 +1,5 @@
+close-query() ran for 'query_1'
+[BRIDGE] Invoked 'close-query' for handle 'query_1' [main:queried]
+close-file() ran for 'file_1'
+[BRIDGE] Invoked 'close-file' for handle 'file_1' [main:opened]
+held before hang-up: 2
