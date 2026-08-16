@@ -324,6 +324,23 @@ regression_check_js_equivalence() {
     # exit code alone — also require the emitted file to exist and be non-empty.
     if ! "${KORUC:?KORUC is unset — the harness must snapshot the compiler before running a test}" "$(test_entry "$test_dir")" --lang=js $flags \
             >"$test_dir/compile_js.err" 2>&1; then
+        # A JS build that REFUSES can be pinned: a `JS_REFUSES` file holds the
+        # expected diagnostic substring. A refusal is a user error (some event
+        # has no JS implementation on the target), and the pin asserts the
+        # refusal is the clean, located diagnostic — never a panic/SIGABRT,
+        # which prints no `error[KORU0xx]` line and would red here. The marker
+        # is the JS-side twin of the negative-branch `expected_error.txt`.
+        if [ -f "$test_dir/JS_REFUSES" ]; then
+            local want
+            want=$(cat "$test_dir/JS_REFUSES")
+            if grep -qF "$want" "$test_dir/compile_js.err"; then
+                _write_targets "refused" "$want"
+                echo -e "${GREEN}  ✓ JS refused cleanly (JS_REFUSES pinned)${NC}"
+                return 0
+            fi
+            _js_equiv_fail "js-compile" "JS refused, but not with the pinned text (JS_REFUSES)"
+            return 0
+        fi
         _js_equiv_fail "js-compile" "koruc --lang=js failed (see compile_js.err)"
         return 0
     fi

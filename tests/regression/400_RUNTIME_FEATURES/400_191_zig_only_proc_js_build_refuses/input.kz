@@ -1,0 +1,21 @@
+// PINS: a Zig-only proc on a --lang=js build must REFUSE CLEANLY — a
+// located diagnostic naming the code, never a panic.
+//
+// The old surface was std.debug.panic("js_emitter.emit failed: {s}") at
+// koru_std/compiler.kz emission: every program whose event has no JS
+// implementation (a zig-only proc, an unmodelled construct) died with
+// SIGABRT + a raw backtrace that read as a compiler bug and buried the
+// reason. The [js_emitter] log line ABOVE the panic named the event; the
+// panic threw that away.
+//
+// JS_REFUSES asserts the refusal is the clean diagnostic — the
+// `error[KORU047]:` line that only exists after the conversion. Under the
+// old panic the js build printed the log line but no error[KORU0xx] line,
+// so this pin reds there and greens here. The bench's mock-gate hit this
+// shape (event-name with a zig-only proc) while rebuilding; the zig build
+// was separately poisoned by a js-lang backend in the content cache.
+const std = @import("std");
+
+~pub tor ping { msg: string }
+~proc ping|zig { std.debug.print("pong {s}\n", .{msg}); }
+~ping(msg: "hello")

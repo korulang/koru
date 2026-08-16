@@ -1962,9 +1962,17 @@ const emitFlowWithMocks = struct {
     // shadow that declaration.
     const final_code = if (@import("std").mem.eql(u8, CompilerEnv.lang, "js")) blk: {
         const js_emitter = @import("js_emitter");
-        // Fail loud: a JS-emit failure must surface, not silently fall back to Zig.
+        // Fail loud: a JS-emit failure must surface, not silently fall back to
+        // Zig. A refusal is a USER error — some event has no JavaScript
+        // implementation on this target (a zig-only proc, an unmodelled
+        // construct) — so it becomes a clean, located diagnostic (the
+        // js_emitter already printed WHICH event) and exit 1. The old
+        // std.debug.panic made every refusal read as a compiler bug: SIGABRT,
+        // a raw error name, and a backtrace that buried the reason. Pinned by
+        // 400_191_zig_only_proc_js_build_refuses.
         break :blk js_emitter.emit(ctx.allocator, ctx.ast, CompilerEnv.library) catch |err| {
-            std.debug.panic("js_emitter.emit failed: {s}", .{@errorName(err)});
+            std.debug.print("error[KORU047]: JS emission failed: {s}\n", .{@errorName(err)});
+            std.process.exit(1);
         };
     } else visitor_code;
 
