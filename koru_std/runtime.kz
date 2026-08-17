@@ -1887,6 +1887,43 @@ fn buildScopeTable() []const ScopeRuntime {
 }
 
 // ============================================================================
+// SCOPE-GRAMMAR - the wire grammar, rendered from the register block
+// ============================================================================
+//
+// The third render from the scope table, and the one that closes the R2
+// loop: scope-vocabulary tells a model WHAT it may call, scope-manifest
+// serves it as data, and scope-grammar teaches HOW a call is written — the
+// wire's shape rules (the constant half, WIRE_GRAMMAR_TEXT, kept beside the
+// parser that enforces it) above this scope's own verb lines (rendered by
+// scope-vocabulary, so the signatures cannot drift from enforcement either).
+// A prompt built from this render and a turn judged by parse.wire are the
+// same declaration read twice: the lesson and the law.
+
+// @retain: scope_grammar_event is referenced from generated Zig code in user
+// pipelines (kopium's agent prompt is built from it).
+~[retain]pub tor scope-grammar { name: string }
+| ok string
+| not-found
+
+~proc scope-grammar|zig {
+    inline for (comptime buildScopeTable()) |scope_info| {
+        if (std.mem.eql(u8, name, scope_info.name)) {
+            var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            const allocator = arena_state.allocator();
+            var out = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+            out.appendSlice(allocator, WIRE_GRAMMAR_TEXT) catch unreachable;
+            out.appendSlice(allocator, "\n\nYour vocabulary:\n") catch unreachable;
+            switch (scope_vocabulary_event.handler(.{ .name = name })) {
+                .ok => |v| out.appendSlice(allocator, v) catch unreachable,
+                .not_found => unreachable, // the inline-for already matched this scope
+            }
+            return .{ .ok = out.toOwnedSlice(allocator) catch unreachable };
+        }
+    }
+    return .{ .not_found = .{} };
+}
+
+// ============================================================================
 // EXPLAIN-RUNTIME - the `[explainer]` for the scope registry
 // ============================================================================
 //
@@ -2239,6 +2276,19 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // Validation only shapes the line; the AST is still built by the
 // interpreter's own parser, so the wire can never accept a shape that eval
 // would execute differently.
+
+// The wire's shape rules, as prompt bytes. These are the sentences
+// `wireValidate` below enforces — the two must move together or the prompt
+// starts lying about the parser (the drift this rung exists to kill).
+// `scope-grammar` renders this text above the scope's own verb lines.
+const WIRE_GRAMMAR_TEXT =
+    \\A wire line is exactly one invocation: verb(field: "value", field: "value")
+    \\- One invocation per turn. Nothing after the closing ')': no chains (|>), no second line, no trailing text.
+    \\- The verb is a bare name from your vocabulary — letters, digits, '-', '_' — immediately followed by '('.
+    \\- Every value is a double-quoted string; escape quotes and backslashes inside (\", \\). No bare values.
+    \\- A field whose type carries <!name> is a handle: issued by an earlier call, still held. Never invent one.
+    \\- Prose is not wire. To speak, call the vocabulary's voice verb; to act, call its verb. Nothing else parses.
+;
 
 const WireRejection = struct { message: []const u8, byte: usize };
 

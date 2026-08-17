@@ -40,5 +40,10 @@ mistake, and the agent's next turn is built from the lesson we hand it.
 - `430_055` pins the same prose-refusal against the *general* interpreter;
   whether `flow_parser` itself tightens is a compiler-core question, Lars's
   call.
-- The derived grammar *render* (the prompt bytes from the same table) is
-  the sibling surface: prompt and enforcement as the same bytes, completed.
+
+The sibling surface landed the same day: `scope-grammar` renders the wire's
+shape rules (kept beside the parser that enforces them) above the scope's
+verb lines, and `std/bridge:grammar` extends it with the session's defined
+flows — the prompt an agent lives under is now the register block plus its
+own growth, pinned by 430_063 and 440_017. Prompt and enforcement are the
+same bytes, completed.

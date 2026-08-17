@@ -322,6 +322,55 @@ pub const Bridge = struct {
 }
 
 // ============================================================================
+// GRAMMAR - the derived prompt, complete: the wire's rules + the session's
+// whole vocabulary
+// ============================================================================
+//
+// `std/runtime:scope-grammar` renders the wire's shape rules above the
+// scope's COMPILED verbs. The prompt an agent actually lives under needs one
+// more thing: the session's DEFINED flows, the verbs it invented on earlier
+// turns. This render is that whole surface — rules, compiled base, and
+// inventions, one string — so the agent's prompt is the register block plus
+// its own growth, and nothing hand-typed. A turn judged by the wire gate
+// (parse.wire, in `run` above) and a prompt built from this render are the
+// same declaration read twice.
+
+~pub tor grammar { br: *Bridge }
+| ok string
+| not-found string
+
+~proc grammar|zig {
+    const rt = @import("root").koru_std.koru_runtime;
+
+    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena_state.allocator();
+    var out = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+
+    switch (rt.scope_grammar_event.handler(.{ .name = br.scope })) {
+        .ok => |g| out.appendSlice(allocator, g) catch unreachable,
+        .not_found => return .{ .not_found = br.scope },
+    }
+
+    // The session's inventions, same as `vocabulary` renders them.
+    var it = br.defined.map.iterator();
+    while (it.next()) |entry| {
+        const flow = entry.value_ptr.*;
+        out.append(allocator, '\n') catch unreachable;
+        out.appendSlice(allocator, flow.name) catch unreachable;
+        out.append(allocator, '(') catch unreachable;
+        for (flow.params, 0..) |pname, i| {
+            if (i > 0) out.appendSlice(allocator, ", ") catch unreachable;
+            out.appendSlice(allocator, pname) catch unreachable;
+            out.appendSlice(allocator, ": ") catch unreachable;
+            out.appendSlice(allocator, flow.param_types[i]) catch unreachable;
+        }
+        out.append(allocator, ')') catch unreachable;
+    }
+
+    return .{ .ok = out.toOwnedSlice(allocator) catch unreachable };
+}
+
+// ============================================================================
 // CLOSE - Hang up: release everything the session still holds
 // ============================================================================
 //

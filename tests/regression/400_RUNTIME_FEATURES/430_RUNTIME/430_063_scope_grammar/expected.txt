@@ -1,0 +1,13 @@
+A wire line is exactly one invocation: verb(field: "value", field: "value")
+- One invocation per turn. Nothing after the closing ')': no chains (|>), no second line, no trailing text.
+- The verb is a bare name from your vocabulary — letters, digits, '-', '_' — immediately followed by '('.
+- Every value is a double-quoted string; escape quotes and backslashes inside (\", \\). No bare values.
+- A field whose type carries <!name> is a handle: issued by an earlier call, still held. Never invent one.
+- Prose is not wire. To speak, call the vocabulary's voice verb; to act, call its verb. Nothing else parses.
+
+Your vocabulary:
+open(path: string)
+append(handle: string<!open>, text: string)
+close(handle: string<!open>)
+say(text: string)
+NOT FOUND
