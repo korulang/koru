@@ -125,6 +125,25 @@ no `440_017` was manufactured. The probe ran green and was removed. This
 CLOSES the confluence theorem: ordering axis carried by LIFO (R5
 meta-finding), resolution axis carried by acquire-time duplication.
 
+**`EX-009-RESOLUTION` — progress/termination is carried (2026-08-17).**
+The paper's progress guarantee (every composition eventually reaches a
+state; the release loop terminates) was audited on the discharge loop. It
+terminates by two structural guarantees, both already in the code:
+1. Acyclic-by-construction: `acquire` assigns monotonically increasing ids
+   (`interpreter.kz:427-429`) and a handle's `depends_on` can only name
+   handles already held (lower id) via `findByHandleId` — a dependency
+   cycle is unconstructible from sequential acquisition.
+2. Monotone marking: `dischargeById` guards `!h.discharged`
+   (`interpreter.kz:503-510`) and the loop skips discharged handles before
+   the guard, so each `progressed` outer pass strictly decreases the
+   undischarged count (bounded by n) — the loop cannot spin.
+The falsification is already on record: EX-004's note — removing the
+discharged-check made the loop re-release both handles forever (12M
+close-file lines, 30s timeout-red). That timeout-red IS the progress
+theorem's counterexample, already caught as recovery-exactness's
+non-terminating double-inverse. Recorded as a carried finding, no pin
+manufactured (diamond rule). This CLOSES progress: the loop always lands.
+
 ---
 
 ## Removed
