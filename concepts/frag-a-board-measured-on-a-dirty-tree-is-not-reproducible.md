@@ -102,3 +102,25 @@ run `git status`. See also
 [[frag-a-rename-can-improve-the-board-without-improving-the-compiler]] — the
 other way a board number moves for reasons that are not the reason it appears to
 have moved.
+
+**Fourth door, and the one that stalls the site: the CONSUMER side reads the
+live tree, not the snapshot.** The site's data generator (`generate-status.js`)
+walks koru's on-disk markers (SUCCESS/FAILURE files) and pokes
+`test-results/unit-tests.json` — it does NOT read the committed `latest.json`
+or the git tree. So a ceremony that is procedurally perfect — snapshot measured
+on a clean commit, commit landed, THEN site regen — still publishes whatever
+the working tree looked like at regen time. Measured 2026-08-17: koru's main
+carried abandoned mid-refactor WIP (interpreter discharge rewrite, library
+build wiring), the working-tree markers reflected a partial cached run, and a
+00:20 regen produced a nonsensical 601/1704 against a committed 1505/1691 —
+a collapse of the headline board that no single commit explains. The inset
+that saved the site was not machinery but a session refusing to commit garbage;
+the site silently froze on its last good data instead.
+
+Consequence for the ceremony: the site regen must run against a tree whose
+marker state matches the snapshot's commit, which means the WIP must be
+stashed BEFORE the site regen (not just before the koru run), or the regen
+must read the snapshot instead of the tree. The general form holds — a
+published board is checkable only if every input that can move it is named by
+the commit it cites — and the site generator is another input the commit does
+not name.
