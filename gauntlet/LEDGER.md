@@ -106,6 +106,27 @@ reverse.
 
 ---
 
+**`EX-008-RESOLUTION` — confluence is carried, not earned (2026-08-17).**
+Theorem 73 (order-independence: remove/replace/revert lands where the final
+composition would have landed) was tested on its one un-pinned axis — a
+REGISTERED handle held across a mid-session REDEFINE of a session-defined
+flow. The property holds without any fix: at hang-up the held file still
+releases exactly once via its recorded `close-file` event.
+Why it is carried, not coincidental: the two structures are disjoint by
+construction — a handle's `discharge_event` is DUPLICATED into the pool's
+allocator at acquire time (`interpreter.kz:479`), while `define` mutates the
+session's durable defined-flows table whose memory EX-003 made self-owned.
+Discharge resolves from the scope's registered spec table, never by
+re-reading the flow body. So replacing a provider can no more corrupt a
+held handle than it can rewrite the pool.
+Recorded as a finding, per the EX-006 diamond discipline: a pin that cannot
+be falsified (the pre-existing architecture is the fix) proves nothing, so
+no `440_017` was manufactured. The probe ran green and was removed. This
+CLOSES the confluence theorem: ordering axis carried by LIFO (R5
+meta-finding), resolution axis carried by acquire-time duplication.
+
+---
+
 ## Removed
 
 (none)
