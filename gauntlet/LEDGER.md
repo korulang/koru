@@ -144,6 +144,26 @@ theorem's counterexample, already caught as recovery-exactness's
 non-terminating double-inverse. Recorded as a carried finding, no pin
 manufactured (diamond rule). This CLOSES progress: the loop always lands.
 
+**`XL-R2-RESOLUTION` — recovery exactness, cross-language (2026-08-17).**
+The exactness theorem (Thm 61: each inverse applied exactly once) is now
+checked by the LIVE ORACLE, not just in-repo. Scenario: a parent owns two
+provider children; the A child is explicitly disposed mid-session; the
+parent hangs up. Invariant: each binding withdraws EXACTLY ONCE — the
+explicit dispose plus hang-up apply A's inverse a single time.
+- Cordis side (`xlang-r2-cordis.spec.ts`): green — measured
+  `service|withdraw|storeA` = 1, `storeB` = 1 across the whole trace.
+- Koru side (`440_013_recovery_exactness`): green — `release:a` = 1,
+  `release:b` = 1.
+- Measured artifact: Cordis re-emits `service|set` during notify (the R1
+  documented set-artifact) — the invariant is on the WITHDRAW side.
+- The closer is now multi-scenario (R1-ordering + R2-exactness) and the
+  battery still discriminates: probe A (flat) fails R1-ordering while
+  R2-exactness stays PASS — two theorems, one closer, independent verdicts.
+- This closes the gap between "KOPIUM satisfies recovery-exactness"
+  (in-repo, already true) and "the reference implementation agrees" (now
+  measured). The 12M-line double-release Koru caught in-repo (EX-004) is
+  the same class the oracle now guards cross-language.
+
 ---
 
 ## Removed
