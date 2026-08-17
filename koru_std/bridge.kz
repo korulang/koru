@@ -203,6 +203,21 @@ pub const Bridge = struct {
         }
     }
 
+    // THE WIRE GATE (the R2 rung, KOPIUM_RUNTIME.md): a turn on the bridge is
+    // ONE invocation and nothing else. `std/runtime:parse.wire` is the strict
+    // grammar — prose, chains, trailing text and truncated strings are refused
+    // here as parse-error ("that was not Koru"), before the dispatcher ever
+    // sees them. What passes still runs the full path below: scope membership
+    // (event-denied), field shapes (validation-error), possession, budget.
+    switch (rt.parse_wire_event.handler(.{ .source = source })) {
+        .parsed => {},
+        .parse_error => |e| return .{ .parse_error = .{
+            .message = e.message,
+            .line = e.line,
+            .column = e.column,
+        } },
+    }
+
     const result = rt.run_event.handler(.{
         .source = source,
         .scope = br.scope,
