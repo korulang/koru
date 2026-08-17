@@ -20,10 +20,13 @@ import { execSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const CORDIS = process.argv.find((a, i) => a === '--cordis-ref' ? process.argv[i + 1] : null)
-  ?? '/Users/larsde/src/cordis-ref'
-const KORU = process.argv.find((a, i) => a === '--koru' ? process.argv[i + 1] : null)
-  ?? '/Users/larsde/src/koru'
+function argValue(flag, def) {
+  const i = process.argv.indexOf(flag)
+  return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : def
+}
+
+const CORDIS = argValue('--cordis-ref', '/Users/larsde/src/cordis-ref')
+const KORU = argValue('--koru', '/Users/larsde/src/koru')
 
 const fixture = join(KORU, 'gauntlet/crosslang/xlang-r1-cordis.spec.ts')
 const koruTest = join(

@@ -65,6 +65,34 @@ VERDICT: FAIL
 It cannot be flattered: green on the true ordering, red on the known
 violation.
 
+## The falsification battery (2026-08-17)
+
+The single manual falsification became a **scripted, batched battery**
+(`falsify.mjs`) so the "can't be flattered" claim is re-checked in one
+command per rung — not by hand-flipping the interpreter and re-running the
+full board. Only the one pin is exercised; uncached full sweeps stay in the
+publish ceremony.
+
+```bash
+node gauntlet/crosslang/falsify.mjs          # runs every probe, restores tree
+```
+
+Each probe in `probes/*.patch` edits the `dischargeAllHandles` loop; the
+contract is per-probe:
+
+| probe | edit | expected | why |
+|---|---|---|---|
+| `A-flat` | forward walk + no guard | **FAIL** | pre-R1 flat release — the one real violation |
+| `B-guardless` | LIFO, guard removed | PASS | LIFO carries ordering alone (near-miss) |
+| `C-forward` | forward walk, guard kept | PASS | guard alone enforces ordering (near-miss) |
+
+Exit `0` = every probe met its contract and the tree was restored
+byte-identical. The battery refuses to run on a dirty tree and aborts if a
+restore fails, so it can never be left with a modified `interpreter.kz`.
+Probes B and C are the discriminating half: a closer that fired on them
+would be over-eager. Their staying green is what makes the battery's one
+FAIL meaningful.
+
 ## The semantic discovery
 
 The fixture's first attempts failed informatively: retiring a single Cordis
@@ -78,6 +106,8 @@ events, not callback order. That is now the documented contract.
 - `xlang-r1-cordis.spec.ts` — the Cordis-side fixture (trace recorder +
   invariant assertion).
 - `closer.mjs` — runs both sides, normalizes, diffs, verdicts.
+- `falsify.mjs` + `probes/*.patch` — the batched falsification battery
+  (the closest-without-flattery check, scripted).
 - This README — the contract.
 - Koru side lives in the regression corpus: `440_010_guarded_withdrawal`.
 

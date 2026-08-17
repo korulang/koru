@@ -1,0 +1,12 @@
+diff --git a/koru_std/interpreter.kz b/koru_std/interpreter.kz
+index 18cf5d27..edc99e79 100644
+--- a/koru_std/interpreter.kz
++++ b/koru_std/interpreter.kz
+@@ -1847,7 +1847,6 @@ pub fn dischargeAllHandles(
+             i -= 1;
+             const handle = pool.handles.items[i];
+             if (handle.discharged) continue;
+-            if (pool.hasUndischargedDependents(handle.id)) continue;
+ 
+             // Find the arg_name for this discharge event by looking up DischargeSpec
+             var arg_name: ?[]const u8 = null;
