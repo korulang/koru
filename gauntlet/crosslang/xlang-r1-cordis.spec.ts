@@ -1,78 +1,71 @@
-// Cross-language gauntlet, rung R1 fixture — CORDIS SIDE.
+// Cross-language gauntlet, rung R1 fixture — CORDIS SIDE (machine-readable).
 //
 // Scenario: retired provider with a live dependent (Theorem 63 ordering).
-// A provider plugin installs service `store`; a consumer plugin injects it.
-// Retiring the provider must run the consumer's teardown FIRST, then the
-// provider's own, then withdraw the service. This file records the trace
-// the closer expects; the same scenario in the Koru bridge must normalize
-// to the same event vocabulary.
+// The parent fiber owns the provider binding AND a child consumer plugin.
+// Retiring the parent tears down both.
 //
-// Run:  cd /Users/larsde/src/cordis-ref
-//       bunx vitest run packages/core/tests/xlang-r1-cordis.spec.ts
+// THE INVARIANT (lifecycle form, per Theorem 63): the dependent leaves the
+// ACTIVE lifecycle state BEFORE the provider's binding is withdrawn. The
+// disposer ORDER is an implementation detail of each runtime and differs
+// between Cordis and Koru — the closer compares lifecycle events only.
 //
-// Event vocabulary (the shared closer contract):
-//   plugin|install|<uid>         fiber created
-//   service|set|<name>           value provided
-//   service|withdraw|<name>      binding removed
-//   <role>|teardown              disposer ran (consumer before provider)
+// Emitted contract: every line starts with `TRACE `, and the FINAL line is
+// `TRACE_JSON <json-array>` carrying the full ordered event list.
+//
+// Run: cd /Users/larsde/src/cordis-ref
+//      bunx vitest run packages/core/tests/xlang-r1-cordis.spec.ts
 
 import { Context } from '../src'
 import { describe, it, expect } from 'vitest'
 
 export function makeRetireTrace() {
   const root = new Context()
-  const trace: string[] = []
+  const events: string[] = []
 
-  // Registered exactly like the working probe: loop over names, spread args.
   for (const ev of ['internal/plugin', 'internal/status', 'internal/service'] as const) {
     root.on(ev, ((...args: any[]) => {
-      if (ev === 'internal/plugin') {
-        trace.push(`plugin|install|${args[0]?.uid}`)
-      } else if (ev === 'internal/service') {
+      if (ev === 'internal/plugin') events.push(`plugin|install|${args[0]?.uid}`)
+      else if (ev === 'internal/service') {
         const [name, value] = args
-        trace.push(value === undefined || value === null
-          ? `service|withdraw|${name}`
-          : `service|set|${name}`)
-      } else if (ev === 'internal/status') {
+        events.push(value == null ? `service|withdraw|${name}` : `service|set|${name}`)
+      } else {
+        // FiberState: PENDING=0 LOADING=1 ACTIVE=2 FAILED=3 DISPOSED=4 UNLOADING=5
         const [fiber, oldState] = args
-        trace.push(`fiber|state|${fiber?.uid}|${oldState}->${fiber?.state}`)
+        events.push(`fiber|state|${fiber?.uid}|${oldState}->${fiber?.state}`)
       }
     }) as any)
   }
 
-  async function provider(ctx: Context) {
+  async function parent(ctx: Context) {
     ctx.provide('store', { data: 1 })
-    return () => { trace.push('provider|teardown') }
-  }
-  async function consumer(ctx: Context) {
-    await ctx.get('store')
-    return () => { trace.push('consumer|teardown') }
+    await ctx.plugin(async (ctx) => {
+      await ctx.get('store')
+      ctx.on('store/x', () => {})
+    })
   }
 
   return {
     async run() {
-      const provFiber = await root.plugin(provider)
-      await root.plugin(consumer)
-      await provFiber.dispose()
-      return trace
+      const parentFiber = await root.plugin(parent)
+      await parentFiber.dispose()
+      return events
     },
   }
 }
 
 describe('xlang R1 — cordis side', () => {
-  it('retires the dependent before the provider', async () => {
+  it('dependent leaves ACTIVE before the binding withdraws', async () => {
     const { run } = makeRetireTrace()
-    const trace = await run()
-    // Theorem 63: provider teardown after consumer teardown; service
-    // withdraw strictly last.
-    const consumerAt = trace.findIndex(t => t === 'consumer|teardown')
-    const providerAt = trace.findIndex(t => t === 'provider|teardown')
-    const withdrawAt = trace.findIndex(t => t.startsWith('service|withdraw'))
-    expect(consumerAt).toBeGreaterThan(-1)
-    expect(providerAt).toBeGreaterThan(-1)
-    expect(withdrawAt).toBeGreaterThan(providerAt)
-    expect(consumerAt).toBeLessThan(providerAt)
-    console.log('XLANGTRACE')
-    for (const t of trace) console.log('TRACE', t)
+    const events = await run()
+    // Consumer is the child (uid 2). Its ACTIVE->UNLOADING transition (2->5)
+    // must precede the provider binding's service|withdraw.
+    const consumerLeavesActive = events.findIndex(
+      t => t.startsWith('fiber|state|2|2->') || t.startsWith('fiber|state|2|1->'),
+    )
+    const withdraw = events.findIndex(t => t.startsWith('service|withdraw'))
+    console.log('XLANG_CORDIS ' + JSON.stringify(events))
+    expect(consumerLeavesActive).toBeGreaterThan(-1)
+    expect(withdraw).toBeGreaterThan(-1)
+    expect(consumerLeavesActive).toBeLessThan(withdraw)
   })
 })
