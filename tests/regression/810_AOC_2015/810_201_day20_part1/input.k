@@ -29,12 +29,10 @@ hunt = #h presents-check(target, house: 1, lazy: 0)
 
 capture { goal: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_201_day20_part1/input.txt")
-    ! line l |> to-int(s: l)
-        | value v |> captured { goal: acc.goal + v }
+    ! line l |> to-int(s: l): v |> captured { goal: acc.goal + v }
     | done _ |> _
     | failed e |> std/io:print.ln("FAILED {{ e:s }}")
-| captured r |> hunt(target: r.goal)
-    | house h |> std/io:print.ln("{{ h:d }}")
+| captured r |> hunt(target: r.goal): h |> std/io:print.ln("{{ h:d }}")
 
 pub tor to-int { s: string } -> i64
 

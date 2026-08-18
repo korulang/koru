@@ -46,6 +46,5 @@ run = #L tick(limit, passes: 0)
 | expired e -> e
 
 std/field:new(bits: 500000)
-| field f |> run(limit: 3, f)
-    | total n |> std/field:count-zeros(f, lo: 1, hi: 500000): c |> std/io:print.ln("passes: {{ n:d }}") |> std/io:print.ln("validated primes: {{ c + 1:d }}") |> std/field:free(f)
+| field f |> run(limit: 3, f): n |> std/field:count-zeros(f, lo: 1, hi: 500000): c |> std/io:print.ln("passes: {{ n:d }}") |> std/io:print.ln("validated primes: {{ c + 1:d }}") |> std/field:free(f)
 | err _ |> _

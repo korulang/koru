@@ -27,8 +27,7 @@ measure = capture { c: 0[i64], m: 0[i64], st: 0[i64] }
 
 capture { diff: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/600_STDLIB/645_SWITCH/645_004_day08_switch/input.txt")
-    ! line l |> measure(line: l)
-        | counted { c, m } |> captured { diff: acc.diff + c - m }
+    ! line l |> measure(line: l): counted |> captured { diff: acc.diff + counted.c - counted.m }
     | done _ |> _
     | failed e |> std/io:print.ln("FAILED {{ e:s }}")
 | captured total |> std/io:print.ln("{{ total.diff:d }}")

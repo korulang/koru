@@ -13,12 +13,10 @@ pub tor pong { a: i64, b: i64, n: i64 } -> i64
 
 ping = if(n == 0)
 | then -> a
-| else |> pong(a: b, b: a, n: n - 1)
-    | value v -> v
+| else |> pong(a: b, b: a, n: n - 1): v -> v
 
 pong = if(n == 0)
 | then -> b
-| else |> ping(a: b, b: a, n: n - 1)
-    | value v -> v
+| else |> ping(a: b, b: a, n: n - 1): v -> v
 
 ping(a: 1, b: 2, n: 2): r |> std/io:print.ln("{{ r:d }}")

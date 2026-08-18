@@ -23,8 +23,7 @@ count-file = capture { n: 0[i64] }
 
 capture { total: 0[i64], files: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/600_STDLIB/650_FS/650_005_cell_ctx_deep_nesting/input.txt")
-    ! line f |> count-file(path: f)
-        | counted n |> captured { total: acc.total + n, files: acc.files + 1 }
+    ! line f |> count-file(path: f): n |> captured { total: acc.total + n, files: acc.files + 1 }
     | done _ |> _
     | failed e |> std/io:print.ln("FAILED {{ e:s }}")
 | captured t |> std/io:print.ln("{{ t.files:d }} files, {{ t.total:d }} lines")

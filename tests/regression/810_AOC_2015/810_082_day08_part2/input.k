@@ -17,8 +17,7 @@ measure = capture { c: 0[i64], e: 2[i64] }
 
 capture { diff: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_082_day08_part2/input.txt")
-    ! line l |> measure(line: l)
-        | counted { c, e } |> captured { diff: acc.diff + e - c }
+    ! line l |> measure(line: l): counted |> captured { diff: acc.diff + counted.e - counted.c }
     | done _ |> _
     | failed e |> std/io:print.ln("FAILED {{ e:s }}")
 | captured total |> std/io:print.ln("{{ total.diff:d }}")

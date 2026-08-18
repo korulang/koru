@@ -14,7 +14,6 @@ mine = #search std/crypto:md5-check(key, n: 1, zeros)
 | found r -> r
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_042_day04_part2/input.txt")
-! line k |> mine(key: k, zeros: 6)
-    | found n |> std/io:print.ln("{{ n:d }}")
+! line k |> mine(key: k, zeros: 6): n |> std/io:print.ln("{{ n:d }}")
 | done _ |> _
 | failed e |> std/io:print.ln("FAILED {{ e:s }}")

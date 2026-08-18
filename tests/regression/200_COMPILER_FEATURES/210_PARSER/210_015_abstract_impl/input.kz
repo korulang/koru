@@ -29,14 +29,12 @@ const std = @import("std");
 // The module qualifier (input:) marks this as an impl override
 // Module name is derived from filename: input.kz -> "input"
 ~input:coordinate =
-    coordinate(ctx: 42)  // Delegates to default
-    | finished f -> f + 1
+    coordinate(ctx: 42): f -> f + 1  // Delegates to default
 
 // Example 4: Implementation that provides complete logic
 // No delegation to default (there isn't one for 'process')
 ~input:process =
-    double(value: data)
-    | result r -> r
+    double(value: data): r -> r
 
 // Use the implemented events
 ~coordinate(ctx: 10)

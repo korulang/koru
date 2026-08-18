@@ -23,17 +23,14 @@ pub tor run-steps { g: [8][8]i64, k: i64 } -> [8][8]i64
 
 run-steps = if(k >= 4)
 | then -> g
-| else |> life-step(g)
-    | next g2 |> run-steps(g: g2, k: k + 1)
-        | final gf -> gf
+| else |> life-step(g): g2 |> run-steps(g: g2, k: k + 1): gf -> gf
 
 capture { g: [8][8]i64{ .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{ 0, 0, 0, 0, 0, 0, 0, 0 } }, row: 0[i64], col: 0[i64] }
 ! as acc |> std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_181_day18_part1/input.txt")
     ! line l |> for(l)
         ! each ch |> captured { g[@as(usize, @intCast(acc.row + 1))][@as(usize, @intCast(acc.col + 1))]: @as(i64, @intFromBool(ch == 35)), col: acc.col + 1 }
       | done |> captured { row: acc.row + 1, col: 0 }
-    | done _ |> run-steps(acc.g, k: 0)
-        | final gf |> capture { lit: 0[i64] }
+    | done _ |> run-steps(acc.g, k: 0): gf |> capture { lit: 0[i64] }
             ! as b |> for(0..8)
                 ! each rr |> for(0..8)
                     ! each cc |> captured { lit: b.lit + gf[rr][cc] }

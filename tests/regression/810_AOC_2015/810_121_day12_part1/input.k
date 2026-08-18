@@ -23,7 +23,6 @@ sum-numbers = capture { sum: 0[i64], num: 0[i64], sign: 1[i64], in: 0[i64] }
 | captured r -> (r.sum + r.sign * r.num)
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_121_day12_part1/input.txt")
-! line l |> sum-numbers(s: l)
-    | total t |> std/io:print.ln("{{ t:d }}")
+! line l |> sum-numbers(s: l): t |> std/io:print.ln("{{ t:d }}")
 | done _ |> _
 | failed e |> std/io:print.ln("FAILED {{ e:s }}")

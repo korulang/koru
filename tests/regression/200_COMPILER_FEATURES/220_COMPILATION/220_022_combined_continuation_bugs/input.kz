@@ -76,8 +76,7 @@ const allocator = std.heap.c_allocator;
 const N: usize = 10;
 
 ~for(0..N)
-! each i |> make-resource(id: i)
-    | ready r |> work-done(r) |> work-done(r) |> work-done(r) |> destroy(r)
+! each i |> make-resource(id: i): r |> work-done(r) |> work-done(r) |> work-done(r) |> destroy(r)
 
 pub fn main() void {
     std.debug.print("All continuation bugs fixed!\n", .{});

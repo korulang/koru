@@ -42,5 +42,4 @@ const {
 
 std/fmt:fmt.blk {
     Hello, {{ name:s }}! The answer is {{ count:d }}.
-}
-| formatted f |> std/io:print.ln(f.text)
+}: f |> std/io:print.ln(f.text)
