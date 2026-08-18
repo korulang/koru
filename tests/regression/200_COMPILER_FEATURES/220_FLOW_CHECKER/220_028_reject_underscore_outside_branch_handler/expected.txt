@@ -1,5 +1,5 @@
 error[KORU010]: '_' is only legal as the body of a branch handler
-  --> tests/regression/200_COMPILER_FEATURES/220_FLOW_CHECKER/220_014_reject_underscore_outside_branch_handler/input.kz:21:0
+  --> tests/regression/200_COMPILER_FEATURES/220_FLOW_CHECKER/220_028_reject_underscore_outside_branch_handler/input.kz:21:0
     |
  21 | |> _
     | ^
