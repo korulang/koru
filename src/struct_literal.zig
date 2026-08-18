@@ -83,10 +83,13 @@ fn splitFields(allocator: Allocator, body: []const u8) ParseError![]const []cons
     }
     if (depth != 0) return error.UnterminatedStruct;
 
-    // Trailing field (or the sole field). An all-whitespace tail with no prior
-    // content means an empty struct `{}` → no fields.
+    // Trailing field (or the sole field). A whitespace-only tail is a trailing
+    // comma, not a field — `{ a: T, }` is the same record as `{ a: T }`.
+    // Appending the empty slice made projectRawFields refuse BareEntryNotPunnable,
+    // so writeBareReturnType fell back to pasting the record verbatim and `string`
+    // never lowered (020_063, Ward's info tor).
     const tail = body[field_start..];
-    if (std.mem.trim(u8, tail, " \t\n\r").len > 0 or fields.items.len > 0) {
+    if (std.mem.trim(u8, tail, " \t\n\r").len > 0) {
         try fields.append(allocator, tail);
     }
     return fields.toOwnedSlice(allocator);

@@ -2,7 +2,7 @@
 // written `std/time:now()` + `| t n |>` — the head-label binding sugar 210_195
 // pins — and that spelling still does not compile in a subflow BODY: the
 // emitter tag-dispatches over the returned scalar and leaks raw Zig. Pinned RED
-// as 210_200. When that closes, either spelling works and this note goes with it.
+// as 210_210. When that closes, either spelling works and this note goes with it.
 // Do not read the bind form here as the shape this program wants.
 import std/io
 import std/time

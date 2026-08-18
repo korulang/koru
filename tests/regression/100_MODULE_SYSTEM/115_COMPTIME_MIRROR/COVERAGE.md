@@ -44,6 +44,7 @@ because "no mirror" is exactly the state this file exists to make expensive.
 | `regex:match` | `115_013_regex_match_in_module` |
 | `regex:scan` | `115_003_regex_scan_in_module` |
 | `runtime:register` | `115_036_runtime_register_in_module` |
+| `store:clear` | `690_265_clear_empties_a_store_and_fires_cleared_once` |
 | `store:default` | no-green-usage |
 | `store:insert` | `115_018_store_insert_in_module` |
 | `store:new` | `690_079_store_declared_in_imported_module` |
