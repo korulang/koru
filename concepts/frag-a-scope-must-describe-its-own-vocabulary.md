@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-a-scope-must-describe-its-own-vocabulary
-provenance: 430_057 — scope-vocabulary, the enumeration surface for a model driving the interpreter; evolved 430_058 — the manifest record minted at scope creation
+provenance: 430_064 — scope-vocabulary, the enumeration surface for a model driving the interpreter; evolved 430_058 — the manifest record minted at scope creation
 ts: 2026-08-16
 ---
 
