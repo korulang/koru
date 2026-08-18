@@ -8,31 +8,6 @@
 
 ## Examples
 
-### 010_000_hello_world_koru
-
-```koru
-const name = "World";
-const debug = true;
-const count: i32 = 42;
-
-// Hello World in pure Koru.
-// This is the frontpage example from korulang.org.
-
-import std/io
-
-std/io:print.blk {
-    {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
-    The answer is {{ count:d }}.
-}
-```
-
-**Output:**
-
-```
-[DEBUG] Hello, World!
-The answer is 42.
-```
-
 ### 020_014_pure_subflow_impl
 
 ```koru

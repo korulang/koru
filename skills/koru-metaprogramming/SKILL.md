@@ -9,5 +9,5 @@ description: Compile-time metaprogramming in Koru: event globbing and compile-ti
 
 ## Worked examples
 
-3 passing tests, verbatim, in [`../../docs/by-example/koru-metaprogramming.md`](../../docs/by-example/koru-metaprogramming.md). The tests are the spec — read them as the authority on what is actually legal. This skill is the map; the shard is the territory.
+4 passing tests, verbatim, in [`../../docs/by-example/koru-metaprogramming.md`](../../docs/by-example/koru-metaprogramming.md). The tests are the spec — read them as the authority on what is actually legal. This skill is the map; the shard is the territory.
 
