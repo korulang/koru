@@ -23,8 +23,7 @@ const raw = "GET / HTTP/1.1\r\n\r\n";
 ! [GET /] |> info(): i |> std/fmt:fmt.blk {
     <h1>{{ i.processor_name:s }}</h1>
     <p>{{ i.core_count:s }}</p>
-}: f
--> { status: 200, body: f, content_type: "text/html" }
+}: f -> { status: 200, body: f, content_type: "text/html" }
 ! [*] -> { status: 404, body: "miss", content_type: "text/plain" }
 
 ~orisha:answer(raw): a |> std/io:print.ln("{{ a.body:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)

@@ -322,6 +322,30 @@ fn generatePipelineCode(
                             );
                             defer allocator.free(seq);
                             try buf.appendSlice(allocator, seq);
+
+                            // An inlined fmt.blk result is `allocated!`. The
+                            // auto-discharge pass inserts `free` at the
+                            // terminator for flows it can still see; a
+                            // ROUTER-inlined arm is lowered to Zig before the
+                            // pass runs, so there the codegen falls back.
+                            // Only free when the pass did NOT already discharge
+                            // (that would double-free) and the arm does not
+                            // RETURN the buffer (the Response holds it).
+                            if (inlineBodyAllocates(ib)) {
+                                if (invocationBindName(&inv)) |bind_name| {
+                                    if (!std.mem.eql(u8, bind_name, "_") and
+                                        std.mem.indexOf(u8, seq, "return ") == null and
+                                        std.mem.indexOf(u8, seq, "free_event") == null)
+                                    {
+                                        const ind_free = try indent(allocator, indent_level);
+                                        defer allocator.free(ind_free);
+                                        try buf.appendSlice(allocator, ind_free);
+                                        try buf.appendSlice(allocator, "koru_allocator().free(");
+                                        try buf.appendSlice(allocator, bind_name);
+                                        try buf.appendSlice(allocator, ");\n");
+                                    }
+                                }
+                            }
                         }
                     }
                 } else if (nested.len > 0) {

@@ -6382,6 +6382,34 @@ pub const Parser = struct {
             const close_line_idx = if (self.current > 0) self.current - 1 else self.current;
             const tail_location = self.getLineLocation(close_line_idx, 0);
 
+            // A `->` / `=>` close tail is a bare-return PRODUCE, the same node
+            // the branch path builds when it strips a top-level arrow: a single
+            // continuation carrying the produce expression (`}: f -> { body: f }`).
+            // parsePipelineContinuationBase refuses a leading arrow — route it
+            // here instead.
+            const tail_lit = lexer.trim(tail);
+            if (tail_lit.len >= 2 and (std.mem.startsWith(u8, tail_lit, "->") or std.mem.startsWith(u8, tail_lit, "=>"))) {
+                const expr = lexer.trim(tail_lit[2..]);
+                const produce_cont = ast.Continuation{
+                    .branch = try self.allocator.dupe(u8, ""),
+                    .binding = null,
+                    .condition = null,
+                    .condition_expr = null,
+                    .node = .{ .branch_constructor = .{
+                        .branch_name = try self.allocator.dupe(u8, ""),
+                        .fields = &.{},
+                        .plain_value = try self.allocator.dupe(u8, expr),
+                        .has_expressions = true,
+                        .is_bare_return = true,
+                    } },
+                    .indent = base_indent,
+                    .continuations = &.{},
+                    .location = tail_location,
+                };
+                var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                try cont_list.append(self.allocator, produce_cont);
+                output_continuations = try cont_list.toOwnedSlice(self.allocator);
+            } else {
             // Mirror parsePipelineContinuationBase's Source-block pipeline step without
             // mutual recursion (that path also calls parseImplicitSourceBlock).
             const has_open_brace = std.mem.indexOf(u8, tail, "{") != null;
@@ -6456,6 +6484,7 @@ pub const Parser = struct {
                 var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
                 try cont_list.append(self.allocator, tail_cont);
                 output_continuations = try cont_list.toOwnedSlice(self.allocator);
+            }
             }
         } else if (strict) {
             output_continuations = try self.parseContinuationsWithMode(base_indent, true);
