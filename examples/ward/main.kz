@@ -1,0 +1,419 @@
+// Ward — host sysinfo. Contract is the companion `main.k`.
+
+const std = @import("std");
+const posix = std.posix;
+
+const Timeval = extern struct {
+    tv_sec: i64,
+    tv_usec: i32,
+};
+
+const Statfs = extern struct {
+    f_bsize: u32,
+    f_iosize: i32,
+    f_blocks: u64,
+    f_bfree: u64,
+    f_bavail: u64,
+    f_files: u64,
+    f_ffree: u64,
+    f_fsid: [2]i32,
+    f_owner: u32,
+    f_type: u32,
+    f_flags: u32,
+    f_fssubtype: u32,
+    f_fstypename: [16]u8,
+    f_mntonname: [1024]u8,
+    f_mntfromname: [1024]u8,
+    f_flags_ext: u32,
+    f_reserved: [7]u32,
+};
+
+extern fn statfs(path: [*:0]const u8, buf: *Statfs) c_int;
+extern fn proc_listpids(ptype: u32, typeinfo: u32, buffer: ?*anyopaque, buffersize: c_int) c_int;
+extern fn host_statistics(host: std.c.mach_port_t, flavor: c_int, info: [*]u32, count: *c_uint) c_int;
+
+const HOST_CPU_LOAD_INFO: c_int = 3;
+const CPU_STATE_IDLE: usize = 2;
+const CPU_STATE_MAX: usize = 4;
+
+const XswUsage = extern struct {
+    xsu_total: u64,
+    xsu_avail: u64,
+    xsu_used: u64,
+    xsu_pagesize: u32,
+    xsu_encrypted: u8,
+};
+
+var last_cpu_ticks: [CPU_STATE_MAX]u32 = .{ 0, 0, 0, 0 };
+var have_cpu_sample: bool = false;
+
+fn sysctlSlice(name: [*:0]const u8, buf: []u8) []const u8 {
+    var len: usize = buf.len;
+    posix.sysctlbynameZ(name, buf.ptr, &len, null, 0) catch return "";
+    if (len == 0) return "";
+    const n = if (buf[len - 1] == 0) len - 1 else len;
+    return buf[0..n];
+}
+
+fn sysctlInt(comptime T: type, name: [*:0]const u8) T {
+    var v: T = 0;
+    var len: usize = @sizeOf(T);
+    posix.sysctlbynameZ(name, &v, &len, null, 0) catch return 0;
+    return v;
+}
+
+fn convertedCapacity(bytes: u64) []const u8 {
+    const bytes_f: f64 = @floatFromInt(bytes);
+    const mib = 1048576.0;
+    const gib = 1073741824.0;
+    const tib = 1099511627776.0;
+    if ((bytes_f / mib) > 999.0) {
+        if ((bytes_f / gib) > 999.0) {
+            return std.fmt.bufPrint(&cap_buf, "{d:.1} TiB", .{bytes_f / tib}) catch "0 MiB";
+        }
+        return std.fmt.bufPrint(&cap_buf, "{d} GiB", .{@round(bytes_f / gib)}) catch "0 MiB";
+    }
+    return std.fmt.bufPrint(&cap_buf, "{d} MiB", .{@round(bytes_f / mib)}) catch "0 MiB";
+}
+
+threadlocal var cap_buf: [32]u8 = undefined;
+threadlocal var name_buf: [128]u8 = undefined;
+threadlocal var os_buf: [64]u8 = undefined;
+threadlocal var ram_buf: [32]u8 = undefined;
+threadlocal var cores_buf: [32]u8 = undefined;
+threadlocal var freq_buf: [32]u8 = undefined;
+threadlocal var procs_buf: [32]u8 = undefined;
+threadlocal var disk_name_buf: [128]u8 = undefined;
+threadlocal var disk_total_buf: [32]u8 = undefined;
+threadlocal var disk_count_buf: [32]u8 = undefined;
+threadlocal var swap_buf: [32]u8 = undefined;
+threadlocal var day_buf: [8]u8 = undefined;
+threadlocal var hour_buf: [8]u8 = undefined;
+threadlocal var min_buf: [8]u8 = undefined;
+threadlocal var sec_buf: [8]u8 = undefined;
+
+fn cpuUsagePercent() i32 {
+    // kern.cp_time is gone on current Darwin (unknown oid). Mach
+    // HOST_CPU_LOAD_INFO is the load ticks: USER/SYSTEM/IDLE/NICE.
+    var ticks: [CPU_STATE_MAX]u32 = .{ 0, 0, 0, 0 };
+    var count: c_uint = CPU_STATE_MAX;
+    const kr = host_statistics(std.c.mach_host_self(), HOST_CPU_LOAD_INFO, &ticks, &count);
+    if (kr != 0) @panic("ward: host_statistics(HOST_CPU_LOAD_INFO) failed");
+    defer {
+        last_cpu_ticks = ticks;
+        have_cpu_sample = true;
+    }
+    if (!have_cpu_sample) return 0;
+    var d_total: u64 = 0;
+    var d_idle: u64 = 0;
+    for (ticks, last_cpu_ticks, 0..) |now, prev, i| {
+        const d: u64 = if (now >= prev) now - prev else 0;
+        d_total += d;
+        if (i == CPU_STATE_IDLE) d_idle = d;
+    }
+    if (d_total == 0) return 0;
+    const busy = d_total - d_idle;
+    return @intCast(@min(100, (busy * 100) / d_total));
+}
+
+fn ramUsagePercent(total: u64) i32 {
+    const pagesize: u64 = sysctlInt(u32, "hw.pagesize");
+    const free_pages: u64 = sysctlInt(u32, "vm.page_free_count");
+    const inactive: u64 = sysctlInt(u32, "vm.page_inactive_count");
+    const free_bytes = (free_pages + inactive) * pagesize;
+    if (total == 0) return 0;
+    const used = if (total > free_bytes) total - free_bytes else 0;
+    return @intCast(@min(100, (used * 100) / total));
+}
+
+fn storageUsage() struct { percent: i32, total: u64, name: []const u8 } {
+    var buf: Statfs = undefined;
+    if (statfs("/", &buf) != 0) {
+        return .{ .percent = 0, .total = 0, .name = "Disk" };
+    }
+    const bsize: u64 = buf.f_bsize;
+    const total = buf.f_blocks * bsize;
+    const avail = buf.f_bavail * bsize;
+    const used = if (total > avail) total - avail else 0;
+    const percent: i32 = if (total == 0) 0 else @intCast(@min(100, (used * 100) / total));
+    const nlen = std.mem.indexOfScalar(u8, &buf.f_mntfromname, 0) orelse buf.f_mntfromname.len;
+    const raw = buf.f_mntfromname[0..nlen];
+    const copied = @min(raw.len, disk_name_buf.len);
+    @memcpy(disk_name_buf[0..copied], raw[0..copied]);
+    const name = if (copied == 0) "Disk" else disk_name_buf[0..copied];
+    return .{ .percent = percent, .total = total, .name = name };
+}
+
+fn liveProcCount() u32 {
+    const PROC_ALL_PIDS: u32 = 1;
+    const bytes = proc_listpids(PROC_ALL_PIDS, 0, null, 0);
+    if (bytes <= 0) return 0;
+    return @intCast(@divTrunc(bytes, @sizeOf(i32)));
+}
+
+fn uptimeSecs() u64 {
+    var tv: Timeval = .{ .tv_sec = 0, .tv_usec = 0 };
+    var len: usize = @sizeOf(Timeval);
+    posix.sysctlbynameZ("kern.boottime", &tv, &len, null, 0) catch return 0;
+    const now = std.time.timestamp();
+    if (now < tv.tv_sec) return 0;
+    return @intCast(now - tv.tv_sec);
+}
+
+fn pad2(n: u64, buf: *[8]u8) []const u8 {
+    return std.fmt.bufPrint(buf, "{d:0>2}", .{n}) catch "00";
+}
+
+~proc usage|zig {
+    const total_ram: u64 = $mod.sysctlInt(u64, "hw.memsize");
+    const disk = $mod.storageUsage();
+    return .{
+        .processor = $mod.cpuUsagePercent(),
+        .ram = $mod.ramUsagePercent(total_ram),
+        .storage = disk.percent,
+    };
+}
+
+~proc uptime|zig {
+    const secs = $mod.uptimeSecs();
+    const d = secs / 86400;
+    const h = (secs % 86400) / 3600;
+    const m = (secs % 3600) / 60;
+    const s = secs % 60;
+    return .{
+        .days = $mod.pad2(d, &$mod.day_buf),
+        .hours = $mod.pad2(h, &$mod.hour_buf),
+        .minutes = $mod.pad2(m, &$mod.min_buf),
+        .seconds = $mod.pad2(s, &$mod.sec_buf),
+    };
+}
+
+~proc info|zig {
+    const brand = $mod.sysctlSlice("machdep.cpu.brand_string", &$mod.name_buf);
+    const ncpu: u32 = $mod.sysctlInt(u32, "hw.ncpu");
+    const freq_hz: u64 = $mod.sysctlInt(u64, "hw.cpufrequency");
+    const total_ram: u64 = $mod.sysctlInt(u64, "hw.memsize");
+    const nproc = $mod.liveProcCount();
+    const os_ver = $mod.sysctlSlice("kern.osproductversion", &$mod.os_buf);
+    const disk = $mod.storageUsage();
+    const cores = std.fmt.bufPrint(&$mod.cores_buf, "{d} {s}", .{ ncpu, if (ncpu == 1) "Core" else "Cores" }) catch "0 Cores";
+    const freq = if (freq_hz == 0)
+        "0.0 GHz"
+    else
+        (std.fmt.bufPrint(&$mod.freq_buf, "{d:.1} GHz", .{@as(f64, @floatFromInt(freq_hz)) / 1_000_000_000.0}) catch "0.0 GHz");
+    const ram = std.fmt.bufPrint(&$mod.ram_buf, "{s} RAM", .{$mod.convertedCapacity(total_ram)}) catch "0 MiB RAM";
+    const procs = std.fmt.bufPrint(&$mod.procs_buf, "{d} Procs", .{nproc}) catch "0 Procs";
+    const total_st = std.fmt.bufPrint(&$mod.disk_total_buf, "{s} Total", .{$mod.convertedCapacity(disk.total)}) catch "0 MiB Total";
+    const disks = std.fmt.bufPrint(&$mod.disk_count_buf, "1 Disk", .{}) catch "1 Disk";
+    var swap_info: XswUsage = .{ .xsu_total = 0, .xsu_avail = 0, .xsu_used = 0, .xsu_pagesize = 0, .xsu_encrypted = 0 };
+    var swap_len: usize = @sizeOf(XswUsage);
+    posix.sysctlbynameZ("vm.swapusage", &swap_info, &swap_len, null, 0) catch {};
+    const swap = std.fmt.bufPrint(&$mod.swap_buf, "{s} Swap", .{$mod.convertedCapacity(swap_info.xsu_total)}) catch "0 MiB Swap";
+    const os = if (os_ver.len == 0) "macOS" else os_ver;
+    return .{
+        .processor_name = if (brand.len == 0) "Unknown CPU" else brand,
+        .processor_core_count = cores,
+        .processor_clock_speed = freq,
+        .processor_bit_depth = "64-bit",
+        .machine_operating_system = os,
+        .machine_total_ram = ram,
+        .machine_ram_type_or_os_bit_depth = "64-bit",
+        .machine_proc_count = procs,
+        .storage_main_storage = disk.name,
+        .storage_total = total_st,
+        .storage_disk_count = disks,
+        .storage_swap_amount = swap,
+    };
+}
+
+threadlocal var setup_name_buf: [16]u8 = undefined;
+threadlocal var setup_theme_buf: [16]u8 = undefined;
+threadlocal var setup_port_buf: [8]u8 = undefined;
+threadlocal var setup_fog_buf: [8]u8 = undefined;
+threadlocal var setup_bg_buf: [32]u8 = undefined;
+threadlocal var setup_ini_buf: [256]u8 = undefined;
+
+fn copyInto(buf: []u8, src: []const u8) ?[]const u8 {
+    if (src.len > buf.len) return null;
+    if (src.len > 0) @memcpy(buf[0..src.len], src);
+    return buf[0..src.len];
+}
+
+fn jsonString(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
+    const v = obj.get(key) orelse return null;
+    return switch (v) {
+        .string => |s| s,
+        else => null,
+    };
+}
+
+~proc parse-setup|zig {
+    const raw = body orelse return .{ .invalid = .{} };
+    const parsed = std.json.parseFromSlice(std.json.Value, koru_allocator(), raw, .{}) catch return .{ .invalid = .{} };
+    defer parsed.deinit();
+    if (parsed.value != .object) return .{ .invalid = .{} };
+    const obj = parsed.value.object;
+
+    const name_raw = jsonString(obj, "serverName") orelse return .{ .invalid = .{} };
+    const name = std.mem.trim(u8, name_raw, " \t");
+    if (name.len == 0) return .{ .invalid = .{} };
+    const server_name = copyInto(&setup_name_buf, name) orelse return .{ .invalid = .{} };
+
+    const theme_raw = jsonString(obj, "theme") orelse "light";
+    const theme = copyInto(&setup_theme_buf, theme_raw) orelse return .{ .invalid = .{} };
+
+    const port = blk: {
+        const v = obj.get("port") orelse break :blk copyInto(&setup_port_buf, "4000") orelse return .{ .invalid = .{} };
+        break :blk switch (v) {
+            .integer => |n| std.fmt.bufPrint(&setup_port_buf, "{d}", .{n}) catch return .{ .invalid = .{} },
+            .float => |f| std.fmt.bufPrint(&setup_port_buf, "{d}", .{@as(i64, @intFromFloat(f))}) catch return .{ .invalid = .{} },
+            .number_string => |s| copyInto(&setup_port_buf, s) orelse return .{ .invalid = .{} },
+            .string => |s| copyInto(&setup_port_buf, s) orelse return .{ .invalid = .{} },
+            else => return .{ .invalid = .{} },
+        };
+    };
+
+    const enable_fog = blk: {
+        const v = obj.get("enableFog") orelse break :blk copyInto(&setup_fog_buf, "true") orelse return .{ .invalid = .{} };
+        break :blk switch (v) {
+            .bool => |b| copyInto(&setup_fog_buf, if (b) "true" else "false") orelse return .{ .invalid = .{} },
+            .string => |s| copyInto(&setup_fog_buf, s) orelse return .{ .invalid = .{} },
+            else => return .{ .invalid = .{} },
+        };
+    };
+
+    const bg_raw = jsonString(obj, "backgroundColor") orelse "default";
+    const background_color = copyInto(&setup_bg_buf, bg_raw) orelse return .{ .invalid = .{} };
+
+    const ini = std.fmt.bufPrint(&setup_ini_buf, "[setup]\nserverName = {s}\ntheme = {s}\nport = {s}\nenableFog = {s}\nbackgroundColor = {s}\n", .{
+        server_name,
+        theme,
+        port,
+        enable_fog,
+        background_color,
+    }) catch return .{ .invalid = .{} };
+
+    return .{ .ready = ini };
+}
+
+~proc parse-ini|zig {
+    var server_name: []const u8 = "Ward";
+    var theme: []const u8 = "light";
+    var port: []const u8 = "4000";
+    var enable_fog: []const u8 = "true";
+    var background_color: []const u8 = "default";
+
+    var it = std.mem.splitScalar(u8, raw, '\n');
+    while (it.next()) |line_raw| {
+        const line = std.mem.trim(u8, line_raw, " \t\r");
+        if (line.len == 0 or line[0] == '[' or line[0] == '#' or line[0] == ';') continue;
+        const eq = std.mem.indexOfScalar(u8, line, '=') orelse continue;
+        const key = std.mem.trim(u8, line[0..eq], " \t");
+        const val = std.mem.trim(u8, line[eq + 1 ..], " \t");
+        if (std.mem.eql(u8, key, "serverName")) {
+            server_name = copyInto(&setup_name_buf, val) orelse return .{ .invalid = .{} };
+        } else if (std.mem.eql(u8, key, "theme")) {
+            theme = copyInto(&setup_theme_buf, val) orelse return .{ .invalid = .{} };
+        } else if (std.mem.eql(u8, key, "port")) {
+            port = copyInto(&setup_port_buf, val) orelse return .{ .invalid = .{} };
+        } else if (std.mem.eql(u8, key, "enableFog")) {
+            enable_fog = copyInto(&setup_fog_buf, val) orelse return .{ .invalid = .{} };
+        } else if (std.mem.eql(u8, key, "backgroundColor")) {
+            background_color = copyInto(&setup_bg_buf, val) orelse return .{ .invalid = .{} };
+        }
+    }
+
+    return .{
+        .cfg = .{
+            .server_name = server_name,
+            .theme = theme,
+            .port = port,
+            .enable_fog = enable_fog,
+            .background_color = background_color,
+        },
+    };
+}
+
+var cached_listen_port: ?u16 = null;
+var env_setup_applied: bool = false;
+
+fn failPort(msg: []const u8) noreturn {
+    std.debug.print("ward: {s}\n", .{msg});
+    std.process.exit(1);
+}
+
+fn parsePort(s: []const u8) ?u16 {
+    const n = std.fmt.parseInt(u32, std.mem.trim(u8, s, " \t"), 10) catch return null;
+    if (n < 1024 or n > 65535) return null;
+    return @intCast(n);
+}
+
+fn portFromArgv() ?u16 {
+    const argv = std.os.argv;
+    for (0..argv.len) |i| {
+        const a = std.mem.span(argv[i]);
+        if (std.mem.eql(u8, a, "--port") or std.mem.eql(u8, a, "-p")) {
+            if (i + 1 >= argv.len) failPort("--port needs a value");
+            return parsePort(std.mem.span(argv[i + 1])) orelse failPort("--port is not in 1024-65535");
+        }
+        if (std.mem.startsWith(u8, a, "--port=")) {
+            return parsePort(a["--port=".len..]) orelse failPort("--port is not in 1024-65535");
+        }
+    }
+    return null;
+}
+
+fn applyEnvSetupIfPresent() void {
+    if (env_setup_applied) return;
+    env_setup_applied = true;
+    const name = posix.getenv("WARD_NAME");
+    const theme = posix.getenv("WARD_THEME");
+    const port = posix.getenv("WARD_PORT");
+    const fog = posix.getenv("WARD_FOG");
+    const bg = posix.getenv("WARD_BACKGROUND");
+    if (name == null and theme == null and port == null and fog == null and bg == null) return;
+    const ini = std.fmt.bufPrint(&setup_ini_buf, "[setup]\nserverName = {s}\ntheme = {s}\nport = {s}\nenableFog = {s}\nbackgroundColor = {s}\n", .{
+        name orelse "Ward",
+        theme orelse "light",
+        port orelse "4000",
+        fog orelse "true",
+        bg orelse "default",
+    }) catch failPort("env setup.ini does not fit the buffer");
+    const f = std.fs.cwd().createFile("setup.ini", .{}) catch failPort("cannot write setup.ini from env");
+    defer f.close();
+    f.writeAll(ini) catch failPort("cannot write setup.ini from env");
+}
+
+fn portFromIni() ?u16 {
+    const f = std.fs.cwd().openFile("setup.ini", .{}) catch return null;
+    defer f.close();
+    var buf: [256]u8 = undefined;
+    const n = f.readAll(&buf) catch return null;
+    var it = std.mem.splitScalar(u8, buf[0..n], '\n');
+    while (it.next()) |line_raw| {
+        const line = std.mem.trim(u8, line_raw, " \t\r");
+        const eq = std.mem.indexOfScalar(u8, line, '=') orelse continue;
+        const key = std.mem.trim(u8, line[0..eq], " \t");
+        if (!std.mem.eql(u8, key, "port")) continue;
+        const val = std.mem.trim(u8, line[eq + 1 ..], " \t");
+        return parsePort(val) orelse failPort("setup.ini port is not in 1024-65535");
+    }
+    return null;
+}
+
+fn resolveListenPort() u16 {
+    if (cached_listen_port) |p| return p;
+    applyEnvSetupIfPresent();
+    const p = portFromArgv() orelse blk: {
+        if (posix.getenv("WARD_PORT")) |s| {
+            break :blk parsePort(s) orelse failPort("WARD_PORT is not in 1024-65535");
+        }
+        break :blk portFromIni() orelse 4000;
+    };
+    cached_listen_port = p;
+    return p;
+}
+
+~proc listen-port|zig {
+    return $mod.resolveListenPort();
+}

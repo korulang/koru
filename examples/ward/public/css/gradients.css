@@ -1,0 +1,26 @@
+/*
+    Gradients file
+    Used for define gradients of project
+
+    Every category must follow convention:
+    * Category must contain only gradient type name
+
+    Every entry must follow convention:
+    * Must begins with category name
+    * Further should be followed by tag/class/id/etc.
+
+    By example: --linear-gradient-uptime
+*/
+
+:root
+{
+    /* base gradients */
+    --linear-gradient-rainbow: linear-gradient(45deg, var(--blue-form) 0%, var(--red-form) 50%, var(--green-form) 100%);
+    --linear-gradient-monochrome: linear-gradient(45deg, var(--grey) 0%, var(--grey-dimmed) 50%, var(--grey) 100%);
+
+    /* linear-gradient mappings */
+    --linear-gradient-form-light: var(--linear-gradient-rainbow);
+    --linear-gradient-form-dark: var(--linear-gradient-monochrome);
+    --linear-gradient-uptime-light: var(--linear-gradient-rainbow);
+    --linear-gradient-uptime-dark: var(--linear-gradient-monochrome);
+}
