@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-08-17T23:00:50.115Z",
+  "timestamp": "2026-08-18T11:48:19.155Z",
   "summary": {
-    "passed": 311,
-    "failed": 0,
+    "passed": 306,
+    "failed": 5,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 1,
@@ -318,11 +318,11 @@
     },
     {
       "name": "visitor_emitter_tests",
-      "passed": 11,
-      "failed": 0,
+      "passed": 6,
+      "failed": 5,
       "skipped": 2,
       "total": 13,
-      "status": "success"
+      "status": "failure"
     },
     {
       "name": "where_clause_integration_tests",
@@ -339,6 +339,12 @@
       "skipped": 1,
       "total": 5,
       "status": "success"
+    }
+  ],
+  "crashedTests": [
+    {
+      "name": "visitor_emitter_test.test.writeFieldType: any other alias for the same module is mangled",
+      "reason": "terminated by signal"
     }
   ]
 }

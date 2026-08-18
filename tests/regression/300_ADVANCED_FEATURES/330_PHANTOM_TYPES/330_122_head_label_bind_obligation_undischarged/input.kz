@@ -1,8 +1,7 @@
-// Pins: a named-label binding on a phantom-minting bare-return HEAD is refused
+// Pins: a call-site bind on a phantom-minting bare-return HEAD is refused
 // when the obligation it carries is never discharged — and the refusal names
-// the AUTHOR'S binding (`c`), not the resource's type. The label spelling
-// `create(...) | made c |>` must enforce exactly what `create(...): c |>`
-// enforces (330_113 is that spelling's pin); the two are one program.
+// the AUTHOR'S binding (`c`), not the resource's type. A sole `| made`
+// continuation is illegal; this is `create(...): c |>`.
 //
 // Auto-discharge is disabled so the wall is under test rather than the LIFO
 // insertion — with the flag on, insertion emits the cleanup and the question
@@ -32,5 +31,4 @@ const Resource = struct { value: i32 };
     std.debug.print("peek {d}\n", .{r});
 }
 
-~create(value: 7)
-| made c |> peek(r: c.value)
+~create(value: 7): c |> peek(r: c.value)

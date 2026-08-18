@@ -447,8 +447,7 @@ pub tor gcd { a: i64, b: i64 } -> i64
 
 gcd = if(b == 0)
 | then -> a
-| else |> gcd(a: b, b: @mod(a, b))
-    | value v -> v
+| else |> gcd(a: b, b: @mod(a, b)): v -> v
 
 gcd(a: 48, b: 18): g |> std/io:print.ln("{{ g:d }}")
 ```
@@ -476,8 +475,7 @@ pub tor loop-k { i: i64, j: i64, k: i64, acc: i64 } -> i64
 
 loop-k = if(k == 0)
 | then -> acc
-| else |> loop-k(i, j, k: k - 1, acc: acc + i * j * k)
-    | value v -> v
+| else |> loop-k(i, j, k: k - 1, acc: acc + i * j * k): v -> v
 
 loop-k(i: 2, j: 3, k: 4, acc: 0): r |> std/io:print.ln("{{ r:d }}")
 ```
@@ -506,13 +504,11 @@ pub tor pong { a: i64, b: i64, n: i64 } -> i64
 
 ping = if(n == 0)
 | then -> a
-| else |> pong(a: b, b: a, n: n - 1)
-    | value v -> v
+| else |> pong(a: b, b: a, n: n - 1): v -> v
 
 pong = if(n == 0)
 | then -> b
-| else |> ping(a: b, b: a, n: n - 1)
-    | value v -> v
+| else |> ping(a: b, b: a, n: n - 1): v -> v
 
 ping(a: 1, b: 2, n: 2): r |> std/io:print.ln("{{ r:d }}")
 ```

@@ -44,9 +44,7 @@ seek = #s istep(n)
 | ok r -> r
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_111_day11_part1/input.txt")
-! line l |> to-n(s: l)
-    | value n0 |> seek(n: n0 + 1)
-        | found n |> std/string:from-page(text: "abcdefghijklmnopqrstuvwxyz")
+! line l |> to-n(s: l): n0 |> seek(n: n0 + 1): n |> std/string:from-page(text: "abcdefghijklmnopqrstuvwxyz")
             | ok alpha |> std/string:from-page(text: "")
                 | ok base |> std/string:take(s: base): buf |> for(0..8)
                         ! each k |> std/string:substring(s: alpha, start: @mod(@divTrunc(@as(usize, @intCast(n)), 8031810176 * @as(usize, @intFromBool(k == 0)) + 308915776 * @as(usize, @intFromBool(k == 1)) + 11881376 * @as(usize, @intFromBool(k == 2)) + 456976 * @as(usize, @intFromBool(k == 3)) + 17576 * @as(usize, @intFromBool(k == 4)) + 676 * @as(usize, @intFromBool(k == 5)) + 26 * @as(usize, @intFromBool(k == 6)) + 1 * @as(usize, @intFromBool(k == 7))), 26), end: @mod(@divTrunc(@as(usize, @intCast(n)), 8031810176 * @as(usize, @intFromBool(k == 0)) + 308915776 * @as(usize, @intFromBool(k == 1)) + 11881376 * @as(usize, @intFromBool(k == 2)) + 456976 * @as(usize, @intFromBool(k == 3)) + 17576 * @as(usize, @intFromBool(k == 4)) + 676 * @as(usize, @intFromBool(k == 5)) + 26 * @as(usize, @intFromBool(k == 6)) + 1 * @as(usize, @intFromBool(k == 7))), 26) + 1)

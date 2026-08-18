@@ -23,8 +23,7 @@ pub tor skip-str { s: string, n: i64, j: i64 } -> i64
 skip-str = if(j < n)
     | then |> if(s[@intCast(j)] == 34)
         | then -> j + 1
-        | else |> skip-str(s, n, j: j + 1)
-            | done k -> k
+        | else |> skip-str(s, n, j: j + 1): k -> k
     | else -> j
 
 // Consume a run of digits starting at i, folding into acc; returns { value, next }.
@@ -39,8 +38,7 @@ pub tor num { s: string, n: i64, acc: i64, i: i64 } -> { sum: i64, next: i64 }
 
 num = if(i < n)
     | then |> if(s[@intCast(i)] >= 48 and s[@intCast(i)] <= 57)
-        | then |> num(s, n, acc: acc * 10 + @as(i64, s[@intCast(i)]) - 48, i: i + 1)
-            | done r -> { r.sum, r.next }
+        | then |> num(s, n, acc: acc * 10 + @as(i64, s[@intCast(i)]) - 48, i: i + 1): r -> { r.sum, r.next }
         | else -> { sum: acc, next: i }
     | else -> { sum: acc, next: i }
 
@@ -48,16 +46,12 @@ num = if(i < n)
 pub tor parse-val { s: string, n: i64, i: i64 } -> { sum: i64, next: i64, isred: i64 }
 
 parse-val = if(s[@intCast(i)] == 91)
-    | then |> arr-sum(s, n, i: i + 1, acc: 0)
-        | done a -> { a.sum, a.next, isred: 0 }
+    | then |> arr-sum(s, n, i: i + 1, acc: 0): a -> { a.sum, a.next, isred: 0 }
     | else |> if(s[@intCast(i)] == 123)
-        | then |> obj-sum(s, n, i: i + 1, acc: 0, red: 0)
-            | done o -> { o.sum, o.next, isred: 0 }
+        | then |> obj-sum(s, n, i: i + 1, acc: 0, red: 0): o -> { o.sum, o.next, isred: 0 }
         | else |> if(s[@intCast(i)] == 34)
-            | then |> skip-str(s, n, j: i + 1)
-                | done afterstr -> { sum: 0, next: afterstr, isred: @as(i64, @intFromBool(s[@intCast(i + 1)] == 114 and s[@intCast(i + 2)] == 101 and s[@intCast(i + 3)] == 100 and s[@intCast(i + 4)] == 34)) }
-            | else |> num(s, n, i: i + @as(i64, @intFromBool(s[@intCast(i)] == 45)), acc: 0)
-                | done m -> { sum: m.sum * (1 - 2 * @as(i64, @intFromBool(s[@intCast(i)] == 45))), m.next, isred: 0 }
+            | then |> skip-str(s, n, j: i + 1): afterstr -> { sum: 0, next: afterstr, isred: @as(i64, @intFromBool(s[@intCast(i + 1)] == 114 and s[@intCast(i + 2)] == 101 and s[@intCast(i + 3)] == 100 and s[@intCast(i + 4)] == 34)) }
+            | else |> num(s, n, i: i + @as(i64, @intFromBool(s[@intCast(i)] == 45)), acc: 0): m -> { sum: m.sum * (1 - 2 * @as(i64, @intFromBool(s[@intCast(i)] == 45))), m.next, isred: 0 }
 
 // Fold an array's element values (arrays always count, even with "red").
 // i points at the first element or at the closing ']'.
@@ -65,12 +59,9 @@ pub tor arr-sum { s: string, n: i64, i: i64, acc: i64 } -> { sum: i64, next: i64
 
 arr-sum = if(s[@intCast(i)] == 93)
     | then -> { sum: acc, next: i + 1 }
-    | else |> parse-val(s, n, i)
-        | val e |> if(s[@intCast(e.next)] == 44)
-            | then |> arr-sum(s, n, i: e.next + 1, acc: acc + e.sum)
-                | done r -> { r.sum, r.next }
-            | else |> arr-sum(s, n, i: e.next, acc: acc + e.sum)
-                | done r -> { r.sum, r.next }
+    | else |> parse-val(s, n, i): e |> if(s[@intCast(e.next)] == 44)
+            | then |> arr-sum(s, n, i: e.next + 1, acc: acc + e.sum): r -> { r.sum, r.next }
+            | else |> arr-sum(s, n, i: e.next, acc: acc + e.sum): r -> { r.sum, r.next }
 
 // Fold an object's value entries; if ANY value is "red", the whole object
 // (and its children, already summed) contributes 0. i points at a key '"' or
@@ -79,13 +70,9 @@ pub tor obj-sum { s: string, n: i64, i: i64, acc: i64, red: i64 } -> { sum: i64,
 
 obj-sum = if(s[@intCast(i)] == 125)
     | then -> { sum: acc * (1 - red), next: i + 1 }
-    | else |> skip-str(s, n, j: i + 1)
-        | done afterkey |> parse-val(s, n, i: afterkey + 1)
-            | val v |> if(s[@intCast(v.next)] == 44)
-                | then |> obj-sum(s, n, i: v.next + 1, acc: acc + v.sum, red: @max(red, v.isred))
-                    | done r -> { r.sum, r.next }
-                | else |> obj-sum(s, n, i: v.next, acc: acc + v.sum, red: @max(red, v.isred))
-                    | done r -> { r.sum, r.next }
+    | else |> skip-str(s, n, j: i + 1): afterkey |> parse-val(s, n, i: afterkey + 1): v |> if(s[@intCast(v.next)] == 44)
+                | then |> obj-sum(s, n, i: v.next + 1, acc: acc + v.sum, red: @max(red, v.isred)): r -> { r.sum, r.next }
+                | else |> obj-sum(s, n, i: v.next, acc: acc + v.sum, red: @max(red, v.isred)): r -> { r.sum, r.next }
 
 // Sum all numbers in one JSON line, skipping red-poisoned objects.
 pub tor sum-no-red { s: string } -> i64
@@ -93,11 +80,9 @@ pub tor sum-no-red { s: string } -> i64
 sum-no-red = capture { len: 0[i64] }
 ! as a |> for(s)
     ! each _ |> captured { len: a.len + 1 }
-| captured r |> parse-val(s, n: r.len, i: 0)
-    | val top -> top.sum
+| captured r |> parse-val(s, n: r.len, i: 0): top -> top.sum
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_122_day12_part2/input.txt")
-! line l |> sum-no-red(s: l)
-    | total t |> std/io:print.ln("{{ t:d }}")
+! line l |> sum-no-red(s: l): t |> std/io:print.ln("{{ t:d }}")
 | done _ |> _
 | failed e |> std/io:print.ln("FAILED {{ e:s }}")

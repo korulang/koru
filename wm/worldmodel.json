@@ -1,11 +1,11 @@
 {
-  "subject": "koru",
-  "generated_at": "2026-08-17T23:34:57.035Z",
+  "subject": "refuse-named-pipe-on-bare-return",
+  "generated_at": "2026-08-18T12:14:41.636Z",
   "scoreboard": {
-    "passed": 1508,
-    "expected": 1650,
-    "gap": 142,
-    "pass_rate": "91.4"
+    "passed": 1498,
+    "expected": 1641,
+    "gap": 143,
+    "pass_rate": "91.3"
   },
   "perf": {
     "promise_host": "at parity with the host language (Zig) — any gap is measurement noise",

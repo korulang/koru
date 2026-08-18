@@ -1278,12 +1278,32 @@ pub const ShapeChecker = struct {
         parent_inv: ?*const ast.Invocation,
         bare_return: bool,
     ) !bool {
-        // Bare-return events (`-> T`) have no branch tags — continuations use
-        // produce syntax (`| _ v -> expr`); the label is binding sugar only. So
-        // the TAG rules skip. The chain hanging off the head does NOT: it is an
-        // ordinary pipeline and its steps get the same walk as anyone else's.
+        // Bare-return events (`-> T`) have no branch tags. A named `| tag`
+        // continuation is the one-variant union (PARSE003's use-site twin):
+        // bind the value with `: name`. Empty names are the rest of a `|>`
+        // chain; `_` is produce sugar; `!` arms are 0..N, not tags of this
+        // return; transform-grafted subtrees are comptime data, not user
+        // dispatch. The chain hanging off the head still walks as a pipeline.
         if (bare_return) {
-            return try self.validatePipelineSteps(event_branches, continuations, location, parent_inv);
+            var tagged = false;
+            for (continuations) |cont| {
+                if (cont.is_transformed_subtree) continue;
+                if (cont.kind == .effect) continue;
+                if (cont.branch.len == 0) continue;
+                if (std.mem.eql(u8, cont.branch, "_")) continue;
+                const loc = if (cont.location.line != 0) cont.location else location;
+                try self.reporter.addErrorAtLocationWithHint(
+                    .KORU021,
+                    loc,
+                    "continuation branch '{s}' on tor '{s}' — a bare return has no tags",
+                    .{ cont.branch, event_name },
+                    "bind the value with `: name`, not `| {s}`",
+                    .{cont.branch},
+                );
+                tagged = true;
+            }
+            const pipeline_ok = try self.validatePipelineSteps(event_branches, continuations, location, parent_inv);
+            return pipeline_ok and !tagged;
         }
 
         // Track if we found any errors (but continue checking to find all of them)
@@ -1560,11 +1580,12 @@ pub const ShapeChecker = struct {
     /// (resolution, implementation, nested branch coverage).
     ///
     /// Split out of checkBranchCoverageWithTerminals because it is orthogonal to
-    /// branch TAGS. A bare-return head (`-> T`) has no tags, so the tag rules are
-    /// skipped — but the chain hanging off it is an ordinary pipeline. Folding
-    /// the two together meant one `if (bare_return) return true` silenced the
-    /// whole walk, and an unknown tor or an unimplemented one mid-chain reached
-    /// codegen (510_116/117, and a raw Zig "has no member named" for KORU040).
+    /// branch TAGS. A bare-return head (`-> T`) has no tags — named `| tag`
+    /// continuations are refused above — but the chain hanging off it is an
+    /// ordinary pipeline. Folding the two together meant one
+    /// `if (bare_return) return true` silenced the whole walk, and an unknown
+    /// tor or an unimplemented one mid-chain reached codegen (510_116/117, and
+    /// a raw Zig "has no member named" for KORU040).
     fn validatePipelineSteps(
         self: *ShapeChecker,
         event_branches: []const ast.Branch,

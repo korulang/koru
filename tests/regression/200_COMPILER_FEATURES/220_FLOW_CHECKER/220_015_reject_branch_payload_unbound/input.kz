@@ -8,12 +8,15 @@
 // Legal:   | ok _ |> _          — explicit discard
 // Illegal: | ok |> _            — neither bound nor discarded
 
-~tor compute {} -> i32
+~tor compute {}
+| ok i32
+| err i32
 
 ~proc compute|zig {
-    return 42;
+    return .{ .ok = 42 };
 }
 
 ~compute()
 | ok |> _
+| err _ |> _
 

@@ -19,7 +19,6 @@ basement-pos = capture { floor: 0[i64], idx: 0[i64], pos: 0[i64] }
 | captured r -> r.pos
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_012_day01_part2/input.txt")
-! line l |> basement-pos(moves: l)
-    | at p |> std/io:print.ln("{{ p:d }}")
+! line l |> basement-pos(moves: l): p |> std/io:print.ln("{{ p:d }}")
 | done _ |> _
 | failed e |> std/io:print.ln("FAILED {{ e:s }}")

@@ -12,7 +12,6 @@ pub tor loop-k { i: i64, j: i64, k: i64, acc: i64 } -> i64
 
 loop-k = if(k == 0)
 | then -> acc
-| else |> loop-k(i, j, k: k - 1, acc: acc + i * j * k)
-    | value v -> v
+| else |> loop-k(i, j, k: k - 1, acc: acc + i * j * k): v -> v
 
 loop-k(i: 2, j: 3, k: 4, acc: 0): r |> std/io:print.ln("{{ r:d }}")

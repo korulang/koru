@@ -32,8 +32,7 @@ shop = capture { best: 9999999[i64] }
 
 std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_211_day21_part1/input.txt")
 ! line l |> std/regex:match(l)
-    | `(?<bh>[0-9]+) (?<bd>[0-9]+) (?<ba>[0-9]+)` { bh: i64, bd: i64, ba: i64 } |> shop(bh, bd, ba, want-loss: 0)
-        | gold g |> std/io:print.ln("{{ g:d }}")
+    | `(?<bh>[0-9]+) (?<bd>[0-9]+) (?<ba>[0-9]+)` { bh: i64, bd: i64, ba: i64 } |> shop(bh, bd, ba, want-loss: 0): g |> std/io:print.ln("{{ g:d }}")
     | no-match |> std/io:print.ln("BAD LINE {{ l:s }}")
 | done _ |> _
 | failed e |> std/io:print.ln("FAILED {{ e:s }}")

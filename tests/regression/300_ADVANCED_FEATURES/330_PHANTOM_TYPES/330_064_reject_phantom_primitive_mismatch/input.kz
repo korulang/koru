@@ -13,5 +13,4 @@
 
 ~to-fahrenheit -> c * 9.0 / 5.0 + 32.0
 
-~read-raw(sensor_id: 1): t |> to-fahrenheit(c: t)     // ERROR: f32 cannot satisfy f32[celsius]
-    | result _ |> _
+~read-raw(sensor_id: 1): t |> to-fahrenheit(c: t): _     // ERROR: f32 cannot satisfy f32[celsius]

@@ -19,7 +19,6 @@ pub tor gcd { a: i64, b: i64 } -> i64
 
 gcd = if(b == 0)
 | then -> a
-| else |> gcd(a: b, b: @mod(a, b))
-    | value v -> v
+| else |> gcd(a: b, b: @mod(a, b)): v -> v
 
 gcd(a: 48, b: 18): g |> std/io:print.ln("{{ g:d }}")
