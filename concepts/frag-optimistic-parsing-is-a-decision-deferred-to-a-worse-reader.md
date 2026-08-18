@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-optimistic-parsing-is-a-decision-deferred-to-a-worse-reader
-provenance: `-> name { … }` in a branch arm read as a Source-block invocation because `looksLikeInvocation` was asked first; the unknown-name case was documented as "optimistic parsing — later passes will catch it". They did, as `unknown tor`, pointing at a line that constructs. Fixed 2026-08-08, pinned as 210_190 and 210_191
+provenance: `-> name { … }` in a branch arm read as a Source-block invocation because `looksLikeInvocation` was asked first; the unknown-name case was documented as "optimistic parsing — later passes will catch it". They did, as `unknown tor`, pointing at a line that constructs. Fixed 2026-08-08, pinned as 210_190 and 210_209
 ts: 2026-08-08
 ---
 
