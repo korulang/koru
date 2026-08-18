@@ -195,6 +195,10 @@ fn escapedIdent(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
 }
 
 /// Lower nested `|>` chain steps in order, without a switch on this result.
+/// `mark_body_allocated` rides into a bare-return produce record: when the
+/// arm RETURNS an allocated inline buffer inside a Response-shaped record
+/// (`}: f -> { body: f, ... }`), the record must claim `.body_allocated =
+/// true` so the caller discharges it after use instead of leaking (350_023).
 fn generateSequentialNested(
     allocator: std.mem.Allocator,
     nested: []const ast.Continuation,
@@ -202,6 +206,7 @@ fn generateSequentialNested(
     result_counter: *usize,
     indent_level: usize,
     var_prefix: []const u8,
+    mark_body_allocated: bool,
 ) CodegenError![]const u8 {
     var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
     for (nested) |*cont| {
@@ -215,7 +220,7 @@ fn generateSequentialNested(
             indent_level,
             var_prefix,
             false,
-            false,
+            mark_body_allocated,
         );
         defer allocator.free(code);
         try buf.appendSlice(allocator, code);
@@ -312,6 +317,17 @@ fn generatePipelineCode(
                                 try buf.appendSlice(allocator, result_var);
                                 try buf.appendSlice(allocator, ";\n");
                             }
+                            // A bare-return produce that RETURNS the allocated
+                            // buffer in a Response-shaped record (`}: f ->
+                            // { body: f, ... }`) must claim body_allocated on
+                            // the record: the buffer rides out to the caller,
+                            // which discharges it after use (orisha
+                            // release-body). Freeing here would be
+                            // use-after-free; not marking leaks (350_023).
+                            const mark_response = if (invocationBindName(&inv)) |bind_name|
+                                inlineBodyAllocates(ib) and chainReturnsBodyBinding(nested, bind_name)
+                            else
+                                false;
                             const seq = try generateSequentialNested(
                                 allocator,
                                 nested,
@@ -319,6 +335,7 @@ fn generatePipelineCode(
                                 result_counter,
                                 indent_level,
                                 var_prefix,
+                                mark_response,
                             );
                             defer allocator.free(seq);
                             try buf.appendSlice(allocator, seq);
@@ -399,6 +416,7 @@ fn generatePipelineCode(
                             result_counter,
                             indent_level,
                             var_prefix,
+                            false,
                         );
                         defer allocator.free(seq);
                         try buf.appendSlice(allocator, seq);
@@ -419,6 +437,7 @@ fn generatePipelineCode(
                             result_counter,
                             indent_level,
                             var_prefix,
+                            false,
                         );
                         defer allocator.free(seq);
                         try buf.appendSlice(allocator, seq);
@@ -597,6 +616,7 @@ fn generatePipelineCode(
                             result_counter,
                             indent_level,
                             var_prefix,
+                            false,
                         );
                         defer allocator.free(seq);
                         try buf.appendSlice(allocator, seq);
@@ -735,7 +755,78 @@ fn generatePipelineCode(
     return buf.toOwnedSlice(allocator) catch unreachable;
 }
 
-/// Generate a switch statement to handle event result branches
+/// True when a nested chain's single continuation is a bare-return PRODUCE
+/// that returns a record whose `body:` field is exactly `binding` — the arm
+/// hands an allocated inline buffer (a fmt.blk `allocPrint`) to its caller
+/// inside a Response-shaped record instead of freeing it here. The record is
+/// then marked `.body_allocated = true` so the caller discharges it
+/// (orisha release-body); leaving the default false leaks the buffer, and
+/// freeing in the arm is use-after-free. Pinned by 350_023.
+fn chainReturnsBodyBinding(nested: []const ast.Continuation, binding: []const u8) bool {
+    if (nested.len != 1) return false;
+    const cont = &nested[0];
+    const bc = switch (cont.node orelse return false) {
+        .branch_constructor => |bc| bc,
+        else => return false,
+    };
+    if (!bc.is_bare_return) return false;
+    const pv = bc.plain_value orelse return false;
+    const value = std.mem.trim(u8, pv, " \t");
+    if (value.len < 2 or value[0] != '{' or value[value.len - 1] != '}') return false;
+
+    // Walk the record's top-level fields (brace depth 0 between the outer
+    // braces), quote-aware — a `body:` nested inside a sub-record or string
+    // must not count.
+    var depth: i32 = 0;
+    var in_string = false;
+    var field_start: usize = 1;
+    var i: usize = 1;
+    while (i < value.len) : (i += 1) {
+        const c = value[i];
+        if (c == '"' and (i == 0 or value[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+        if (c == '{' or c == '(' or c == '[') depth += 1;
+        if (c == '}' or c == ')' or c == ']') depth -= 1;
+        if (c == ',' and depth == 0) {
+            if (fieldHasBodyValue(value[field_start..i], binding)) return true;
+            field_start = i + 1;
+        }
+    }
+    if (field_start < value.len - 1) {
+        return fieldHasBodyValue(value[field_start .. value.len - 1], binding);
+    }
+    return false;
+}
+
+/// True when a single record field (`body: f`) names `binding` as its value.
+fn fieldHasBodyValue(field: []const u8, binding: []const u8) bool {
+    const trimmed = std.mem.trim(u8, field, " \t");
+    if (trimmed.len == 0) return false;
+    var depth: i32 = 0;
+    var in_string = false;
+    var i: usize = 0;
+    while (i < trimmed.len) : (i += 1) {
+        const c = trimmed[i];
+        if (c == '"' and (i == 0 or trimmed[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+        if (c == '{' or c == '(' or c == '[') depth += 1;
+        if (c == '}' or c == ')' or c == ']') depth -= 1;
+        if (c == ':' and depth == 0) {
+            const key = std.mem.trim(u8, trimmed[0..i], " \t");
+            if (!std.mem.eql(u8, key, "body")) return false;
+            const val = std.mem.trim(u8, trimmed[i + 1 ..], " \t");
+            return std.mem.eql(u8, val, binding);
+        }
+    }
+    return false;
+}
+
 /// Whether an inline body allocated a buffer the caller binds. fmt.blk's
 /// transform writes `allocPrint` against `__fmt_alloc`. Auto-discharge runs
 /// after inlining transforms have already lowered nested sites to Zig, so

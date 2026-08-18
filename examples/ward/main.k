@@ -249,8 +249,7 @@ orisha:handler = orisha:router(req)
             <script type = "text/javascript" > indexInitialization(); </script>
         </body>
     </html>
-          }
-            | formatted f -> { status: 200, body: f, content_type: "text/html" }
+          }: f -> { status: 200, body: f, content_type: "text/html" }
         | invalid -> { status: 500, body: "invalid setup.ini", content_type: "text/plain" }
     | not-found |> listen-port(): port |> std/fmt:fmt.blk {
     <!DOCTYPE html>
@@ -330,8 +329,7 @@ orisha:handler = orisha:router(req)
             <script type = "text/javascript" > setupInitialization(); </script>
         </body>
     </html>
-    }
-        | formatted f -> { status: 200, body: f, content_type: "text/html" }
+    }: f -> { status: 200, body: f, content_type: "text/html" }
     | failed e -> { status: 500, body: e, content_type: "text/plain" }
 ! [*] |> orisha:static-router(name: "site")
 

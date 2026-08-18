@@ -7694,6 +7694,26 @@ pub const Parser = struct {
                 // Use strict mode: only collect continuations MORE indented than this branch
                 const source_block_continuations = try self.parseContinuationsWithMode(indent, true);
                 // Source-block branch body — `_` allowed as sole step.
+                //
+                // A `: name -> produce` tail on the close line (`}: f -> {...}`)
+                // is the bare-return produce, the SAME node the same-line path
+                // below builds: `->` is not a `|>` chain delimiter, so without
+                // this strip the invocation parser's arg scan silently swallows
+                // it (return_binding kept, produce dropped). Detect at top
+                // level — the arrow sits between the block's `}` and the
+                // produce, both at depth 0.
+                var produce_tail: ?[]const u8 = null;
+                {
+                    const full_nc = stripTrailingLineComment(full_rest);
+                    if (indexOfTopLevelArrow(full_nc)) |aidx| {
+                        const pt = lexer.trim(full_nc[aidx + 2 ..]);
+                        if (pt.len > 0) {
+                            produce_tail = pt;
+                            full_rest = lexer.trim(full_nc[0..aidx]);
+                        }
+                    }
+                }
+
                 const steps_inner = try self.parsePipelineSteps(full_rest, true, location);
                 defer self.allocator.free(steps_inner);
                 if (steps_inner.len > 0) {
@@ -7702,6 +7722,28 @@ pub const Parser = struct {
                     // binding usage in the chain tail and producing false KORU100 errors.
                     // Mirrors the chain-build pattern in the non-multi-line path below.
                     var current_nested: []const ast.Continuation = source_block_continuations;
+                    if (produce_tail) |pt| {
+                        const conts = try self.allocator.alloc(ast.Continuation, 1);
+                        conts[0] = ast.Continuation{
+                            .branch = try self.allocator.dupe(u8, ""),
+                            .binding = null,
+                            .binding_annotations = &[_][]const u8{},
+                            .binding_type = .branch_payload,
+                            .condition = null,
+                            .condition_expr = null,
+                            .node = .{ .branch_constructor = .{
+                                .branch_name = try self.allocator.dupe(u8, ""),
+                                .fields = &.{},
+                                .plain_value = try self.allocator.dupe(u8, pt),
+                                .has_expressions = true,
+                                .is_bare_return = true,
+                            } },
+                            .indent = indent,
+                            .continuations = current_nested,
+                            .location = location,
+                        };
+                        current_nested = conts;
+                    }
 
                     if (steps_inner.len > 1) {
                         var step_idx: usize = steps_inner.len;
@@ -7812,7 +7854,7 @@ pub const Parser = struct {
             // rides on the final segment; without this strip the invocation
             // parser's arg scan silently swallowed it (return_binding kept,
             // produce dropped). Detect on a comment-stripped view.
-            var produce_tail: ?[]const u8 = null;
+var produce_tail: ?[]const u8 = null;
             {
                 const full_nc = stripTrailingLineComment(full_rest);
                 if (indexOfTopLevelArrow(full_nc)) |aidx| {
