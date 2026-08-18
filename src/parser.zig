@@ -4311,6 +4311,7 @@ pub const Parser = struct {
         var uses_implicit_source = false;
         var implicit_source_text: ?[]const u8 = null;
         var implicit_source_phantom_type: ?[]const u8 = null;
+        var implicit_source_bind_name: ?[]const u8 = null;
         var implicit_source_file_path: ?[]const u8 = null;
         var continuations: []ast.Continuation = undefined;
 
@@ -4429,6 +4430,7 @@ pub const Parser = struct {
                         implicit_source_text = result.source;
                         errdefer self.allocator.free(implicit_source_text.?);
                         implicit_source_phantom_type = result.phantom_type;
+                        implicit_source_bind_name = result.bind_name;
                         continuations = result.continuations;
                     } else {
                         // Parse as implicit flow block (no Source parameter)
@@ -4444,6 +4446,7 @@ pub const Parser = struct {
                     implicit_source_text = result.source;
                     errdefer self.allocator.free(implicit_source_text.?);
                     implicit_source_phantom_type = result.phantom_type;
+                    implicit_source_bind_name = result.bind_name;
                     continuations = result.continuations;
                 }
             }
@@ -4569,6 +4572,12 @@ pub const Parser = struct {
                 // Event not in registry (happens during module imports when fail_fast=false)
                 // Add source parameter with default name "source"
                 final_invocation = try self.createImplicitSourceInvocationDefault(invocation, implicit_source_text.?, implicit_source_phantom_type);
+            }
+            // A `}: name |> ...` close binds the block's bare return (`fmt.blk { … }: f`).
+            // Set it as the invocation's return_binding so the emitter threads the
+            // value and the transform sees the bind (fmt.blk's return_binding branch).
+            if (implicit_source_bind_name) |bn| {
+                final_invocation.return_binding = bn;
             }
             self.allocator.free(implicit_source_text.?);
         } else if (self.registry.getEventType(path_str)) |event_type| {
@@ -4735,11 +4744,12 @@ pub const Parser = struct {
         var stitched_clean: ?[]const u8 = null;
         defer if (stitched_clean) |s| self.allocator.free(s);
         bind_colon: {
-            var depth: i32 = 0;
+            var paren_depth: i32 = 0;
+            var brace_depth: i32 = 0;
             var idx: usize = 0;
             var in_str = false;
-            var seen_open = false;
-            var close_paren: ?usize = null;
+            var open_kind: enum { none, paren, brace } = .none;
+            var close_pos: ?usize = null;
             while (idx < clean.len) : (idx += 1) {
                 const c = clean[idx];
                 if (c == '"' and (idx == 0 or clean[idx - 1] != '\\')) {
@@ -4747,18 +4757,40 @@ pub const Parser = struct {
                     continue;
                 }
                 if (in_str) continue;
-                if (c == '(') {
-                    depth += 1;
-                    seen_open = true;
-                } else if (c == ')') {
-                    depth -= 1;
-                    if (depth == 0 and seen_open) {
-                        close_paren = idx;
-                        break;
+                if (open_kind == .none) {
+                    // The head's first top-level opener: `event(` or `blk {`.
+                    // A brace inside a paren head is argument data, not a block.
+                    if (c == '(') {
+                        open_kind = .paren;
+                    } else if (c == '{') {
+                        open_kind = .brace;
+                    } else {
+                        continue;
+                    }
+                }
+                if (open_kind == .paren) {
+                    if (c == '(') {
+                        paren_depth += 1;
+                    } else if (c == ')') {
+                        paren_depth -= 1;
+                        if (paren_depth == 0) {
+                            close_pos = idx;
+                            break;
+                        }
+                    }
+                } else if (open_kind == .brace) {
+                    if (c == '{') {
+                        brace_depth += 1;
+                    } else if (c == '}') {
+                        brace_depth -= 1;
+                        if (brace_depth == 0) {
+                            close_pos = idx;
+                            break;
+                        }
                     }
                 }
             }
-            if (close_paren) |cp| {
+            if (close_pos) |cp| {
                 var j = cp + 1;
                 while (j < clean.len and (clean[j] == ' ' or clean[j] == '\t')) : (j += 1) {}
                 if (j < clean.len and clean[j] == ':') {
@@ -5116,9 +5148,17 @@ pub const Parser = struct {
             // Look up event type
             if (self.registry.getEventType(path_str)) |event_type| {
                 // Create invocation with implicit Source parameter (no phantom type)
-                const result = try self.createImplicitSourceInvocation(base_invocation, source_text, null, event_type);
+                var result = try self.createImplicitSourceInvocation(base_invocation, source_text, null, event_type);
                 if (base_invocation.args.len > 0) {
                     self.allocator.free(@constCast(base_invocation.args));
+                }
+                // The source-block path REBUILDS the invocation from the head
+                // recursion; the `: name` bind collected above does not ride
+                // base_invocation (the head has none) and must be re-attached
+                // or the bare return is silently unbound (fmt.blk chain steps).
+                if (return_binding) |rb| {
+                    result.return_binding = rb;
+                    result.return_binding_annotations = return_binding_annotations;
                 }
                 return result;
             } else {
@@ -5146,6 +5186,10 @@ pub const Parser = struct {
                     .path = base_invocation.path,
                     .args = try args.toOwnedSlice(self.allocator),
                     .variant = base_invocation.variant,
+                    // Re-attach the `: name` bind (see the registry path above):
+                    // the rebuild drops it from base_invocation.
+                    .return_binding = return_binding,
+                    .return_binding_annotations = return_binding_annotations,
                 };
             }
         }
@@ -6185,7 +6229,7 @@ pub const Parser = struct {
         return all_continuations.toOwnedSlice(self.allocator);
     }
 
-    fn parseImplicitSourceBlock(self: *Parser, base_indent: usize, phantom_type: ?[]const u8, strict: bool) anyerror!struct { source: []const u8, continuations: []ast.Continuation, phantom_type: ?[]const u8 } {
+    fn parseImplicitSourceBlock(self: *Parser, base_indent: usize, phantom_type: ?[]const u8, strict: bool) anyerror!struct { source: []const u8, continuations: []ast.Continuation, phantom_type: ?[]const u8, bind_name: ?[]const u8 } {
         // Parse Source content inside {} as raw text, then any output continuations after
         // Source is captured as a string - no parsing of flows inside
         //
@@ -6206,6 +6250,8 @@ pub const Parser = struct {
         var min_indent: ?usize = null;
         var first_content_indent: ?usize = null;
         var inline_close_line: ?[]const u8 = null;
+        var inline_bind_name: ?[]const u8 = null;
+        var inline_close_tail: ?[]const u8 = null;
 
         // First pass: collect lines and find minimum indentation
         while (self.current < self.lines.len and inside_braces) {
@@ -6229,13 +6275,54 @@ pub const Parser = struct {
                 break;
             }
 
-            // Inline void chain after `}`: `} |> next()` — `|>` is always inline in Koru,
-            // so the source block must close at the `}` even when `|>` follows on the same line.
-            if (std.mem.startsWith(u8, trimmed, "}") and std.mem.indexOf(u8, trimmed, "|>") != null) {
-                inline_close_line = line;
-                self.current += 1;
-                inside_braces = false;
-                break;
+            // Inline continuation after `}`: `} |> next()`, `}: f |> next()`,
+            // `}: f -> { … }` (bare-return produce) or `}: f => …` — a
+            // continuation after a source block is always inline, so the block
+            // must close at the `}` even when one follows on the same line. A
+            // `: name` between the `}` and the operator is the block's return
+            // BIND (`fmt.blk { … }: f` — the `: name` rule), surfaced with the
+            // tail so the bind survives the cut.
+            if (std.mem.startsWith(u8, trimmed, "}") and !std.mem.eql(u8, trimmed, "}")) {
+                var rest = lexer.trim(trimmed[1..]);
+                var bind_name_slice: ?[]const u8 = null;
+                if (rest.len > 0 and rest[0] == ':') {
+                    const bind_rest = lexer.trim(rest[1..]);
+                    var name_end: usize = 0;
+                    while (name_end < bind_rest.len and
+                        (std.ascii.isAlphanumeric(bind_rest[name_end]) or
+                            bind_rest[name_end] == '_' or bind_rest[name_end] == '-')) : (name_end += 1)
+                    {}
+                    if (name_end == 0) {
+                        try self.reporter.addError(.PARSE001, self.current, 0, "expected a binding name after the colon on the source-block close line (close-brace colon name then a chain or produce operator)", .{});
+                        return error.ParseError;
+                    }
+                    bind_name_slice = bind_rest[0..name_end];
+                    rest = lexer.trim(bind_rest[name_end..]);
+                }
+                var op_len: usize = 0;
+                var op_keep = false;
+                inline for (.{ "|>", "->", "=>" }) |op| {
+                    if (std.mem.startsWith(u8, rest, op)) {
+                        op_len = op.len;
+                        // `|>` is a chain marker — the tail is what FOLLOWS it.
+                        // `->` / `=>` are produce/construct operators — the tail
+                        // IS the operator plus its expression.
+                        op_keep = !std.mem.eql(u8, op, "|>");
+                        break;
+                    }
+                }
+                if (op_len > 0 or bind_name_slice != null) {
+                    if (bind_name_slice) |bs| {
+                        inline_bind_name = try self.allocator.dupe(u8, bs);
+                    }
+                    if (op_len > 0) {
+                        inline_close_tail = if (op_keep) rest else lexer.trim(rest[op_len..]);
+                    }
+                    inline_close_line = line;
+                    self.current += 1;
+                    inside_braces = false;
+                    break;
+                }
             }
 
             // Track minimum indentation of non-empty lines
@@ -6290,75 +6377,74 @@ pub const Parser = struct {
         // In strict mode (pipeline context), only collect continuations MORE indented than base_indent
         // This prevents sibling branches at the pipeline level from being consumed as children
         var output_continuations: []ast.Continuation = undefined;
-        if (inline_close_line) |close_line| {
-            const trimmed_close = lexer.trim(close_line);
-            if (std.mem.indexOf(u8, trimmed_close, "|>")) |pipe_idx| {
-                const tail = lexer.trim(trimmed_close[pipe_idx + 2 ..]);
-                const close_line_idx = if (self.current > 0) self.current - 1 else self.current;
-                const tail_location = self.getLineLocation(close_line_idx, 0);
+        const bind_name = inline_bind_name;
+        if (inline_close_tail) |tail| {
+            const close_line_idx = if (self.current > 0) self.current - 1 else self.current;
+            const tail_location = self.getLineLocation(close_line_idx, 0);
 
-                // Mirror parsePipelineContinuationBase's Source-block pipeline step without
-                // mutual recursion (that path also calls parseImplicitSourceBlock).
-                const has_open_brace = std.mem.indexOf(u8, tail, "{") != null;
-                const has_close_brace = std.mem.indexOf(u8, tail, "}") != null;
-                if (has_open_brace and !has_close_brace) {
-                    const brace_idx = std.mem.lastIndexOf(u8, tail, "{") orelse unreachable;
-                    const invocation_str = lexer.trim(tail[0..brace_idx]);
-                    const temp_invocation = try self.parseEventInvocation(invocation_str);
-                    const path_str = try self.pathToString(temp_invocation.path);
-                    defer self.allocator.free(path_str);
+            // Mirror parsePipelineContinuationBase's Source-block pipeline step without
+            // mutual recursion (that path also calls parseImplicitSourceBlock).
+            const has_open_brace = std.mem.indexOf(u8, tail, "{") != null;
+            const has_close_brace = std.mem.indexOf(u8, tail, "}") != null;
+            if (has_open_brace and !has_close_brace) {
+                const brace_idx = std.mem.lastIndexOf(u8, tail, "{") orelse unreachable;
+                const invocation_str = lexer.trim(tail[0..brace_idx]);
+                const temp_invocation = try self.parseEventInvocation(invocation_str);
+                const path_str = try self.pathToString(temp_invocation.path);
+                defer self.allocator.free(path_str);
 
-                    var has_source_param = false;
-                    if (self.registry.getEventType(path_str)) |event_type| {
-                        if (event_type.input_shape) |shape| {
-                            for (shape.fields) |field| {
-                                if (field.is_source) {
-                                    has_source_param = true;
-                                    break;
-                                }
+                var has_source_param = false;
+                var unresolved = false;
+                if (self.registry.getEventType(path_str)) |event_type| {
+                    if (event_type.input_shape) |shape| {
+                        for (shape.fields) |field| {
+                            if (field.is_source) {
+                                has_source_param = true;
+                                break;
                             }
                         }
                     }
+                } else {
+                    unresolved = true;
+                }
 
-                    if (has_source_param) {
-                        const tail_source = try self.parseImplicitSourceBlock(base_indent, null, true);
-                        var final_invocation: ast.Invocation = undefined;
-                        if (self.registry.getEventType(path_str)) |event_type| {
-                            final_invocation = try self.createImplicitSourceInvocation(
-                                temp_invocation,
-                                tail_source.source,
-                                tail_source.phantom_type,
-                                event_type,
-                            );
-                        } else {
-                            final_invocation = try self.createImplicitSourceInvocationDefault(
-                                temp_invocation,
-                                tail_source.source,
-                                tail_source.phantom_type,
-                            );
-                        }
-                        self.allocator.free(tail_source.source);
-
-                        const step = ast.Step{ .invocation = final_invocation };
-                        const tail_cont = ast.Continuation{
-                            .branch = try self.allocator.dupe(u8, ""),
-                            .binding = null,
-                            .condition = null,
-                            .condition_expr = null,
-                            .node = step,
-                            .indent = base_indent,
-                            .continuations = tail_source.continuations,
-                            .location = tail_location,
-                        };
-                        var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
-                        try cont_list.append(self.allocator, tail_cont);
-                        output_continuations = try cont_list.toOwnedSlice(self.allocator);
+                if (has_source_param or unresolved) {
+                    const tail_source = try self.parseImplicitSourceBlock(base_indent, null, true);
+                    var final_invocation: ast.Invocation = undefined;
+                    if (self.registry.getEventType(path_str)) |event_type| {
+                        final_invocation = try self.createImplicitSourceInvocation(
+                            temp_invocation,
+                            tail_source.source,
+                            tail_source.phantom_type,
+                            event_type,
+                        );
                     } else {
-                        const tail_cont = try self.parsePipelineContinuationBase(tail, base_indent, tail_location);
-                        var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
-                        try cont_list.append(self.allocator, tail_cont);
-                        output_continuations = try cont_list.toOwnedSlice(self.allocator);
+                        final_invocation = try self.createImplicitSourceInvocationDefault(
+                            temp_invocation,
+                            tail_source.source,
+                            tail_source.phantom_type,
+                        );
                     }
+                    // `: name` close bind, same rule as the root path.
+                    if (tail_source.bind_name) |bnn| {
+                        final_invocation.return_binding = bnn;
+                    }
+                    self.allocator.free(tail_source.source);
+
+                    const step = ast.Step{ .invocation = final_invocation };
+                    const tail_cont = ast.Continuation{
+                        .branch = try self.allocator.dupe(u8, ""),
+                        .binding = null,
+                        .condition = null,
+                        .condition_expr = null,
+                        .node = step,
+                        .indent = base_indent,
+                        .continuations = tail_source.continuations,
+                        .location = tail_location,
+                    };
+                    var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                    try cont_list.append(self.allocator, tail_cont);
+                    output_continuations = try cont_list.toOwnedSlice(self.allocator);
                 } else {
                     const tail_cont = try self.parsePipelineContinuationBase(tail, base_indent, tail_location);
                     var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
@@ -6366,10 +6452,10 @@ pub const Parser = struct {
                     output_continuations = try cont_list.toOwnedSlice(self.allocator);
                 }
             } else {
-                output_continuations = if (strict)
-                    try self.parseContinuationsWithMode(base_indent, true)
-                else
-                    try self.parseContinuations(base_indent);
+                const tail_cont = try self.parsePipelineContinuationBase(tail, base_indent, tail_location);
+                var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                try cont_list.append(self.allocator, tail_cont);
+                output_continuations = try cont_list.toOwnedSlice(self.allocator);
             }
         } else if (strict) {
             output_continuations = try self.parseContinuationsWithMode(base_indent, true);
@@ -6381,6 +6467,7 @@ pub const Parser = struct {
             .source = source,
             .continuations = output_continuations,
             .phantom_type = phantom_type,
+            .bind_name = bind_name,
         };
     }
 
@@ -7921,8 +8008,14 @@ pub const Parser = struct {
             const path_str = try self.pathToString(temp_invocation.path);
             defer self.allocator.free(path_str);
 
-            // Check if this event has a Source parameter
+            // Check if this event has a Source parameter. An event NOT in the
+            // registry yet (comptime keyword like fmt.blk, unresolved import)
+            // optimistically takes the Source path — the same assumption the
+            // root-site path makes — so a chain-step source block parses here
+            // instead of the generic brace-collection path (which cannot see
+            // the `}: name |> …` close bind).
             var has_source_param = false;
+            var unresolved = false;
             if (self.registry.getEventType(path_str)) |event_type| {
                 if (event_type.input_shape) |shape| {
                     for (shape.fields) |field| {
@@ -7932,9 +8025,11 @@ pub const Parser = struct {
                         }
                     }
                 }
+            } else {
+                unresolved = true;
             }
 
-            if (has_source_param) {
+            if (has_source_param or unresolved) {
                 // This IS a Source block - parse it properly!
                 log_debug("[DEBUG] parsePipelineContinuationBase: has_source_param=true, path={s}\n", .{path_str});
                 const result = try self.parseImplicitSourceBlock(indent, null, true);
@@ -7946,6 +8041,12 @@ pub const Parser = struct {
                     final_invocation = try self.createImplicitSourceInvocation(temp_invocation, result.source, result.phantom_type, event_type);
                 } else {
                     final_invocation = try self.createImplicitSourceInvocationDefault(temp_invocation, result.source, result.phantom_type);
+                }
+                // `: name` bound on the block close (`fmt.blk { … }: f |> …`),
+                // same rule as the root path — without this the emitter never
+                // sees the name and the first `{{ f:s }}` is undeclared.
+                if (result.bind_name) |rb| {
+                    final_invocation.return_binding = rb;
                 }
                 self.allocator.free(result.source);
 
@@ -7996,7 +8097,15 @@ pub const Parser = struct {
                             break;
                         }
                     }
-                    if (!only_closing_braces) break;
+                    if (!only_closing_braces) {
+                        // A line STARTING with `}` is the block's close, even
+                        // with a bind+continuation tail (`}: f |> next()` /
+                        // `}: f -> { … }`); sibling continuations never start
+                        // with `}`. Without this the close line is dropped, the
+                        // collected content never balances, and the `: name`
+                        // bind is silently lost (fmt.blk chain steps).
+                        if (!std.mem.startsWith(u8, next_trimmed, "}")) break;
+                    }
                 }
 
                 // Add this line to our content

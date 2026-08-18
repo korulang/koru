@@ -41,16 +41,18 @@ pub const FormattedText = struct {
 //       Hello {{ name:s }}!
 //       Count: {{ count:d }}
 //   }
-//   | formatted f |> ... use f.text ...
+//   : f |> ... use {{ f:s }} ...
 //
-// The FormattedText carries its allocator, so fmt.dealloc knows how to free.
-// Auto-discharge inserts fmt.dealloc automatically.
+// The `<allocated!>` string is bound with `: name` (bare-return rule) and
+// auto-discharge inserts fmt.dealloc / std/io:free accordingly; the caller
+// interpolates the text with `{{ f:s }}`.
 
 // The transform event returns SiteResult (the rewritten site) — the single-return
 // form every `[transform]` decl lands as (frag-single-return-form-is-universal;
-// `ln` is the twin). The RUNTIME value is the `.formatted` union the inline_body
-// breaks with, which the caller branches on as `| formatted f`; the `<allocated!>`
-// obligation rides that runtime value, not the transform event's own return.
+// `ln` is the twin). The RUNTIME value is the allocated string; a caller binds
+// it with `: name` (`f` above), and legacy `| branch` sites get the `.formatted`
+// union the inline_body breaks with. The `<allocated!>` obligation rides that
+// runtime value, not the transform event's own return.
 ~[comptime|transform]pub tor fmt.blk {
     source: Source,
     invocation: *const Invocation,
@@ -247,9 +249,11 @@ pub const FormattedText = struct {
     // uses. The emitter wraps the body in a labeled block and substitutes a
     // unique label; a hard-coded `:__blk` is dangling (620_007).
     //
-    // The payload is the allocated string itself (`string<allocated!>`), so
-    // auto-discharge inserts `std/io:free` — the one disposer for allocator-
-    // owned buffers (335_042). `| formatted f` binds `f` as that string.
+    // A `: name` bind yields the allocated STRING itself (`string<allocated!>`):
+    // the caller interpolates `{{ f:s }}` and auto-discharge inserts
+    // `std/io:free` — the one disposer for the `allocated` label (335_042/043
+    // ruling). `| formatted f` bound the same string behind the `.formatted`
+    // union variant; the grammar now binds bare returns with `: name` only.
     const inline_code = if (flow.inv().return_binding != null)
         std.fmt.allocPrint(
             allocator,
@@ -333,7 +337,7 @@ pub const FormattedText = struct {
 //   fmt.blk.with_allocator(allocator: my_arena) {
 //       Hello {{ name:s }}!
 //   }
-//   | formatted f |> ...
+//   : f |> ...
 
 // TODO: fmt.blk.with_allocator - requires solving how user params
 // coexist with transform infrastructure params in the pass runner.

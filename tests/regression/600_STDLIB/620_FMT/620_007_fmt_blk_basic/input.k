@@ -1,5 +1,5 @@
-// PIN: `std/fmt:fmt.blk` allocates a formatted string and yields it on
-// `| formatted f`. Twin of 620_001 (`ln`, thread-local buffer); this is the
+// PIN: `std/fmt:fmt.blk` allocates a formatted string and binds it with
+// `: f`. Twin of 620_001 (`ln`, thread-local buffer); this is the
 // form that can hold more than that buffer — HTML, JSON, a file. The buffer
 // carries `allocated!`; auto-discharge inserts `std/io:free` (335_042).
 // The transform rewrites to `fmt.blk.impl` (`-> string<std.io:allocated!>`,
@@ -15,5 +15,4 @@ const {
 
 std/fmt:fmt.blk {
     Hello, {{ name:s }}! The answer is {{ count:d }}.
-}
-| formatted f |> std/io:print.ln("{{ f:s }}")
+}: f |> std/io:print.ln("{{ f:s }}")

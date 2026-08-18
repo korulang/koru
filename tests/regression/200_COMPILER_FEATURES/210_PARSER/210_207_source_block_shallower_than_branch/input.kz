@@ -19,6 +19,5 @@
 ~wrap(raw: "Ada")
         | cfg c |> std/fmt:fmt.blk {
     Hello {{ c:s }}
-}
-            | formatted f |> std/io:print.ln("{{ f:s }}")
+}: f |> std/io:print.ln("{{ f:s }}")
         | invalid |> std/io:print.ln("no")

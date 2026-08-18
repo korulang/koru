@@ -29,6 +29,5 @@ const req = TestRequest{ .method = "GET", .path = "/" };
 ! [GET /] |> info(): i |> std/fmt:fmt.blk {
     <h1>{{ i.processor_name:s }}</h1>
     <p>{{ i.core_count:s }}</p>
-}
-    | formatted f |> std/io:print.ln("{{ f:s }}")
+}: f |> std/io:print.ln("{{ f:s }}")
 ! [*] |> std/io:print.ln("miss")

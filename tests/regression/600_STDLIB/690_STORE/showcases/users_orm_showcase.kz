@@ -138,9 +138,8 @@
             std/fmt:blk {
                 INSERT INTO users (id, name, email) VALUES ({{ id:d }}, '{{ name:s }}', '{{ email:s }}')
                 ON CONFLICT(id) DO UPDATE SET name = '{{ name:s }}', email = '{{ email:s }}'
-            }
-            | formatted f |>
-                libs/sqlite3:exec(conn2, sql: f.text)
+            }: f |>
+                libs/sqlite3:exec(conn2, sql: "{{ f:s }}")
                 | ok _ |> _
                 | err e |> fatal(msg: e.msg)
 
@@ -155,9 +154,8 @@
             // Accepted as an open hole for this showcase.
             std/fmt:blk {
                 DELETE FROM users WHERE id = {{ id:d }}
-            }
-            | formatted f |>
-                libs/sqlite3:exec(conn2, sql: f.text)
+            }: f |>
+                libs/sqlite3:exec(conn2, sql: "{{ f:s }}")
                 | ok _ |> _
                 | err e |> fatal(msg: e.msg)
     | err e |> fatal(msg: e.msg)
