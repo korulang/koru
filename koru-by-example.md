@@ -8,7 +8,7 @@ Every example below is verbatim source from a passing POSITIVE regression test (
 
 ## Contents
 
-- **CORE LANGUAGE / BASIC SYNTAX** — 2 tests
+- **CORE LANGUAGE / BASIC SYNTAX** — 3 tests
 - **CORE LANGUAGE / EVENTS FLOWS** — 4 tests
 - **CORE LANGUAGE / LITERALS** — 2 tests
 - **CORE LANGUAGE / CONTROL FLOW** — 5 tests
@@ -16,13 +16,37 @@ Every example below is verbatim source from a passing POSITIVE regression test (
 - **ADVANCED FEATURES / PHANTOM TYPES** — 2 tests
 - **RUNTIME FEATURES** — 2 tests
 - **STDLIB / STRING** — 1 test
-- **STDLIB / FMT** — 1 test
 
 ---
 
 # CORE LANGUAGE
 
 ## BASIC SYNTAX
+
+### 010_000_hello_world_koru
+
+```koru
+const name = "World";
+const debug = true;
+const count: i32 = 42;
+
+// Hello World in pure Koru.
+// This is the frontpage example from korulang.org.
+
+import std/io
+
+std/io:print.blk {
+    {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
+    The answer is {{ count:d }}.
+}
+```
+
+**Output:**
+
+```
+[DEBUG] Hello, World!
+The answer is 42.
+```
 
 ### 010_001_hello_world
 
@@ -860,28 +884,5 @@ std/string:from-page(text: "hello")
 
 ```
 hello
-```
-
-## FMT
-
-### 620_001_fmt_ln_basic
-
-```koru
-// TEST: fmt:ln basic - format a string and get it back via | line continuation
-import std/fmt
-import std/io
-
-tor greet { name: string } -> string
-
-greet = std/fmt:ln("Hello, {{ name:s }}!")
-| line l -> l.text
-
-greet(name: "World"): g |> std/io:print.ln(g)
-```
-
-**Output:**
-
-```
-Hello, World!
 ```
 
