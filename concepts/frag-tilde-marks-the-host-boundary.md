@@ -148,7 +148,7 @@ Two things were new here and are worth carrying:
 - **The enforcement is the facet.** A pure-Koru `.k` file Rejects the tilde —
   PARSE003, at the parser, with a teaching message. The strongest wall a
   presentation context can have is to live in a file the lexer itself policed.
-  The registry tests (`430_057`/`430_058`) moved from `.kz` to `input.k` —
+  The registry tests (`430_064`/`430_058`) moved from `.kz` to `input.k` —
   the harness runs both — so the corpus's pure surface is now compiler-held,
   not convention-held. Any future regression to `~` in a pure test is a parse
   error, discovered in the same commit that writes it.
