@@ -54,3 +54,23 @@
     }
     return { tag: "done", done: __koru_rl_n };
 }
+
+~proc write|js {
+    try {
+        require("fs").writeFileSync(path, content);
+    } catch (__koru_wr_err) {
+        const __koru_wr_code = __koru_wr_err && __koru_wr_err.code;
+        let __koru_wr_msg;
+        if (__koru_wr_code === "ENOENT") {
+            __koru_wr_msg = "File not found";
+        } else if (__koru_wr_code === "EACCES" || __koru_wr_code === "EPERM") {
+            __koru_wr_msg = "Access denied";
+        } else if (__koru_wr_code === "EISDIR") {
+            __koru_wr_msg = "Path is a directory";
+        } else {
+            __koru_wr_msg = "Failed to write file";
+        }
+        return { tag: "failed", failed: __koru_wr_msg };
+    }
+    return { tag: "written", written: {} };
+}

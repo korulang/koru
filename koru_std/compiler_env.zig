@@ -7,8 +7,12 @@ pub const CompilerEnv = struct {
     /// Default emission target language (--lang=<name>)
     pub const lang: []const u8 = "zig";
 
+    /// True when built with `koruc lib` — exports are roots
+    pub const library: bool = false;
+
     /// All compiler flags (for runtime checking)
     pub const flags = &[_][]const u8{
+        "command=claims",
         "build=macos",
     };
 

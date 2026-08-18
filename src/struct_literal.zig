@@ -149,6 +149,7 @@ fn projectRawFields(
 ) ParseError![]const StructField {
     var out = try std.ArrayList(StructField).initCapacity(allocator, raw_fields.len);
     for (raw_fields) |raw| {
+        if (std.mem.trim(u8, raw, " \t\n\r").len == 0) continue;
         if (topLevelColon(raw)) |colon| {
             const name = std.mem.trim(u8, raw[0..colon], " \t\n\r");
             const value = std.mem.trim(u8, raw[colon + 1 ..], " \t\n\r");
@@ -498,6 +499,17 @@ test "parseFields: named + bare puns; reject bare expression and redundant label
 
     // Singleton non-punnable expression: only with the capture-seed carve-out.
     try std.testing.expectError(error.BareEntryNotPunnable, parseFields(allocator, "{ a + 1 }"));
+
+    // Trailing comma is not a field. An empty last slice used to refuse
+    // BareEntryNotPunnable, so writeBareReturnType pasted the record verbatim
+    // and `string` never lowered.
+    const trailing = try parseFields(allocator, "{ a: string, b: i64, }");
+    try std.testing.expectEqual(@as(usize, 2), trailing.len);
+    try std.testing.expectEqualStrings("a", trailing[0].name);
+    try std.testing.expectEqualStrings("string", trailing[0].value);
+    try std.testing.expectEqualStrings("b", trailing[1].name);
+    try std.testing.expectEqualStrings("i64", trailing[1].value);
+
     const seed = try parseFieldsWithOptions(allocator, "{ a + 1 }", .{ .allow_singleton_expression = true });
     try std.testing.expectEqual(@as(usize, 1), seed.len);
     try std.testing.expectEqualStrings("", seed[0].name);

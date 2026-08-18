@@ -8,6 +8,14 @@ const ast = @import("ast");
 /// An event is "reachable" if its path appears as an invocation anywhere in the
 /// program — in flows, continuation nodes, or tap references.
 ///
+/// A transform that inlines a continuation (orisha:router, ~for) rewrites the
+/// call into a string inside `inline_body` and empties the continuation tree.
+/// Reachability is a fact about the SOURCE program, so this pass also walks
+/// `original_ast` (the pre-transform tree) and scans `inline_body` for
+/// `name_event.handler` that continuation_codegen emitted. Otherwise a live
+/// callee whose only remaining reference is generated Zig is stripped, and
+/// the inlined call names a member that does not exist (350_021).
+///
 /// Compiling a PROGRAM, the roots are its flows: Koru has full visibility, and
 /// if nobody calls it, it doesn't exist in the output.
 ///
@@ -45,9 +53,13 @@ pub const DeadStripPass = struct {
         self.used.deinit();
     }
 
-    pub fn run(self: *DeadStripPass, program: *const ast.Program) !*const ast.Program {
+    pub fn run(self: *DeadStripPass, program: *const ast.Program, original: ?*const ast.Program) !*const ast.Program {
         // Phase 1: Collect all invoked event paths
-        try self.collectUsedPaths(program.items);
+        try self.collectUsedPaths(program.items, program.main_module_name);
+        // Pre-transform tree still has the AST calls a transform later inlined.
+        if (original) |orig| {
+            if (orig != program) try self.collectUsedPaths(orig.items, orig.main_module_name);
+        }
 
         // A library's exports are roots. Seeding them BEFORE the walk means
         // everything they reach is reachable too — an exported entry point
@@ -100,12 +112,15 @@ pub const DeadStripPass = struct {
     // Phase 1: Collect all event paths that are referenced
     // ========================================================================
 
-    fn collectUsedPaths(self: *DeadStripPass, items: []const ast.Item) !void {
+    fn collectUsedPaths(self: *DeadStripPass, items: []const ast.Item, main_module: []const u8) !void {
         for (items) |item| {
             switch (item) {
                 .flow => |flow| {
                     try self.collectFromInvocation(flow.inv());
                     try self.collectFromContinuations(flow.body.continuations);
+                    if (flow.inline_body) |ib| {
+                        try self.collectFromInlineBody(ib, main_module);
+                    }
                 },
                 .event_tap => |tap| {
                     if (tap.source) |source| try self.markPath(&source);
@@ -113,7 +128,7 @@ pub const DeadStripPass = struct {
                     try self.collectFromContinuations(tap.continuations);
                 },
                 .module_decl => |mod| {
-                    try self.collectUsedPaths(mod.items);
+                    try self.collectUsedPaths(mod.items, main_module);
                 },
                 .immediate_impl => |impl| {
                     try self.markPath(&impl.event_path);
@@ -128,6 +143,42 @@ pub const DeadStripPass = struct {
                 else => {},
             }
         }
+    }
+
+    /// continuation_codegen emits `main_module.name_event.handler(...)`. A
+    /// transform that replaced the AST call with that string still needs the
+    /// event to exist. Mark `name` and `main:name` so isPathUsed matches the
+    /// qualified decl.
+    fn collectFromInlineBody(self: *DeadStripPass, body: []const u8, main_module: []const u8) !void {
+        const needle = "_event.handler";
+        var i: usize = 0;
+        while (std.mem.indexOfPos(u8, body, i, needle)) |idx| {
+            var start = idx;
+            while (start > 0) {
+                const c = body[start - 1];
+                const ident = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+                    (c >= '0' and c <= '9') or c == '_';
+                if (!ident) break;
+                start -= 1;
+            }
+            const name = body[start..idx];
+            if (name.len > 0) {
+                try self.markBareName(name, main_module);
+            }
+            i = idx + needle.len;
+        }
+    }
+
+    fn markBareName(self: *DeadStripPass, name: []const u8, main_module: []const u8) !void {
+        const bare = try self.allocator.dupe(u8, name);
+        self.used.put(bare, {}) catch {
+            self.allocator.free(bare);
+        };
+        if (main_module.len == 0) return;
+        const qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ main_module, name });
+        self.used.put(qualified, {}) catch {
+            self.allocator.free(qualified);
+        };
     }
 
     fn collectFromInvocation(self: *DeadStripPass, invocation: *const ast.Invocation) !void {

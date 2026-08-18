@@ -3094,7 +3094,7 @@ const joinPathAlloc = struct {
     // across the metacircular boundary and sees per-user state only there.
     pass.library_roots = CompilerEnv.library;
 
-    const new_ast = pass.run(mutable_ctx.ast) catch {
+    const new_ast = pass.run(mutable_ctx.ast, mutable_ctx.original_ast) catch {
         return mutable_ctx;
     };
 

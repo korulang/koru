@@ -61,7 +61,7 @@ pub const FormattedText = struct {
 
 ~[norun]pub tor fmt.blk.impl {
     text: string,
-}
+} -> string<std.io:allocated!>
 
 ~proc fmt.blk|zig {
     const ast = @import("ast");
@@ -243,20 +243,36 @@ pub const FormattedText = struct {
         }
     }
 
-    // Generate code that allocates FormattedText and returns pointer
-    // Uses page_allocator as the hidden default
-    const inline_code = std.fmt.allocPrint(
-        allocator,
-        \\{{
-        \\    const __fmt_alloc = koru_allocator();
-        \\    const __fmt_text = @import("std").fmt.allocPrint(__fmt_alloc, "{s}", .{{{s}}}) catch unreachable;
-        \\    const __fmt_result = __fmt_alloc.create(@import("std").io.FormattedText) catch unreachable;
-        \\    __fmt_result.* = .{{ .text = __fmt_text, .allocator = __fmt_alloc }};
-        \\    break :__blk .{{ .formatted = __fmt_result }};
-        \\}}
-        ,
-        .{ format_buf.items, args_buf.items }
-    ) catch unreachable;
+    // Allocate, then break to `__KORU_INLINE__` — the same placeholder `ln`
+    // uses. The emitter wraps the body in a labeled block and substitutes a
+    // unique label; a hard-coded `:__blk` is dangling (620_007).
+    //
+    // The payload is the allocated string itself (`string<allocated!>`), so
+    // auto-discharge inserts `std/io:free` — the one disposer for allocator-
+    // owned buffers (335_042). `| formatted f` binds `f` as that string.
+    const inline_code = if (flow.inv().return_binding != null)
+        std.fmt.allocPrint(
+            allocator,
+            \\{{
+            \\    const __fmt_alloc = koru_allocator();
+            \\    const __fmt_text = @import("std").fmt.allocPrint(__fmt_alloc, "{s}", .{{{s}}}) catch unreachable;
+            \\    break :__KORU_INLINE__ __fmt_text;
+            \\}}
+            ,
+            .{ format_buf.items, args_buf.items }
+        ) catch unreachable
+    else
+        std.fmt.allocPrint(
+            allocator,
+            \\{{
+            \\    const __fmt_alloc = koru_allocator();
+            \\    const __fmt_text = @import("std").fmt.allocPrint(__fmt_alloc, "{s}", .{{{s}}}) catch unreachable;
+            \\    const __BlkResult = union(enum) {{ formatted: []const u8 }};
+            \\    break :__KORU_INLINE__ @as(__BlkResult, .{{ .formatted = __fmt_text }});
+            \\}}
+            ,
+            .{ format_buf.items, args_buf.items }
+        ) catch unreachable;
 
     // Position-agnostic: one write-back path at every depth (the runner lifts
     // nested sites and grafts the result back).

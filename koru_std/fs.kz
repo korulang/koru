@@ -70,6 +70,32 @@ const std = @import("std");
     return .{ .done = __koru_rl_n };
 }
 
+// Write a buffer to a path. The caller's slice is borrowed for the duration
+// of the write; the file owns the bytes after `| written`. `| failed` is
+// the same loud strings `read-lines` uses on open, plus write-side I/O.
+// No cap: the host writes `content` as given. The file is the owner after `| written`.
+~pub tor write { path: string, content: string }
+| written
+| failed string
+
+~proc write|zig {
+    const __koru_wr_file = std.fs.cwd().createFile(path, .{}) catch |err| {
+        const __koru_wr_msg = switch (err) {
+            error.FileNotFound => "File not found",
+            error.AccessDenied => "Access denied",
+            error.IsDir => "Path is a directory",
+            else => "Failed to write file",
+        };
+        return .{ .failed = __koru_wr_msg };
+    };
+    defer __koru_wr_file.close();
+
+    __koru_wr_file.writeAll(content) catch {
+        return .{ .failed = "Failed to write file" };
+    };
+    return .{ .written = .{} };
+}
+
 // ============================================================================
 // LOW-LEVEL API (phantom types, full control) - FUTURE
 // ============================================================================

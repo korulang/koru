@@ -1,0 +1,29 @@
+// PINS: orisha:router inlines a continuation through continuation_codegen.
+// A route that binds a bare-return tor (`usage(): u |> …`) must emit
+// `const u = handler(...)`, not `switch (result) { . =>` — that is not Zig.
+//
+// 350_015 pins the same bind on the visitor_emitter/subflow path.
+// 350_010's router arms are a single print, so they never asked this question.
+// Ward's `/api/usage` is this shape.
+
+~import orisha
+~import std/io
+
+const std = @import("std");
+
+const TestRequest = struct {
+    method: []const u8,
+    path: []const u8,
+};
+
+const req = TestRequest{ .method = "GET", .path = "/api/usage" };
+
+~tor usage {} -> { processor: i32, ram: i32, storage: i32 }
+
+~proc usage|zig {
+    return .{ .processor = 7, .ram = 11, .storage = 13 };
+}
+
+~orisha:router(req: &req)
+! [GET /api/usage] |> usage(): u |> std/io:print.ln("{{ u.processor:d }}/{{ u.ram:d }}/{{ u.storage:d }}")
+! [*] |> std/io:print.ln("miss")

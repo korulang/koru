@@ -1,0 +1,34 @@
+// PINS: fmt.blk inside an orisha:router arm, after a bare-return bind.
+// Ward's GET / is `info(): i |> fmt.blk { … {{ i.processor_name:s }} … }`.
+// 350_021 pins the bind with ln; 620_007 pins fmt.blk at top level; neither
+// is this combination. The template is HTML: `<h1>{{ … }}` contains the
+// substring `>{`, which is also typed-source syntax (`event <Type>{`).
+// That scan must not steal the source-opening `{` from `fmt.blk {`.
+// The formatted string is the response body.
+
+~import orisha
+~import std/fmt
+~import std/io
+
+const std = @import("std");
+
+const TestRequest = struct {
+    method: []const u8,
+    path: []const u8,
+};
+
+const req = TestRequest{ .method = "GET", .path = "/" };
+
+~tor info {} -> { processor_name: string, core_count: string }
+
+~proc info|zig {
+    return .{ .processor_name = "M2", .core_count = "12 Cores" };
+}
+
+~orisha:router(req: &req)
+! [GET /] |> info(): i |> std/fmt:fmt.blk {
+    <h1>{{ i.processor_name:s }}</h1>
+    <p>{{ i.core_count:s }}</p>
+}
+    | formatted f |> std/io:print.ln("{{ f:s }}")
+! [*] |> std/io:print.ln("miss")

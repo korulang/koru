@@ -20,7 +20,16 @@ test "visitor emits only user code, not compiler infrastructure" {
     // Should emit ONLY the user code (hello event)
     // Should NOT emit compiler.* items
 
-    var buffer: [4096]u8 = undefined;
+    // 16 KB, not 4 KB, and the number has a reason. This emitter writes the
+    // program PREAMBLE — the allocator spine and the leak check — before it
+    // writes anything this test is about, and that preamble measured 2,965
+    // bytes before `koru_leak_check` was extracted into it. At 4,096 the
+    // headroom over scaffolding nobody here is asserting on was under a third,
+    // and adding ten lines to the preamble broke a test about EVENT ORDERING
+    // with `error.BufferOverflow` — a failure that names neither the preamble
+    // nor the size. A fixed buffer sized just above today's output turns every
+    // future preamble line into an unrelated-looking red.
+    var buffer: [16384]u8 = undefined;
     var code_emitter = emitter_helpers.CodeEmitter.init(&buffer);
 
     // Create compiler event with [compiler] annotation
@@ -94,7 +103,16 @@ test "visitor filters out host_lines from compiler_bootstrap module" {
     // Host lines like "const emitter_lib = @import(\"emitter\");"
     // that come from compiler_bootstrap.kz should be filtered out
 
-    var buffer: [4096]u8 = undefined;
+    // 16 KB, not 4 KB, and the number has a reason. This emitter writes the
+    // program PREAMBLE — the allocator spine and the leak check — before it
+    // writes anything this test is about, and that preamble measured 2,965
+    // bytes before `koru_leak_check` was extracted into it. At 4,096 the
+    // headroom over scaffolding nobody here is asserting on was under a third,
+    // and adding ten lines to the preamble broke a test about EVENT ORDERING
+    // with `error.BufferOverflow` — a failure that names neither the preamble
+    // nor the size. A fixed buffer sized just above today's output turns every
+    // future preamble line into an unrelated-looking red.
+    var buffer: [16384]u8 = undefined;
     var code_emitter = emitter_helpers.CodeEmitter.init(&buffer);
 
     // Create host_line from compiler_bootstrap (should be filtered)
@@ -143,7 +161,16 @@ test "visitor preserves host_lines from user code" {
     // Host lines like "const std = @import(\"std\");"
     // from user's input.kz should be preserved
 
-    var buffer: [4096]u8 = undefined;
+    // 16 KB, not 4 KB, and the number has a reason. This emitter writes the
+    // program PREAMBLE — the allocator spine and the leak check — before it
+    // writes anything this test is about, and that preamble measured 2,965
+    // bytes before `koru_leak_check` was extracted into it. At 4,096 the
+    // headroom over scaffolding nobody here is asserting on was under a third,
+    // and adding ten lines to the preamble broke a test about EVENT ORDERING
+    // with `error.BufferOverflow` — a failure that names neither the preamble
+    // nor the size. A fixed buffer sized just above today's output turns every
+    // future preamble line into an unrelated-looking red.
+    var buffer: [16384]u8 = undefined;
     var code_emitter = emitter_helpers.CodeEmitter.init(&buffer);
 
     // Create multiple host_lines from user code
@@ -188,7 +215,16 @@ test "visitor preserves host_lines from user code" {
 test "visitor emits events in correct order" {
     // Events should be emitted in the order they appear in user code
 
-    var buffer: [4096]u8 = undefined;
+    // 16 KB, not 4 KB, and the number has a reason. This emitter writes the
+    // program PREAMBLE — the allocator spine and the leak check — before it
+    // writes anything this test is about, and that preamble measured 2,965
+    // bytes before `koru_leak_check` was extracted into it. At 4,096 the
+    // headroom over scaffolding nobody here is asserting on was under a third,
+    // and adding ten lines to the preamble broke a test about EVENT ORDERING
+    // with `error.BufferOverflow` — a failure that names neither the preamble
+    // nor the size. A fixed buffer sized just above today's output turns every
+    // future preamble line into an unrelated-looking red.
+    var buffer: [16384]u8 = undefined;
     var code_emitter = emitter_helpers.CodeEmitter.init(&buffer);
 
     // Create three events in specific order
@@ -280,7 +316,16 @@ test "visitor emits complete valid program" {
     // End-to-end test: given a simple program AST,
     // emit complete valid Zig code that compiles
 
-    var buffer: [4096]u8 = undefined;
+    // 16 KB, not 4 KB, and the number has a reason. This emitter writes the
+    // program PREAMBLE — the allocator spine and the leak check — before it
+    // writes anything this test is about, and that preamble measured 2,965
+    // bytes before `koru_leak_check` was extracted into it. At 4,096 the
+    // headroom over scaffolding nobody here is asserting on was under a third,
+    // and adding ten lines to the preamble broke a test about EVENT ORDERING
+    // with `error.BufferOverflow` — a failure that names neither the preamble
+    // nor the size. A fixed buffer sized just above today's output turns every
+    // future preamble line into an unrelated-looking red.
+    var buffer: [16384]u8 = undefined;
     var code_emitter = emitter_helpers.CodeEmitter.init(&buffer);
 
     // Create a simple complete program:

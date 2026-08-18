@@ -12,6 +12,9 @@ pub fn build(__koru_b: *std.Build) void {
             .optimize = __koru_optimize,
         }),
     });
+    // koru_allocator() backs onto std.heap.c_allocator (real libc malloc/free,
+    // not a debug allocator that munmaps on every free) — needs libc linked.
+    __koru_exe.linkLibC();
 
     // Module: compiler
     const compiler_build_0 = struct {
@@ -42,6 +45,26 @@ const ast_module = b.createModule(.{
     .optimize = optimize,
 });
 ast_module.addImport("errors", errors_module);
+
+// AST ⇄ JSON reflective round-trip. The backend reads the per-user program AST
+// from `program.ast.json` at runtime and deserializes it via this module — the
+// AST is no longer compiled into the backend binary, so backend.zig stays
+// byte-identical across user programs AND the built binary is reusable across
+// any program with the same handler set.
+const ast_json_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_json.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+ast_json_module.addImport("ast", ast_module);
+
+// Compiler env module - per-user CompilerEnv struct (flags + env vars).
+// Also split out for the same byte-identical-backend.zig reason.
+const compiler_env_module = b.createModule(.{
+    .root_source_file = b.path("compiler_env.zig"),
+    .target = target,
+    .optimize = optimize,
+});
 
 // Lexer module - tokenization
 const lexer_module = b.createModule(.{
@@ -75,7 +98,7 @@ const expression_parser_module = b.createModule(.{
 expression_parser_module.addImport("lexer", lexer_module);
 expression_parser_module.addImport("ast", ast_module);
 
-// Comptime evaluator — the one evaluator; annotation entries ride it
+// Comptime evaluator — the comptime Koru interpreter (fold-comptime pass)
 const comptime_eval_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/comptime_eval.zig" },
     .target = target,
@@ -117,6 +140,14 @@ module_resolver_module.addImport("config", config_module);
 module_resolver_module.addImport("log", log_module);
 module_resolver_module.addImport("file_types", file_types_module);
 
+// Parse-time name normalizer (kebab -> snake). Shares ast_module for type identity.
+const ast_mangle_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_mangle.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+ast_mangle_module.addImport("ast", ast_module);
+
 // Parser module - source parsing
 const parser_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
@@ -124,6 +155,7 @@ const parser_module = b.createModule(.{
     .optimize = optimize,
 });
 parser_module.addImport("ast", ast_module);
+parser_module.addImport("ast_mangle", ast_mangle_module);
 parser_module.addImport("lexer", lexer_module);
 parser_module.addImport("errors", errors_module);
 parser_module.addImport("log", log_module);
@@ -182,6 +214,29 @@ flow_checker_module.addImport("errors", errors_module);
 flow_checker_module.addImport("log", log_module);
 flow_checker_module.addImport("branch_checker", branch_checker_module);
 flow_checker_module.addImport("annotation_parser", annotation_parser_module);
+flow_checker_module.addImport("expression_parser", expression_parser_module);
+flow_checker_module.addImport("phantom_parser", phantom_parser_module);
+
+// AST desugars — the point-free pyramid, the bind pun + type thread, and the
+// flow return terminus. They run in the ELABORATE segment, after
+// resolve-with-scopes, because every one of them looks a declaration up by
+// path and a `[with]`-scoped bare name is not resolvable until then.
+const ast_transform_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_transform.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+ast_transform_module.addImport("ast", ast_module);
+ast_transform_module.addImport("errors", errors_module);
+
+// Release gate - rejects [prototype] modules under --release (the production gate)
+const release_gate_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/release_gate.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+release_gate_module.addImport("ast", ast_module);
+release_gate_module.addImport("errors", errors_module);
 
 // Phantom semantic checker - validates phantom type states
 const phantom_semantic_checker_module = b.createModule(.{
@@ -262,6 +317,16 @@ const liquid_module = b.createModule(.{
     .optimize = optimize,
 });
 
+// Struct-literal projector - parses Koru `{ name: expr }` into ordered field
+// pairs / a liquid record. Used by the capture transform to interpret the
+// opaque `captured({...})` payload (docs/PARSER_PALETTE.md).
+const struct_literal_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/struct_literal.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+struct_literal_module.addImport("liquid", liquid_module);
+
 // Compiler config
 const compiler_config_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/compiler_config.zig" },
@@ -282,6 +347,8 @@ emitter_helpers_module.addImport("compiler_config", compiler_config_module);
 emitter_helpers_module.addImport("type_registry", type_registry_module);
 emitter_helpers_module.addImport("codegen_utils", codegen_utils_module);
 emitter_helpers_module.addImport("annotation_parser", annotation_parser_module);
+emitter_helpers_module.addImport("struct_literal", struct_literal_module);
+parser_module.addImport("struct_literal", struct_literal_module);
 
 // Tap pattern matcher
 const glob_pattern_matcher_module = b.createModule(.{
@@ -319,6 +386,21 @@ tap_transformer_module.addImport("log", log_module);
 tap_transformer_module.addImport("tap_registry", tap_registry_module);
 tap_transformer_module.addImport("emitter_helpers", emitter_helpers_module);
 
+// Template processor - renders proc bodies tagged `|template|...`
+// through Liquid, then strips the `template` tag from the variant chain.
+const template_processor_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/template_processor.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+template_processor_module.addImport("ast", ast_module);
+template_processor_module.addImport("liquid", liquid_module);
+template_processor_module.addImport("log", log_module);
+template_processor_module.addImport("errors", errors_module);
+template_processor_module.addImport("annotation_parser", annotation_parser_module);
+template_processor_module.addImport("struct_literal", struct_literal_module);
+template_processor_module.addImport("codegen_utils", codegen_utils_module);
+
 // Purity helpers
 const purity_helpers_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/compiler_passes/purity_helpers.zig" },
@@ -344,6 +426,32 @@ visitor_emitter_module.addImport("tap_registry", tap_registry_module);
 visitor_emitter_module.addImport("type_registry", type_registry_module);
 visitor_emitter_module.addImport("annotation_parser", annotation_parser_module);
 visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
+visitor_emitter_module.addImport("file_types", file_types_module);
+visitor_emitter_module.addImport("comptime_eval", comptime_eval_module);
+
+// JS-target emitter (spike): minimal AST→JS for pump.kz. Gated behind
+// --lang=js in emit-zig; the default Zig path never references it.
+const js_emitter_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/js_emitter.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+js_emitter_module.addImport("ast", ast_module);
+js_emitter_module.addImport("log", log_module);
+js_emitter_module.addImport("file_types", file_types_module);
+js_emitter_module.addImport("annotation_parser", annotation_parser_module);
+// The ONE struct-literal projector. A `-> { a.x, b.y }` produce is a Koru
+// struct literal under the pun law, and reading it with a second brace-splitter
+// is how two hosts' answers drift — the `no koruStructToZig text surgery` rule
+// in control.kz's capture seed and template_processor's lowerScrutinee both name
+// that reason.
+js_emitter_module.addImport("struct_literal", struct_literal_module);
+// The ONE Koru expression lowering. It used to be a private method on this
+// emitter, which is exactly why a `std/store` guard and a `std/kernel` op
+// body reached `node` unlowered — the pass was reachable only from text the
+// emitter wrote itself. It now lives in codegen_utils and this emitter is one
+// of its callers.
+js_emitter_module.addImport("codegen_utils", codegen_utils_module);
 
 // Build.zig emission
 const emit_build_zig_module = b.createModule(.{
@@ -375,7 +483,69 @@ transform_pass_runner_module.addImport("ast_functional", ast_functional_module);
 transform_pass_runner_module.addImport("liquid", liquid_module);
 
 // Add all imports to the backend executable
+// Backend_output_emitted as its own compilation unit, linked via addObject.
+// This is the slice-B move: backend.zig no longer @import-s this file, so
+// it doesn't get fused into backend.zig's compilation unit.
+// Regex engine (std/regex) — compile-time NFA/DFA matcher generator used by
+// the `match` transform. Pure std, no deps.
+const regex_engine_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/regex_engine.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+
+const backend_output_module = b.createModule(.{
+    .root_source_file = b.path("backend_output_emitted.zig"),
+    .target = target,
+    .optimize = optimize,
+});
+backend_output_module.addImport("ast", ast_module);
+backend_output_module.addImport("regex_engine", regex_engine_module);
+backend_output_module.addImport("log", log_module);
+backend_output_module.addImport("emitter_helpers", emitter_helpers_module);
+backend_output_module.addImport("compiler_env", compiler_env_module);
+backend_output_module.addImport("tap_registry", tap_registry_module);
+backend_output_module.addImport("annotation_parser", annotation_parser_module);
+backend_output_module.addImport("type_registry", type_registry_module);
+backend_output_module.addImport("codegen_utils", codegen_utils_module);
+backend_output_module.addImport("transform_pass_runner", transform_pass_runner_module);
+backend_output_module.addImport("parser", parser_module);
+backend_output_module.addImport("ast_functional", ast_functional_module);
+backend_output_module.addImport("flow_checker", flow_checker_module);
+backend_output_module.addImport("ast_transform", ast_transform_module);
+backend_output_module.addImport("shape_checker", shape_checker_module);
+backend_output_module.addImport("release_gate", release_gate_module);
+backend_output_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
+backend_output_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
+backend_output_module.addImport("dead_strip", dead_strip_module);
+backend_output_module.addImport("purity_analyzer", purity_analyzer_module);
+backend_output_module.addImport("visitor_emitter", visitor_emitter_module);
+backend_output_module.addImport("js_emitter", js_emitter_module);
+backend_output_module.addImport("emit_build_zig", emit_build_zig_module);
+backend_output_module.addImport("ast_serializer", ast_serializer_module);
+backend_output_module.addImport("runtime_registry", runtime_registry_module);
+backend_output_module.addImport("tap_transformer", tap_transformer_module);
+backend_output_module.addImport("template_processor", template_processor_module);
+backend_output_module.addImport("expression_parser", expression_parser_module);
+backend_output_module.addImport("comptime_eval", comptime_eval_module);
+backend_output_module.addImport("errors", errors_module);
+backend_output_module.addImport("continuation_codegen", continuation_codegen_module);
+backend_output_module.addImport("template_utils", template_utils_module);
+backend_output_module.addImport("liquid", liquid_module);
+backend_output_module.addImport("struct_literal", struct_literal_module);
+
+// backend_output_emitted as a MODULE of the exe (single compilation unit =
+// single std). Previously a separate `b.addObject` + `exe.addObject`, which
+// gave backend_output its OWN std — so `std.os.environ` (and every std global)
+// was duplicated: `start` set the exe's environ, but the emitted pipeline's
+// getenv read the object's uninitialized copy → 0xAA → segfault on Linux
+// (no-libc reads the global directly; macOS hid it by routing getenv via libc).
+// One compilation = one std = one environ.
+exe.root_module.addImport("backend_output", backend_output_module);
+
 exe.root_module.addImport("ast", ast_module);
+exe.root_module.addImport("ast_json", ast_json_module);
+exe.root_module.addImport("compiler_env", compiler_env_module);
 exe.root_module.addImport("ast_functional", ast_functional_module);
 exe.root_module.addImport("ast_serializer", ast_serializer_module);
 exe.root_module.addImport("log", log_module);
@@ -383,12 +553,16 @@ exe.root_module.addImport("emitter_helpers", emitter_helpers_module);
 exe.root_module.addImport("tap_registry", tap_registry_module);
 exe.root_module.addImport("runtime_registry", runtime_registry_module);
 exe.root_module.addImport("tap_transformer", tap_transformer_module);
+exe.root_module.addImport("template_processor", template_processor_module);
 exe.root_module.addImport("visitor_emitter", visitor_emitter_module);
 exe.root_module.addImport("parser", parser_module);
 exe.root_module.addImport("expression_parser", expression_parser_module);
+exe.root_module.addImport("comptime_eval", comptime_eval_module);
 exe.root_module.addImport("emit_build_zig", emit_build_zig_module);
 exe.root_module.addImport("shape_checker", shape_checker_module);
 exe.root_module.addImport("flow_checker", flow_checker_module);
+exe.root_module.addImport("ast_transform", ast_transform_module);
+exe.root_module.addImport("release_gate", release_gate_module);
 exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
 exe.root_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
 exe.root_module.addImport("dead_strip", dead_strip_module);
@@ -401,7 +575,7 @@ exe.root_module.addImport("codegen_utils", codegen_utils_module);
 exe.root_module.addImport("continuation_codegen", continuation_codegen_module);
 exe.root_module.addImport("template_utils", template_utils_module);
 exe.root_module.addImport("liquid", liquid_module);
-
+exe.root_module.addImport("struct_literal", struct_literal_module);
         }
     }.call;
 compiler_build_0(__koru_b, __koru_exe, __koru_target, __koru_optimize);

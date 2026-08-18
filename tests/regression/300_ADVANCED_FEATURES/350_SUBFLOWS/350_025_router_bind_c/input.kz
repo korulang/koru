@@ -1,0 +1,21 @@
+// PINS: a Koru bind named `c` inside an orisha:router arm must compile.
+// Orisha used to declare `const c = std.c` at module scope; Zig 0.15
+// forbids a local `const c` from shadowing that. The libc alias is
+// `libc`, not `c`. Ward's `| cfg c` is this bind.
+
+~import orisha
+~import std/io
+
+const raw = "GET / HTTP/1.1\r\n\r\n";
+
+~pub tor label {} -> string
+
+~proc label|zig {
+    return "Ada";
+}
+
+~orisha:handler = orisha:router(req)
+! [GET /] |> label(): c -> { status: 200, body: c, content_type: "text/plain" }
+! [*] -> { status: 404, body: "miss", content_type: "text/plain" }
+
+~orisha:answer(raw): a |> std/io:print.ln("{{ a.body:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)

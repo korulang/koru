@@ -1,0 +1,24 @@
+// PINS: a Source block opened on a nested continuation may have body
+// text SHALLLOWER than that continuation (`| cfg` at 8 spaces, the
+// block at 4). The gatherer stopped on any shallower line without `}`,
+// so the block never closed (PARSE001). Sibling continuations (`|` / `!`)
+// still stop the gatherer; 210_139 pins the mid-line close. Ward's GET /
+// dashboard is this shape: parse-ini's `| cfg` then fmt.blk HTML.
+
+~import std/fmt
+~import std/io
+
+~pub tor wrap { raw: string }
+| cfg string
+| invalid
+
+~proc wrap|zig {
+    return .{ .cfg = raw };
+}
+
+~wrap(raw: "Ada")
+        | cfg c |> std/fmt:fmt.blk {
+    Hello {{ c:s }}
+}
+            | formatted f |> std/io:print.ln("{{ f:s }}")
+        | invalid |> std/io:print.ln("no")

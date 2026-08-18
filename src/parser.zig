@@ -480,6 +480,42 @@ fn splitTrailingReturnArrow(self: *Parser, s: []const u8, decl_line: usize) !Ret
     return .{ .head = head, .return_type = return_type, .return_phantom = return_phantom };
 }
 
+/// A `-> {` that does not close on the decl line continues on the following
+/// lines until braces balance. Twin of `parseEventInputShapeFromFollowingLines`
+/// (the INPUT shape); this is the RETURN type. Without it, a `.k` file's
+/// per-line `~` synthesis treats `processor_name: string,` as a new construct
+/// (KORU040), and a `.kz` file treats those lines as host Zig.
+fn finishOpenReturnType(self: *Parser, return_type: *?[]const u8, start_line: usize) !void {
+    const rt = return_type.* orelse return;
+    if (netBraces(rt) <= 0) return;
+
+    var buf = std.ArrayList(u8).initCapacity(self.allocator, rt.len + 64) catch unreachable;
+    errdefer buf.deinit(self.allocator);
+    try buf.appendSlice(self.allocator, rt);
+
+    while (self.current < self.lines.len and netBraces(buf.items) > 0) {
+        const raw = self.lines[self.current];
+        self.current += 1;
+        const trimmed = lexer.trim(raw);
+        if (trimmed.len == 0) continue;
+        if (lexer.isCommentLine(raw)) continue;
+        try buf.append(self.allocator, ' ');
+        try buf.appendSlice(self.allocator, trimmed);
+    }
+    if (netBraces(buf.items) > 0) {
+        try self.reporter.addError(
+            .PARSE001,
+            start_line,
+            1,
+            "unclosed '{{' in tor return type — close the record (`-> {{ a: T, b: U }}`)",
+            .{},
+        );
+        return error.ParseError;
+    }
+    self.allocator.free(rt);
+    return_type.* = try buf.toOwnedSlice(self.allocator);
+}
+
 /// A `-> { ... }` type string carrying exactly ONE top-level field. Such a
 /// single-field record collapses to the scalar (`-> T`) in every produce
 /// position — bare return (`-> { a }`, 210_149) and effect-arm resume
@@ -2160,6 +2196,8 @@ pub const Parser = struct {
                 return error.ParseError;
             }
         }
+
+        try finishOpenReturnType(self, &return_type, event_line_index + 1);
 
         // Parse branches (both same-line and continuation lines)
         var branches = try std.ArrayList(ast.Branch).initCapacity(self.allocator, 8);
@@ -4899,7 +4937,15 @@ pub const Parser = struct {
             invocation_part_full;
 
         // Check for Source block syntax: eventName <Type>{ ... }
-        const source_block_marker = std.mem.indexOf(u8, invocation_part, ">{");
+        // `<Type>` is attached to the SOURCE-OPENING `{` (the first top-level
+        // brace). Scanning the whole invocation for `>{` claims HTML
+        // `<h1>{{ interp }}` as typed source — `h1>{{` is that substring —
+        // and glues the real opener onto the event name (`fmt.blk {`).
+        // Ward's dashboard is this shape (350_022).
+        const source_block_marker: ?usize = if (findTopLevelBrace(invocation_part)) |b_idx|
+            if (b_idx > 0 and invocation_part[b_idx - 1] == '>') b_idx - 1 else null
+        else
+            null;
         log_debug("[DEBUG] parseEventInvocation: source_block_marker={?d} invocation_part='{s}'\n", .{ source_block_marker, invocation_part });
 
         if (source_block_marker) |marker_idx| {
@@ -7452,10 +7498,12 @@ pub const Parser = struct {
                     const next_indent = lexer.getIndent(next_line);
                     const next_trimmed = lexer.trim(next_line);
 
-                    // A shallower line with no closing brace can't be part of
-                    // this block — malformed input; stop and let downstream
-                    // parsing report it.
-                    if (next_indent < indent and std.mem.indexOf(u8, next_trimmed, "}") == null) {
+                    // Source-block text may be shallower than the branch that
+                    // opened it (Ward: `| cfg` at 8 spaces, HTML at 4). Stop
+                    // early only for a sibling continuation (`|` / `!`), not
+                    // for block text. 210_139 still holds: brace depth, not
+                    // indent, decides when the block itself has closed.
+                    if (next_indent < indent and next_trimmed.len > 0 and (next_trimmed[0] == '|' or next_trimmed[0] == '!') and std.mem.indexOf(u8, next_trimmed, "}") == null) {
                         break;
                     }
 

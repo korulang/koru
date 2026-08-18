@@ -43,10 +43,13 @@ fn buildEventPath(
         try buf.appendSlice(allocator, "main_module.");
     }
 
-    // Event name with segments joined by underscore
+    // Event name with segments joined by underscore. Kebab segments
+    // (`parse-setup`, `read-file`) mangle to the same spelling the event
+    // struct was emitted under (`parse_setup_event`). A hyphen in the
+    // path is subtraction in Zig (350_024).
     for (invocation.path.segments, 0..) |seg, i| {
         if (i > 0) try buf.append(allocator, '_');
-        try buf.appendSlice(allocator, seg);
+        try codegen_utils.appendMangled(&buf, allocator, seg);
     }
 
     // Add _event suffix
@@ -158,6 +161,68 @@ fn inlineBodyYieldsValue(body: []const u8) bool {
     return std.mem.indexOf(u8, body, INLINE_LABEL_PLACEHOLDER) != null;
 }
 
+/// A continuation with a non-empty branch name is a tagged-union arm (`| line l`).
+/// Empty branch names are the rest of a `|>` chain, including a `: bind` on a
+/// bare return — those are values, not tags.
+fn continuationsAreTaggedUnion(nested: []const ast.Continuation) bool {
+    for (nested) |c| {
+        if (c.branch.len > 0) return true;
+    }
+    return false;
+}
+
+/// Call-site `: bind` on a bare produce, or null when the result is discarded.
+fn invocationBindName(inv: *const ast.Invocation) ?[]const u8 {
+    const rb = inv.return_binding orelse return null;
+    if (std.mem.eql(u8, rb, "_")) return null;
+    return rb;
+}
+
+/// Switching is for tagged-union results. A `: bind` names a bare produce, and
+/// empty-branch nested continuations are the rest of the `|>` chain. Switching
+/// on either emits `switch (x) { . =>` — not Zig. Twin of the visitor_emitter
+/// path 350_015 pins; this is the copy orisha:router (and every transform that
+/// inlines a continuation) uses.
+fn shouldSwitchOnResult(inv: *const ast.Invocation, nested: []const ast.Continuation) bool {
+    if (invocationBindName(inv) != null) return false;
+    return continuationsAreTaggedUnion(nested);
+}
+
+fn escapedIdent(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+    var buf = std.ArrayList(u8).initCapacity(allocator, name.len + 4) catch unreachable;
+    try codegen_utils.appendBranchName(&buf, allocator, name);
+    return buf.toOwnedSlice(allocator) catch unreachable;
+}
+
+/// Lower nested `|>` chain steps in order, without a switch on this result.
+fn generateSequentialNested(
+    allocator: std.mem.Allocator,
+    nested: []const ast.Continuation,
+    main_module_name: []const u8,
+    result_counter: *usize,
+    indent_level: usize,
+    var_prefix: []const u8,
+) CodegenError![]const u8 {
+    var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+    for (nested) |*cont| {
+        const pipeline = if (cont.node) |node| &[_]ast.Node{node} else &[_]ast.Node{};
+        const code = try generatePipelineCode(
+            allocator,
+            pipeline,
+            cont.continuations,
+            main_module_name,
+            result_counter,
+            indent_level,
+            var_prefix,
+            false,
+            false,
+        );
+        defer allocator.free(code);
+        try buf.appendSlice(allocator, code);
+    }
+    return buf.toOwnedSlice(allocator) catch unreachable;
+}
+
 /// Generate code for a single continuation's pipeline (the steps after |>)
 /// This handles invoking events and recursively processing nested continuations.
 fn generatePipelineCode(
@@ -169,6 +234,7 @@ fn generatePipelineCode(
     indent_level: usize,
     var_prefix: []const u8,
     is_root: bool,
+    mark_body_allocated: bool,
 ) CodegenError![]const u8 {
     var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
 
@@ -188,8 +254,12 @@ fn generatePipelineCode(
                         continue;
                     }
 
-                    // Transform set inline_body — emit inline code instead of handler call
-                    const result_var = try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
+                    // Transform set inline_body — emit inline code instead of handler call.
+                    // A `: bind` names this const so the rest of the chain can read it.
+                    const result_var = if (invocationBindName(&inv)) |rb|
+                        try escapedIdent(allocator, rb)
+                    else
+                        try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
                     defer allocator.free(result_var);
                     result_counter.* += 1;
 
@@ -222,6 +292,57 @@ fn generatePipelineCode(
                     try buf.appendSlice(allocator, ";\n");
 
                     if (nested.len > 0) {
+                        if (shouldSwitchOnResult(&inv, nested)) {
+                            const switch_code = try generateBranchSwitch(
+                                allocator,
+                                result_var,
+                                nested,
+                                main_module_name,
+                                result_counter,
+                                indent_level,
+                                var_prefix,
+                                inlineBodyAllocates(ib),
+                            );
+                            defer allocator.free(switch_code);
+                            try buf.appendSlice(allocator, switch_code);
+                        } else {
+                            if (invocationBindName(&inv) == null) {
+                                try buf.appendSlice(allocator, ind);
+                                try buf.appendSlice(allocator, "_ = &");
+                                try buf.appendSlice(allocator, result_var);
+                                try buf.appendSlice(allocator, ";\n");
+                            }
+                            const seq = try generateSequentialNested(
+                                allocator,
+                                nested,
+                                main_module_name,
+                                result_counter,
+                                indent_level,
+                                var_prefix,
+                            );
+                            defer allocator.free(seq);
+                            try buf.appendSlice(allocator, seq);
+                        }
+                    }
+                } else if (nested.len > 0) {
+                    // Nested continuations: either tagged-union arms (switch)
+                    // or the rest of a `|>` chain after a bare produce (`: bind`).
+                    const bind = invocationBindName(&inv);
+                    if (shouldSwitchOnResult(&inv, nested)) {
+                        const result_var = try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
+                        defer allocator.free(result_var);
+                        result_counter.* += 1;
+
+                        const call_code = try generateHandlerCallWithResult(
+                            allocator,
+                            &inv,
+                            main_module_name,
+                            result_var,
+                            indent_level,
+                        );
+                        defer allocator.free(call_code);
+                        try buf.appendSlice(allocator, call_code);
+
                         const switch_code = try generateBranchSwitch(
                             allocator,
                             result_var,
@@ -230,44 +351,63 @@ fn generatePipelineCode(
                             result_counter,
                             indent_level,
                             var_prefix,
+                            false,
                         );
                         defer allocator.free(switch_code);
                         try buf.appendSlice(allocator, switch_code);
+                    } else if (bind) |rb| {
+                        const result_var = try escapedIdent(allocator, rb);
+                        defer allocator.free(result_var);
+                        const call_code = try generateHandlerCallWithResult(
+                            allocator,
+                            &inv,
+                            main_module_name,
+                            result_var,
+                            indent_level,
+                        );
+                        defer allocator.free(call_code);
+                        try buf.appendSlice(allocator, call_code);
+
+                        const seq = try generateSequentialNested(
+                            allocator,
+                            nested,
+                            main_module_name,
+                            result_counter,
+                            indent_level,
+                            var_prefix,
+                        );
+                        defer allocator.free(seq);
+                        try buf.appendSlice(allocator, seq);
+                    } else {
+                        const call_code = try generateHandlerCall(
+                            allocator,
+                            &inv,
+                            main_module_name,
+                            indent_level,
+                        );
+                        defer allocator.free(call_code);
+                        try buf.appendSlice(allocator, call_code);
+
+                        const seq = try generateSequentialNested(
+                            allocator,
+                            nested,
+                            main_module_name,
+                            result_counter,
+                            indent_level,
+                            var_prefix,
+                        );
+                        defer allocator.free(seq);
+                        try buf.appendSlice(allocator, seq);
                     }
-                } else if (nested.len > 0) {
-                    // This invocation has nested continuations - capture result and switch
-                    const result_var = try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
-                    defer allocator.free(result_var);
-                    result_counter.* += 1;
-
-                    const call_code = try generateHandlerCallWithResult(
-                        allocator,
-                        &inv,
-                        main_module_name,
-                        result_var,
-                        indent_level,
-                    );
-                    defer allocator.free(call_code);
-                    try buf.appendSlice(allocator, call_code);
-
-                    // Generate switch for nested continuations
-                    const switch_code = try generateBranchSwitch(
-                        allocator,
-                        result_var,
-                        nested,
-                        main_module_name,
-                        result_counter,
-                        indent_level,
-                        var_prefix,
-                    );
-                    defer allocator.free(switch_code);
-                    try buf.appendSlice(allocator, switch_code);
                 } else if (is_root and nested.len == 0) {
                     // Bare produce: a root leaf invocation IS the produced value.
                     // `-> craft(req)` must RETURN the handler's response, not
                     // silently drop it; the generic call path saw every chained
                     // tor as a side effect (`_ =`) and the response vanished.
-                    const result_var = try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
+                    const result_var = if (invocationBindName(&inv)) |rb|
+                        try escapedIdent(allocator, rb)
+                    else
+                        try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
                     defer allocator.free(result_var);
                     result_counter.* += 1;
                     const call_code = try generateHandlerCallWithResult(
@@ -333,7 +473,17 @@ fn generatePipelineCode(
                     const trimmed_pv = std.mem.trim(u8, pv, " \t");
                     if (trimmed_pv.len > 0 and trimmed_pv[0] == '{') {
                         const lowered = codegen_utils.koruStructToZig(allocator, trimmed_pv) catch trimmed_pv;
-                        try buf.appendSlice(allocator, lowered);
+                        if (mark_body_allocated) {
+                            if (std.mem.lastIndexOfScalar(u8, lowered, '}')) |close| {
+                                try buf.appendSlice(allocator, lowered[0..close]);
+                                try buf.appendSlice(allocator, ", .body_allocated = true ");
+                                try buf.appendSlice(allocator, lowered[close..]);
+                            } else {
+                                try buf.appendSlice(allocator, lowered);
+                            }
+                        } else {
+                            try buf.appendSlice(allocator, lowered);
+                        }
                     } else {
                         try buf.appendSlice(allocator, trimmed_pv);
                     }
@@ -349,6 +499,9 @@ fn generatePipelineCode(
                         // Use expression_str if available, otherwise fall back to type (for simple values)
                         const value = if (field.expression_str) |expr| expr else field.type;
                         try buf.appendSlice(allocator, value);
+                    }
+                    if (mark_body_allocated) {
+                        try buf.appendSlice(allocator, ", .body_allocated = true");
                     }
                     try buf.appendSlice(allocator, " }");
                 }
@@ -395,18 +548,35 @@ fn generatePipelineCode(
                     }
                     try buf.appendSlice(allocator, ";\n");
 
-                    // Generate switch for nested continuations
-                    const switch_code = try generateBranchSwitch(
-                        allocator,
-                        result_var,
-                        nested,
-                        main_module_name,
-                        result_counter,
-                        indent_level,
-                        var_prefix,
-                    );
-                    defer allocator.free(switch_code);
-                    try buf.appendSlice(allocator, switch_code);
+                    if (continuationsAreTaggedUnion(nested)) {
+                        const switch_code = try generateBranchSwitch(
+                            allocator,
+                            result_var,
+                            nested,
+                            main_module_name,
+                            result_counter,
+                            indent_level,
+                            var_prefix,
+                            false,
+                        );
+                        defer allocator.free(switch_code);
+                        try buf.appendSlice(allocator, switch_code);
+                    } else {
+                        try buf.appendSlice(allocator, ind);
+                        try buf.appendSlice(allocator, "_ = &");
+                        try buf.appendSlice(allocator, result_var);
+                        try buf.appendSlice(allocator, ";\n");
+                        const seq = try generateSequentialNested(
+                            allocator,
+                            nested,
+                            main_module_name,
+                            result_counter,
+                            indent_level,
+                            var_prefix,
+                        );
+                        defer allocator.free(seq);
+                        try buf.appendSlice(allocator, seq);
+                    }
                 } else {
                     // Simple inline code — no result needed
                     const ind = try indent(allocator, indent_level);
@@ -542,6 +712,16 @@ fn generatePipelineCode(
 }
 
 /// Generate a switch statement to handle event result branches
+/// Whether an inline body allocated a buffer the caller binds. fmt.blk's
+/// transform writes `allocPrint` against `__fmt_alloc`. Auto-discharge runs
+/// after inlining transforms have already lowered nested sites to Zig, so
+/// this path discharges that buffer the inserter will never see (350_022,
+/// twin of 620_007's `| formatted f` free on the visitor_emitter path).
+fn inlineBodyAllocates(ib: []const u8) bool {
+    return std.mem.indexOf(u8, ib, "allocPrint") != null and
+        std.mem.indexOf(u8, ib, "__fmt_alloc") != null;
+}
+
 fn generateBranchSwitch(
     allocator: std.mem.Allocator,
     result_var: []const u8,
@@ -550,6 +730,7 @@ fn generateBranchSwitch(
     result_counter: *usize,
     indent_level: usize,
     var_prefix: []const u8,
+    discharge_allocated: bool,
 ) CodegenError![]const u8 {
     var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
 
@@ -623,9 +804,29 @@ fn generateBranchSwitch(
             indent_level + 2,
             var_prefix,
             false,
+            discharge_allocated,
         );
         defer allocator.free(pipeline_code);
         try buf.appendSlice(allocator, pipeline_code);
+
+        // An inlined fmt.blk result is `allocated!`. Auto-discharge cannot
+        // insert the free: the router has already lowered this arm to Zig.
+        // Do not free when the arm `return`s the slice (the Response holds
+        // it; freeing here is use-after-free). 350_022 prints, then frees.
+        if (discharge_allocated) {
+            if (cont.binding) |binding| {
+                if (!std.mem.eql(u8, binding, "_") and
+                    std.mem.indexOf(u8, pipeline_code, "return ") == null)
+                {
+                    const ind3 = try indent(allocator, indent_level + 2);
+                    defer allocator.free(ind3);
+                    try buf.appendSlice(allocator, ind3);
+                    try buf.appendSlice(allocator, "koru_allocator().free(");
+                    try buf.appendSlice(allocator, binding);
+                    try buf.appendSlice(allocator, ");\n");
+                }
+            }
+        }
 
         // Close branch
         try buf.appendSlice(allocator, ind2);
@@ -691,5 +892,6 @@ pub fn generateContinuationChainWithPrefix(
         indent_level,
         var_prefix,
         true, // root: the continuation's own node is a bare produce when leaf
+        false,
     );
 }

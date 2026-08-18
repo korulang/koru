@@ -1,0 +1,28 @@
+// PINS: a kebab tor name inlined into an orisha:router arm mangles to
+// the same Zig identifier the event struct was emitted under
+// (`parse_setup_event`, not `parse-setup_event`). Hyphen in a field
+// access is subtraction; the two spellings both look legal until they
+// meet. Ward's POST /api/setup is this call. The mangle lives in
+// continuation_codegen.buildEventPath (codegen_utils.appendMangled).
+
+~import orisha
+~import std/io
+
+const raw = "POST /api/setup HTTP/1.1\r\n\r\nhello";
+
+~pub tor parse-setup { body: ?string }
+| ready string
+| invalid
+
+~proc parse-setup|zig {
+    const raw_body = body orelse return .{ .invalid = .{} };
+    return .{ .ready = raw_body };
+}
+
+~orisha:handler = orisha:router(req)
+! [POST /api/setup] |> parse-setup(req.body)
+    | ready s -> { status: 200, body: s, content_type: "text/plain" }
+    | invalid -> { status: 400, body: "invalid", content_type: "text/plain" }
+! [*] -> { status: 404, body: "miss", content_type: "text/plain" }
+
+~orisha:answer(raw): a |> std/io:print.ln("{{ a.body:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)
