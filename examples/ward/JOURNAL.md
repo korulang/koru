@@ -90,6 +90,13 @@ Backend cache still hashes `src/` + `koru_std` and not Orisha. An orisha
 edit can cache-hit a stale `a.out`. Bust the key (change a stdlib byte) or
 `zig build --build-file build_backend.zig` against the live `output_emitted.zig`.
 
+RESOLVED 2026-08-18: the frontend key now hashes `backend_output_emitted.zig`
+— the generated file the backend binary actually embeds, which carries the
+compiled `koru_orisha` module. An orisha edit regenerates it with the new
+module, which turns into a cache miss. Verified: same program, real orisha vs
+a patched copy → distinct keys; same program twice → one entry, 11.8s → 1.2s.
+(The regression harness already keyed on that file; the frontend now does too.)
+
 ## 2026-08-18 — processor stuck at 000%
 
 `kern.cp_time` is not an oid on this Darwin (`sysctl: unknown oid`). Every

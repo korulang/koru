@@ -262,6 +262,22 @@ fn backendCacheKey(allocator: std.mem.Allocator, koru_home: []const u8, output_d
     h.update("compiler_env.zig");
     h.update(env_contents);
     count += 1;
+    // backend_output_emitted.zig is the OTHER generated embed: it carries the
+    // COMPILED comptime modules the backend binary bakes in — koru_std's own
+    // flows AND user-library transforms (orisha's router, std/store, std/regex).
+    // The roots cannot see it (generated into output_dir, not koru_home), and
+    // it is the ONLY key input that moves when a sibling library like orisha is
+    // edited: an orisha change regenerates it with the new koru_orisha module,
+    // and hashing it here is what turns that edit into a cache miss instead of
+    // a stale backend serving an old a.out. Same FAIL-LOUD rule as above:
+    // unreadable means disable the cache, never serve a mismatch.
+    const embedded_path = std.fs.path.join(allocator, &[_][]const u8{ output_dir, "backend_output_emitted.zig" }) catch return null;
+    defer allocator.free(embedded_path);
+    const embedded_contents = std.fs.cwd().readFileAlloc(allocator, embedded_path, 64 * 1024 * 1024) catch return null;
+    defer allocator.free(embedded_contents);
+    h.update("backend_output_emitted.zig");
+    h.update(embedded_contents);
+    count += 1;
     if (count == 0) return null;
     return std.fmt.allocPrint(allocator, "{x}", .{h.final()}) catch null;
 }
