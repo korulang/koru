@@ -30,13 +30,33 @@ pub const Field = struct {
     }
 };
 
-// No-op allocator for STACK-placed fields: a FixedBufferAllocator over a tiny
-// static buffer. A stack Field stores this; `free` then calls .free/.destroy on
-// stack pointers, which are never "the last allocation" of this 8-byte arena, so
-// both are no-ops. Lets `free` stay byte-identical for heap and stack fields (no
-// free-site rewrite) — the escape-driven allocation lever. Single-threaded.
-var __field_noop_buf: [8]u8 = undefined;
-var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
+// No-op allocator for STACK-placed fields: a stack Field stores this; `free`
+// then calls .free/.destroy on caller-frame pointers, which must be genuine
+// no-ops. NOT a FixedBufferAllocator: Zig 0.15's FBA.free asserts
+// `ownsSlice(buf)` (the pointer must live in ITS fixed buffer), so freeing a
+// caller-frame pointer through it aborts in Debug (silent wrong-owner free in
+// ReleaseFast) — the crash-134 class the Debug output default surfaced
+// (115_004/006/029, 2106-2112, 400_136). Lets `free` stay byte-identical for
+// heap and stack fields (no free-site rewrite) — the escape-driven allocation
+// lever. alloc/resize are unreachable by construction; a reach is a bug.
+const __field_noop = struct {
+    fn alloc(_: *anyopaque, len: usize, _: std.mem.Alignment, _: usize) ?[*]u8 {
+        _ = len;
+        return null; // stack fields never allocate through this cut — a null is a fail-loud.
+    }
+    fn resize(_: *anyopaque, _: []u8, _: std.mem.Alignment, _: usize, _: usize) bool {
+        return false;
+    }
+    fn remap(_: *anyopaque, _: []u8, _: std.mem.Alignment, _: usize, _: usize) ?[*]u8 {
+        return null;
+    }
+    fn free(_: *anyopaque, _: []u8, _: std.mem.Alignment, _: usize) void {}
+};
+var __field_noop_self: u8 = undefined;
+var __field_noop_alloc = std.mem.Allocator{
+    .ptr = &__field_noop_self,
+    .vtable = &.{ .alloc = __field_noop.alloc, .resize = __field_noop.resize, .remap = __field_noop.remap, .free = __field_noop.free },
+};
 
 // ============================================
 // Construction
@@ -348,7 +368,7 @@ var __field_noop_fba = std.heap.FixedBufferAllocator.init(&__field_noop_buf);
 
 ~proc new-instack|zig {
     @memset(buf, 0);
-    slot.* = .{ .data = buf, .bits = bits, .allocator = __field_noop_fba.allocator() };
+    slot.* = .{ .data = buf, .bits = bits, .allocator = __field_noop_alloc };
     return slot;
 }
 
