@@ -76,3 +76,15 @@ precedent, or a single opt-in slice, says nothing about the shape you have not
 built against the JS target. When porting a transform — or trusting JS
 coverage — check the machinery carries the exact shape you wrote, by BUILDING
 it against the JS target, not by reading the `.kz`.
+
+**The rule is now code, not prose.** 2026-08-19 shipped the refuse-not-paste
+wall as `validateNoZigInJs` in `src/js_emitter.zig`, checked once at the END of
+`emit()` where every paste path has already landed: the emitted JS must not
+contain Zig-only syntax (a finite set of Zig builtins, `]uN` array types,
+`..]` slices, bare `fn` decls), scanned outside strings/comments, refused as
+`error[KORU047]` at compile time instead of a node SyntaxError one layer down.
+Measured on a settled board: the ~120 paste-class divergences became clean
+refusals, the 641 previously-passing tests held, and the Zig board was
+byte-identical (1531/119). The wall is the invariant; the sweep
+(`scripts/js-sweep.py`) is the instrument; both live in code and the belief
+above is the residue: an emitter that cannot lower must refuse, never paste.

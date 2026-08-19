@@ -44,6 +44,9 @@ pub const JsEmitError = error{
     UnresolvedEvent,
     UnsupportedConstruct,
     NoJsProcBody,
+    // Emitted JS contained Zig-only syntax (an un-lowered construct was pasted
+    // verbatim instead of refused). Surfaced as `error[KORU047]` by the driver.
+    ZigTextInOutput,
 };
 
 /// The variant-tag string this emitter targets. It is the SAME namespace as
@@ -248,7 +251,137 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program, library: 
         }
     }
 
+    // THE WALL. The emitter's lowering is permissive by design (writeLowered
+    // passes unrecognized text through verbatim, and several splice sites write
+    // host text raw), so an un-lowered construct reaches this buffer as Zig
+    // instead of refusing at the site that failed to lower it. Validate the
+    // COMPLETE output here, once, where every paste path has already landed.
+    try validateNoZigInJs(&buf);
+
     return buf.toOwnedSlice(allocator);
+}
+
+/// The refuse-not-paste wall (2026-08-19). The JS-target sweep measured ~120
+/// of 198 divergences as EMITTED ZIG: buffer declarations (`var b: [(N)/64]u64
+/// = undefined;`), slice arguments (`b[0..]`), bare `fn` declarations, and
+/// `@as`/`@intCast`/`@import` expressions reached the JS file because no
+/// lowering exists for the construct — and node then died with a SyntaxError
+/// one layer down, or worse ran and misbehaved. The failure never surfaced at
+/// compile time.
+///
+/// This scan is the invariant: **the emitted JS must not contain Zig-only
+/// syntax.** It runs outside string/template/comment contexts and fires on a
+/// finite, high-precision token set — every entry is invalid JavaScript, so a
+/// false positive would require the emitter itself to write Zig-looking text
+/// into a JS string, which is the same disease one layer down. The driver
+/// (koru_std/compiler.kz) turns the return into `error[KORU047]`, so the user
+/// gets a clean, located refusal instead of a SyntaxError from node.
+const ZIG_BUILTINS = [_][]const u8{
+    "@import",   "@as",        "@intCast",  "@floatCast", "@ptrCast",
+    "@bitCast",  "@truncate",  "@min",      "@max",       "@mod",
+    "@memcpy",   "@memset",    "@sizeOf",   "@TypeOf",    "@typeOf",
+    "@alignOf",  "@field",     "@call",     "@intFrom",   "@floatFrom",
+    "@enumFrom", "@unionInit", "@splat",    "@reduce",    "@panic",
+    "@compileError", "@intTo", "@floatTo",  "@enumTo",    "@intFromFloat",
+    "@floatFromInt", "@intFromBool", "@intFromEnum", "@enumFromInt",
+    "@errorName", "@setRuntimeSafety", "@this", "@typeInfo", "@typeName",
+    "@embedFile", "@cImport",  "@extern",   "@select",    "@mulAdd",
+    "@addWithOverflow", "@subWithOverflow", "@mulWithOverflow",
+    "@divTrunc",  "@divFloor", "@divExact", "@rem",       "@abs",
+    "@clz",       "@ctz",      "@popCount", "@byteSwap",  "@bitReverse",
+    "@log2",      "@log10",    "@exp2",     "@floor",     "@ceil",
+    "@round",     "@fabs",     "@fmin",     "@fmax",      "@copysign",
+    "@tagName",   "@breakpoint", "@returnAddress", "@frameAddress",
+    "@hasDecl",   "@hasField", "@wasmMemorySize", "@wasmMemoryGrow",
+};
+
+fn validateNoZigInJs(buf: *const std.ArrayList(u8)) JsEmitError!void {
+    const text = buf.items;
+    var i: usize = 0;
+    var in_line_comment = false;
+    var in_block_comment = false;
+    var in_str: ?u8 = null;
+    var line: usize = 1;
+    while (i < text.len) : (i += 1) {
+        const c = text[i];
+        if (c == '\n') line += 1;
+
+        if (in_str) |q| {
+            if (c == '\\' and i + 1 < text.len) {
+                i += 1; // escaped char — can't be the terminator
+            } else if (c == q) {
+                in_str = null;
+            }
+            continue;
+        }
+        if (in_line_comment) {
+            if (c == '\n') in_line_comment = false;
+            continue;
+        }
+        if (in_block_comment) {
+            if (c == '*' and i + 1 < text.len and text[i + 1] == '/') {
+                in_block_comment = false;
+                i += 1;
+            }
+            continue;
+        }
+        if (c == '"' or c == '\'' or c == '`') {
+            in_str = c;
+            continue;
+        }
+        if (c == '/' and i + 1 < text.len and text[i + 1] == '/') {
+            in_line_comment = true;
+            i += 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < text.len and text[i + 1] == '*') {
+            in_block_comment = true;
+            i += 1;
+            continue;
+        }
+
+        // Zig-only tokens, outside strings and comments.
+        if (c == '@') {
+            for (ZIG_BUILTINS) |b| {
+                if (i + b.len <= text.len and std.mem.eql(u8, text[i .. i + b.len], b)) {
+                    return refuseZigInJs(buf, line, b);
+                }
+            }
+        } else if (c == ']' and i + 1 < text.len and (text[i + 1] == 'u' or text[i + 1] == 'i') and
+            i + 2 < text.len and std.ascii.isDigit(text[i + 2]))
+        {
+            // Zig array type annotation: `[(N)/64]u64`, `[8]u8`.
+            return refuseZigInJs(buf, line, "]uN Zig array type");
+        } else if (c == '.' and i + 2 < text.len and text[i + 1] == '.' and text[i + 2] == ']') {
+            // Zig slice end: `buf[0..]`.
+            return refuseZigInJs(buf, line, "..] Zig slice");
+        } else if (c == 'f' and i + 2 < text.len and text[i + 1] == 'n' and text[i + 2] == ' ' and
+            (i == 0 or !std.ascii.isAlphanumeric(text[i - 1])) and (i == 0 or text[i - 1] != '_'))
+        {
+            // Bare `fn ` declaration (JS spells it `function`).
+            return refuseZigInJs(buf, line, "fn Zig declaration");
+        }
+    }
+}
+
+fn refuseZigInJs(buf: *const std.ArrayList(u8), line: usize, what: []const u8) JsEmitError {
+    // One line of context around the match, for the diagnostic.
+    const text = buf.items;
+    var start: usize = 0;
+    if (line > 1) {
+        var found: usize = 0;
+        var l: usize = 1;
+        while (l < line and found < text.len) : (found += 1) {
+            if (text[found] == '\n') l += 1;
+        }
+        start = found;
+    }
+    var end = start;
+    while (end < text.len and text[end] != '\n') : (end += 1) {}
+    const ctx_len = @min(end - start, @as(usize, 80));
+    log.err("[js_emitter] REFUSE: {s} found in emitted JS at line {d} (un-lowered construct reached the output instead of refusing)\n", .{ what, line });
+    log.err("  context: {s}\n", .{text[start .. start + ctx_len]});
+    return JsEmitError.ZigTextInOutput;
 }
 
 /// Phase 0's walker: every `.kjs`-sourced host line in `items`, in order,

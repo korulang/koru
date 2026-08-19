@@ -46,6 +46,21 @@ ARGS = sys.argv[1:]
 UPDATE_BASELINE = "--js-baseline-update" in ARGS
 FAIL_ON_REGRESSION = "--fail-on-regression" in ARGS
 
+# The sweep must NOT run concurrently with a regression suite: the suite clears
+# and rewrites SUCCESS/FAILURE markers in waves, so mid-suite a candidate pool
+# measured against `SUCCESS` is an inflated/deflated fiction (measured
+# 2026-08-19: a sweep started under a foreign suite's lock saw 145 of 921
+# candidates and reported 530 false regressions). Refuse loudly instead.
+RUN_LOCK = os.path.join(REPO, ".regression-run.lock")
+MACHINE_LOCK = os.path.join(os.environ.get("TMPDIR", "/tmp"), "koru-regression.lock")
+if not UPDATE_BASELINE and "--ignore-suite-lock" not in ARGS:
+    for lock in (RUN_LOCK, MACHINE_LOCK):
+        if os.path.isdir(lock):
+            print(f"[js-sweep] REFUSE: a regression suite holds {lock} — the marker "
+                  "state is mid-run and a sweep would measure fiction. Wait for the "
+                  "suite to finish, or pass --ignore-suite-lock to force.", file=sys.stderr)
+            sys.exit(2)
+
 ENV = dict(os.environ)
 ENV["KORU_STDLIB"] = os.path.join(REPO, "koru_std")
 ENV["KORU_PATH"] = REPO
