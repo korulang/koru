@@ -19,7 +19,15 @@ Ward now reads it that way (`$mod.cpuClockMHz()` in examples/ward/main.kz) and
 reports 3.5 GHz, agreeing with ward-rs. Reaching the property needs IOKit and
 CoreFoundation, which the direct `zig build-exe` fallback cannot link — Ward is
 the first program in this tree to use the Stage-D `build_output.zig` user-deps
-path. The clock costs a.out ~1.3 MB of framework stubs (3724600 → 5064968).
+path, declared as `std/build:requires` in main.k.
+
+COST CORRECTED 2026-08-19 (same day, measured): the two frameworks add 32
+bytes of stubs — the earlier "5.06 MB a.out" was Zig 0.15 building the output
+binary in Debug (standardOptimizeOption with a preferred mode returns Debug
+unless `--release=fast` is passed; the generated build_output.zig comment says
+ReleaseFast and the pipeline passes no flag). Ward builds at 3,725,944 bytes
+with ReleaseFast — effectively the pre-fix 3,724,600. The clock read is
+~1.3 KB of binary.
 
 Falsifier: Apple ships a populated public frequency API for Apple Silicon (a
 sysctl that returns a value, or a documented host_processor_info field), or an

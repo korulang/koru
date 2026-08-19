@@ -130,6 +130,20 @@ build:requires in the tree. Cost: a.out grew 3724600 → ~5MB. No compiler
 surface changed; the platform read lives in the two-file host like every
 other machine probe.
 
+CORRECTED same day — the "~5MB" was not the link. Measured: the two
+frameworks add 32 bytes of stubs (hello-world ± frameworks: +32B). The 1.34
+MB was build MODE: Zig 0.15's standardOptimizeOption with a
+`preferred_optimize_mode` returns `.Debug` unless `--release=fast`/`-Drelease`
+is passed (std/Build.zig:1319), and the backend's `zig build --build-file
+build_output.zig` passes no such flag — so the generated file's "defaults to
+ReleaseFast" comment is stale on 0.15 and every output binary builds Debug
+(UBSan + DWARF runtime: `nm | grep -c ubsan` 48, dwarf 277). ReleaseFast
+build: 3,725,944 B ≈ the pre-fix 3,724,600. Deployed via
+`zig build --build-file build_output.zig --release=fast` + copy to a.out.
+Open: emit_build_zig.zig should generate the 0.15-correct form so output
+binaries actually build ReleaseFast everywhere — that changes every program's
+output mode, so it is a ruling, not a ride.
+
 ## 2026-08-17 — multiline `-> { record }` was a new construct per line
 
 `.k` synthesizes `~` on every top-level line. `pub tor info {} -> {` left the
