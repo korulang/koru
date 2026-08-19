@@ -39,12 +39,9 @@ pub tor listen-port {} -> u16
 orisha:static(name: "site", root: "public")
 
 orisha:handler = orisha:router(req)
-! [GET /api/usage] |> usage(): u |> std/fmt:ln("{\"processor\":{{ u.processor:d }},\"ram\":{{ u.ram:d }},\"storage\":{{ u.storage:d }}}")
-    | line l -> { status: 200, body: l.text, content_type: "application/json" }
-! [GET /api/uptime] |> uptime(): u |> std/fmt:ln("{\"days\":\"{{ u.days:s }}\",\"hours\":\"{{ u.hours:s }}\",\"minutes\":\"{{ u.minutes:s }}\",\"seconds\":\"{{ u.seconds:s }}\"}")
-    | line l -> { status: 200, body: l.text, content_type: "application/json" }
-! [GET /api/info] |> info(): i |> std/fmt:ln("{\"processor\":{\"name\":\"{{ i.processor_name:s }}\",\"coreCount\":\"{{ i.processor_core_count:s }}\",\"clockSpeed\":\"{{ i.processor_clock_speed:s }}\",\"bitDepth\":\"{{ i.processor_bit_depth:s }}\"},\"machine\":{\"operatingSystem\":\"{{ i.machine_operating_system:s }}\",\"totalRam\":\"{{ i.machine_total_ram:s }}\",\"ramTypeOrOSBitDepth\":\"{{ i.machine_ram_type_or_os_bit_depth:s }}\",\"procCount\":\"{{ i.machine_proc_count:s }}\"},\"storage\":{\"mainStorage\":\"{{ i.storage_main_storage:s }}\",\"total\":\"{{ i.storage_total:s }}\",\"diskCount\":\"{{ i.storage_disk_count:s }}\",\"swapAmount\":\"{{ i.storage_swap_amount:s }}\"}}")
-    | line l -> { status: 200, body: l.text, content_type: "application/json" }
+! [GET /api/usage] |> usage(): u |> std/fmt:ln("{\"processor\":{{ u.processor:d }},\"ram\":{{ u.ram:d }},\"storage\":{{ u.storage:d }}}"): l -> { status: 200, body: l.text, content_type: "application/json" }
+! [GET /api/uptime] |> uptime(): u |> std/fmt:ln("{\"days\":\"{{ u.days:s }}\",\"hours\":\"{{ u.hours:s }}\",\"minutes\":\"{{ u.minutes:s }}\",\"seconds\":\"{{ u.seconds:s }}\"}"): l -> { status: 200, body: l.text, content_type: "application/json" }
+! [GET /api/info] |> info(): i |> std/fmt:ln("{\"processor\":{\"name\":\"{{ i.processor_name:s }}\",\"coreCount\":\"{{ i.processor_core_count:s }}\",\"clockSpeed\":\"{{ i.processor_clock_speed:s }}\",\"bitDepth\":\"{{ i.processor_bit_depth:s }}\"},\"machine\":{\"operatingSystem\":\"{{ i.machine_operating_system:s }}\",\"totalRam\":\"{{ i.machine_total_ram:s }}\",\"ramTypeOrOSBitDepth\":\"{{ i.machine_ram_type_or_os_bit_depth:s }}\",\"procCount\":\"{{ i.machine_proc_count:s }}\"},\"storage\":{\"mainStorage\":\"{{ i.storage_main_storage:s }}\",\"total\":\"{{ i.storage_total:s }}\",\"diskCount\":\"{{ i.storage_disk_count:s }}\",\"swapAmount\":\"{{ i.storage_swap_amount:s }}\"}}"): l -> { status: 200, body: l.text, content_type: "application/json" }
 ! [POST /api/setup] |> parse-setup(req.body)
     | ready s |> std/fs:write(path: "setup.ini", content: s)
         | written -> { status: 200, body: "ok", content_type: "text/plain" }

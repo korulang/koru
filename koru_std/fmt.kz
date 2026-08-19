@@ -349,7 +349,7 @@ pub const FormattedText = struct {
 //
 // Syntax:
 //   std/fmt:ln("Hello {{ name:s }}! Count: {{ count:d }}")
-//   | line l |> ... use l.text ...
+//   : l |> ... use l.text ...
 //
 // Zero allocation: uses a thread-local buffer (safe across workers).
 // The {{ var:spec }} placeholders are resolved at compile time into
@@ -532,10 +532,11 @@ pub const FormattedText = struct {
     // out with the line value. Uses __KORU_INLINE__ as label placeholder — the
     // emitter replaces it with a unique label when wrapping in a labeled block.
     //
-    // Result SHAPE follows the consumption form: a `| line l` BRANCH needs the
-    // `__LnResult` tagged union to switch on; a `: l` bare-return BIND needs the
-    // payload `struct { text }` directly, so `l.text` resolves (620_002). Both
-    // are self-contained — no external module path references needed.
+    // Result SHAPE follows the consumption form: the `: l` bare-return BIND
+    // needs the payload `struct { text }` directly, so `l.text` resolves
+    // (620_002); a `| line l` BRANCH (refused on bare returns — a legacy
+    // router-inline spelling) needs the `__LnResult` tagged union to switch on.
+    // Self-contained — no external module path references needed.
     const inline_code = if (invocation.return_binding != null)
         std.fmt.allocPrint(
             allocator,

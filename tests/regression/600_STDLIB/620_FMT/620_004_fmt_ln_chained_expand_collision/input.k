@@ -2,21 +2,20 @@
 // unique per splice, not a fixed name.
 //
 // Sibling facet of 620_003 (same root defect: [expand] splice result names
-// minted outside the function-global counter). With a fixed name, the second
-// splice's switch nests inside the first's arm and Zig rejects:
-//
-//   error: local constant '__expand_result' shadows local constant from outer scope
-//
-// The fix mints __expand_result_<N> from the shared result counter, so any
-// chain depth of [expand] splices stays shadow-free.
+// from a fixed pool collide when a later splice adds another hop at the
+// same depth). The fix names each expand result after the path it walks;
+// 620_003 covers the origin case, this covers the chain case. Both were
+// originally written with `| line r` — the bare-return branch form the
+// shape checker now refuses — and bind `: r` instead.
 
 import app/net
 import std/fmt
+import std/io
 
 app/net:connect(host: "localhost")
-| ok c |> std/fmt:ln("GET /conn/{{ c:d }}")
-    | line req |> std/fmt:ln("wrapped: {{ req.text:s }}")
-        | line req2 |> app/net:write(conn: c, data: req2.text)
+| ok c |> std/fmt:ln("GET /conn/{{ c:d }}"): req
+    |> std/fmt:ln("wrapped: {{ req.text:s }}"): req2
+        |> app/net:write(conn: c, data: req2.text)
             | ok w |> app/net:read(conn: w)
                 | ok r |> app/net:shutdown(r.conn)
                     | ok |> _

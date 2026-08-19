@@ -14,10 +14,11 @@
 
 import app/net
 import std/fmt
+import std/io
 
 app/net:connect(host: "localhost")
-| ok c |> std/fmt:ln("GET /conn/{{ c:d }}")
-    | line req |> app/net:write(conn: c, data: req.text)
+| ok c |> std/fmt:ln("GET /conn/{{ c:d }}"): req
+    |> app/net:write(conn: c, data: req.text)
         | ok w |> app/net:read(conn: w)
             | ok r |> app/net:shutdown(r.conn)
                 | ok |> _
