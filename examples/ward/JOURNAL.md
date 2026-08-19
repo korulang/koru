@@ -106,6 +106,30 @@ were real. Mach `host_statistics(HOST_CPU_LOAD_INFO)` is the load ticks
 like 0%. First sample after boot is still 0 — there is no interval yet.
 
 
+## 2026-08-19 — processor clock read 0.0 GHz (hw.cpufrequency is empty on Apple Silicon)
+
+`hw.cpufrequency` exists but returns nothing on M-series Darwin — the oid
+reads 0, so Ward's clock was `0.0 GHz` (Java's OSHI hits the same wall: `0
+MHz`). ward-rs shows a real `3.5 GHz`: sysinfo's macOS backend reads the pmgr
+service's `voltage-states5-sram` property (psutil PR 2222) and divides by 1e6
+on aarch64. Verified by direct probe on this machine: the property's last
+eight bytes are `3504000000` (Hz) followed by the voltage word `1159` — the
+frequency sits at `[len-8..len-4]`, not the final four bytes.
+
+Fix in the Ward host: `$mod.cpuClockMHz()` keeps the sysctl path for Intel,
+then falls back to IOServiceGetMatchingServices("AppleARMIODevice") → pmgr →
+IORegistryEntryCreateCFProperty("voltage-states5-sram") → u32 at len-8.
+
+IOKit/CoreFoundation symbols need frameworks, and the direct `zig build-exe`
+fallback links only `-lc`. The program declares them as
+`std/build:requires { exe.linkFramework(...) }` in main.k — koruc's
+collector generates `build_output.zig` (Stage-D user-deps path, defaults the
+output to ReleaseFast) and the backend then runs `zig build --build-file
+build_output.zig`, copying zig-out/bin/output to a.out. This is the first
+build:requires in the tree. Cost: a.out grew 3724600 → ~5MB. No compiler
+surface changed; the platform read lives in the two-file host like every
+other machine probe.
+
 ## 2026-08-17 — multiline `-> { record }` was a new construct per line
 
 `.k` synthesizes `~` on every top-level line. `pub tor info {} -> {` left the

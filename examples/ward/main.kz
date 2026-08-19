@@ -32,6 +32,24 @@ extern fn statfs(path: [*:0]const u8, buf: *Statfs) c_int;
 extern fn proc_listpids(ptype: u32, typeinfo: u32, buffer: ?*anyopaque, buffersize: c_int) c_int;
 extern fn host_statistics(host: std.c.mach_port_t, flavor: c_int, info: [*]u32, count: *c_uint) c_int;
 
+// IOKit / CoreFoundation — pmgr P-state table, the Apple Silicon clock source
+// (psutil PR 2222; sysinfo src/unix/apple/macos/cpu.rs). Frameworks are linked
+// through the build_output.zig user-deps path (direct build-exe links none).
+const kern_return_t = c_int;
+const CFIndex = isize;
+const kCFStringEncodingUTF8: u32 = 0x08000100;
+
+extern fn IOServiceMatching(name: [*:0]const u8) ?*anyopaque;
+extern fn IOServiceGetMatchingServices(main_port: std.c.mach_port_t, matching: ?*anyopaque, existing: *std.c.mach_port_t) kern_return_t;
+extern fn IOIteratorNext(iterator: std.c.mach_port_t) std.c.mach_port_t;
+extern fn IORegistryEntryGetName(entry: std.c.mach_port_t, name: [*]u8) kern_return_t;
+extern fn IORegistryEntryCreateCFProperty(entry: std.c.mach_port_t, key: ?*const anyopaque, allocator: ?*anyopaque, options: u32) ?*anyopaque;
+extern fn IOObjectRelease(object: std.c.mach_port_t) kern_return_t;
+extern fn CFRelease(cf: ?*const anyopaque) void;
+extern fn CFStringCreateWithBytes(allocator: ?*anyopaque, bytes: [*]const u8, num_bytes: CFIndex, encoding: u32, is_external_rep: u8) ?*anyopaque;
+extern fn CFDataGetLength(data: ?*const anyopaque) CFIndex;
+extern fn CFDataGetBytePtr(data: ?*const anyopaque) ?[*]const u8;
+
 const HOST_CPU_LOAD_INFO: c_int = 3;
 const CPU_STATE_IDLE: usize = 2;
 const CPU_STATE_MAX: usize = 4;
@@ -116,6 +134,45 @@ fn cpuUsagePercent() i32 {
     return @intCast(@min(100, (busy * 100) / d_total));
 }
 
+fn cpuClockMHz() u64 {
+    // hw.cpufrequency reports Hz on Intel but is empty on Apple Silicon; the
+    // pmgr service's P-state table carries the max clock there. Same source
+    // as psutil PR 2222 and sysinfo's macOS backend. Raw unit: Hz on aarch64,
+    // kHz elsewhere — divide to MHz.
+    const hz: u64 = sysctlInt(u64, "hw.cpufrequency");
+    if (hz != 0) return hz / 1_000_000;
+
+    const matching = IOServiceMatching("AppleARMIODevice") orelse return 0;
+    var iter: std.c.mach_port_t = 0;
+    if (IOServiceGetMatchingServices(0, matching, &iter) != 0) return 0; // consumes matching
+    defer _ = IOObjectRelease(iter);
+
+    const key = CFStringCreateWithBytes(null, "voltage-states5-sram", "voltage-states5-sram".len, kCFStringEncodingUTF8, 0) orelse return 0;
+    defer CFRelease(key);
+
+    while (true) {
+        const entry = IOIteratorNext(iter);
+        if (entry == 0) break;
+        defer _ = IOObjectRelease(entry);
+        var nm: [128]u8 = undefined;
+        if (IORegistryEntryGetName(entry, &nm) != 0) continue;
+        if (!std.mem.eql(u8, std.mem.sliceTo(&nm, 0), "pmgr")) continue;
+        const data = IORegistryEntryCreateCFProperty(entry, key, null, 0) orelse return 0;
+        defer CFRelease(data);
+        const len = CFDataGetLength(data);
+        if (len < 8) return 0;
+        const bytes = CFDataGetBytePtr(data) orelse return 0;
+        var raw: [4]u8 align(1) = undefined;
+        @memcpy(&raw, bytes[@intCast(len - 8)..][0..4]);
+        const max_clock = std.mem.readInt(u32, &raw, .little);
+        if (@import("builtin").cpu.arch == .aarch64) {
+            return max_clock / 1_000_000;
+        }
+        return max_clock / 1_000;
+    }
+    return 0;
+}
+
 fn ramUsagePercent(total: u64) i32 {
     const pagesize: u64 = sysctlInt(u32, "hw.pagesize");
     const free_pages: u64 = sysctlInt(u32, "vm.page_free_count");
@@ -191,16 +248,16 @@ fn pad2(n: u64, buf: *[8]u8) []const u8 {
 ~proc info|zig {
     const brand = $mod.sysctlSlice("machdep.cpu.brand_string", &$mod.name_buf);
     const ncpu: u32 = $mod.sysctlInt(u32, "hw.ncpu");
-    const freq_hz: u64 = $mod.sysctlInt(u64, "hw.cpufrequency");
+    const freq_mhz = $mod.cpuClockMHz();
     const total_ram: u64 = $mod.sysctlInt(u64, "hw.memsize");
     const nproc = $mod.liveProcCount();
     const os_ver = $mod.sysctlSlice("kern.osproductversion", &$mod.os_buf);
     const disk = $mod.storageUsage();
     const cores = std.fmt.bufPrint(&$mod.cores_buf, "{d} {s}", .{ ncpu, if (ncpu == 1) "Core" else "Cores" }) catch "0 Cores";
-    const freq = if (freq_hz == 0)
+    const freq = if (freq_mhz == 0)
         "0.0 GHz"
     else
-        (std.fmt.bufPrint(&$mod.freq_buf, "{d:.1} GHz", .{@as(f64, @floatFromInt(freq_hz)) / 1_000_000_000.0}) catch "0.0 GHz");
+        (std.fmt.bufPrint(&$mod.freq_buf, "{d:.1} GHz", .{@as(f64, @floatFromInt(freq_mhz)) / 1000.0}) catch "0.0 GHz");
     const ram = std.fmt.bufPrint(&$mod.ram_buf, "{s} RAM", .{$mod.convertedCapacity(total_ram)}) catch "0 MiB RAM";
     const procs = std.fmt.bufPrint(&$mod.procs_buf, "{d} Procs", .{nproc}) catch "0 Procs";
     const total_st = std.fmt.bufPrint(&$mod.disk_total_buf, "{s} Total", .{$mod.convertedCapacity(disk.total)}) catch "0 MiB Total";

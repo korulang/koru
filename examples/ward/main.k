@@ -6,6 +6,14 @@ import orisha
 import std/io
 import std/fmt
 import std/fs
+import std/build
+
+// IOKit + CoreFoundation link the pmgr clock read in main.kz (build_output.zig
+// is generated from this declaration by koruc — see emitOutputBuildZig).
+std/build:requires {
+    exe.linkFramework("IOKit");
+    exe.linkFramework("CoreFoundation");
+}
 
 pub tor usage {} -> { processor: i32, ram: i32, storage: i32 }
 
