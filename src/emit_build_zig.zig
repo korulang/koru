@@ -178,6 +178,7 @@ pub fn emitOutputBuildZig(
     requires: []const BuildRequirement,
     output_path: []const u8,
     rel_to_root: []const u8,
+    debug: bool,
 ) !void {
     log.debug("📦 Generating output build.zig with {d} requirements\n", .{requires.len});
 
@@ -213,11 +214,26 @@ pub fn emitOutputBuildZig(
         \\
         \\pub fn build(__koru_b: *std.Build) void {
         \\    const __koru_target = __koru_b.standardTargetOptions(.{});
-        \\    // Hyper-performance language: the OUTPUT binary defaults to ReleaseFast
-        \\    // (the `zig build` invocation passes no -Doptimize, so without this the
-        \\    // standard default would be Debug). -Doptimize still overrides.
-        \\    const __koru_optimize = __koru_b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
         \\
+    );
+    if (debug) {
+        append(&buffer, &pos,
+            \\    // --debug build: Debug is the standard default; -Doptimize overrides.
+            \\    const __koru_optimize = __koru_b.standardOptimizeOption(.{});
+            \\
+        );
+    } else {
+        append(&buffer, &pos,
+            \\    // Hyper-performance language: the OUTPUT binary defaults to ReleaseFast
+            \\    // (matching the direct zig build-exe path). standardOptimizeOption with
+            \\    // a preferred_optimize_mode silently returns Debug on Zig 0.15 unless
+            \\    // --release=fast is passed, and the backend passes none — so register
+            \\    // -Doptimize directly and default to ReleaseFast.
+            \\    const __koru_optimize = __koru_b.option(std.builtin.OptimizeMode, "optimize", "Prioritize performance, safety, or binary size") orelse .ReleaseFast;
+            \\
+        );
+    }
+    append(&buffer, &pos,
         \\    const __koru_exe = __koru_b.addExecutable(.{
         \\        .name = "output",
         \\        .root_module = __koru_b.createModule(.{

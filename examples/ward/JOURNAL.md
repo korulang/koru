@@ -144,6 +144,14 @@ Open: emit_build_zig.zig should generate the 0.15-correct form so output
 binaries actually build ReleaseFast everywhere — that changes every program's
 output mode, so it is a ruling, not a ride.
 
+RESOLVED 2026-08-19 (ruled by Lars, same day): emit_build_zig.zig now emits
+the 0.15-correct form — `b.option(OptimizeMode, "optimize", ...) orelse
+.ReleaseFast` — mirroring the direct path's `-O ReleaseFast` default with a
+`--debug` opt-out passed from compiler_config. Plain `koruc main.kz
+--build=macos` on Ward now yields 3,725,944 B (0 ubsan symbols). The direct
+zig build-exe path was already correct; only the build_output.zig template
+(the requires path) carried the stale standardOptimizeOption call.
+
 ## 2026-08-17 — multiline `-> { record }` was a new construct per line
 
 `.k` synthesizes `~` on every top-level line. `pub tor info {} -> {` left the
