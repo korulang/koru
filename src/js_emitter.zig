@@ -606,7 +606,21 @@ const Emitter = struct {
         switch (impl) {
             // Opaque host code — splice verbatim, re-indented.
             .proc => |proc| {
-                try self.emitReindented(proc.body.text, "      ");
+                // A [transform] tor has NO runtime body: its `|js` variant is
+                // Stage-C host code that EMITS JavaScript, not JavaScript
+                // itself. The decl-site handler is dead either way — the
+                // transform's inline output replaced every call site — so
+                // splicing the variant body put Zig source inside the runtime
+                // handler and node refused the file (010_000_hello_world_koru:
+                // `print.blk|js`'s Liquid parser landed in `blk_event.handler`
+                // as `const ast = @import("ast");`). Emit a stub that names
+                // itself, mirroring the |template| case below: reaching it
+                // means a call site survived the transform pass.
+                if (annotation_parser.hasPart(event.annotations, "transform")) {
+                    try self.writeFmt("      throw new Error(\"{s}: [transform] tor is lowered at compile time and must never be called\");\n", .{name});
+                } else {
+                    try self.emitReindented(proc.body.text, "      ");
+                }
                 try self.write("\n");
             },
             // A per-call `|template|` proc was rendered into every call site by
