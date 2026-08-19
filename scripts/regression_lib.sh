@@ -1877,6 +1877,15 @@ EOF
     # the Zig baseline, require the JS target to agree on the same expected.txt.
     regression_check_js_equivalence "$test_dir"
 
+    # Residual hygiene on a passed test: the JS-equivalence deposit (a JS-target
+    # backend in zig-out/, output_emitted.js, js-run artifacts) must not linger —
+    # a later run can `mv` that stale JS-target backend into place and misjudge a
+    # Zig test as no-exe, and a concurrent js-sweep rebuilds into the same dirs
+    # (010_001 class, 2026-08-19). Failures keep their artifacts for diagnosis.
+    if [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ]; then
+        rm -rf "$test_dir/zig-out" "$test_dir/output_emitted.js" "$test_dir/actual.js.txt" "$test_dir/compile_js.err" "$test_dir/temp_build.zig" 2>/dev/null
+    fi
+
     return 0
 }
 
