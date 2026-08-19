@@ -144,6 +144,15 @@ Open: emit_build_zig.zig should generate the 0.15-correct form so output
 binaries actually build ReleaseFast everywhere — that changes every program's
 output mode, so it is a ruling, not a ride.
 
+RULED 2026-08-19 (Lars): the default flipped the other way. The OUTPUT
+binary now defaults to **Debug** (safety checks on — the mode the test suite
+should judge), with `--release=fast` as the explicit opt-in for shipping and
+benchmarks, on both build paths. Measure: Ward Stage D cold — Debug 3.9-4.6s
+vs ReleaseFast 18-20s (~4.4x). Ward itself ships with --release=fast:
+`koruc main.kz --build=macos --release=fast` → 3,725,944 B, 0 ubsan. The
+pre-flip full board (3565bf5a, ReleaseFast requires-path) was 1531/119 —
+identical to before, zero regressions from the template fix itself.
+
 RESOLVED 2026-08-19 (ruled by Lars, same day): emit_build_zig.zig now emits
 the 0.15-correct form — `b.option(OptimizeMode, "optimize", ...) orelse
 .ReleaseFast` — mirroring the direct path's `-O ReleaseFast` default with a

@@ -29,13 +29,15 @@ ReleaseFast and the pipeline passed no flag). Ward builds at 3,725,944 bytes
 at ReleaseFast — effectively the pre-fix 3,724,600. The clock read is
 ~1.3 KB of binary.
 
-RESOLVED 2026-08-19: emit_build_zig.zig was the stale template (only the
-build_output.zig path—programs with std/build:requires—was affected; the
-direct `zig build-exe` path already defaulted ReleaseFast with a --debug
-opt-out). It now emits `b.option(OptimizeMode, "optimize", ...) orelse
-.ReleaseFast` and takes the debug flag at generation time. Every Koru output
-binary builds fast-and-lean by default; the belief now lives in the emitter,
-not this file.
+RULED 2026-08-19 (same day, by Lars): the OUTPUT default is now **Debug**,
+not ReleaseFast. A compiler's own test suite should judge safety-checked
+binaries — Debug keeps bounds/overflow/unreachable traps on, which is how
+codegen bugs surface — and Debug output compiles ~4.4x faster (measured on
+Ward's Stage D: Debug 3.9-4.6 s vs ReleaseFast 18-20 s, cold cache, same
+emitted file). `--release=fast` opts the output binary into ReleaseFast on
+both build paths (direct and build_output); shipping apps and benchmarks
+pass it explicitly — Ward builds with it. The 1.34 MB Debug-runtime delta is
+now the expected cost of the safety-checked mode, not a defect.
 
 Falsifier: Apple ships a populated public frequency API for Apple Silicon (a
 sysctl that returns a value, or a documented host_processor_info field), or an

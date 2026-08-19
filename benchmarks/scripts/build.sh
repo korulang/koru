@@ -32,7 +32,7 @@ if [ -d "$DIR/koru" ]; then
     echo "[koru] building..."
     cd "$DIR/koru"
     rm -rf zig-out .zig-cache backend.zig build.zig build_backend.zig backend_output_emitted.zig output_emitted.zig build_output.zig build.zig.zon a.out
-    KORU_STDLIB=/Users/larsde/src/koru/koru_std KORU_PATH=/Users/larsde/src/koru-libs /Users/larsde/src/koru/zig-out/bin/koruc input.kz -o backend.zig > /dev/null
+    KORU_STDLIB=/Users/larsde/src/koru/koru_std KORU_PATH=/Users/larsde/src/koru-libs /Users/larsde/src/koru/zig-out/bin/koruc input.kz -o backend.zig --release=fast > /dev/null
     zig build -Doptimize=ReleaseFast > /dev/null
     ./zig-out/bin/backend > /dev/null
     [ -f a.out ] || { echo "[koru] FAILED to build a.out"; exit 1; }

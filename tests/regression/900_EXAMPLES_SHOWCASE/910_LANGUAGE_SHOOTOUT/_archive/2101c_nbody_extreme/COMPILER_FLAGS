@@ -1,1 +1,1 @@
--Doptimize=ReleaseFast
+-Doptimize=ReleaseFast --release=fast

@@ -1372,16 +1372,22 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\
             \\    if (has_build_output) {
             \\        // Use zig build with build_output.zig (includes user dependencies)
-            \\        var bo_argv: [5][]const u8 = undefined;
+            \\        var bo_argv: [7][]const u8 = undefined;
             \\        bo_argv[0] = "zig";
             \\        bo_argv[1] = "build";
             \\        bo_argv[2] = "--build-file";
             \\        bo_argv[3] = "build_output.zig";
             \\        var bo_argc: usize = 4;
+            \\        var opt_buf: [24]u8 = undefined;
+            \\        // Output Debug by default; --release=fast opts into ReleaseFast.
+            \\        // Passed as -Doptimize so build_output.zig's standardOptimizeOption honors it.
+            \\        const out_opt = if (CompilerEnv.hasFlag("release=fast") and !CompilerEnv.hasFlag("debug")) "ReleaseFast" else "Debug";
+            \\        bo_argv[bo_argc] = __koru_std.fmt.bufPrint(&opt_buf, "-Doptimize={s}", .{out_opt}) catch "-Doptimize=Debug";
+            \\        bo_argc += 1;
             \\        var dt_buf: [128]u8 = undefined;
             \\        if (build_target) |t| {
-            \\            bo_argv[4] = __koru_std.fmt.bufPrint(&dt_buf, "-Dtarget={s}", .{t}) catch "-Dtarget=native";
-            \\            bo_argc = 5;
+            \\            bo_argv[bo_argc] = __koru_std.fmt.bufPrint(&dt_buf, "-Dtarget={s}", .{t}) catch "-Dtarget=native";
+            \\            bo_argc += 1;
             \\        }
             \\        const result = __koru_std.process.Child.run(.{
             \\            .allocator = allocator,
@@ -1455,6 +1461,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\        var emit_path_buf: [256]u8 = undefined;
             \\        const emit_path = try __koru_std.fmt.bufPrint(&emit_path_buf, "-femit-bin={s}", .{output_exe});
             \\        const debug = CompilerEnv.hasFlag("debug");
+            \\        const release_fast = CompilerEnv.hasFlag("release=fast");
             \\        var exe_argv: [14][]const u8 = undefined;
             \\        var exe_argc: usize = 0;
             \\        exe_argv[exe_argc] = "zig"; exe_argc += 1;
@@ -1468,16 +1475,13 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\            exe_argv[exe_argc] = t; exe_argc += 1;
             \\        }
             \\        exe_argv[exe_argc] = "-O"; exe_argc += 1;
-            \\        // Hyper-performance language: the OUTPUT binary defaults to
-            \\        // ReleaseFast. ReleaseSmall was the orphaned default of a removed
-            \\        // `--tiny` flag — a silent perf-degradation (it benchmarked
-            \\        // size-optimized koru against ReleaseFast rivals). `--debug`
-            \\        // produces a real Debug build for debugging.
-            \\        if (debug) {
-            \\            exe_argv[exe_argc] = "Debug"; exe_argc += 1;
-            \\        } else {
-            \\            exe_argv[exe_argc] = "ReleaseFast"; exe_argc += 1;
-            \\        }
+            \\        // The OUTPUT binary defaults to Debug: safety checks (bounds,
+            \\        // overflow, unreachable) stay on, which is the mode the test suite
+            \\        // should judge. The earlier ReleaseFast default was a benchmark
+            \\        // optimization that leaked into every output and hid UB. `--release=fast`
+            \\        // opts into ReleaseFast for shipping and benchmarks; `--debug` stays
+            \\        // an explicit Debug.
+            \\        exe_argv[exe_argc] = if (release_fast and !debug) "ReleaseFast" else "Debug"; exe_argc += 1;
             \\        exe_argv[exe_argc] = emit_path; exe_argc += 1;
             \\        const result = __koru_std.process.Child.run(.{
             \\            .allocator = allocator,
@@ -7643,7 +7647,7 @@ pub fn main() !void {
         // Generate build_output.zig - this will be used to compile output_emitted.zig
         const build_output_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build_output.zig" });
         defer allocator.free(build_output_path);
-        try emit_build_zig.emitOutputBuildZig(allocator, output_build_reqs.items, build_output_path, koru_lib_path, compiler_config.hasFlag("debug"));
+        try emit_build_zig.emitOutputBuildZig(allocator, output_build_reqs.items, build_output_path, koru_lib_path);
         try printStdout(allocator, "✓ Generated {s} (for output binary)\n", .{build_output_path});
     }
 
