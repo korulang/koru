@@ -190,6 +190,11 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  ./run_regression.sh --status           Show current test status from disk markers"
     echo "  ./run_regression.sh --list             List all tests with their status"
     echo "  ./run_regression.sh --last-run         Show results from last full run"
+    echo "  ./run_regression.sh --js-sweep         Measure every eligible test against the JS"
+    echo "                                         target (the JS-regression canary; JS is not"
+    echo "                                         expected to be coherent). Add --js-baseline-"
+    echo "                                         update to pin the passing set, --fail-on-"
+    echo "                                         regression to make a JS drop fail the run."
     echo ""
     echo -e "${CYAN}RESIDUALS:${NC}"
     echo "  ./run_regression.sh --todo-sweep       Drive the residuals instead of the board:"
@@ -268,6 +273,25 @@ if [ "$1" = "--kz-convertible" ]; then
     # The .kz -> .k migration-backlog lint. Fast preview by default; add
     # --verify to compile-gate candidates in an isolated worktree (read-only).
     exec bash scripts/kz_convertible.sh "${2:-}"
+fi
+
+if [ "$1" = "--js-sweep" ]; then
+    # JS-target regression canary: measure every eligible (positive, passing)
+    # test that does NOT opt into JS via LANGUAGES, against the JS emitter.
+    # JS is intentionally not-coherent, so this never fails on incomplete
+    # coverage — it only fails (with --fail-on-regression) when a test that
+    # previously PASSED on JS stops passing. Writes js-sweep-results.jsonl and
+    # diffs against test-results/js-sweep-baseline.json; never flips markers.
+    if [ ! -x "./zig-out/bin/koruc" ]; then
+        echo -e "${RED}❌ koruc not built. Run 'zig build' first (or the full suite).${NC}"
+        exit 1
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo -e "${RED}❌ python3 not found — the JS sweep needs python3.${NC}"
+        exit 1
+    fi
+    shift
+    exec python3 scripts/js-sweep.py "$@"
 fi
 
 if [ "$1" = "--std-compiles" ]; then

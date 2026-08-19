@@ -41,13 +41,38 @@ proc's — the Zig emitter already reads the event for exactly this reason
 handler ("lowered at compile time and must never be called"), mirroring the
 `|template` stub; the runtime surface is the transform's inline output alone.
 
+**And it is systemic, not just the |js seam.** A JS-target sweep of every
+eligible positive test (scripts/js-sweep.py, 921 tests; JS is intentionally
+not-coherent) showed the same disease at the DATA/EXPRESSION and FUNCTION
+boundaries, not only transform variants: when the emitter lacks a lowering it
+does not refuse with a diagnostic — it PASTES THE ZIG TEXT into the emitted JS
+and lets node throw a SyntaxError at runtime. Observed verbatim in the output:
+`var __fld_buf_9_0: [(1000001 + 63) / 64]u64 = undefined;`, whole `fn __mm…(data:
+[*]u64, …) void {`, and `@as(usize, @intCast(acc.row + 1))` indexing. Across the
+unmeasured pool that silent-Zig-paste class is ~120 of the 198 divergent tests,
+and it is why the emitter recorded ZERO clean refusals and ZERO crashes: it
+never admits failure in advance; it hands node broken JavaScript and the 
+failure surfaces one layer down, as a `SyntaxError` (or worse, a silent wrong
+`ReferenceError`/wrong-output divergence). The clean-refusal path exists
+(error[KORU..] diagnostics) but only fires for the subset that has one.
+
+The operating rule that follows, for any further JS-target work: **an emitter
+that cannot lower a construct must REFUSE with a located diagnostic, never emit
+the host-language text.** The ~120 paste-class failures are one walls-and-
+instrument problem away from becoming a second, inventory-able band of clean
+refusals — and the handful of genuine semantic divergences (multicast order, a
+0-vs-1) are the ones that will then surface as the real gaps to fix. Measure
+by sweeping; gate on regression (the JS-pass set must not shrink), never on
+completeness.
+
 **And the original lesson, sharpened:** `print.blk|js` working was NOT evidence
 that transform `|js` variants worked — and it was not even working. It was the
 failing shape all along: a plain `~proc` variant of a transform tor, invisible to
-a fix that only covered `[transform]proc` declarations. A single green precedent
-says the path is open for programs shaped like the precedent, and nothing more.
-`[transform]proc` variants and plain-proc variants of a transform tor are TWO
-shapes the machinery must carry; after 2026-08-06 it carried one of them, and the
-board's `js-runtime` failures were the other, silently. When porting a transform,
-check the machinery carries the exact declaration shape you wrote — by BUILDING it
-against the JS target, not by reading the `.kz`.
+a fix that only covered `[transform]proc` declarations. The full sweep adds the
+second half: the 38 opt-in tests were a curated slice, and the ~641 correctly-
+passing tests that were never measured outnumber the broken ones nearly 4:1 — so
+the JS target was never "tiny and broken", it was "unmeasured". A single green
+precedent, or a single opt-in slice, says nothing about the shape you have not
+built against the JS target. When porting a transform — or trusting JS
+coverage — check the machinery carries the exact shape you wrote, by BUILDING
+it against the JS target, not by reading the `.kz`.
