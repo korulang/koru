@@ -114,10 +114,13 @@ function walk(dir, breadcrumbs, negativeTests) {
       return [];
     }
     // Tests split into the `.k` + host form keep the host bindings (e.g. Zig
-    // consts) in input.kz and the portable Koru in input.k. Show them as a
-    // single block — host consts first, then the Koru — which reproduces the
-    // pre-split example. Tests not yet split keep all their Koru in input.kz,
-    // so the kz-only path is unchanged.
+    // consts) in input.kz and the portable Koru in input.k. A `.kz` const
+    // (`const count: i32 = 42;`) is ZIG text — concat it onto a pure `.k`
+    // display and the shown file fails shape-check as pure Koru (KORU114),
+    // which is exactly what the frontpage example did before the split. The
+    // corpus teaches the PURE Koru surface, so a split test shows input.k
+    // alone; a `.kz`-only test (not yet split) falls back to input.kz.
+    // Precondition: input.k must be self-contained (its own const block).
     const inputKzPath = path.join(dir, 'input.kz');
     const inputKPath = path.join(dir, 'input.k');
     // The corpus teaches the PURE Koru surface. A `.kz` is Koru embedded in
@@ -132,10 +135,10 @@ function walk(dir, breadcrumbs, negativeTests) {
     // represented the same way.
     const deTilde = (s) => s.split('\n').map((l) => l.replace(/^([ \t]*)~/, '$1')).join('\n');
     const parts = [];
-    if (fs.existsSync(inputKzPath))
-      parts.push(deTilde(fs.readFileSync(inputKzPath, 'utf-8')).replace(/\n+$/, ''));
     if (fs.existsSync(inputKPath))
       parts.push(deTilde(fs.readFileSync(inputKPath, 'utf-8')).replace(/\n+$/, ''));
+    else if (fs.existsSync(inputKzPath))
+      parts.push(deTilde(fs.readFileSync(inputKzPath, 'utf-8')).replace(/\n+$/, ''));
     if (parts.length === 0) return [];
     const expectedPath = path.join(dir, 'expected.txt');
     return [
