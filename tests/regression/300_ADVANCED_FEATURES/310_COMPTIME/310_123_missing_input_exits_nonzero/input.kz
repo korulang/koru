@@ -1,0 +1,14 @@
+// Pins that `koruc run` / `koruc build` with no input file exit non-zero.
+// They already printed "Error: no input file specified"; they used to then
+// `return` from main and exit 0, so a script, Makefile, or hook could not
+// tell the error from success. Sibling: 310_115 (the `deps <module>` swap
+// already exits 1). Blindness: no test invoked koruc with no file, and
+// none asserted a CLI verb's exit status. Bare `koruc` (no args) is usage
+// and still exits 0 — that is a different path.
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

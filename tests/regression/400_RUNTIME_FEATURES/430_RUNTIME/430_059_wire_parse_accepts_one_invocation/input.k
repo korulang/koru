@@ -7,7 +7,7 @@ import std/runtime
 import std/io
 
 pub tor greet { name: string } -> string
-greet -> { name }
+greet -> name
 
 std/runtime:register(scope: "api") {
     greet(1)

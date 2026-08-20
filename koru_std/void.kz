@@ -1,0 +1,21 @@
+// std/void — the explicit no-op.
+//
+// A void tor whose body does nothing is either a lie or a hole. Written
+// `close -> {}` it is a silent hole — the render reads like finished work and
+// nothing in the corpus or the toolchain can tell a placeholder from an
+// implementation. Written with no body at all it is a legal *contract* (the
+// compiler refuses it only when invoked), but absence is equally silent.
+//
+// `std/void:placeholder` is the third spelling: a named, first-class artifact
+// that the whole toolchain can see. `koruc` can walk the AST, find a verb
+// whose body points here, and tell you the vocabulary is unfinished; a gate
+// can refuse a scope where a placeholder is still reachable at publish time.
+// The no-op stops being a convention and becomes data.
+//
+// A verb delegates to it when it exists to hold a place in a vocabulary but
+// has no effect yet: `close = std/void:placeholder()`. When the verb gets its
+// real body, the delegation is deleted.
+
+~pub tor placeholder {}
+
+~proc placeholder|zig {}

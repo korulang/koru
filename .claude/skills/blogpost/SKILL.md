@@ -143,6 +143,9 @@ alone.** Lead with the concrete subject — the feature or concept, by name.
   glyphs" not "Today I added a parser." No changelog narration, no "we then…".
 - **Short and synthesized.** State the idea and let the tests carry the proof.
 - Match the register of the recent posts; don't invent a new house style.
+- **Numbers worth seeing are a HyperFrame.** `~/.claude/skills/hyperframe/SKILL.md`
+  — the site surface (`src/lib/hyperframes/`), not the War Room. A chart is a
+  second copy of a table and must be gated. Leave `draft: true`.
 
 ## Never
 

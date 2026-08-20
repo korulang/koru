@@ -19,18 +19,17 @@ Ordered by the frame's own ladder. **Rung 1 first: two states, one observation.*
 
 ## Rung 1 — two different states produce the same observation
 
-### Q1. Three verbs print an error and exit 0
+### Q1. Three verbs print an error and exit 0 — DRAINED 2026-08-15 (`310_123`)
 ```
-koruc run       →  Error: no input file specified   exit 0
-koruc build     →  same                             exit 0
-koruc deps      →  same                             exit 0
+koruc run       →  Error: no input file specified   exit 1   (was 0)
+koruc build     →  same                             exit 1   (was 0)
+koruc deps      →  toolchain report                 exit 0   (intentional: bare `deps` is the toolchain check)
 ```
-Anything scripting `koruc` — CI, a Makefile, a hook — cannot tell this from
-success. The sibling branch that refuses `koruc deps <module>` calls
-`std.process.exit(1)`; these do not.
-
-⚠️ One agent reported `deps` as the *correct* control. It is not — all three
-exit 0. The bug is broader than the report.
+`run`/`build` with no file printed an error then `return`ed from `main`, so
+anything scripting `koruc` could not tell this from success. Now `exit(1)`,
+pinned by `310_123_missing_input_exits_nonzero`. Bare `koruc deps` is a
+different path (the toolchain check) and stays 0. The sibling `koruc deps
+<module>` refusal was already `310_115`.
 
 ### Q2. `--check` passes a file that does not build
 ```

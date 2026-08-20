@@ -5,18 +5,19 @@
 // declaration read twice — the lesson and the law cannot drift apart.
 import std/runtime
 import std/io
+import std/void
 
 pub tor open { path: string } -> string<open!>
-open -> { "note_0" }
+open -> "note_0"
 
 pub tor append { handle: string<!open>, text: string } -> string<open!>
-append -> { handle }
+append -> handle
 
 pub tor close { handle: string<!open> }
-close -> {}
+close = std/void:placeholder()
 
 pub tor say { text: string }
-say -> {}
+say = std/void:placeholder()
 
 std/runtime:register(scope: "notes") {
     open(10)

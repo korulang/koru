@@ -1,0 +1,4 @@
+open(path: string)
+append(handle: string<!open>, text: string)
+close(handle: string<!open>)
+say(text: string)

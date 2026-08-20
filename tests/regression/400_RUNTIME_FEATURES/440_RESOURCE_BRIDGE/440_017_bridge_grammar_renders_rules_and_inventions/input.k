@@ -8,7 +8,7 @@ import std/bridge
 import std/runtime
 
 tor echo { text: string } -> string
-echo -> { text }
+echo -> text
 
 std/runtime:register(scope: "api") {
     echo(1)
