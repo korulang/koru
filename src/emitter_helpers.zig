@@ -7515,7 +7515,28 @@ fn emitInvocation(
             break :blk null;
         };
         if (found_immediate) |immediate_impl| {
-            const event_decl = findEventDeclByPath(items, &invocation.path);
+            // Cross-module immediate impl: inlining the call body below would
+            // splice the declaring module's bare names into the caller's
+            // emitted scope. A `const {}` in an imported module (e.g.
+            // `sim:thrust-dx` referencing `SHIP_THRUST`) resolves ONLY inside
+            // that module's emitted struct, never in the caller's flow — the
+            // inlined body dies with `use of undeclared identifier`. Same-module
+            // calls (unqualified, or qualified to the main module) keep the
+            // inline splice: the consts land in the same emitted container.
+            const cross_module_call: bool = blk: {
+                const mq = invocation.path.module_qualifier orelse break :blk false;
+                if (ctx.main_module_name) |mmn| {
+                    if (std.mem.eql(u8, mq, mmn)) break :blk false;
+                } else break :blk false;
+                break :blk true;
+            };
+            if (cross_module_call) {
+                // Fall through to the handler-call path below — the target
+                // module's emitted handler resolves its consts in-scope
+                // (emitted `koru_sim` struct holds both the `const {}` block
+                // and the per-event __koru_handler_impl).
+            } else {
+                const event_decl = findEventDeclByPath(items, &invocation.path);
             const immediate_bc = &immediate_impl.value;
             // Emit: const result: EventType.Output = blk: {
             //     const n = 5;  // bind input args
@@ -7798,12 +7819,13 @@ fn emitInvocation(
             try emitter.writeIndent();
             try emitter.write("};\n");
             if (bind_discarded) {
-                try emitter.writeIndent();
-                try emitter.write("_ = ");
-                try emitter.write(bind_name);
-                try emitter.write(";\n");
+                    try emitter.writeIndent();
+                    try emitter.write("_ = ");
+                    try emitter.write(bind_name);
+                    try emitter.write(";\n");
+                }
+                return;
             }
-            return;
         }
     }
 
