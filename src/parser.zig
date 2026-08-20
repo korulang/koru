@@ -796,6 +796,65 @@ pub const Parser = struct {
         return content;
     }
 
+    /// Find the LAST file-source closure in trimmed text: either the typed
+    /// `<type>"path"` form or the bare `@"path"` form. Returns the index of the
+    /// `@`/`>` (the char before the opening quote) and whether the form is
+    /// typed. When both appear, the later one is the real closure.
+    fn findFileSourceMarker(trimmed: []const u8) ?struct { marker_idx: usize, typed: bool } {
+        const typed = std.mem.lastIndexOf(u8, trimmed, ">\"");
+        const bare = std.mem.lastIndexOf(u8, trimmed, "@\"");
+        if (typed) |t| {
+            if (bare) |b| {
+                if (t > b) return .{ .marker_idx = t, .typed = true };
+                return .{ .marker_idx = b, .typed = false };
+            }
+            return .{ .marker_idx = t, .typed = true };
+        }
+        if (bare) |b| return .{ .marker_idx = b, .typed = false };
+        return null;
+    }
+
+    /// Extract the scope type `[...]` and the path for a file-source closure at
+    /// `marker` whose text is `trimmed`. Returns the invocation text before the
+    /// closure and the phantom type (null for the bare `@"path"` form).
+    fn splitFileSource(self: *Parser, trimmed: []const u8, marker_idx: usize, typed: bool) anyerror!struct { invocation_str: []const u8, phantom_type: ?[]const u8 } {
+        var invocation_str = lexer.trim(trimmed[0..marker_idx]);
+        var phantom_type: ?[]const u8 = null;
+        if (typed) {
+            const angle_start = std.mem.lastIndexOf(u8, trimmed[0 .. marker_idx + 1], "<") orelse {
+                try self.reporter.addError(.PARSE001, self.current, 0, "File source syntax requires scope type: ~tor <type>\"path\"", .{});
+                return error.ParseError;
+            };
+            phantom_type = try self.allocator.dupe(u8, trimmed[angle_start + 1 .. marker_idx]);
+            invocation_str = lexer.trim(trimmed[0..angle_start]);
+        }
+        return .{ .invocation_str = invocation_str, .phantom_type = phantom_type };
+    }
+
+    /// Extract a `: bind` from the tail after a file-source closing quote.
+    /// Returns the bind name (allocated) and the remaining tail after the bind.
+    fn extractFileBindTail(self: *Parser, tail: []const u8, location: errors.SourceLocation) anyerror!struct { bind: ?[]const u8, rest: []const u8 } {
+        var rest = tail;
+        var bind: ?[]const u8 = null;
+        if (std.mem.startsWith(u8, rest, ":")) {
+            const bind_rest = lexer.trim(rest[1..]);
+            if (bind_rest.len > 0 and bind_rest[0] == '{') {
+                try self.reporter.addError(.PARSE001, location.line - 1, 0, "destructure bind after a file source is not supported yet", .{});
+                return error.ParseError;
+            }
+            var bind_end: usize = bind_rest.len;
+            for (bind_rest, 0..) |c, k| {
+                if (c == ' ' or c == '\t' or c == '|') {
+                    bind_end = k;
+                    break;
+                }
+            }
+            bind = try self.allocator.dupe(u8, bind_rest[0..bind_end]);
+            rest = lexer.trim(bind_rest[bind_end..]);
+        }
+        return .{ .bind = bind, .rest = rest };
+    }
+
     pub fn init(allocator: std.mem.Allocator, source: []const u8, file_name: []const u8, compiler_flags: []const []const u8, resolver: ?*ModuleResolver) !Parser {
         // Parser init
         var lines_list = try std.ArrayList([]const u8).initCapacity(allocator, 8);
@@ -4301,10 +4360,12 @@ pub const Parser = struct {
         // Check if it ends with { or <Type>{ - that's the marker for implicit flow/source syntax
         const has_implicit_flow_brace = std.mem.endsWith(u8, trimmed_after, "{");
 
-        // Check if it ends with " and contains >" - that's the marker for file source syntax
-        // e.g., ~print <text>"hello.md"
-        const has_implicit_file_source = std.mem.endsWith(u8, trimmed_after, "\"") and
-            std.mem.indexOf(u8, trimmed_after, ">\"") != null;
+        // File-source closure: the typed `<type>"path"` or the bare `@"path"` form
+        // (the file twin of the inline `{` source block). The closure can appear
+        // anywhere in the line — a `: bind` and an inline `|>` continuation may
+        // follow the closing quote, and a chain of `|>` steps may precede it.
+        const file_source_marker = findFileSourceMarker(trimmed_after);
+        const has_implicit_file_source = file_source_marker != null;
 
         var invocation: ast.Invocation = undefined;
         var uses_implicit_flow = false;
@@ -4316,40 +4377,100 @@ pub const Parser = struct {
         var continuations: []ast.Continuation = undefined;
 
         if (has_implicit_file_source) {
-            // Parse file source syntax: ~event <type>"path"
-            // Extract: invocation before <, scope type in <...>, file path in "..."
+            const marker = file_source_marker.?;
 
-            // Find the last >" to locate where the path starts
-            const quote_start = std.mem.lastIndexOf(u8, trimmed_after, ">\"") orelse unreachable;
-            const path_start = quote_start + 2; // Skip >"
-            const path_end = trimmed_after.len - 1; // Exclude trailing "
+            // The file path runs from just after the `@"`/`>"` to the next quote.
+            const path_start = marker.marker_idx + 2;
+            const path_rel_end = std.mem.indexOf(u8, trimmed_after[path_start..], "\"") orelse {
+                try self.reporter.addError(.PARSE001, self.current, 0, "File source syntax requires a closing quote", .{});
+                return error.ParseError;
+            };
+            const path_end = path_start + path_rel_end;
             const file_path = trimmed_after[path_start..path_end];
 
-            // Find the < to extract scope type
-            const angle_start = std.mem.lastIndexOf(u8, trimmed_after[0 .. quote_start + 1], "<") orelse {
-                try self.reporter.addError(.PARSE001, self.current, 0, "File source syntax requires scope type: ~tor <type>\"path\"", .{});
-                return error.ParseError;
+            // Split the invocation text and scope type off the front, then a
+            // `: bind` and continuation tail off the back.
+            const front = try self.splitFileSource(trimmed_after, marker.marker_idx, marker.typed);
+            const back = try self.extractFileBindTail(lexer.trim(trimmed_after[path_end + 1 ..]), self.getCurrentLocation());
+            const invocation_str = front.invocation_str;
+
+            // Detect inline chain: `head() |> ... |> terminal <file>"path"` — the
+            // file-source twin of the `… |> terminal {` chain handled below. For
+            // chains the file closure rides on the TAIL (the terminal step), so
+            // route it through parsePipelineContinuationBase, which builds the
+            // source step there; the bind and continuations on the tail belong to
+            // that step too, so they are not applied to the head here.
+            const inline_pipe_arrow = blk: {
+                var i: usize = 0;
+                var paren_depth: i32 = 0;
+                var brace_depth: i32 = 0;
+                var in_string = false;
+                while (i + 1 < invocation_str.len) : (i += 1) {
+                    const c = invocation_str[i];
+                    if (c == '"' and (i == 0 or invocation_str[i - 1] != '\\')) {
+                        in_string = !in_string;
+                        continue;
+                    }
+                    if (in_string) continue;
+                    if (c == '(') paren_depth += 1;
+                    if (c == ')') paren_depth -= 1;
+                    if (c == '{') brace_depth += 1;
+                    if (c == '}') brace_depth -= 1;
+                    if (paren_depth == 0 and brace_depth == 0 and c == '|' and invocation_str[i + 1] == '>') {
+                        break :blk i;
+                    }
+                }
+                break :blk null;
             };
-            const phantom_type = trimmed_after[angle_start + 1 .. quote_start];
 
-            // Extract invocation string (before the <)
-            const invocation_str = lexer.trim(trimmed_after[0..angle_start]);
-            invocation = try self.parseEventInvocation(invocation_str);
-            errdefer invocation.deinit(self.allocator);
+            if (inline_pipe_arrow) |pipe_idx| {
+                // Chain detected. Rebuild the tail with the file closure (path and
+                // bind tail) glued back on, and hand it to parsePipelineContinuationBase.
+                const head_str = lexer.trim(invocation_str[0..pipe_idx]);
+                const tail_str = lexer.trim(invocation_str[pipe_idx + 2 ..]);
+                const closure_str = lexer.trim(trimmed_after[marker.marker_idx..]);
+                const tail_full = try std.fmt.allocPrint(self.allocator, "{s} {s}", .{ tail_str, closure_str });
+                defer self.allocator.free(tail_full);
+                if (back.bind) |bn| self.allocator.free(bn);
+                if (front.phantom_type) |pt| self.allocator.free(pt);
 
-            // Read the file content
-            const file_content = self.readSourceFile(file_path) catch |err| {
-                try self.reporter.addError(.PARSE001, self.current, 0, "Failed to read source file '{s}': {s}", .{ file_path, @errorName(err) });
-                return error.ParseError;
-            };
+                invocation = try self.parseEventInvocation(head_str);
+                errdefer invocation.deinit(self.allocator);
 
-            uses_implicit_source = true;
-            implicit_source_text = file_content;
-            implicit_source_phantom_type = try self.allocator.dupe(u8, phantom_type);
-            implicit_source_file_path = try self.allocator.dupe(u8, file_path);
+                const tail_cont = try self.parsePipelineContinuationBase(
+                    tail_full,
+                    lexer.getIndent(line),
+                    self.getCurrentLocation(),
+                );
 
-            // No multi-line block to parse, just get continuations from next lines
-            continuations = try self.parseContinuations(lexer.getIndent(line));
+                var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                try cont_list.append(self.allocator, tail_cont);
+                continuations = try cont_list.toOwnedSlice(self.allocator);
+            } else {
+                // Single event: read the file, bind, and continue — the file twin
+                // of `fmt.blk { … }: f |> …`.
+                invocation = try self.parseEventInvocation(invocation_str);
+                errdefer invocation.deinit(self.allocator);
+
+                const file_content = self.readSourceFile(file_path) catch |err| {
+                    try self.reporter.addError(.PARSE001, self.current, 0, "Failed to read source file '{s}': {s}", .{ file_path, @errorName(err) });
+                    return error.ParseError;
+                };
+
+                uses_implicit_source = true;
+                implicit_source_text = file_content;
+                implicit_source_phantom_type = front.phantom_type;
+                implicit_source_bind_name = back.bind;
+                implicit_source_file_path = try self.allocator.dupe(u8, file_path);
+
+                // Continuations: an inline `|>` on the same line (the twin of the
+                // block-close `}: f |> …`) or the following lines.
+                if (std.mem.indexOf(u8, back.rest, "|>") != null) {
+                    continuations = try self.parseInlineContinuation(back.rest, lexer.getIndent(line), self.current);
+                } else {
+                    continuations = try self.parseContinuations(lexer.getIndent(line));
+                }
+            }
         } else if (has_implicit_flow_brace) {
             // Parse event name and args up to the {
             const brace_idx = std.mem.lastIndexOf(u8, remaining, "{") orelse unreachable;
@@ -7847,6 +7968,29 @@ pub const Parser = struct {
                 full_rest = allocated_rest.?;
             }
 
+            // File-source step: the arm's chain tail carries a file closure
+            // (`|> ... |> fmt.blk <file>"path"`), the file twin of the `{`
+            // source block above. Strip the leading `|>` and route through
+            // parsePipelineContinuationBase, which builds the source step and
+            // its `: bind` / `|>` continuation tail. The arm's own
+            // branch/binding are then merged onto that step.
+            if (findFileSourceMarker(full_rest)) |_| {
+                const stripped = if (std.mem.startsWith(u8, lexer.trim(full_rest), "|>"))
+                    lexer.trim(lexer.trim(full_rest)[2..])
+                else
+                    lexer.trim(full_rest);
+                var pipe_cont = try self.parsePipelineContinuationBase(stripped, indent, location);
+                pipe_cont.branch = owned_branch;
+                pipe_cont.binding = binding;
+                pipe_cont.destructure = destructure;
+                pipe_cont.binding_annotations = binding_annotations;
+                pipe_cont.binding_type = .branch_payload;
+                pipe_cont.condition = condition;
+                pipe_cont.condition_expr = condition_expr;
+                if (allocated_rest) |ar| self.allocator.free(ar);
+                return pipe_cont;
+            }
+
             // A trailing top-level `-> produce` on the LAST step of the arm's
             // chain (`| else |> f(x): v -> g(v)`) is the bare-return produce
             // arm — same chain-tail grammar parseInlineContinuation strips for
@@ -8070,6 +8214,63 @@ var produce_tail: ?[]const u8 = null;
         const has_open_brace = std.mem.indexOf(u8, content, "{") != null;
         const has_close_brace = std.mem.indexOf(u8, content, "}") != null;
         log_debug("[DEBUG] parsePipelineContinuationBase: content='{s}' has_open={} has_close={}\n", .{ content, has_open_brace, has_close_brace });
+
+        const file_marker = findFileSourceMarker(content);
+        if (file_marker) |marker| {
+            // File-source step: the terminal carries a file closure (`<type>"path"`
+            // or `@"path"`) — the file twin of the `… {` source block handled below.
+            // The step may itself contain further `|>` steps (`info(): i |> … |>
+            // fmt.blk <file>"t.txt"`), which parseEventInvocation resolves; the file
+            // source attaches to the terminal, and a `: bind`/`|>` tail after the
+            // closing quote is its block-close twin (`}: f |> …`).
+            const path_start = marker.marker_idx + 2;
+            const path_rel_end = std.mem.indexOf(u8, content[path_start..], "\"") orelse {
+                try self.reporter.addError(.PARSE005, location.line - 1, 0, "File source syntax requires a closing quote", .{});
+                return error.ParseError;
+            };
+            const path_end = path_start + path_rel_end;
+            const file_path = content[path_start..path_end];
+
+            const front = try self.splitFileSource(content, marker.marker_idx, marker.typed);
+            const back = try self.extractFileBindTail(lexer.trim(content[path_end + 1 ..]), location);
+            const temp_invocation = try self.parseEventInvocation(front.invocation_str);
+            const path_str = try self.pathToString(temp_invocation.path);
+            defer self.allocator.free(path_str);
+
+            const file_content = self.readSourceFile(file_path) catch |err| {
+                try self.reporter.addError(.PARSE005, location.line - 1, 0, "Failed to read source file '{s}': {s}", .{ file_path, @errorName(err) });
+                return error.ParseError;
+            };
+
+            var final_invocation: ast.Invocation = undefined;
+            if (self.registry.getEventType(path_str)) |event_type| {
+                final_invocation = try self.createImplicitSourceInvocation(temp_invocation, file_content, front.phantom_type, event_type);
+            } else {
+                final_invocation = try self.createImplicitSourceInvocationDefault(temp_invocation, file_content, front.phantom_type);
+            }
+            if (back.bind) |rb| final_invocation.return_binding = rb;
+            self.allocator.free(file_content);
+
+            var continuations_: []ast.Continuation = undefined;
+            if (std.mem.indexOf(u8, back.rest, "|>") != null) {
+                continuations_ = try self.parseInlineContinuation(back.rest, indent, location.line - 1);
+            } else {
+                continuations_ = try self.parseContinuations(indent);
+            }
+
+            const step_ = ast.Step{ .invocation = final_invocation };
+            return ast.Continuation{
+                .branch = try self.allocator.dupe(u8, ""),
+                .binding = null,
+                .condition = null,
+                .condition_expr = null,
+                .node = step_,
+                .indent = indent,
+                .continuations = continuations_,
+                .location = location,
+            };
+        }
+
         if (has_open_brace and !has_close_brace) {
             const brace_idx = std.mem.lastIndexOf(u8, content, "{") orelse unreachable;
             const invocation_str = lexer.trim(content[0..brace_idx]);
