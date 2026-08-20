@@ -1,0 +1,7 @@
+name: discovery
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a previously unknown defect or capability surfaced at runtime and was pinned — the system did something the author's model said it could not (or failed something the model said it could). Distinct from surprise (observed divergence) in that discovery names the NEW knowledge the observation installed, not the divergence itself.
+route: surface, wake
