@@ -21,6 +21,10 @@ fn log_debug(comptime fmt: []const u8, args: anytype) void {
     if (DEBUG) std.debug.print(fmt, args);
 }
 
+/// A file-source closure (`<type>"path"` or `@"path"`) — a named struct so
+/// both construction sites share one type.
+const FileSourceMarker = struct { marker_idx: usize, typed: bool };
+
 /// Attempt to parse an arg's value as an expression and store the result.
 /// Values that don't parse (types, source blocks, module paths, partial matches) silently remain null.
 pub fn tryParseArgExpression(allocator: std.mem.Allocator, arg: *ast.Arg) void {
@@ -800,18 +804,33 @@ pub const Parser = struct {
     /// `<type>"path"` form or the bare `@"path"` form. Returns the index of the
     /// `@`/`>` (the char before the opening quote) and whether the form is
     /// typed. When both appear, the later one is the real closure.
-    fn findFileSourceMarker(trimmed: []const u8) ?struct { marker_idx: usize, typed: bool } {
-        const typed = std.mem.lastIndexOf(u8, trimmed, ">\"");
-        const bare = std.mem.lastIndexOf(u8, trimmed, "@\"");
-        if (typed) |t| {
-            if (bare) |b| {
-                if (t > b) return .{ .marker_idx = t, .typed = true };
-                return .{ .marker_idx = b, .typed = false };
+    ///
+    /// The scan tracks string literals so a `>"`/`@"` pair INSIDE a quoted
+    /// string is not mistaken for a closure — a terminal like
+    /// `print.ln("…<none>")` ends with the `>` of `<none>` right before the
+    /// string's own closing quote, and `@"` can appear inside template text.
+    /// Escaped quotes (`\"`) inside a string do not toggle the string state.
+    fn findFileSourceMarker(trimmed: []const u8) ?FileSourceMarker {
+        var result: ?FileSourceMarker = null;
+        var in_string = false;
+        var i: usize = 0;
+        while (i + 1 < trimmed.len) : (i += 1) {
+            if (trimmed[i] == '\\') {
+                i += 1;
+                continue;
             }
-            return .{ .marker_idx = t, .typed = true };
+            if (trimmed[i] == '"') {
+                in_string = !in_string;
+                continue;
+            }
+            if (in_string) continue;
+            if (trimmed[i] == '>' and trimmed[i + 1] == '"') {
+                result = .{ .marker_idx = i, .typed = true };
+            } else if (trimmed[i] == '@' and trimmed[i + 1] == '"') {
+                result = .{ .marker_idx = i, .typed = false };
+            }
         }
-        if (bare) |b| return .{ .marker_idx = b, .typed = false };
-        return null;
+        return result;
     }
 
     /// Extract the scope type `[...]` and the path for a file-source closure at
