@@ -159,7 +159,7 @@ fn transformItems(
             .flow => |flow| {
                 // Transform top-level flows (e.g., ~hello() | done |> _)
                 // These are flow-level taps that should fire when the main invocation completes
-                log.debug("TAP TRANSFORMER: Found top-level flow invoking: {s}\n", .{flow.inv().path.segments[0]});
+                log.debug("TAP TRANSFORMER: Found top-level flow invoking: {s}\n", .{if (flow.inv().path.segments.len > 0) flow.inv().path.segments[0] else "(empty)"});
 
                 if (hasOpaqueAnnotation(flow.annotations)) {
                     try transformed.append(allocator, item);

@@ -178,6 +178,16 @@ fn findTopLevelEquals(s: []const u8) ?usize {
 
         // Only match = at top level
         if (c == '=' and paren_depth == 0 and brace_depth == 0) {
+            // Skip a `=` that is part of a multi-char operator, NOT the
+            // impl/construct equals: `==`, `<=`, `>=`, `!=`. Without this a
+            // comparison in a bare-produce body (`t -> a == b`, `t -> x <= y`)
+            // was split at the `=` — the body read as an `=`-impl `t = a = b`,
+            // minting a bogus flow named `= b` resolved as the dreaded
+            // `unknown tor 'm:= b'` (pinned 110_032). `=>` must still match:
+            // the caller's is_arrow check reads the `>` after it.
+            const prev_is_cmp = i > 0 and (s[i - 1] == '=' or s[i - 1] == '<' or s[i - 1] == '>' or s[i - 1] == '!');
+            const next_is_eq = i + 1 < s.len and s[i + 1] == '=';
+            if (prev_is_cmp or next_is_eq) continue;
             return i;
         }
     }
