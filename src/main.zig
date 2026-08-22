@@ -2106,7 +2106,7 @@ fn collectCommands(allocator: std.mem.Allocator, source_file: *ast.Program) !str
 
                 commands[count] = .{
                     .name = cli,
-                    .handler_name = handler_name,
+                    .handler_name = try mangleHandlerName(allocator, handler_name),
                     .module_path = null,
                 };
                 count += 1;
@@ -2130,7 +2130,7 @@ fn collectCommands(allocator: std.mem.Allocator, source_file: *ast.Program) !str
 
                         commands[count] = .{
                             .name = cli,
-                            .handler_name = handler_name,
+                            .handler_name = try mangleHandlerName(allocator, handler_name),
                             .module_path = module.logical_name,
                         };
                         count += 1;
@@ -3097,6 +3097,21 @@ fn lowerKebabIdent(buf: []u8, name: []const u8) []const u8 {
         if (c.* == '-') c.* = '_';
     }
     return buf[0..name.len];
+}
+
+/// Mangle a command handler's event name for Zig: kebab `-` → `_`. The module
+/// emitter writes `pub const publish_npm_event` for an event named `publish-npm`
+/// (mangled), while the command dispatcher's generated `{s}_event.handler` used
+/// the raw `joinPathSegments` spelling — a kebab-named `[comptime|command]`
+/// crossed a module boundary and the two drifted, emitting `publish-npm_event`
+/// (invalid, undeclared) against the module's `publish_npm_event`. One mangle to
+/// match the emitter, not a second spelling. (Same class as writeBranchName.)
+fn mangleHandlerName(allocator: std.mem.Allocator, handler_name: []const u8) ![]const u8 {
+    var result = try std.ArrayList(u8).initCapacity(allocator, handler_name.len);
+    for (handler_name) |c| {
+        try result.append(allocator, if (c == '-') '_' else c);
+    }
+    return result.toOwnedSlice(allocator);
 }
 
 fn joinPathSegments(allocator: std.mem.Allocator, segments: []const []const u8) ![]const u8 {
@@ -7853,7 +7868,17 @@ pub fn main() !void {
 
     // If there are user-defined build steps, execute them (including any defaults they depend on)
     // Default-only steps don't auto-execute - they're just available for override
-    if (build_steps.len > 0 and collection.has_user_defined) {
+    //
+    // A DETECTED COMPTIME COMMAND must not be hijacked here EXCEPT `ci`. The step
+    // graph self-executes on a plain build; `ci` is the shared vocabulary verb for
+    // "run the whole graph" — a portable CI entry from a koru/github or koru/vercel
+    // pipeline, and an ideal separator. Without this guard, declaring steps in the
+    // same program as any other command made the frontend run the steps and return
+    // before the command dispatcher saw the verb. `ci` is special-cased to drive
+    // the graph here; every other command still dispatches to its backend handler.
+    const drives_step_graph = detected_comptime_command == null or
+        std.mem.eql(u8, detected_comptime_command.?, "ci");
+    if (build_steps.len > 0 and collection.has_user_defined and drives_step_graph) {
         try executeBuildSteps(allocator, build_steps, output_dir);
         // Build steps handled everything, we're done!
         return;

@@ -1,0 +1,44 @@
+// Pins: two compiler fixes in the command-dispatch surface.
+//
+// 1. A [comptime|command] event whose name is kebab (`publish-npm`) must emit a
+//    VALID Zig handler symbol. The module emitter mangles kebab -> underscore
+//    (`publish_npm_event`), but the command dispatcher's generated
+//    `{s}_event.handler` used the raw spelling and emitted `publish-npm_event` —
+//    an undeclared identifier. A kebab-named command crossing a module boundary
+//    was the case that surfaced it.
+//
+// 2. `ci` is a shared frontend verb: it drives the std/build:step graph the
+//    program declares, in depends_on (topological) order, even when the program
+//    also declares other commands. Declaring steps used to hijack the whole
+//    build and return before the command dispatcher ran, so `ci` was a no-op.
+
+~import std/build
+~import std/compiler
+
+const std = @import("std");
+
+~std/compiler:command.declare {
+  "name": "publish-npm",
+  "alias": "publish",
+  "description": "A kebab-named comptime command"
+}
+
+~[comptime|command]pub tor publish-npm {
+    program: *const Program,
+    allocator: std.mem.Allocator,
+    argv: []const []const u8,
+}
+
+~proc publish-npm|zig {
+    const S = @import("std");
+    S.debug.print("kebab command ran\n", .{});
+}
+
+// The shared step vocabulary: declare release first, but it depends_on build.
+// `ci` must still run build first (topological), and run both.
+~[depends_on(build)]std/build:step(name: "release") {
+    echo "release step"
+}
+~std/build:step(name: "build") {
+    echo "build step"
+}
