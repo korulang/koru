@@ -24,7 +24,7 @@ const std = @import("std");
 ~tor emit-transition {
     source: string,
     branch: string,
-    destination: ?[]const u8,
+    destination: ?string,
     timestamp_ns: i128,
 }
 

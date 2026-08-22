@@ -168,7 +168,7 @@ pub const Bridge = struct {
 | exhausted { used: u64, last_event: string, handles: u32 }
 | parse-error { message: string, line: u32, column: u32 }
 | validation-error string
-| shape-error { branch: string, field: ?[]const u8, message: string }
+| shape-error { branch: string, field: ?string, message: string }
 | event-denied string
 | dispatch-error { event_name: string, message: string }
 | scope-not-found string

@@ -7,7 +7,7 @@
 
 const std = @import("std");
 
-~pub tor handle { method: string, path: string } -> { status: u16, body: []const u8 }
+~pub tor handle { method: string, path: string } -> { status: u16, body: string }
 
 ~proc handle|zig {
     if (std.mem.eql(u8, method, "GET")) {

@@ -739,7 +739,7 @@ pub const CompilerContext = struct {
 //   [comptime|command]pub event install {
 //       program: *const Program,
 //       allocator: std.mem.Allocator,
-//       argv: []const []const u8,
+//       argv: []string,
 //   }
 //
 //   proc install {
@@ -1814,7 +1814,7 @@ const emitFlowWithMocks = struct {
 }.call;
 
 // Emission segment: Final code generation (abstract, can be overridden)
-~[comptime|abstract] pub tor emission { ctx: CompilerContext } -> { ctx: CompilerContext, code: []const u8 }
+~[comptime|abstract] pub tor emission { ctx: CompilerContext } -> { ctx: CompilerContext, code: string }
 
 ~emission = inject-ccp(ctx): c1 |> pass-dead-strip(ctx: c1): c2 |> emit-zig(ctx: c2): c3 -> { ctx: c3.ctx, code: c3.code }
 
@@ -1825,7 +1825,7 @@ const emitFlowWithMocks = struct {
 | failed string
 
 // Zig code emission event - the final step of compilation!
-~pub tor emit-zig { ctx: CompilerContext } -> { ctx: CompilerContext, code: []const u8 }
+~pub tor emit-zig { ctx: CompilerContext } -> { ctx: CompilerContext, code: string }
 
 // Comptime evaluation pass - executes events with Program/Source parameters
 ~pub tor evaluate-comptime { ctx: CompilerContext } -> CompilerContext

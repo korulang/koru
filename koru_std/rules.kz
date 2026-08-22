@@ -186,7 +186,7 @@ fn printJson(v: []const u8) void {
 ~[comptime|command]pub tor claims {
     program: *const Program,
     allocator: __koru_std.mem.Allocator,
-    argv: []const []const u8,
+    argv: []string,
 }
 
 ~proc claims|zig {
@@ -310,7 +310,7 @@ fn printJson(v: []const u8) void {
 ~[comptime|command]pub tor assumes {
     program: *const Program,
     allocator: __koru_std.mem.Allocator,
-    argv: []const []const u8,
+    argv: []string,
 }
 
 ~proc assumes|zig {

@@ -397,6 +397,35 @@ const ReturnArrowSplit = struct {
 /// by the time this runs the cursor has already advanced past the declaration,
 /// so deriving a location from `self.current` here blames the line after the
 /// one at fault — which on a file ending in the declaration is past EOF.
+/// Does this Koru surface type text contain the raw Zig byte slice anywhere?
+/// The rule is CONTAINMENT, not equality: `?[]const u8`, `[][]const u8`,
+/// `[]const []const u8`, `*[]const u8` and `Handle<[]const u8>` are all host
+/// syntax reaching the surface, and an equality wall let every one of them
+/// walk past (510_108: "a wall matched by spelling is not a wall; it is a
+/// spell-checker"). Quote-aware so a string-literal default value is data,
+/// never a trigger.
+fn surfaceTypeContainsRawByteSlice(text: []const u8) bool {
+    var i: usize = 0;
+    var in_string = false;
+    while (i < text.len) : (i += 1) {
+        const c = text[i];
+        if (in_string) {
+            if (c == '\\' and i + 1 < text.len) {
+                i += 1;
+            } else if (c == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (c == '"') {
+            in_string = true;
+            continue;
+        }
+        if (std.mem.startsWith(u8, text[i..], "[]const u8")) return true;
+    }
+    return false;
+}
+
 fn splitTrailingReturnArrow(self: *Parser, s: []const u8, decl_line: usize) !ReturnArrowSplit {
     var depth: i32 = 0;
     var in_string = false;
@@ -480,7 +509,7 @@ fn splitTrailingReturnArrow(self: *Parser, s: []const u8, decl_line: usize) !Ret
     // `[]const u8` is not a Koru surface type in a return position either — the
     // same wall as payloads, on the phantom-stripped base. `string` is the
     // canonical text type; the slice is only the Zig lowering.
-    if (std.mem.eql(u8, rt, "[]const u8")) {
+    if (surfaceTypeContainsRawByteSlice(rt)) {
         try self.reporter.addError(
             .PARSE003,
             decl_line,
@@ -10228,7 +10257,7 @@ var produce_tail: ?[]const u8 = null;
             // (parseShape), on the phantom-stripped BASE. Reject the raw Zig
             // slice; `string` is KEPT in the AST as the surface type and
             // lowered to []const u8 only at the Zig emission boundary.
-            if (std.mem.eql(u8, type_str, "[]const u8")) {
+            if (surfaceTypeContainsRawByteSlice(type_str)) {
                 try self.reporter.addError(
                     .PARSE003,
                     self.current,
@@ -10739,7 +10768,7 @@ var produce_tail: ?[]const u8 = null;
             // type — it survives the whole pipeline (printer/round-trip stay
             // faithful) and is lowered to []const u8 only at the Zig emission
             // boundary. Holds in .k AND .kz.
-            if (std.mem.eql(u8, field_type, "[]const u8")) {
+            if (surfaceTypeContainsRawByteSlice(field_type)) {
                 try self.reporter.addError(
                     .PARSE003,
                     self.current + 1,

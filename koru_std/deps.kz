@@ -41,7 +41,7 @@
 ~[comptime|command]pub tor deps {
     program: *const Program,
     allocator: __koru_std.mem.Allocator,
-    argv: []const []const u8,
+    argv: []string,
 }
 
 ~proc deps|zig {

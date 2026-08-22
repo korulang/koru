@@ -35,8 +35,8 @@ This keeps the token stream clean for the parser.
 - whitespace(skip)
 ] tor token {}
 | number u64[\d+]
-| string []const u8["[^"]*"]
-| identifier []const u8[[a-zA-Z_][a-zA-Z0-9_]*]
+| string string["[^"]*"]
+| identifier string[[a-zA-Z_][a-zA-Z0-9_]*]
 | lparen void[(]
 | rparen void[)]
 | plus void[+]

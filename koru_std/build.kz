@@ -377,7 +377,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //           | failed e |> std/io:println("Tests failed: " ++ e)
 //       | failed e |> std/io:println("Lint failed: " ++ e)
 
-~[comptime|norun]pub tor command { name: string, description: string } -> [][]const u8
+~[comptime|norun]pub tor command { name: string, description: string } -> []string
 
 // ============================================================================
 // BUILD STEPS - Declarative Build Pipeline with Dependencies

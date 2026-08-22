@@ -2499,14 +2499,14 @@ fn wireLineColumn(s: []const u8, byte: usize) struct { line: u32, column: u32 } 
     handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool = null,
     fail_fast: bool = true,
     auto_discharge: bool = true,
-    shape: ?[]const u8 = null,
+    shape: ?string = null,
     defined: ?*@import("root").koru_std.koru_interpreter.DefinedFlows = null
 }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: string, handles: u32 }
 | parse-error { message: string, line: u32, column: u32 }
 | validation-error string
-| shape-error { branch: string, field: ?[]const u8, message: string }
+| shape-error { branch: string, field: ?string, message: string }
 | event-denied string
 | dispatch-error { event_name: string, message: string }
 | scope-not-found string
@@ -2622,13 +2622,13 @@ fn wireLineColumn(s: []const u8, byte: usize) struct { line: u32, column: u32 } 
     handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool = null,
     fail_fast: bool = true,
     auto_discharge: bool = true,
-    shape: ?[]const u8 = null
+    shape: ?string = null
 }
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: string, handles: u32 }
 | parse-error { message: string, line: u32, column: u32 }
 | validation-error string
-| shape-error { branch: string, field: ?[]const u8, message: string }
+| shape-error { branch: string, field: ?string, message: string }
 | event-denied string
 | dispatch-error { event_name: string, message: string }
 | scope-not-found string

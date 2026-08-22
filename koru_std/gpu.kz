@@ -14,7 +14,7 @@ const std = @import("std");
 ~pub tor compile.target {
     target_name: string,
     body: string,
-    path: []const []const u8,
+    path: []string,
 }
 | compiled {
     code: string,
@@ -194,7 +194,7 @@ fn generateWrapper(
     allocator: std.mem.Allocator,
     shader_name: []const u8,
     glsl_code: []const u8,
-    path: []const []const u8,
+    path: []string,
 ) ![]const u8 {
     _ = path; // TODO: Use for better error messages
 

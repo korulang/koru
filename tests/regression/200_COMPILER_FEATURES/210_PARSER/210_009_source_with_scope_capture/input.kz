@@ -9,7 +9,7 @@
 ~import std/io
 
 // Event that provides user data
-~tor getUserData { } -> { name: []const u8, age: i32 }
+~tor getUserData { } -> { name: string, age: i32 }
 
 ~proc getUserData|zig {
     return .{ .name = "Alice", .age = 42 };

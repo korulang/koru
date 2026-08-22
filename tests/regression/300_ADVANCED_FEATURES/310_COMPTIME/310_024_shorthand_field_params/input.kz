@@ -6,7 +6,7 @@ const std = @import("std");
 ~tor process {
     source: string,
     branch: string,
-    destination: ?[]const u8,
+    destination: ?string,
 }
 
 ~proc process|zig {

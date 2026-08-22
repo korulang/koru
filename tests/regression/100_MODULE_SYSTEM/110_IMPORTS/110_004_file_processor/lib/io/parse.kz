@@ -2,10 +2,10 @@
 
 const std = @import("std");
 
-~pub tor lines { text: string } -> [][]const u8
+~pub tor lines { text: string } -> []string
 
 ~proc lines|zig {
     std.debug.print("parse lines ({} chars)\n", .{text.len});
-    const empty: [][]const u8 = &.{};
+    const empty: []string = &.{};
     return .{ .@"parsed" = empty };
 }

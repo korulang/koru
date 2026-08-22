@@ -183,7 +183,7 @@
                 "fields": [
                     {
                         "name": "data",
-                        "type": "?[]const u8",
+                        "type": "?string",
                         "is_source": false,
                         "is_file": false,
                         "is_embed_file": false,

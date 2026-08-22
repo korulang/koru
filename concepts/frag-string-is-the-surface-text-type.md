@@ -76,3 +76,28 @@ deliberate ruling — it must not ride in for free under a rename.
 as registry-checked, not host strings) for where this sits in the larger type
 story. Pins: 020_060 (payload positive), 510_105 (payload reject), 510_104
 (return reject).
+
+
+---
+
+**Evolved 2026-08-22 (containment cascade).** The rejection half of the ruling
+was a spell-checker: three `std.mem.eql(t, "[]const u8")` sites let every
+spelling that merely CONTAINS the slice walk past — `[][]const u8`,
+`?[]const u8`, `*[]const u8`, `Handle<[]const u8>` compiled clean to a binary
+(510_108 held this gap open, deferred 2026-07-25 to "the wider sweep"). The
+sweep ran: the wall is now quote-aware **containment** — if the raw slice
+appears anywhere in a surface type text, in any position (return, inline
+payload, braced payload field), PARSE003 fires. Corollary the equality wall
+could never express: **`string` composes.** A slice of text is spelled
+`[]string`, an optional text `?string`, and both are first-class surface types,
+not escape hatches back into host spelling.
+
+Lowering followed the composition: `lowerZigType`, `writeFieldType`, and
+`writeBareReturnType` now recurse through `?`/`[]`/`[]const ` prefixes and lower
+the base at every depth — `[]string` emits `[]const []const u8`. The emitted
+slice levels are **const**: text is immutable, and the host command ABI hands
+`argv` over as `[]const []const u8`, so a mutable element type there is a
+compile error in the dispatcher. Pins: 510_104-107 stay green, 510_108 flipped
+green, and the corpus migrated (~20 stdlib surface positions, ~12 fixtures);
+210_008's expected.json records that AST JSON embeds resolved stdlib type text,
+so a surface spelling change is visible in pinned ASTs.

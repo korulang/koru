@@ -1,7 +1,7 @@
 const std = @import("std");
 ~tor hello {}
 ~tor goodbye {}
-~[comptime|runtime] tor logger { source: string, branch: string, destination: ?[]const u8 }
+~[comptime|runtime] tor logger { source: string, branch: string, destination: ?string }
 ~proc hello|zig {
     std.debug.print("Hello executed\n", .{});
 }

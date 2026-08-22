@@ -233,7 +233,7 @@ fn ioLowerJsExpr(alloc: std.mem.Allocator, text: []const u8) []const u8 {
 }
 
 // Get command line arguments
-~pub tor args {} -> []const []const u8
+~pub tor args {} -> []string
 
 ~proc args|zig {
     var arg_list = std.ArrayList([]const u8).init(koru_allocator());

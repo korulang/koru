@@ -103,7 +103,7 @@ const std = @import("std");
 ~[comptime|command]pub tor generate {
     program: *const Program,
     allocator: __koru_std.mem.Allocator,
-    argv: []const []const u8,
+    argv: []string,
 }
 
 ~[transform]proc grammar|zig {

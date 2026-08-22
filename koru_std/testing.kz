@@ -938,7 +938,7 @@ const emitFlowWithMocks = struct {
 }
 
 // Simple fail - fails the test with optional message
-~[keyword] pub tor assert.fail { message: ?[]const u8 }
+~[keyword] pub tor assert.fail { message: ?string }
 
 ~[pure] proc assert.fail|zig {
     const msg = message orelse "Assertion failed";

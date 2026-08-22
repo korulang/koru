@@ -57,7 +57,7 @@
         // instantiation moves into the gate. No pin shows `create` anywhere
         // but column 0, because no existing pin gates instantiation on
         // anything. This is new ground, not a read precedent. See GAPS #1.
-        ~std/store:create(users) { id: i64, name: []const u8, email: []const u8 }
+        ~std/store:create(users) { id: i64, name: string, email: string }
 
         // INVENTED, the central hot spot: storage-backend arms. Attached in
         // the exact trailing position `create`'s interceptors use — GROUNDED
