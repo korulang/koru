@@ -790,7 +790,7 @@ import std/io
 
 const Pos = struct { x: i64, y: i64 };
 
-pub tor locate {} -> { pos: Pos, label: []const u8 }
+pub tor locate {} -> { pos: Pos, label: string }
 
 proc locate|zig { return .{ .pos = .{ .x = 3, .y = 7 }, .label = "home" }; }
 
