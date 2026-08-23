@@ -218,6 +218,18 @@ fourth dissolution of the day, and the cleanest:
   retired 2026-08-23 (all six deleted; per-pin reasons in the retirement
   commit). The three boundary laws live HERE and replant against the first real
   acquisition boundary — likely list-of-proto persistence.
+- **Cutover executed (2026-08-23, same day)**: all four mint verbs (`struct`,
+  `type`, `enum`, `union`) are removed from koru_std/types.kz; 24 consumer
+  tests retired across the 030/340/115 clusters — sixteen green museum pieces
+  plus eight honest-reds — with zero green→red flips among survivors (four
+  failures in the verification run all pre-date the cut). Doctrines that rode
+  dead vehicles and now replant on proto entries: registry-backed nominal
+  distinctness (was 030_132/133, 340_006), field reflection over real schemas
+  (`fields-of` survives; was exercised via 340_012/013 mints). std/types holds
+  only fields-of + nominal primitives and deliberately declares NO composite
+  type until proto lands with list as its first consumer. Known residue: the
+  stamped-name quoting in emitter_helpers.zig is unreachable until proto's
+  derived names need it again.
 
 Falsification conditions carry forward unchanged, plus one: a program that
 cannot agree on a composite across sites without a named entry confirms proto;
