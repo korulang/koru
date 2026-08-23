@@ -260,6 +260,24 @@ pub const AutoDischargeInserter = struct {
         return false;
     }
 
+    /// Does a bare-return produce expression reference `binding`? Textual and
+    /// identifier-bounded (word boundaries on both sides, so `r` matches `r`
+    /// and `@\"r\"`-free spellings but not `ref`), mirroring the tolerance of
+    /// bindingEscapesViaBranchConstructor: an escape credit only suppresses an
+    /// insertion here; the phantom checker still owns the real linearity wall.
+    fn expressionReferences(expr: []const u8, binding: []const u8) bool {
+        if (binding.len == 0 or expr.len < binding.len) return false;
+        var i: usize = 0;
+        while (i + binding.len <= expr.len) : (i += 1) {
+            if (!std.mem.eql(u8, expr[i .. i + binding.len], binding)) continue;
+            const before_ok = i == 0 or !(std.ascii.isAlphanumeric(expr[i - 1]) or expr[i - 1] == '_');
+            const j = i + binding.len;
+            const after_ok = j == expr.len or !(std.ascii.isAlphanumeric(expr[j]) or expr[j] == '_');
+            if (before_ok and after_ok) return true;
+        }
+        return false;
+    }
+
     /// Check if a binding escapes via a branch constructor field
     /// Returns true if the binding (or binding.field) appears in any field value
     fn bindingEscapesViaBranchConstructor(bc: *const ast.BranchConstructor, binding_name: []const u8) bool {
@@ -2070,6 +2088,49 @@ pub const AutoDischargeInserter = struct {
                 false;
 
             if (!has_explicit_terminator and context.hasObligations() and !context.in_sequential_prefix) {
+                // A bare-return PRODUCE (`-> expr` under a subflow impl whose
+                // event declares `-> T`) is an ESCAPE, not a discard-terminus:
+                // the produced value crosses to the CALLER carrying its
+                // obligation (linear transfer — the caller's consuming site or
+                // the caller's own discharge settles it). The branch-constructor
+                // twin of this credit lives in the explicit-terminator path
+                // (bindingEscapesViaBranchConstructor); without the expression
+                // twin, every transfer-through-bare-return impl got a disposal
+                // appended AFTER its `return r;` — unreachable code naming an
+                // undeclared result (330_076/330_085). Credit the bindings the
+                // expression references, then let the normal gates decide.
+                if (cont.node) |pnode| {
+                    if (pnode == .expression and flow.impl_of != null) {
+                        const impl_decl = blk: {
+                            const impl_path = flow.impl_of.?;
+                            const impl_name = try self.pathToString(impl_path);
+                            defer self.allocator.free(impl_name);
+                            const iq = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ flow.module, impl_name });
+                            defer self.allocator.free(iq);
+                            break :blk self.event_map.get(iq);
+                        };
+                        if (impl_decl != null and impl_decl.?.decl.return_type != null) {
+                            const expr = pnode.expression;
+                            var escape_bindings: [16][]const u8 = undefined;
+                            var escape_count: usize = 0;
+                            var esc_iter = context.obligations();
+                            while (esc_iter.next()) |entry| {
+                                if (expressionReferences(expr, entry.key_ptr.*)) {
+                                    if (escape_count < 16) {
+                                        escape_bindings[escape_count] = entry.key_ptr.*;
+                                        escape_count += 1;
+                                    }
+                                }
+                            }
+                            for (escape_bindings[0..escape_count]) |binding| {
+                                _ = context.cleanup_obligations.remove(binding);
+                            }
+                        }
+                    }
+                }
+                if (!context.hasObligations()) {
+                    return .{ .transformed = false, .program = program };
+                }
                 // (Sequential-prefix steps are not flow exits — the flow continues
                 // into the next sibling, which discharges the obligation. See
                 // in_sequential_prefix. This is the spot that previously injected a
