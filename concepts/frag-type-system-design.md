@@ -214,10 +214,10 @@ fourth dissolution of the day, and the cleanest:
   (generation handles, resources outside, validity checked never owned) is
   the precedent. This knocked three times today; it is the first design day
   when composites enter collections.
-- **Pin disposition**: the 696_INSTANCE pins test the dissolved verb and get
-  retired/parked with reasons; the three boundary laws live HERE and replant
-  against the first real acquisition boundary — likely list-of-proto
-  persistence.
+- **Pin disposition**: the 696_INSTANCE pins tested the dissolved verb and were
+  retired 2026-08-23 (all six deleted; per-pin reasons in the retirement
+  commit). The three boundary laws live HERE and replant against the first real
+  acquisition boundary — likely list-of-proto persistence.
 
 Falsification conditions carry forward unchanged, plus one: a program that
 cannot agree on a composite across sites without a named entry confirms proto;
