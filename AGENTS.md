@@ -13,6 +13,23 @@
 - Before writing nontrivial Koru, inspect a passing regression test with the same shape.
 - If no passing example exists for the syntax shape, say so and add or request a minimal repro instead of inventing syntax.
 
+## A header comment is not a live blocker
+Package and test headers (`draw_per_entity.k`, `bounce.k`, `boids.k`, …) record a measurement **at write time**. They do not update when a cited pin goes green. `690_252` SUCCESS does not mean every comment that named `690_252` is still true.
+
+Before you spend a session on a “gap,” compile the join **in this session**. Three claims, pick one, first sentence:
+
+- **blocker** — you compiled it; it refused (quote the diagnostic).
+- **not a blocker** — you compiled it, or a passing test *is* that join.
+- **unmeasured** — you have not compiled it this session. Stop talking.
+
+Do not weld pins + stale comments + “when it goes green” into a wall Lars cannot parse.
+
+**Stores vs grids.** `std/store` has capacity, `insert`, and `take`. A grid cannot add or remove a row. Entities that come and go belong in a store. Do not invent a fixed pool of dead slots, dummy writes, or a “conditional store” hole to occupy cells. That is a grid limitation narrated as a language gap.
+
+**Watch is not query.** `std/store(name) ! field` is a standing watch: body transplanted to write sites; no ambient from the enclosing flow (`690_006`). `std/store:query(name)` / `stripe` is a chain step. A query body can take a **borrow**: bare `<state>` on a parameter (`f: *Frame<frame>`). Draw already takes that. Issue is `<state!>`, consume is `<!state>`. If the compiler drops the phantom on the qbody input, that is a defect to compile and fix in `src/` — not a reason to put the game on a grid.
+
+**Answer the question.** “Do you understand X?” is yes or no. Do not look X up and lecture the spelling. Lead with a sentence that parses. Archaeology after, or not at all.
+
 ## Find It Before You Build It
 - Before building a check, a wall, a helper, or a shared surface, **find out whether it already exists.** This is a precondition on every task, not a step in one.
 - **A forgotten mechanism is indistinguishable from an absent one until someone counts** — and the count comes back describing a catastrophe the mechanism has been silently preventing. The negative-test corpus was measured as 75% rotten, twice, before the wall holding it at 223/227 was found at `regression_lib.sh:608`.

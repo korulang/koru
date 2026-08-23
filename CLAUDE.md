@@ -18,6 +18,16 @@ What's legal and what's rejected lives in the suite, not in prose. A `MUST_ERROR
 test with its `expected_error` pins both the refused program and the diagnostic
 refusing it. When this file and the compiler disagree, the compiler wins.
 
+A **file header that cites a pin** is not the suite. It is a comment. Compile the
+program it describes before calling that program impossible. `SUCCESS` on the
+cited test does not refresh the comment.
+
+Three first-sentence states: **blocker** (compiled, refused), **not a blocker**
+(compiled or a passing test *is* the join), **unmeasured** (not compiled this
+session — stop narrating). Inventing a grid-slot / “conditional store” workaround
+because a comment said a store query cannot take a frame borrow is the consumer
+reroute this file already bans — and it is worse when you never even compiled.
+
 - **`koru-by-example.md`** — curated tour of real tests, verbatim source.
 - **`tests/regression/`** — the full suite.
 
