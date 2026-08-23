@@ -1,0 +1,7 @@
+name: board-move
+kind: measured
+shape: categorical
+face: in
+membrane: false
+note: the regression board moved without a behavior change — pins retired, parked, or re-homed as fossils; coverage claims must accompany it
+route: surface
