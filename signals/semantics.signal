@@ -1,0 +1,6 @@
+name: semantics
+kind: installed
+shape: categorical
+face: in
+membrane: true
+note: obligation termini classify three ways — discharged, dropped, escaped; bare-return produces are escapes (330_076/330_085 repair), and every insert-or-not pass must enumerate all three
