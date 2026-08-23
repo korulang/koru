@@ -164,3 +164,61 @@ program that cannot be expressed honestly without a user-minted layout, a
 borrow slot at instantiation, or a named shape alias reopens the corresponding
 door. Go spent a decade resisting generics without a written reopening
 criterion; we did not repeat that.
+---
+
+## The walk closes: instance dissolves; proto returns as pure NAMING (2026-08-23, late)
+
+The same session audited its own instance law and it did not survive — the
+fourth dissolution of the day, and the cleanest:
+
+- **`instance` failed its own semantics.** Every consumption of an instance is
+  field access inside a flow; the clause is a record literal whose entire body
+  is "evaluate these expressions and put their results next to each other."
+  Ordinary calling already does that. Composition mints presence, not bytes —
+  and presence needs no verb. The construct ate itself. Doctrine confirmed
+  four times over (struct, switch, mem:new, instance): proposals keep
+  dissolving until only operations remain.
+- **What survives is boundary law, not machinery**: storage duration must not
+  exceed permission duration (borrows lend bodies, obligations rent
+  indefinitely); slots accept any tor satisfying the bang-signature (states
+  cannot be forged); partial presence is nonexistence. These attach to ANY
+  persistence boundary and need no construct.
+- **The heap conclusion stands**: growth is the ONE legitimate allocation
+  trigger, and std/list already contains it correctly — allocator inside the
+  handle, `<list!>`/`<list>`/`<!list>` states. The heap remains where acquired
+  things live.
+- **The lawful reopening of the named-shape door**: containers push element
+  identity into signatures AND into monomorphized/generated names
+  (`List_<element>`, `new-<element>`). Anonymous shapes do not survive that
+  trip — re-spelling drifts across sites into silently-different list types,
+  inline expressions mangle into unspeakable identifiers (the interpreter.kz
+  alias war story, recurring), obligation nesting becomes unspeakable in
+  return position. Names exist when a second party must find the thing; with
+  containers, the compiler itself is the second party. The held-shut door was
+  knocked on by rule, not by taste.
+- **The landing — `std/types` as the registry front door**:
+  `~std/types:proto(name) { fields }` declares layout-SILENT entries. The
+  name `struct` stays dead deliberately: it asserts physical field-stacking,
+  which SoA store rows contradict — layout belongs to projections, never to
+  identity. Module-qualified resolution through expression paths
+  (`std/list:new(app/car:garage)`); the file-domain/module-domain pitfall
+  (115_018 family) is known territory. **Name the ELEMENT, derive the
+  container** — `*List<garage><list!>` — never hand-name container×shape
+  pairs (`EngineList` conflates record with table). Inline-named shapes at
+  first use may arrive later as sugar registering into the enclosing module's
+  namespace. Sequencing: list consumes protos first; store adopts references
+  after (its apply-synthesis gains an entry-resolution step); packed or
+  parameterized variants are parked AT the traits border, demand-marker only.
+- **Genuine gap ranked next**: the storage-references ruling — receipts inside
+  storage have no binder for the checker to police. Store's answer
+  (generation handles, resources outside, validity checked never owned) is
+  the precedent. This knocked three times today; it is the first design day
+  when composites enter collections.
+- **Pin disposition**: the 696_INSTANCE pins test the dissolved verb and get
+  retired/parked with reasons; the three boundary laws live HERE and replant
+  against the first real acquisition boundary — likely list-of-proto
+  persistence.
+
+Falsification conditions carry forward unchanged, plus one: a program that
+cannot agree on a composite across sites without a named entry confirms proto;
+a program satisfied by inline shapes everywhere dissolves it again.
