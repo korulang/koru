@@ -349,9 +349,9 @@ pub const TypeRegistry = struct {
                 // Declared-type registration (rung 1 of the type registry): a
                 // flow invoking a std/types declaration tor (`struct`, nominal
                 // wrappers) declares a type under its first argument's name.
-                // Stamped identities (`box#i64`) ARE the name — the entry is the
-                // identity. Same bare-`struct` keyword form is a null qualifier;
-                // both register.
+                // Stamped identities (`box#i64`) ARE the name — the entry is
+                // the identity. Same bare-`struct` keyword form is a null
+                // qualifier; both register.
                 const inv = flow.inv();
                 const mq = inv.path.module_qualifier;
                 const types_tor = if (mq) |mqv|
@@ -365,11 +365,25 @@ pub const TypeRegistry = struct {
                         std.mem.eql(u8, last_seg, "int") or
                         std.mem.eql(u8, last_seg, "float") or
                         std.mem.eql(u8, last_seg, "bool");
-                    if (is_decl_tor and inv.args.len > 0) {
+                    // PROTO rung: `std/types:proto(Name)` is the declared-type
+                    // front door; the container name it derives (`List_<Name>`)
+                    // is registered alongside, so the identity set the
+                    // nominal-distinctness gate consults covers both the entry
+                    // and the containers built over it. Idempotent on the
+                    // registry side — the LOUD collision is the checker's scan
+                    // (it can cite both registrants); this scan only feeds the
+                    // identity test.
+                    const is_proto = std.mem.eql(u8, last_seg, "proto");
+                    if ((is_decl_tor or is_proto) and inv.args.len > 0) {
                         var name = inv.args[0].value;
                         if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"')
                             name = name[1 .. name.len - 1];
                         if (name.len > 0) try self.registerDeclaredType(name);
+                        if (is_proto and name.len > 0) {
+                            const container = try std.fmt.allocPrint(self.allocator, "List_{s}", .{name});
+                            defer self.allocator.free(container);
+                            try self.registerDeclaredType(container);
+                        }
                     }
                 }
             },
