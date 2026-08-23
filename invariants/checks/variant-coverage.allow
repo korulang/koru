@@ -15,7 +15,6 @@
 # code that ships with zero executions behind it.
 
 # --- Not emitted Zig code: markers the scan cannot see by construction ---
-types.kz       | __GENERIC__                       | comment-carried marker (`// __GENERIC__:Name<Params>:Body`, parsed later by ~type); the bare-code scan strips comments by design. Raw grep 2026-07-31: zero artifacts carry it even as a comment, so the generic-definition path is also corpus-unwitnessed — but this check can never say so
 runtime.kz     | __KORU_RUNTIME_REGISTRY_HELPERS__ | comment-carried dedup sentinel (runtime.kz:731 emits it as `// marker`); raw grep 2026-07-31 finds it in 3 artifacts, always inside a comment the scan strips
 fmt.kz         | __KORU_INLINE__                   | label placeholder, substituted with a unique per-site label by src/emitter_helpers.zig:4438 before anything is written; it can never reach an artifact verbatim
 kernel.kz      | __koru_self_elem_{}               | substitution sentinel, never emitted even on a successful run: kernel.kz:1944-1955 replaces every occurrence with __koru_kernel_ptr_<hash>[i] before the loop is printed, and the emit at 2001-2018 interpolates only ptr_name, binding_name and the already-inlined body. Same class as __KORU_INLINE__ above. Its only writer is the standalone kernel:self transform, which today panics before it is even reached (pinned red by 390_056) — but a FIXED transform could not emit this name either, which is why this is an exemption and __koru_kernel_ptr_{} is not
