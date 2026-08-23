@@ -89,7 +89,9 @@ pub const List_i64 = struct {
     const routed_name = if (is_proto_elem) blk: {
         if (!hasRewrittenNew(program, proto_name.?)) {
             appended_items = synthesizeContainer(allocator, program, flow, proto_name.?, elem);
-            std.debug.print("[new] appended={d} elem={s}\n", .{@as(usize, appended_items.len), elem});
+        }
+        if (appended_items.len == 0) {
+            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/list:new({s}): container synthesis produced no units — the proto entry was not found or has no parseable fields", .{elem}) };
         }
         break :blk proto_name.?;
     } else elem;
@@ -98,9 +100,14 @@ pub const List_i64 = struct {
     const new_segments = allocator.alloc([]const u8, 1) catch unreachable;
     new_segments[0] = seg;
 
+    // The rewrite must address the CALLER's module (post-canonicalization
+    // assigns no qualifiers — appended items never get canonicalized, so the
+    // path must be spelled from the start). flow.module is the entry/module
+    // file-derived name = the canonical module for the entry file; the slice
+    // rung pins the caller-in-entry-file case.
     const new_inv = ast.Invocation{
         .path = ast.DottedPath{
-            .module_qualifier = null,
+            .module_qualifier = allocator.dupe(u8, flow.module) catch unreachable,
             .segments = new_segments,
         },
         .args = &[_]ast.Arg{},
@@ -385,6 +392,75 @@ fn protoFieldsOf(alloc: std.mem.Allocator, decl: *const astz.Flow) ProtoFields {
     return .{ .names = names[0..w], .types = types[0..w] };
 }
 
+/// The fields of a proto entry, from whichever representation the walker's
+/// fixed point has left: the declaration flow (pre-self-erase) or the erased
+/// `// proto Name: fields` comment. `elem` may be module-qualified.
+fn protoFieldsOfProgram(alloc: std.mem.Allocator, prog: *const astz.Program, elem: []const u8) ProtoFields {
+    if (findProtoDecl(prog, elem)) |decl| {
+        return protoFieldsOf(alloc, decl);
+    }
+    const trimmed = std.mem.trim(u8, elem, " \t");
+    const want_name = if (std.mem.lastIndexOfScalar(u8, trimmed, ':')) |ci|
+        std.mem.trim(u8, trimmed[ci + 1 ..], " \t")
+    else
+        trimmed;
+    const N = struct {
+        fn find(items: []const astz.Item, name: []const u8, out: *?[]const u8) bool {
+            for (items) |pi| {
+                switch (pi) {
+                    .inline_code => |ic| {
+                        const c = ic.code;
+                        const prefix = "// proto ";
+                        if (std.mem.startsWith(u8, c, prefix)) {
+                            if (std.mem.indexOfScalar(u8, c, ':')) |colon| {
+                                if (std.mem.eql(u8, std.mem.trim(u8, c[prefix.len..colon], " \t"), name)) {
+                                    out.* = c[colon + 1 ..];
+                                    return true;
+                                }
+                            }
+                        }
+                    },
+                    .module_decl => |*m| {
+                        if (find(m.items, name, out)) return true;
+                    },
+                    else => {},
+                }
+            }
+            return false;
+        }
+    };
+    var rest: ?[]const u8 = null;
+    _ = N.find(prog.items, want_name, &rest);
+    const text = rest orelse return .{ .names = &.{}, .types = &.{} };
+    // Parse the trailing fields text like a proto body source.
+    var count: usize = 0;
+    var lines1 = std.mem.splitScalar(u8, text, '\n');
+    while (lines1.next()) |line_raw| {
+        const line = std.mem.trim(u8, line_raw, " \t\r,");
+        if (line.len == 0) continue;
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+        const fname = std.mem.trim(u8, line[0..colon], " \t");
+        const ftype = std.mem.trim(u8, line[colon + 1 ..], " \t,");
+        if (fname.len > 0 and ftype.len > 0) count += 1;
+    }
+    const names = alloc.alloc([]const u8, count) catch unreachable;
+    const types = alloc.alloc([]const u8, count) catch unreachable;
+    var w: usize = 0;
+    var lines2 = std.mem.splitScalar(u8, text, '\n');
+    while (lines2.next()) |line_raw| {
+        const line = std.mem.trim(u8, line_raw, " \t\r,");
+        if (line.len == 0) continue;
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+        const fname = std.mem.trim(u8, line[0..colon], " \t");
+        const ftype = std.mem.trim(u8, line[colon + 1 ..], " \t,");
+        if (fname.len == 0 or ftype.len == 0) continue;
+        names[w] = alloc.dupe(u8, fname) catch unreachable;
+        types[w] = alloc.dupe(u8, ftype) catch unreachable;
+        w += 1;
+    }
+    return .{ .names = names[0..w], .types = types[0..w] };
+}
+
 /// The element a container handle was bound from, found in the enclosing flow:
 /// a `std/list:new(<elem>)` invocation whose binding branch carries the handle.
 /// The new transform rewrites `new` -> `new-<elem>` in place, so the scan keys
@@ -409,7 +485,7 @@ fn synthOp(
     proc_body: []const u8
 ) [2]astz.Item {
     const path = astz.DottedPath{
-        .module_qualifier = null,
+        .module_qualifier = allocator.dupe(u8, flow.module) catch unreachable,
         .segments = blk: {
             const segs = allocator.alloc([]const u8, 1) catch unreachable;
             segs[0] = allocator.dupe(u8, name) catch unreachable;
@@ -453,9 +529,10 @@ fn synthesizeContainer(
     elem_expr: []const u8
 ) []const astz.Item {
     
-    const decl = findProtoDecl(program, elem_expr) orelse return &.{};
     const list_name = std.fmt.allocPrint(allocator, "List_{s}", .{proto_name}) catch unreachable;
-    const pf = protoFieldsOf(allocator, decl);
+    // The proto declaration's fields (see protoFieldsOfProgram).
+    const pf = protoFieldsOfProgram(allocator, program, elem_expr);
+    if (pf.names.len == 0) @panic("proto-fields-empty");
 
     var units = std.ArrayList(astz.Item).initCapacity(allocator, 13) catch unreachable;
 
@@ -601,7 +678,6 @@ fn synthesizeContainer(
     }
 
     const u = units.toOwnedSlice(allocator) catch unreachable;
-    std.debug.print("[synth] units={d}\n", .{@as(usize, u.len)});
     return u;
 }
 
