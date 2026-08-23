@@ -1,0 +1,159 @@
+#  liblwip: Makefile.uk
+#
+#  Authors: Felipe Huici <felipe.huici@neclab.eu>
+#           Simon Kuenzer <simon.kuenzer@neclab.eu>
+#
+#
+#  Copyright (c) 2017-2019, NEC Europe Ltd., NEC Corporation.
+#                           All rights reserved.
+#
+#  Redistribution and use in source and binary forms, with or without
+#  modification, are permitted provided that the following conditions
+#  are met:
+#
+#  1. Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#  2. Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#  3. Neither the name of the copyright holder nor the names of its
+#     contributors may be used to endorse or promote products derived from
+#     this software without specific prior written permission.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+#  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+#  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+#  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+#  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+#  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+#  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+#  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+#  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+#  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+#  POSSIBILITY OF SUCH DAMAGE.
+#
+
+################################################################################
+# Library registration
+################################################################################
+$(eval $(call addlib_s,liblwip,$(CONFIG_LIBLWIP)))
+
+################################################################################
+# Sources
+################################################################################
+ifeq ($(CONFIG_LWIP_UNIKRAFT21X),y)
+LIBLWIP_BRANCH=UNIKRAFT-2_1_x
+LIBLWIP_ZIPNAME=fork-lwip-$(LIBLWIP_BRANCH)
+LIBLWIP_URL=https://github.com/unikraft/fork-lwip/archive/refs/heads/$(LIBLWIP_BRANCH).zip
+else ifeq ($(CONFIG_LWIP_LATEST21X),y)
+LIBLWIP_BRANCH=STABLE-2_1_x
+LIBLWIP_ZIPNAME=fork-lwip-$(LIBLWIP_BRANCH)
+LIBLWIP_URL=https://github.com/unikraft/fork-lwip/archive/refs/heads/$(LIBLWIP_BRANCH).zip
+else
+LIBLWIP_TAG=STABLE-2_1_2_RELEASE
+LIBLWIP_ZIPNAME=fork-lwip-$(LIBLWIP_TAG)
+LIBLWIP_URL=https://github.com/unikraft/fork-lwip/archive/refs/tags/$(LIBLWIP_TAG).zip
+LIBLWIP_ORIGIN_SHA256=8f0ae46e2702720ce852b00de5d304adb2809b0203741f299876594bb8be7890
+endif
+
+LIBLWIP_PATCHDIR=$(LIBLWIP_BASE)/patches
+$(eval $(call fetch,liblwip,$(LIBLWIP_URL)))
+$(eval $(call patch,liblwip,$(LIBLWIP_PATCHDIR),$(LIBLWIP_ZIPNAME)))
+
+################################################################################
+# Helpers
+################################################################################
+LIBLWIP_EXTRACTED=$(LIBLWIP_ORIGIN)/$(LIBLWIP_ZIPNAME)/src
+
+################################################################################
+# Library includes
+################################################################################
+LIBLWIP_COMMON_INCLUDES-y += -I$(LIBLWIP_BASE)/include
+LIBLWIP_COMMON_INCLUDES-y += -I$(LIBLWIP_BASE)/musl-imported/include
+LIBLWIP_COMMON_INCLUDES-y += -I$(LIBLWIP_EXTRACTED)/include
+CINCLUDES-$(CONFIG_LIBLWIP)   += $(LIBLWIP_COMMON_INCLUDES-y)
+CXXINCLUDES-$(CONFIG_LIBLWIP) += $(LIBLWIP_COMMON_INCLUDES-y)
+$(eval $(call uknetdev_scratch_mem,$(CONFIG_LWIP_UKNETDEV_SCRATCH)))
+
+################################################################################
+# Library flags
+################################################################################
+LIBLWIP_CFLAGS-y += -Wno-type-limits -Wno-unused-parameter
+LIBLWIP_CFLAGS-$(call have_clang) += -Wno-macro-redefined
+LIBLWIP_CFLAGS-$(CONFIG_LWIP_DEBUG) += -DUK_DEBUG
+LIBLWIP_CFLAGS-y   += -D__IN_LIBLWIP__
+LIBLWIP_CXXFLAGS-y += -D__IN_LIBLWIP__
+
+################################################################################
+# Core
+################################################################################
+LIBLWIP_SRCS-y += $(LIBLWIP_BASE)/alloc.c|unikraft
+LIBLWIP_SRCS-$(CONFIG_LWIP_THREADS) += $(LIBLWIP_BASE)/mutex.c|unikraft
+LIBLWIP_SRCS-$(CONFIG_LWIP_THREADS) += $(LIBLWIP_BASE)/semaphore.c|unikraft
+LIBLWIP_SRCS-$(CONFIG_LWIP_THREADS) += $(LIBLWIP_BASE)/mailbox.c|unikraft
+LIBLWIP_SRCS-$(CONFIG_LWIP_THREADS) += $(LIBLWIP_BASE)/threads.c|unikraft
+LIBLWIP_SRCS-y += $(LIBLWIP_BASE)/init.c|unikraft
+LIBLWIP_SRCS-y += $(LIBLWIP_BASE)/time.c|unikraft
+LIBLWIP_SRCS-$(CONFIG_LWIP_SOCKET) += $(LIBLWIP_BASE)/sockets.c|unikraft
+LIBLWIP_SOCKETS_FLAGS-$(call gcc_version_ge,8,0) += -Wno-cast-function-type
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/init.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/def.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/inet_chksum.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/ip.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/mem.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/memp.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/netif.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/pbuf.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/raw.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/stats.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/sys.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/core/timeouts.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_DNS) += $(LIBLWIP_EXTRACTED)/core/dns.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_TCP) += $(LIBLWIP_EXTRACTED)/core/tcp.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_TCP) += $(LIBLWIP_EXTRACTED)/core/tcp_in.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_TCP) += $(LIBLWIP_EXTRACTED)/core/tcp_out.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_UDP) += $(LIBLWIP_EXTRACTED)/core/udp.c
+LIBLWIP_SRCS-$(CONFIG_LIBPOSIX_NETLINK) += $(LIBLWIP_BASE)/netlink.c|unikraft
+
+################################################################################
+# APIs
+################################################################################
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/api/api_lib.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/api/api_msg.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/api/err.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/api/netbuf.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/api/netdb.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/api/netifapi.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/api/tcpip.c
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/api/if_api.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_SOCKET) += $(LIBLWIP_EXTRACTED)/api/sockets.c
+
+################################################################################
+# NETIFs
+################################################################################
+LIBLWIP_SRCS-y += $(LIBLWIP_EXTRACTED)/netif/ethernet.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_UKNETDEV) += $(LIBLWIP_BASE)/netbuf.c|unikraft
+LIBLWIP_SRCS-$(CONFIG_LWIP_UKNETDEV) += $(LIBLWIP_BASE)/uknetdev.c|unikraft
+
+################################################################################
+# IPv4
+################################################################################
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV4)    += $(LIBLWIP_EXTRACTED)/core/ipv4/etharp.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV4)    += $(LIBLWIP_EXTRACTED)/core/ipv4/ip4_frag.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV4)    += $(LIBLWIP_EXTRACTED)/core/ipv4/ip4.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV4)    += $(LIBLWIP_EXTRACTED)/core/ipv4/ip4_addr.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_ICMP)    += $(LIBLWIP_EXTRACTED)/core/ipv4/icmp.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IGMP)    += $(LIBLWIP_EXTRACTED)/core/ipv4/igmp.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_DHCP)    += $(LIBLWIP_EXTRACTED)/core/ipv4/dhcp.c
+
+################################################################################
+# IPv6
+################################################################################
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV6) += $(LIBLWIP_EXTRACTED)/core/ipv6/dhcp6.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV6) += $(LIBLWIP_EXTRACTED)/core/ipv6/ethip6.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV6) += $(LIBLWIP_EXTRACTED)/core/ipv6/icmp6.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV6) += $(LIBLWIP_EXTRACTED)/core/ipv6/ip6.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV6) += $(LIBLWIP_EXTRACTED)/core/ipv6/ip6_addr.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV6) += $(LIBLWIP_EXTRACTED)/core/ipv6/ip6_frag.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV6) += $(LIBLWIP_EXTRACTED)/core/ipv6/mld6.c
+LIBLWIP_SRCS-$(CONFIG_LWIP_IPV6) += $(LIBLWIP_EXTRACTED)/core/ipv6/nd6.c

@@ -1,0 +1,1 @@
+x86_64-elf-strip -s /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/ukserve_qemu-x86_64.dbg -o /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/ukserve_qemu-x86_64 2>&1 | { ggrep -Ev "Empty loadable segment detected|section.*lma.*adjusted to.*" || true; }

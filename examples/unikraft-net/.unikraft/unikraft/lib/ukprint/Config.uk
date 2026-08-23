@@ -1,0 +1,103 @@
+menuconfig LIBUKPRINT
+	bool "ukprint: Printing and logging facilities"
+	select LIBNOLIBC if !HAVE_LIBC
+	select LIBUKBITOPS
+	default y
+
+if LIBUKPRINT
+
+menuconfig LIBUKPRINT_PRINTK
+	bool "Kernel messages (uk_printk)"
+	default y
+	help
+		Enables kernel message console.
+
+if LIBUKPRINT_PRINTK
+
+config LIBUKPRINT_PRINT_TIME
+	bool "Show timestamp in messages"
+	default y
+
+config LIBUKPRINT_PRINT_THREAD
+	bool "Show thread identifier"
+	depends on LIBUKSCHED
+	help
+		Prints the thread name or, if unnamed, the address of
+		the TCB (struct uk_thread) of the currently scheduled
+		thread. For the case `uk_thread_current()` returns
+		NULL, the placeholder "<<n/a>>" is printed instead.
+
+config LIBUKPRINT_PRINT_CALLER
+	bool "Show caller information"
+	help
+		Prints the current return address and current stack frame
+		address for the message command. The return address can be
+		useful in combination with a debugger. The stack frame
+		address is a handy information for analysing the state of
+		the currently active stack.
+		Format: "{r:<return address>,f:<stack frame address>}"
+
+config LIBUKPRINT_PRINT_SRCNAME
+	bool "Print source code location of messages"
+	default y
+
+config LIBUKPRINT_ANSI_COLOR
+	bool "Colored output"
+	help
+		Use ANSI control sequences to colorize console output.
+		Before activating this option, please make sure that
+		your console output/display supports ANSI.
+
+choice
+	prompt "Verbosity"
+	default LIBUKPRINT_KLVL_ERR
+	help
+		Set the verbosity of kernel messages
+
+config LIBUKPRINT_PRINTK_UKSTORE
+	bool "Control verbosity via ukstore"
+	select LIBUKSTORE
+	help
+		Allows configuring the console verbosity at runtime via ukstore.
+		The maximum verbosity is still bound to the highest verbosity
+		level configured at compile time.
+
+config LIBUKPRINT_KLVL_DEBUG
+	bool "Debug"
+
+config LIBUKPRINT_KLVL_INFO
+	bool "Info"
+
+config LIBUKPRINT_KLVL_WARN
+	bool "Warn"
+
+config LIBUKPRINT_KLVL_ERR
+	bool "Error (default)"
+
+config LIBUKPRINT_KLVL_CRIT
+	bool "Critical"
+endchoice
+endif
+
+menuconfig LIBUKPRINT_LOGBUF
+	bool "Kernel log buffer (dmesg)"
+	select LIBUKLOCK
+	help
+		Applications can print the logbuffer to the console by calling
+		uk_print_dmesg()
+
+if LIBUKPRINT_LOGBUF
+
+config LIBUKPRINT_LOGBUF_SIZE
+	int "Log buffer max message length (chars)"
+	default 10240
+
+endif
+
+config LIBUKPRINT_TEST
+	bool "Enable unit tests"
+	depends on LIBUKRANDOM
+	depends on LIBUKPRINT_LOGBUF
+	select LIBUKTEST
+
+endif

@@ -1,0 +1,5 @@
+$(eval $(call addlib_s,libxencons,$(CONFIG_LIBXENCONS)))
+
+CINCLUDES-$(CONFIG_LIBXENCONS)   += -I$(LIBXENCONS_BASE)/include
+
+LIBXENCONS_SRCS-y          += $(LIBXENCONS_BASE)/console.c|isr

@@ -1,0 +1,76 @@
+menu "Platform Interface Options"
+config UKPLAT_MEMRNAME
+	bool "Memory region names"
+	default n
+	help
+		Enable name field in memory region descriptors
+
+config UKPLAT_MEMREGION_MAX_COUNT
+	int "Maximum amount of Bootinfo Memory Region Descriptors"
+	default 128
+	help
+		The number of memory region descriptors depends on the platform. Some
+		may have less than 100, while others may have 100's of memory region
+		descriptors. In order to cope with this, the user is able to configure
+		the amount of statically allocated space in the image made available
+		for storing memory region descriptors' metadata.
+
+config UKPLAT_CPU_MAXCOUNT
+	int "Maximum number of supported logical CPUs"
+	range 1 256
+	default 1
+
+config HAVE_SMP
+	bool
+	default y if UKPLAT_CPU_MAXCOUNT > 1
+	select LIBUKINTCTLR_APIC if (ARCH_X86_64 && UKPLAT_CPU_MAXCOUNT > 1)
+	select LIBUKACPI if ARCH_X86_64
+
+config ENFORCE_W_XOR_X
+	bool "Enforce W^X"
+	depends on LIBUKPAGING && ARCH_ARM_64
+	default y
+	help
+		During boot the protection settings of all memory
+		ranges are updated to enforce write XOR execute (W^X)
+		and mitigate code injection attacks.
+endmenu
+
+config HZ
+	int
+	prompt "Timer frequency (Hz)"
+	default 100
+	help
+		Configure the timer interrupt frequency.
+		Only change this if you know what you're doing.
+
+config FPSIMD
+	bool "floating point & simd support in application"
+	default n
+	depends on ARCH_ARM_64
+	help
+		Enable support FPU usage in application
+
+# FIXME: Temporary workaround to display a warning when more than one platform
+#        is selected. Note that the check does not take external platforms into
+#        account and may not display the warning even though more than one
+#        platform is selected.
+#        This warning will be removed once we have restructured the menu to
+#        only allow a single platform (including external platforms).
+comment "Warning: Selecting multiple platforms is unsupported!"
+	depends on PLAT_KVM && PLAT_XEN
+
+config HAVE_SHUTDOWN_DISPATCHER
+	bool
+
+config HAVE_REBOOT
+	bool
+
+config HAVE_PAGING
+	bool
+
+config HAVE_5LEVEL_PT
+	bool
+
+config HAVE_CPU_MULTI_PHASE_STARTUP
+	bool

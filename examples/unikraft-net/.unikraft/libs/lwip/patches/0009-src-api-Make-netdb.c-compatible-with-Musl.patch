@@ -1,0 +1,51 @@
+From d906cf1b48aec553b5a580a3578564cf57ebb5ec Mon Sep 17 00:00:00 2001
+Message-Id: <d906cf1b48aec553b5a580a3578564cf57ebb5ec.1668957138.git.razvand@unikraft.io>
+In-Reply-To: <e245cb8fe567f6988ca1a008f4c63cbf4027558f.1668957138.git.razvand@unikraft.io>
+References: <e245cb8fe567f6988ca1a008f4c63cbf4027558f.1668957138.git.razvand@unikraft.io>
+From: Razvan Deaconescu <razvand@unikraft.io>
+Date: Sun, 20 Nov 2022 17:11:35 +0200
+Subject: [PATCH 3/4] src/api: Make netdb.c compatible with Musl
+
+Remove functions, macros, and variables from `src/api/netdb.c` to make it
+compatible with Musl.
+
+Signed-off-by: Razvan Deaconescu <razvand@unikraft.io>
+---
+ src/api/netdb.c | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/src/api/netdb.c b/src/api/netdb.c
+index ee78297..962e9aa 100644
+--- a/src/api/netdb.c
++++ b/src/api/netdb.c
+@@ -56,11 +56,6 @@ struct gethostbyname_r_helper {
+   char *aliases;
+ };
+ 
+-/** h_errno is exported in netdb.h for access by applications. */
+-#if LWIP_DNS_API_DECLARE_H_ERRNO
+-int h_errno;
+-#endif /* LWIP_DNS_API_DECLARE_H_ERRNO */
+-
+ /** define "hostent" variables storage: 0 if we use a static (but unprotected)
+  * set of variables for lwip_gethostbyname, 1 if we use a local storage */
+ #ifndef LWIP_DNS_API_HOSTENT_STORAGE
+@@ -377,7 +372,6 @@ lwip_getaddrinfo(const char *nodename, const char *servname,
+     /* set up sockaddr */
+     inet6_addr_from_ip6addr(&sa6->sin6_addr, ip_2_ip6(&addr));
+     sa6->sin6_family = AF_INET6;
+-    sa6->sin6_len = sizeof(struct sockaddr_in6);
+     sa6->sin6_port = lwip_htons((u16_t)port_nr);
+     sa6->sin6_scope_id = ip6_addr_zone(ip_2_ip6(&addr));
+     ai->ai_family = AF_INET6;
+@@ -388,7 +382,6 @@ lwip_getaddrinfo(const char *nodename, const char *servname,
+     /* set up sockaddr */
+     inet_addr_from_ip4addr(&sa4->sin_addr, ip_2_ip4(&addr));
+     sa4->sin_family = AF_INET;
+-    sa4->sin_len = sizeof(struct sockaddr_in);
+     sa4->sin_port = lwip_htons((u16_t)port_nr);
+     ai->ai_family = AF_INET;
+ #endif /* LWIP_IPV4 */
+-- 
+2.17.1
+

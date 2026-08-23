@@ -1,0 +1,11 @@
+--- a/src/api/sockets.c	2018-03-05 16:12:39.917974880 +0100
++++ b/src/api/sockets.c	2018-03-05 16:12:24.577997842 +0100
+@@ -44,6 +44,8 @@
+  *
+  */
+ 
++#include <sys/time.h>
++
+ #include "lwip/opt.h"
+ 
+ #if LWIP_SOCKET /* don't build if not configured for use in lwipopts.h */

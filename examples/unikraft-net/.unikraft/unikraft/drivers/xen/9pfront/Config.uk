@@ -1,0 +1,26 @@
+menuconfig LIB9PFRONT
+	bool "9pfront: Xen 9pfs volumes"
+	select LIBXENBUS
+	select LIBXENHEADERS
+	select LIBXENGNTTAB
+	depends on HAVE_XENBUS
+	depends on LIBUK9P
+	help
+		Xen driver for 9pfs volumes
+
+if LIB9PFRONT
+config LIB9PFRONT_NB_RINGS
+	int "Number of rings"
+	default 2
+	help
+		Number of rings to allocate.
+		Will be clamped to the maximum value allowed by the backend.
+
+config LIB9PFRONT_RING_ORDER
+	int "Ring size order"
+	default 6
+	help
+		Ring order for xen 9P devices. Orders of 0, 1, 2, ..., 9 will
+		create rings of size 4K, 8K, 16K, ..., 2M respectively.
+		Will be clamped to the maximum value allowed by the backend.
+endif

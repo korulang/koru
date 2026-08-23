@@ -1,0 +1,259 @@
+menuconfig LIBUKBOOT
+	bool "ukboot: Unikraft bootstrapping"
+	select LIBNOLIBC if !HAVE_LIBC
+	select LIBUKDEBUG
+	select LIBUKARGPARSE
+	select HAVE_BOOTENTRY
+	imply LIBUKPM
+	imply LIBUKBOOT_MAINTHREAD if HAVE_SHUTDOWN_DISPATCHER
+	imply LIBUKBOOT_SHUTDOWNREQ_HANDLER if HAVE_SHUTDOWN_DISPATCHER
+	select LIBUKLCPU
+	default y
+
+	# FIXME: binary buddy allocator is hard-coded for now
+
+if LIBUKBOOT
+choice LIBUKBOOT_BANNER
+	prompt "Unikraft banner"
+	default LIBUKBOOT_BANNER_POWEREDBY
+
+config LIBUKBOOT_BANNER_NONE
+	bool "None"
+
+config LIBUKBOOT_BANNER_MINIMAL
+	bool "One liner"
+
+config LIBUKBOOT_BANNER_CLASSIC
+	bool "Classic banner"
+
+config LIBUKBOOT_BANNER_POWEREDBY
+	bool "Powered by Unikraft"
+
+config LIBUKBOOT_BANNER_POWEREDBY_ANSI
+	bool "Powered by Unikraft (blue, ANSI)"
+	help
+	  Please make sure that your console display supports
+	  ANSI colors
+
+config LIBUKBOOT_BANNER_POWEREDBY_ANSI2
+	bool "Powered by Unikraft (gray, ANSI)"
+	help
+	  Please make sure that your console display supports
+	  ANSI colors
+
+config LIBUKBOOT_BANNER_POWEREDBY_EA
+	bool "Powered by Unikraft (ASCII)"
+	help
+	  Please make sure that your console display supports
+	  extended ASCII characters
+
+config LIBUKBOOT_BANNER_POWEREDBY_EAANSI
+	bool "Powered by Unikraft (ASCII, blue, ANSI)"
+	help
+	  Please make sure that your console display supports
+	  extended ASCII characters and ANSI colors
+
+config LIBUKBOOT_BANNER_POWEREDBY_EAANSI2
+	bool "Powered by Unikraft (ASCII, gray, ANSI)"
+	help
+	  Please make sure that your console display supports
+	  extended ASCII characters and ANSI colors
+
+config LIBUKBOOT_BANNER_POWEREDBY_U8
+	bool "Powered by Unikraft (UTF-8)"
+	help
+	  Please make sure that your console display supports
+	  UTF-8
+
+config LIBUKBOOT_BANNER_POWEREDBY_U8ANSI
+	bool "Powered by Unikraft (UTF-8, blue, ANSI)"
+	help
+	  Please make sure that your console display supports
+	  UTF-8 and ANSI colors
+
+config LIBUKBOOT_BANNER_POWEREDBY_U8ANSI2
+	bool "Powered by Unikraft (UTF-8, gray, ANSI)"
+	help
+	  Please make sure that your console display supports
+	  UTF-8 and ANSI colors
+endchoice
+
+config LIBUKBOOT_CMDLINE_MAX_LEN
+	int "Maxiumum command line length"
+	default 4096
+
+config LIBUKBOOT_MAXNBARGS
+	int "Maximum number of arguments (max. size of argv)"
+	default 60
+
+config LIBUKBOOT_DISABLE_WEAK_MAIN
+	bool
+	default n
+
+# Hidden option that indicates that allocator is initialized
+# We do this here in order to allow specifying dependecies to
+# the allocator choice
+config LIBUKBOOT_INITALLOC
+	bool
+	default y if !LIBUKBOOT_INITNOALLOC
+
+choice
+	prompt "Initialize memory allocator"
+	default LIBUKBOOT_INITBBUDDY
+
+config LIBUKBOOT_INITBBUDDY
+	bool "Binary buddy allocator"
+	select LIBUKALLOCBBUDDY
+
+config LIBUKBOOT_INITREGION
+	bool "Region allocator"
+	select LIBUKALLOCREGION
+	help
+	  Satisfy allocation as fast as possible. No support for free().
+	  Refer to help in ukallocregion for more information.
+
+config LIBUKBOOT_INITMIMALLOC
+	bool "Mimalloc"
+	depends on LIBMIMALLOC_INCLUDED
+	select LIBMIMALLOC
+
+config LIBUKBOOT_INITTINYALLOC
+	bool "tinyalloc"
+	depends on LIBTINYALLOC_INCLUDED
+	select LIBTINYALLOC
+	help
+	  Minimalist allocator implementation, meant for use in systems
+	  with unmanaged linear memory such as WebAssembly or embedded
+	  systems. tinyalloc is highly configurable and offers high
+	  performance and reasonable memory usage when used and
+	  configured appropriately.
+
+config LIBUKBOOT_INITTLSF
+	bool "TLSF"
+	depends on LIBTLSF_INCLUDED
+	select LIBTLSF
+
+config LIBUKBOOT_INITNOALLOC
+	bool "None"
+
+endchoice
+
+config LIBUKBOOT_HEAP_BASE
+	hex "Heap base address"
+	default 0x400000000
+	depends on LIBUKPAGING
+	depends on LIBUKBOOT_INITALLOC
+
+# Hidden configuration option that specifies that scheduling should be
+# initialized. The check for !LIBUKBOOT_INITNOSCHED is not sufficient, as
+# the option is also not available if !LIBUKBOOT_INITALLOC is set. The
+# reason is the dependency of the choice. This would incorrectly mean
+# that a scheduler is being initialized.
+config LIBUKBOOT_INITSCHED
+	bool
+	default y if LIBUKBOOT_INITALLOC && !LIBUKBOOT_INITNOSCHED
+
+choice
+	prompt "Initialize scheduler"
+	default LIBUKBOOT_INITSCHEDCOOP
+	depends on LIBUKBOOT_INITALLOC
+
+config LIBUKBOOT_INITSCHEDCOOP
+	bool "Cooperative scheduler"
+	select LIBUKSCHEDCOOP
+	help
+	  Initialize ukschedcoop as cooperative scheduler on the boot CPU.
+
+config LIBUKBOOT_INITNOSCHED
+	bool "None"
+
+endchoice
+
+config LIBUKBOOT_MAINTHREAD
+	bool "Run application main in own thread"
+	depends on LIBUKBOOT_INITSCHED && LIBUKBOOT_INITALLOC
+	select LIBUKLOCK
+	select LIBUKLOCK_SEMAPHORE
+	help
+	  Instead of executing main() in the "init" context, a "main"
+	  thread is created for executing the application code.
+	  This enables proceeding with a system shutdown before the
+	  application's main function returned.
+
+config LIBUKBOOT_MAINTHREAD_NOHALT
+	bool "Do not initiate a shutdown when application main returned"
+	depends on LIBUKBOOT_MAINTHREAD
+	help
+	  This setting disables automatically shutting down whenever
+	  the application main function returned or when the main thread
+	  terminated. The system performs a shutdown only on explicit
+	  requests.
+
+config LIBUKBOOT_SHUTDOWNREQ_HANDLER
+	bool "Register shutdown request handler"
+	depends on LIBUKBOOT_MAINTHREAD
+	depends on HAVE_SHUTDOWN_DISPATCHER
+	help
+	  This setting enables the init thread to initiate a shutdown
+	  if it is requested by a driver on the shutdown_req event queue
+	  (e.g., ACPI power button event).
+
+config LIBUKBOOT_INIT
+	bool "Provide /sbin/init logic"
+	depends on LIBPOSIX_PROCESS_MULTIPROCESS
+	select LIBPOSIX_FDTAB
+	select LIBPOSIX_PROCESS_SIGNAL
+	select LIBPOSIX_PROCESS_SIGNALFD
+	select LIBUKBOOT_MAINTHREAD
+	help
+		Provides /sbin/init logic to handle orphan processes
+		and manage shutdown. When this option is selected, the
+		application is executed on a new process. If you don't
+		select this in a multiprocess configuration, you need
+		to provide your own init.
+
+menuconfig LIBUKBOOT_GRACEFUL_SHUTDOWN
+	bool "Graceful shutdown"
+	depends on LIBUKBOOT_INIT
+	select LIBPOSIX_POLL
+	help
+		Signal the application on system shutdown to give it
+		a chance to terminate gracefully. If timeout is reached,
+		all processes are killed forecefully.
+
+if LIBUKBOOT_GRACEFUL_SHUTDOWN
+config LIBUKBOOT_GRACEFUL_SHUTDOWN_SIGNAL
+	int "Termination signal"
+	default 15 if (ARCH_ARM_64 || ARCH_X86_64)
+	help
+		Signal to send the application to gracefully terminate
+		before shutting down. Defaults to SIGTERM.
+
+config LIBUKBOOT_GRACEFUL_SHUTDOWN_TIMEOUT
+	int "Termination timeout (msec)"
+	default 5000
+	help
+		Time (msec) to wait for children to gracefully terminate
+		before shutting down. Setting a negative value causes an
+		indefinite wait.
+endif
+
+config LIBUKBOOT_ALLOCSTACK
+	bool
+	default y if LIBUKBOOT_INITALLOC
+	select LIBUKALLOCSTACK
+	depends on LIBUKBOOT_INITALLOC
+
+if LIBUKBOOT_ALLOCSTACK
+config LIBUKBOOT_ALLOCSTACK_PREMAP_ORDER
+	int "Minimal pre-mapped stack size"
+	default 1
+	depends on LIBUKVMEM
+	help
+	  Indirectly configures the stack allocator pre-mapped size by
+	  changing the stack size page order. Stack size is equal to
+	  2 ^ order * page size (e.g. 4KB). Note that the last page
+	  (or last page from top to bottom) will be the guard page.
+	  Only change this if you know what you're doing.
+endif  # LIBUKBOOT_ALLOCSTACK
+endif  # LIBUKBOOT

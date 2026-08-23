@@ -1,0 +1,15 @@
+menuconfig LIBUKFALLOC
+	bool "ukfalloc: Abstraction for physical memory allocators"
+	default n
+	select LIBUKDEBUG
+
+if LIBUKFALLOC
+
+config LIBUKFALLOC_STATS
+	bool "Frame allocator statistics"
+	select LIBUKATOMIC
+	select LIBUKSTORE
+	help
+		Provide frame allocator statistics via ukstore.
+
+endif

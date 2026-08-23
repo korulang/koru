@@ -1,0 +1,6 @@
+mmap
+munmap
+mprotect
+madvise
+mlock
+msync

@@ -1,0 +1,1 @@
+gawk --lint -f /Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/lib/uklibid/namemap.awk        /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libuklibid/libraries.in > /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libuklibid/namemap.c

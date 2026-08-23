@@ -1,0 +1,29 @@
+// PIN 696_004 — scalar slots take plain values (type-system synthesis walk, 2026-08-23).
+//
+// DOCTRINE UNDER TEST:
+//   The forcing applies to the PRESENCE of every property, never to the FORM
+//   of scalar arrivals. `13` needs nobody's permission to exist; a scalar
+//   never needed anyone's constructor. Forcing an acquisition ceremony onto a
+//   scalar slot would be inventing work — values arrive, and that is all
+//   scalars ever do. The asymmetry is the design: constructors are forced for
+//   references because initialization and construction are the same event;
+//   scalars have no constructor because there is nothing to construct.
+//
+// Both scalar slots below arrive as plain literals. This is the positive half
+// of the asymmetry; 695_001 pins the reference half.
+
+~import std/store
+~import std/io
+
+~std/store:proto(tally) {
+    count: i32
+    name: string
+}
+
+~proc main {
+    std/store:instance(tally) {
+        count: 13
+        name: "thirteen"
+    }
+    | ready t |> std/io:print.ln("count is thirteen")
+}

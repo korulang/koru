@@ -1,0 +1,74 @@
+diff --git a/src/api/sockets.c b/src/api/sockets.c
+index ad54979..4db3d3e 100644
+--- a/src/api/sockets.c
++++ b/src/api/sockets.c
+@@ -286,6 +286,7 @@ static struct lwip_select_cb *select_cb_list;
+ /* Forward declaration of some functions */
+ #if LWIP_SOCKET_SELECT || LWIP_SOCKET_POLL
+ static void event_callback(struct netconn *conn, enum netconn_evt evt, u16_t len);
++void lwip_posix_socket_event_callback(struct lwip_sock *sock, enum netconn_evt evt, u16_t len);
+ #define DEFAULT_SOCKET_EVENTCB event_callback
+ static void select_check_waiters(int s, int has_recvevent, int has_sendevent, int has_errevent);
+ #else
+@@ -529,6 +530,7 @@ alloc_socket(struct netconn *newconn, int accepted)
+        * (unless it has been created by accept()). */
+       sockets[i].sendevent  = (NETCONNTYPE_GROUP(newconn->type) == NETCONN_TCP ? (accepted != 0) : 1);
+       sockets[i].errevent   = 0;
++      sockets[i].sock_data  = NULL;
+ #endif /* LWIP_SOCKET_SELECT || LWIP_SOCKET_POLL */
+       return i + LWIP_SOCKET_OFFSET;
+     }
+@@ -2543,6 +2545,8 @@ event_callback(struct netconn *conn, enum netconn_evt evt, u16_t len)
+       break;
+   }
+ 
++  lwip_posix_socket_event_callback(sock, evt, len);
++
+   if (sock->select_waiting && check_waiters) {
+     /* Save which events are active */
+     int has_recvevent, has_sendevent, has_errevent;
+diff --git a/src/include/lwip/priv/sockets_priv.h b/src/include/lwip/priv/sockets_priv.h
+index d8f9904..71fd8d4 100644
+--- a/src/include/lwip/priv/sockets_priv.h
++++ b/src/include/lwip/priv/sockets_priv.h
+@@ -80,6 +80,8 @@ struct lwip_sock {
+   u16_t errevent;
+   /** counter of how many threads are waiting for this socket using select */
+   SELWAIT_T select_waiting;
++  /** optional data that is associated with the socket */
++  void *sock_data;
+ #endif /* LWIP_SOCKET_SELECT || LWIP_SOCKET_POLL */
+ #if LWIP_NETCONN_FULLDUPLEX
+   /* counter of how many threads are using a struct lwip_sock (not the 'int') */
+diff --git a/src/include/lwip/sockets.h b/src/include/lwip/sockets.h
+index dd24369..6e20d2c 100644
+--- a/src/include/lwip/sockets.h
++++ b/src/include/lwip/sockets.h
+@@ -520,17 +520,17 @@ typedef struct fd_set
+ /* poll-related defines and types */
+ /* @todo: find a better way to guard the definition of these defines and types if already defined */
+ #if !defined(POLLIN) && !defined(POLLOUT)
+-#define POLLIN     0x1
+-#define POLLOUT    0x2
+-#define POLLERR    0x4
+-#define POLLNVAL   0x8
++#define POLLIN     0x0001
++#define POLLOUT    0x0004
++#define POLLERR    0x0008
++#define POLLNVAL   0x0020
+ /* Below values are unimplemented */
+-#define POLLRDNORM 0x10
+-#define POLLRDBAND 0x20
+-#define POLLPRI    0x40
+-#define POLLWRNORM 0x80
+-#define POLLWRBAND 0x100
+-#define POLLHUP    0x200
++#define POLLRDNORM 0x0040
++#define POLLRDBAND 0x0080
++#define POLLPRI    0x0002
++#define POLLWRNORM 0x0100
++#define POLLWRBAND 0x0200
++#define POLLHUP    0x0010
+ typedef unsigned int nfds_t;
+ struct pollfd
+ {

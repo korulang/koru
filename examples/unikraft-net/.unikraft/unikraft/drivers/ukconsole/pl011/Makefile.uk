@@ -1,0 +1,7 @@
+$(eval $(call addlib_s,libpl011,$(CONFIG_LIBPL011)))
+$(eval $(call addlib_paramprefix,libpl011,pl011))
+
+# TODO: Remove as soon as plat dependencies go away
+LIBPL011_CINCLUDES-y  += -I$(UK_PLAT_COMMON_BASE)/include
+
+LIBPL011_SRCS-y += $(LIBPL011_BASE)/pl011.c|isr

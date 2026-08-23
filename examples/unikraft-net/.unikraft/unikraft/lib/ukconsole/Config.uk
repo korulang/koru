@@ -1,0 +1,10 @@
+menuconfig LIBUKCONSOLE
+	bool "ukconsole: generic console driver interface"
+	default y
+	select LIBUKBITOPS
+
+if LIBUKCONSOLE
+config LIBUKCONSOLE_TEST
+	bool "Enable unit tests"
+	select LIBUKTEST
+endif

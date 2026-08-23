@@ -1,0 +1,37 @@
+Don't use the naive RFC1337 mechanism
+
+Other than sending RST frames there is no other way to reuse port
+numbers in LWIP. Therefore, allow RST frames when they have the
+correct sequence number.
+
+diff --git a/src/core/tcp_in.c b/src/core/tcp_in.c
+--- a/src/core/tcp_in.c	2024-01-23 17:57:59.453522491 +0100
++++ b/src/core/tcp_in.c	2024-01-23 17:58:03.496864164 +0100
+@@ -744,6 +744,27 @@
+    *   acceptable since we only send ACKs)
+    * - second check the RST bit (... return) */
+   if (flags & TCP_RST) {
++    if (seqno == pcb->rcv_nxt) {
++      /* Go to closed state */
++      tcp_pcb_purge(pcb);
++      /* Remove it from the list */
++      struct tcp_pcb *prev = NULL;
++      struct tcp_pcb *pcbi = tcp_tw_pcbs;
++      while (pcbi != NULL) {
++        if (pcbi == pcb) {
++          if (prev != NULL) {
++            prev->next = pcb->next;
++          } else {
++            tcp_tw_pcbs = pcb->next;
++          }
++          pcbi = pcbi->next;
++          tcp_free(pcb);
++        } else {
++          prev = pcbi;
++          pcbi = pcbi->next;
++        }
++      }
++    }
+     return;
+   }
+ 

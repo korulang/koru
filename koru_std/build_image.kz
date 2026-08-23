@@ -1,0 +1,357 @@
+// build_image.kz - A minted build-image manifest for reproducible builds.
+//
+// The build image is NOT a Docker/Nix artifact (yet). What this module owns is
+// the attestation layer everything else was missing: a sealed manifest recording
+// the closure the build ran on, so the same build can be reconstructed later.
+//
+// The image is MINTED, not derived. That distinction is the whole point:
+//
+//   - `derived` is the vulnerable model — every build re-runs `deps install`,
+//     and every rebuild re-trusts the registry. Compromise the registry tomorrow
+//     and a fresh install happily delivers the poison as a "fresh" image. The
+//     attack window is every single build.
+//   - `minted` is the seal — the image is created ONCE, deliberately, and its
+//     closure is recorded. Later builds never re-derive; they reference the
+//     minted image ID, already frozen. The trust window is one deliberate act.
+//
+// So re-minting is ANOMALOUS, not routine. A second `image mint` on a program
+// that already has an image is refused unless `--force`, because in the normal
+// course of things an image is sealed once and consumed. Refusing on re-mint is
+// the loud-failure doctrine dropped on the supply-chain seam: drifting is a
+// red pipeline, not a slow cache refresh.
+//
+// The manifest records what the build was ACTUALLY composed of at mint time:
+// the toolchain version (zig), every declared `requires` family (system / zig /
+// build), and a tree hash over all of it. `image check` recomputes that same
+// closure from the live program and compares — a difference between the mint and
+// the live closure is a drift, and is refused.
+//
+// Commands:
+//   koruc main.kz build image mint    # seal the current closure (anomalous if one exists)
+//   koruc main.kz build image check   # recompute the closure, refuse on drift from the mint
+//
+// `--force` is the one deliberate escape for re-mint — the same weight as
+// `vendor sync`, which vendor.kz is careful to make "read a diff before running."
+
+~import std/compiler
+~import std/deps
+
+~[comptime]
+
+const std = @import("std");
+
+// The manifest's on-disk shape. The closure is recorded in sorted, byte-stable
+// form so the file is reviewable as a diff — a manifest that reshuffles itself
+// is a manifest nobody reads.
+pub const ImageManifest = struct {
+    pub const Closure = struct {
+        pub const Item = struct {
+            family: []const u8,
+            key: []const u8,
+            value: []const u8,
+        };
+        items: []const Item,
+        tree: [64]u8,
+    };
+
+    pub const Origin = struct {
+        toolchain: []const u8,
+        toolchain_version: []const u8,
+    };
+
+    pub const ParseError = error{ Unreadable, NotJson, MissingClosure };
+};
+
+// ============================================================
+// BUILD IMAGE COMMAND - mint / check
+// ============================================================
+
+~std/compiler:command.declare {
+    "name": "image",
+    "description": "Mint and verify a sealed build-image manifest",
+    "subcommands": [
+        { "name": "mint", "description": "Seal the current build closure (anomalous if one already exists)" },
+        { "name": "check", "description": "Recompute the closure and refuse on drift from the mint" }
+    ]
+}
+
+~[comptime|command]pub tor image {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []const []const u8,
+}
+
+~proc image|zig {
+    const ast = @import("ast");
+
+    const Sub = enum { mint, check };
+    var sub: Sub = .check;
+    var force: bool = false;
+
+    var ai: usize = 0;
+    while (ai < argv.len) : (ai += 1) {
+        const a = argv[ai];
+        if (std.mem.eql(u8, a, "mint")) sub = .mint;
+        if (std.mem.eql(u8, a, "check")) sub = .check;
+        if (std.mem.eql(u8, a, "--force")) force = true;
+    }
+
+    // The closure is built from the WHOLE program, not just the entry file —
+    // reach through `.module_decl` the same way `vendor add` and `deps` do.
+    const all_flows = ast.allFlows(allocator, program);
+    defer allocator.free(all_flows);
+
+    // Collect the closure: one record per declared requirement, family-tagged,
+    // so a `build:requires` zig snippet and a `requires.system` bare lib never
+    // collide under the same key.
+    var items = std.ArrayListUnmanaged(ImageManifest.Closure.Item){};
+    defer {
+        for (items.items) |it| {
+            allocator.free(it.key);
+            allocator.free(it.value);
+        }
+        items.deinit(allocator);
+    }
+
+    const add_item = struct {
+        fn call(
+            list: *std.ArrayListUnmanaged(ImageManifest.Closure.Item),
+            a: std.mem.Allocator,
+            family: []const u8,
+            key: []const u8,
+            value: []const u8,
+        ) void {
+            // Absent or empty value still contributes a record — the CLOSURE is
+            // "what is declared and with what," not only "what has a value."
+            const k = a.dupe(u8, key) catch return;
+            const v = a.dupe(u8, value) catch return;
+            list.append(a, .{ .family = family, .key = k, .value = v }) catch return;
+        }
+    }.call;
+
+    for (all_flows) |flow| {
+        const mq = flow.inv().path.module_qualifier orelse continue;
+        if (std.mem.eql(u8, mq, "std.build") and
+            flow.inv().path.segments.len == 1 and
+            std.mem.eql(u8, flow.inv().path.segments[0], "requires"))
+        {
+            for (flow.inv().args) |arg| {
+                if (std.mem.eql(u8, arg.name, "source")) {
+                    add_item(&items, allocator, "build", "build:requires", arg.value);
+                }
+            }
+        } else if (std.mem.eql(u8, mq, "std.deps") and flow.inv().path.segments.len == 2) {
+            if (std.mem.eql(u8, flow.inv().path.segments[0], "requires")) {
+                const fam = flow.inv().path.segments[1]; // "system" or "zig"
+                for (flow.inv().args) |arg| {
+                    if (std.mem.eql(u8, arg.name, "source")) {
+                        // A requires block is JSON-ish; recover the NAME for the
+                        // key by scanning for `"name": "..."` so the record is
+                        // human-readable (the value carries the whole block).
+                        var key: []const u8 = fam;
+                        if (findJsonStringField(arg.value, "name")) |n| {
+                            key = n;
+                        }
+                        add_item(&items, allocator, fam, key, arg.value);
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort the closure by (family, key) so the manifest is byte-stable.
+    std.mem.sort(ImageManifest.Closure.Item, items.items, {}, struct {
+        fn lt(_: void, a: ImageManifest.Closure.Item, b: ImageManifest.Closure.Item) bool {
+            const fa = std.mem.order(u8, a.family, b.family);
+            if (fa != .eq) return fa == .lt;
+            return std.mem.order(u8, a.key, b.key) == .lt;
+        }
+    }.lt);
+
+    // Tree hash over the sorted closure: family + key + value, null-separated.
+    var tree = std.crypto.hash.sha2.Sha256.init(.{});
+    for (items.items) |it| {
+        tree.update(it.family);
+        tree.update(&[_]u8{0});
+        tree.update(it.key);
+        tree.update(&[_]u8{0});
+        tree.update(it.value);
+        tree.update("\n");
+    }
+    var tree_hex: [64]u8 = undefined;
+    _ = std.fmt.bufPrint(&tree_hex, "{x}", .{tree.finalResult()}) catch unreachable;
+
+    // Toolchain version — what the build actually ran under. Getting this is the
+    // difference between "the closure" and "the closure that will reproduce."
+    // Dupe it (and remember it is owned so the defer frees it): `res.stdout` and
+    // the trimmed slice into it are freed below the moment the block exits.
+    var zig_version_owned = false;
+    var zig_version: []const u8 = "unknown";
+    zig_version = blk: {
+        const res = std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &[_][]const u8{ "zig", "version" },
+        }) catch break :blk "unknown";
+        defer allocator.free(res.stdout);
+        defer allocator.free(res.stderr);
+        zig_version_owned = true;
+        break :blk allocator.dupe(u8, std.mem.trim(u8, res.stdout, " \t\r\n")) catch "unknown";
+    };
+    // Free only the duped runtime value, never the "unknown" literal.
+    defer if (zig_version_owned) allocator.free(zig_version);
+
+    const manifest_path = "build.image";
+    const exists = std.fs.cwd().access(manifest_path, .{}) catch null;
+
+    if (sub == .mint) {
+        if (exists != null and !force) {
+            // Anomalous re-derive path. An image is a seal created once; a second
+            // mint would overwrite the frozen closure and destroy the evidence of
+            // what a previous build ran on. That is the exact move supply-chain
+            // attacks exploit — so it is refused unless the user names force.
+            std.debug.print("✗ A build image already exists ({s}). Re-minting is anomalous — it would overwrite the sealed closure. Use `--force` only if you deliberately intend to re-seal.\n", .{manifest_path});
+            std.process.exit(1);
+        }
+        writeManifest(allocator, manifest_path, &tree_hex, zig_version, items.items) catch {
+            std.debug.print("✗ Failed to write {s}\n", .{manifest_path});
+            std.process.exit(1);
+        };
+        std.debug.print("✓ Minted build image: {s}\n", .{manifest_path});
+        std.debug.print("  toolchain  zig {s}\n", .{zig_version});
+        std.debug.print("  closure    sha256:{s}  ({d} record(s))\n", .{ tree_hex[0..12], items.items.len });
+        return;
+    }
+
+    // CHECK: the live closure must match the minted one. If there's no mint, the
+    // program is not sealed — a red pipeline, not a green "nothing to check."
+    if (exists) |_| {} else {
+        std.debug.print("✗ No build image ({s}). The program's build closure is unsealed. Mint it with `koruc {s} build image mint`.\n", .{ manifest_path, program.main_module_name });
+        std.process.exit(1);
+    }
+
+    const text = std.fs.cwd().readFileAlloc(allocator, manifest_path, 16 * 1024 * 1024) catch |err| {
+        std.debug.print("✗ {s} is unreadable ({s})\n", .{ manifest_path, @errorName(err) });
+        std.process.exit(1);
+    };
+    defer allocator.free(text);
+
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, text, .{}) catch {
+        std.debug.print("✗ {s} is not readable JSON\n", .{manifest_path});
+        std.process.exit(1);
+    };
+    defer parsed.deinit();
+
+    const closure = parsed.value.object.get("closure") orelse {
+        std.debug.print("✗ {s} has no closure record\n", .{manifest_path});
+        std.process.exit(1);
+    };
+    const minted_tree = closure.object.get("tree") orelse {
+        std.debug.print("✗ {s} closure has no tree hash\n", .{manifest_path});
+        std.process.exit(1);
+    };
+
+    // Compare the recorded tree against the live closure we just computed.
+    // The diagnostic NAMES the class of drift, not just "mismatch" — the thing
+    // to go read is the closure, which is what the mint was supposed to freeze.
+    // The live prefix is `sha256:` + the hex — built in a stack buffer, never
+    // heap, so the comparison cannot leak.
+    var live_tree: [64 + 7]u8 = undefined;
+    _ = std.fmt.bufPrint(&live_tree, "sha256:{s}", .{tree_hex}) catch unreachable;
+    if (std.mem.eql(u8, minted_tree.string, &live_tree)) {
+        std.debug.print("✓ Build image {s} matches the live closure\n", .{manifest_path});
+        return;
+    }
+
+    std.debug.print("✗ Build closure drifted from the minted image.\n", .{});
+    std.debug.print("  image    {s}\n", .{minted_tree.string});
+    std.debug.print("  live     sha256:{s}\n", .{tree_hex});
+    std.debug.print("  Re-mint only deliberately — `koruc {s} build image mint --force`.\n", .{program.main_module_name});
+    std.process.exit(1);
+}
+
+fn findJsonStringField(source: []const u8, field: []const u8) ?[]const u8 {
+    // Field-prefix match: `"field"` followed by `:` — a `"name"` inside
+    // `"filename"` must never match. Then a `"..."` string follows.
+    var idx: usize = 0;
+    while (std.mem.indexOfPos(u8, source, idx, field)) |i| {
+        // Only match when the field token is exactly a key: preceded by `"` and
+        // followed by `"` then `:`.
+        if (i == 0 or source[i - 1] != '"') {
+            idx = i + field.len;
+            continue;
+        }
+        const after_field = i + field.len;
+        if (after_field >= source.len or source[after_field] != '"') {
+            idx = i + field.len;
+            continue;
+        }
+        var probe = after_field + 1;
+        while (probe < source.len and (source[probe] == ' ' or source[probe] == '\t')) probe += 1;
+        if (probe >= source.len or source[probe] != ':') {
+            idx = i + field.len;
+            continue;
+        }
+        probe += 1;
+        while (probe < source.len and (source[probe] == ' ' or source[probe] == '\t')) probe += 1;
+        if (probe >= source.len or source[probe] != '"') return null;
+        const vstart = probe + 1;
+        const vend = std.mem.indexOfScalarPos(u8, source, vstart, '"') orelse return null;
+        return source[vstart..vend];
+    }
+    return null;
+}
+
+/// Escape a string for a JSON double-quoted value: `"` `\` and control chars
+/// become backslash escapes. Anything else passes through.
+fn writeEscaped(w: anytype, s: []const u8) !void {
+    for (s) |c| {
+        if (c == '"') {
+            try w.writeAll("\\\"");
+        } else if (c == '\\') {
+            try w.writeAll("\\\\");
+        } else if (c < 0x20) {
+            // Remaining control chars become \uXXXX; an already-printed byte is
+            // never both a named escape and a control char.
+            try w.print("\\u00{x:0>2}", .{c});
+        } else {
+            try w.writeByte(c);
+        }
+    }
+}
+
+fn writeManifest(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    tree_hex: []const u8,
+    toolchain_version: []const u8,
+    items: []const ImageManifest.Closure.Item,
+) !void {
+    var buf = std.ArrayListUnmanaged(u8){};
+    defer buf.deinit(allocator);
+    const w = buf.writer(allocator);
+
+    try w.writeAll("{\n  \"version\": 1,\n");
+    try w.print("  \"origin\": {{ \"toolchain\": \"zig\", \"version\": \"{s}\" }},\n", .{toolchain_version});
+    try w.writeAll("  \"closure\": {\n");
+    try w.print("    \"tree\": \"sha256:{s}\",\n", .{tree_hex});
+    try w.writeAll("    \"records\": [\n");
+    for (items, 0..) |it, i| {
+        // Escape each field by hand so embedded quotes/newlines in the source
+        // value are legitimately escaped — the manifest must parse. (A manifest
+        // that cannot be read back is a manifest that cannot reject a drift,
+        // which is the only thing it exists to do.)
+        try w.writeAll("      { \"family\": \"");
+        try writeEscaped(w, it.family);
+        try w.writeAll("\", \"key\": \"");
+        try writeEscaped(w, it.key);
+        try w.writeAll("\", \"value\": \"");
+        try writeEscaped(w, it.value);
+        try w.writeAll(if (i + 1 < items.len) "\" },\n" else "\" }\n");
+    }
+    try w.writeAll("    ]\n");
+    try w.writeAll("  }\n}\n");
+
+    const file = try std.fs.cwd().createFile(path, .{});
+    defer file.close();
+    try file.writeAll(buf.items);
+}

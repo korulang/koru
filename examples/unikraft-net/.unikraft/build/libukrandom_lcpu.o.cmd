@@ -1,0 +1,1 @@
+x86_64-elf-objcopy --keep-global-symbols=/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/ukrandom/lcpu/exportsyms.uk        /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libukrandom_lcpu.ld.o /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libukrandom_lcpu.o

@@ -1,0 +1,30 @@
+// PIN 696_002 — partial instantiation is refused (type-system synthesis walk, 2026-08-23).
+//
+// DOCTRINE UNDER TEST:
+//   A constructor is a forcing function over the property list. Partial
+//   instantiation is not initialization failure — it is NONEXISTENCE. The
+//   compiler holds the guest list (the schema declared it, complete, before
+//   any mint site existed) and refuses doors until everyone shown up.
+//   Scalars get bytes exactly once; pointers get witnesses; properties get
+//   forced. There are no uninitialized fields because there are no partial
+//   instances.
+//
+// Here `label` is missing from the clause. The program must be rejected at
+// the KORU layer, naming the absent property and its schema.
+
+~import std/store
+~import std/io
+
+~std/store:proto(garage) {
+    label: string
+    engine: *Engine<running!>
+}
+
+~tor start-engine {} -> *Engine<running!>
+
+~proc main {
+    std/store:instance(garage) {
+        engine: start-engine()
+    }
+    | ready g |> std/io:print.ln("unreachable")
+}

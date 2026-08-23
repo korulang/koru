@@ -1,0 +1,28 @@
+// PIN 696_006 — borrow slots are refused at instantiation (type-system synthesis walk, 2026-08-23).
+//
+// DOCTRINE UNDER TEST:
+//   Storage duration must not exceed permission duration. Borrows lend
+//   bodies; obligations rent indefinitely. An instantiated slot outlives the
+//   flow that minted it, so it accepts only `<state!>` — the marker whose
+//   duration is open-ended until discharge. A plain `<state>` view expires
+//   with its lender's body; holding one in permanent memory is dangling by
+//   construction, not by accident.
+//
+// Here a producer lends a bare `*Book<open>` (no bang — no obligation minted)
+// and an instantiated slot is asked to hold it. Refused at the KORU layer,
+// naming both states.
+
+~import std/store
+
+~std/store:proto(shelf) {
+    book: *Book<open!>
+}
+
+~tor lend-book {} -> *Book<open>
+
+~proc main {
+    std/store:instance(shelf) {
+        book: lend-book()
+    }
+    | ready s |> std/io:print.ln("unreachable")
+}

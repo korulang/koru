@@ -1,0 +1,9 @@
+$(eval $(call addlib_s,libxenbus,$(CONFIG_LIBXENBUS)))
+
+CINCLUDES-$(CONFIG_LIBXENBUS)  += -I$(LIBXENBUS_BASE)/include
+
+LIBXENBUS_SRCS-y               += $(LIBXENBUS_BASE)/xenbus.c
+LIBXENBUS_SRCS-y               += $(LIBXENBUS_BASE)/client.c
+LIBXENBUS_SRCS-y               += $(LIBXENBUS_BASE)/xs_comms.c
+LIBXENBUS_SRCS-y               += $(LIBXENBUS_BASE)/xs_watch.c
+LIBXENBUS_SRCS-y               += $(LIBXENBUS_BASE)/xs.c

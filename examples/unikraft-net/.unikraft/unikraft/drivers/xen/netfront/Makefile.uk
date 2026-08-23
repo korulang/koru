@@ -1,0 +1,4 @@
+$(eval $(call addlib_s,libnetfront,$(CONFIG_LIBNETFRONT)))
+
+LIBNETFRONT_SRCS-y          += $(LIBNETFRONT_BASE)/netfront.c
+LIBNETFRONT_SRCS-y          += $(LIBNETFRONT_BASE)/netfront_xs.c

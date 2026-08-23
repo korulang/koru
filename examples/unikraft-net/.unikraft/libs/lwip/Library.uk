@@ -1,0 +1,7 @@
+name        := "lwip"
+description := "A Lightweight TCP/IP stack."
+homepage    := "https://savannah.nongnu.org/projects/lwip/"
+license     := "BSD-3-Clause"
+version     := 2.1.x sha256:544d82aa663165dcecb6626b00035f6d7fe0b8d39d3eec63a8635be8aa8f5d62 https://github.com/unikraft/fork-lwip/archive/STABLE-2_1_x.tar.gz
+version     += 2.1.2 sha256:c6b10d0f5392d507f27a5a79bc43e706cb20df66bba86da56f557a53b68f2da8 https://github.com/unikraft/fork-lwip/archive/STABLE-2_1_2_RELEASE.tar.gz
+version     += 2.1.x-unikraft sha256:478d5aab535444de2f71debb212b1d1574be69f1f889fcb2becf251db62e87f2 https://github.com/unikraft/fork-lwip/archive/UNIKRAFT-2_1_x.tar.gz

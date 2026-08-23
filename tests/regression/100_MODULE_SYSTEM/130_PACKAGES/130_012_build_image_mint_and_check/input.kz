@@ -1,0 +1,28 @@
+// Pins the minted build-image lifecycle: a build closure is minted once, and
+// re-minting is ANOMALOUS (refused without `--force`). `image check` recomputes
+// the live closure and refuses on drift from the mint — the supply-chain seam
+// this whole module exists to close.
+//
+// The body compiles clean (SUCCESS); post.sh drives `mint`/`check` and asserts
+// the re-mint refusal + the drift detection + the no-leak exit.
+
+~import std/build_image
+~import std/deps
+
+~std/deps:requires.system {
+    "name": "curl",
+    "check": "curl --version",
+    "brew": "curl",
+    "apt": "libcurl4-openssl-dev"
+}
+
+~std/build:requires {
+    exe.linkSystemLibrary("sqlite3");
+}
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

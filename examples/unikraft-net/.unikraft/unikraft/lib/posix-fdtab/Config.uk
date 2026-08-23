@@ -1,0 +1,24 @@
+menuconfig LIBPOSIX_FDTAB
+	bool "posix-fdtab: File descriptor table"
+	select LIBUKATOMIC
+	select LIBUKBITOPS
+	select LIBUKFILE
+	select LIBPOSIX_FD
+	select LIBPOSIX_FD_HEAPOFD
+
+if LIBPOSIX_FDTAB
+	config LIBPOSIX_FDTAB_MAXFDS
+	int "Maximum number of file descriptors"
+	default 1024
+
+	# Hidden, will autoselect when required
+	config LIBPOSIX_FDTAB_MULTITAB
+	bool
+	default y if LIBPOSIX_PROCESS_MULTITHREADING
+	select LIBUKSCHED
+
+	# Hidden, selected by core components when needed
+	config LIBPOSIX_FDTAB_LEGACY_SHIM
+	bool
+
+endif

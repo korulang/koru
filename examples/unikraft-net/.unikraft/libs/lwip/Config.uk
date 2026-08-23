@@ -1,0 +1,408 @@
+menuconfig LIBLWIP
+	bool "lwip - Lightweight TCP/IP stack"
+	default n
+	select LIBNOLIBC if !HAVE_LIBC
+	select LIBUKDEBUG
+	select LIBUKRANDOM
+	select LIBUKBITOPS if LIBPOSIX_NETLINK
+	select HAVE_NW_STACK
+
+if LIBLWIP
+choice
+	prompt "Version"
+	default LWIP_UNIKRAFT21X
+	help
+		Select the version of the upstream lwIP stack
+		sources that will be downloaded.
+		Please note that you should run `make properclean`
+		whenever you change the version.
+
+config LWIP_RELEASE212
+	bool "Release 2.1.2"
+	help
+		An official release from the lwIP community.
+
+config LWIP_LATEST21X
+	bool "Latest 2.1.x (unofficial)"
+	help
+		The latest available lwIP version from the 2.1
+		release series that include recent bugfixes and
+		security patches.
+		Please note that there is a little chance that
+		depending on the changes upstream, the Unikraft
+		code could become incompatible. In such a case,
+		we recommend to select a released and officially
+		supported version instead.
+
+config LWIP_UNIKRAFT21X
+	bool "Unikraft 2.1.x (official)"
+	help
+		Unikraft official latest available and tested lwIP
+		version. This version is based on the latest lwIP
+		release from the 2.1 release series, includes some
+		recent bugfixes and security patches, and includes
+		latest features developed by the Unikraft community
+		that are currently upstreamed to lwIP.
+endchoice
+
+menu "Netif drivers"
+config LWIP_LOOPIF
+	bool "Loop interface"
+	default n
+	select LWIP_LOOPBACK
+	help
+		A driver for localhost (e.g., 127.0.0.1) networking.
+		Note: When lwIP is configured with mainloop mode, the
+		loop interface needs to be polled manually (netif_poll()).
+
+config LWIP_UKNETDEV
+	bool "Unikraft Netdev Ethernet (libuknetdev)"
+	default y
+	select LIBUKNETDEV
+	select LIBUKNETDEV_DISPATCHERTHREADS if LWIP_THREADS
+	help
+		A generic driver that operates network drivers through
+		libuknetdev API.
+		Note: When lwIP is configured with mainloop mode, receive
+		interrupts are not enabled by this driver (there is also no
+		receive interrupt handler registered).
+		In case threaded mode is selected and the underlying device
+		driver does not support receive interrupts the network
+		interfaces have to be polled manually (uknetdev_poll()).
+
+if LWIP_UKNETDEV
+config LWIP_UKNETDEV_POLLONLY
+       depends on LWIP_THREADS
+       bool "Force polling mode (workaround)"
+       default n
+       help
+		This option forces polling mode for uknetdev devices
+		irrespective if the device supports interrupt-driven
+		mode.
+		Because this option always causes 100% CPU utilization
+		it should be considered as workaround for cases where
+		interrupt-based handling performs badly.
+endif
+
+config LWIP_UKNETDEV_SCRATCH
+	int
+	default 64
+	help
+		The network stack reserves space in the uknetdev device for its
+		use. Please do not change this value and in case change this
+		value please make sure it is sufficient enough to hold the
+		lwip_netdev_data data structure.
+endmenu
+
+config LWIP_AUTOIFACE
+	bool "Automatically attach netifs"
+	default y
+	help
+		Automatically attach found network devices to the stack
+		during initialization.
+
+config LWIP_FAILNOIFACE
+	bool "Fail boot without netifs"
+	depends on LWIP_AUTOIFACE
+
+choice
+	prompt "Operation mode"
+	default LWIP_THREADS
+
+config LWIP_NOTHREADS
+	bool "Mainloop (non-threaded)"
+	help
+		No thread is created to operate the stack. The stack has to be
+		called from the same context as all stack interactions. This
+		includes polling network devices. The Socket API is unavailable.
+
+config LWIP_THREADS
+	bool "Threaded"
+	select LIBUKSCHED
+	select LIBUKMPI
+	select LIBUKMPI_MBOX
+	select LIBUKLOCK
+	select LIBUKLOCK_SEMAPHORE
+	select LIBUKLOCK_MUTEX
+	help
+		Creates a core thread for the stack.
+endchoice
+
+choice
+    prompt "Stack input mailbox size"
+    depends on LWIP_THREADS
+	default LWIP_STACKTHREAD_MBOX_SIZE_256
+    config LWIP_STACKTHREAD_MBOX_SIZE_32
+        bool "32"
+    config LWIP_STACKTHREAD_MBOX_SIZE_64
+        bool "64"
+    config LWIP_STACKTHREAD_MBOX_SIZE_128
+        bool "128"
+	config LWIP_STACKTHREAD_MBOX_SIZE_256
+        bool "256"
+    config LWIP_STACKTHREAD_MBOX_SIZE_512
+        bool "512"
+    config LWIP_STACKTHREAD_MBOX_SIZE_1024
+        bool "1024"
+	config LWIP_STACKTHREAD_MBOX_SIZE_2048
+        bool "2048"
+	help
+		This sets the size for the input mailbox that is used for receiving traffic from the network
+		interfaces.
+endchoice
+
+config LWIP_STACKTHREAD_MBOX_SIZE
+    int
+    default 32 if LWIP_STACKTHREAD_MBOX_SIZE_32
+    default 64 if LWIP_STACKTHREAD_MBOX_SIZE_64
+    default 128 if LWIP_STACKTHREAD_MBOX_SIZE_128
+    default 256 if LWIP_STACKTHREAD_MBOX_SIZE_256
+    default 512 if LWIP_STACKTHREAD_MBOX_SIZE_512
+    default 1024 if LWIP_STACKTHREAD_MBOX_SIZE_1024
+    default 2048 if LWIP_STACKTHREAD_MBOX_SIZE_2048
+
+choice
+	prompt "Memory allocation mode"
+	default LWIP_HEAP
+
+config LWIP_HEAP
+	bool "Heap only"
+	help
+		Use default ukalloc allocator for all memory allocation requests
+
+config LWIP_POOLS
+	bool "Memory pools"
+endchoice
+
+config LWIP_NETIF_EXT_STATUS_CALLBACK
+	bool "Netif extended status callback API"
+	default y
+	help
+		Support extended status callbacks to netif related events.
+
+config LWIP_NETIF_STATUS_PRINT
+	bool "Print netif status updates"
+	depends on LWIP_NETIF_EXT_STATUS_CALLBACK
+	default y
+	help
+		Print netif status changes to standard console
+
+config LWIP_RCVBUF
+	bool "Use receive buffers"
+	default y
+	help
+		Use receive buffers, enabling the SO_RCVBUF socket option and FIONREAD ioctl
+
+config LWIP_LINGER
+	bool "Linger on close()"
+	default y
+	help
+		Enables support of the SO_LINGER socket option that allows delaying close()
+		if data still available in the socket.
+
+config LWIP_LOOPBACK
+	bool "Loopback traffic"
+	default y
+	help
+		Support sending packets with a destination IP address
+		that is equal to the netif IP address, looping them back
+		up the stack.
+
+config LWIP_IPV4
+	bool "IPv4 support"
+	default y
+
+config LWIP_IPV6
+	bool "IPv6 support"
+	default n
+
+menu "IP Configuration"
+	depends on LWIP_IPV4 || LWIP_IPV6
+
+config LWIP_IP_REASS_MAX_PBUFS
+	int "Maximum number of fragments"
+	default 10
+	help
+		This is the maximum number of IP fragments waiting to be
+		reassembled.
+
+endmenu
+
+config LWIP_UDP
+	bool "UDP support"
+	default y
+
+config LWIP_RAW
+	bool "RAW support"
+	default n
+	help
+		Enable the RAW address family (AF_RAW).  This option allows an
+		application to be able to hook into the IP layer itself.
+
+menuconfig LWIP_TCP
+	bool "TCP support"
+	default y
+
+if LWIP_TCP
+config LWIP_TCP_MSS
+	int "Maximum segment size (bytes)"
+	default 1460
+
+config LWIP_WND_SCALE
+	bool "Window scaling"
+	default y
+
+config LWIP_TCP_KEEPALIVE
+	bool "Keepalive"
+	default n
+
+config LWIP_TCP_TIMESTAMPS
+	bool "Timestamps"
+	default n
+
+config LWIP_NUM_TCPCON
+	int "Maximum number of simultaneous TCP connections"
+	default 64
+
+config LWIP_NUM_TCPLISTENERS
+	int "Maximum number of simultaneous TCP listeners"
+	default 64
+endif
+
+config LWIP_ICMP
+	bool "ICMP support"
+	default y
+
+config LWIP_IGMP
+	bool "IGMP support"
+	default n
+
+config LWIP_SNMP
+	bool "SNMP support"
+	default n
+
+config LWIP_DHCP
+	bool "DHCP client"
+	depends on LWIP_IPV4
+	select LWIP_UDP
+	default n
+	help
+		When LWIP_AUTOIFACE is used, the initialization routine will
+		query the IPv4 addresses for the found devices from a DHCP
+		server on network.
+
+if LWIP_DHCP
+config LWIP_WAITIFACE
+	bool "Wait for 1st interface"
+	depends on LWIP_AUTOIFACE
+	select LWIP_NETIF_EXT_STATUS_CALLBACK
+	select LIBUKLOCK
+	select LIBUKLOCK_SEMAPHORE
+
+config LWIP_WAITIFACE_TO
+	int "Wait timeout (seconds, 0 = forever)"
+	range 0 300
+	default 5
+	depends on LWIP_WAITIFACE
+endif # LWIP_DHCP
+
+menuconfig LWIP_DNS
+	bool "DNS Resolver"
+	default y
+
+if LWIP_DNS
+config LWIP_DNS_MAX_SERVERS
+	int "Maximum number of servers"
+	default 2
+
+config LWIP_DNS_TABLE_SIZE
+	int "DNS table size"
+	default 32
+endif
+
+menuconfig LWIP_SOCKET
+	depends on LWIP_THREADS && (LWIP_UDP || LWIP_TCP)
+	bool "Socket API"
+	select LIBPOSIX_SOCKET
+	default y
+
+if LWIP_SOCKET
+	config LWIP_UDP_RECVMBOX_FACTOR
+		int "Factor for UDP recvmbox"
+		depends on LWIP_UDP
+		range 1 5
+		default 2
+		help
+			How many times should the UDP recvmbox be bigger than the LWIP stackthread mbox size.
+			Default 2, maximum 5.
+
+	config LWIP_TCP_RECVMBOX_FACTOR
+		int "Factor for TCP recvmbox"
+		depends on LWIP_TCP
+		range 1 5
+		default 2
+		help
+			How many times should the TCP recvmbox be bigger than the LWIP stackthread mbox size.
+			Default 2, maximum 5.
+endif
+
+menuconfig LWIP_DEBUG
+	bool "Debug messages"
+	default n
+	help
+		Enables debug messages on the debug console for selected lwIP
+		message types.
+
+if LWIP_DEBUG
+config LWIP_MAINLOOP_DEBUG
+	bool "Mainloop"
+	default n
+	help
+		Enables TCP_IP_DEBUG, TIMERS_DEBUG
+
+config LWIP_IF_DEBUG
+	bool "Netif"
+	default n
+	help
+		Enables ETHARP_DEBUG, NETIF_DEBUG
+
+config LWIP_IP_DEBUG
+	bool "IP"
+	default n
+	help
+		Enables IP_DEBUG, IP6_DEBUG, IP_REASS_DEBUG
+
+config LWIP_UDP_DEBUG
+	bool "UDP"
+	default n
+	help
+		Enables UDP_DEBUG
+
+config LWIP_TCP_DEBUG
+	bool "TCP"
+	default n
+	help
+		Enables TCP_DEBUG, TCP_FR_DEBUG, TCP_RTO_DEBUG, TCP_CWND_DEBUG,
+		TCP_WND_DEBUG, TCP_RST_DEBUG, TCP_QLEN_DEBUG, TCP_OUTPUT_DEBUG,
+		TCP_INPUT_DEBUG
+
+config LWIP_SYS_DEBUG
+	bool "System"
+	default n
+	help
+		Enables SYS_DEBUG, PBUF_DEBUG, MEM_DEBUG, MEMP_DEBUG
+
+config LWIP_API_DEBUG
+	bool "APIs"
+	default n
+	help
+		Enables SOCKETS_DEBUG, RAW_DEBUG, API_MSG_DEBUG, API_LIB_DEBUG
+
+config LWIP_SERVICE_DEBUG
+	bool "Services"
+	default n
+	help
+		Enables ETHARP_DEBUG, DNS_DEBUG, AUTOIP_DEBUG, DHCP_DEBUG,
+		ICMP_DEBUG, SNMP_DEBUG, SNMP_MSG_DEBUG, SNMP_MIB_DEBUG
+endif
+endif

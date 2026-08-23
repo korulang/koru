@@ -1,0 +1,290 @@
+name: integration
+
+on:
+  push:
+    branches: [staging, stable]
+    paths-ignore: ['*.md']
+
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [staging]
+    paths-ignore: ['*.md']
+
+jobs:
+  libc-test:
+    name: libc-test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - plat: qemu
+          arch: x86_64
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Fetch helloworld
+      uses: actions/checkout@v4
+      with:
+        repository: unikraft/app-helloworld
+        fetch-depth: 1
+        path: _helloworld
+
+    - name: Build and run libc-test via uktest
+      uses: unikraft/kraftkit@staging
+      with:
+        loglevel: debug
+        workdir: _helloworld
+        plat: ${{ matrix.plat }}
+        arch: ${{ matrix.arch }}
+        execute: true
+        kraftfile: |
+          specification: '0.5'
+          name: helloworld
+          unikraft:
+            source: ../
+            kconfig:
+              CONFIG_LIBUKTEST: "y"
+              CONFIG_LIBUKTEST_ALL: "n"
+              CONFIG_LIBUKTEST_TEST_MYSELF: "n"
+              CONFIG_LIBUKTEST_LOG_STATS: "y"
+              CONFIG_LIBUKDEBUG_ANSI_COLOR: "y"
+              CONFIG_LIBUKDEBUG_PRINTK_INFO: "y"
+              CONFIG_LIBDEVFS: "y"
+              CONFIG_LIBDEVFS_DEV_STDOUT: "y"
+              CONFIG_LIBDEVFS_DEV_NULL_ZERO: "y"
+              CONFIG_LIBDEVFS_DEV_ZERO: "y"
+              CONFIG_STACK_SIZE_PAGE_ORDER: 4
+          libraries:
+            libc-test:
+              version: staging
+              kconfig:
+                CONFIG_LIBLIBCTEST: "y"
+                CONFIG_LIBLIBCTEST_STRING_TESTS: "y"
+                CONFIG_LIBLIBCTEST_PTHREAD_TESTS: "y"
+                CONFIG_LIBLIBCTEST_CONVERSION_TESTS: "y"
+                CONFIG_LIBLIBCTEST_REGEX_TESTS: "y"
+                CONFIG_LIBLIBCTEST_FILE_FOLDER_TESTS: "y"
+                CONFIG_LIBLIBCTEST_TIME_TESTS: "y"
+                CONFIG_LIBLIBCTEST_NETWORK_TESTS: "y"
+                CONFIG_LIBLIBCTEST_SORT_TESTS: "y"
+                CONFIG_LIBLIBCTEST_STRUCTURE_SEARCH_TESTS: "y"
+                CONFIG_LIBLIBCTEST_SEMAPHORE_TESTS: "y"
+                CONFIG_LIBLIBCTEST_RANDOM_TESTS: "y"
+                CONFIG_LIBLIBCTEST_CRYPT_TESTS: "y"
+                CONFIG_LIBLIBCTEST_ENV_TESTS: "y"
+                CONFIG_LIBLIBCTEST_MALLOC_TESTS: "y"
+                CONFIG_LIBLIBCTEST_TGMATH_TESTS: "y"
+                CONFIG_LIBLIBCTEST_ICONV_TESTS: "y"
+                CONFIG_LIBLIBCTEST_UDIV_TESTS: "y"
+                CONFIG_LIBLIBCTEST_MBFUNC_TESTS: "y"
+                CONFIG_LIBLIBCTEST_SETJMP_TESTS: "y"
+                CONFIG_LIBLIBCTEST_FPCLASSIFY_TESTS: "y"
+                CONFIG_LIBLIBCTEST_POSIX_SPAWN_TESTS: "y"
+                CONFIG_LIBLIBCTEST_ACCESS_TESTS: "y"
+            musl:
+              version: staging
+              kconfig:
+                CONFIG_MUSL: "y"
+                CONFIG_LIBMUSL_COMPLEX: "y"
+            compiler-rt:
+              version: staging
+          targets:
+          - platform: ${{ matrix.plat }}
+            architecture: ${{ matrix.arch }}
+
+  self-test:
+    name: self-test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - plat: qemu
+          arch: x86_64
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Fetch helloworld
+      uses: actions/checkout@v4
+      with:
+        repository: unikraft/app-helloworld
+        fetch-depth: 1
+        path: _helloworld
+
+    - name: Build and run all internal tests via uktest
+      uses: unikraft/kraftkit@staging
+      with:
+        loglevel: debug
+        workdir: _helloworld
+        plat: ${{ matrix.plat }}
+        arch: ${{ matrix.arch }}
+        execute: true
+        kraftfile: |
+          specification: '0.5'
+          name: helloworld
+          unikraft:
+            source: ../
+            kconfig:
+              CONFIG_LIBUKTEST: "y"
+              CONFIG_LIBUKTEST_ALL: "y"
+              CONFIG_LIBUKTEST_TEST_MYSELF: "y"
+              CONFIG_LIBUKDEBUG_ANSI_COLOR: "y"
+              CONFIG_LIBUKDEBUG_PRINTK_INFO: "y"
+              CONFIG_LIBUKTEST_FAILFAST: "n"
+              CONFIG_LIBUKTEST_LOG_STATS: "y"
+              CONFIG_OPTIMIZE_WARNISERROR: "y"
+          targets:
+          - platform: ${{ matrix.plat }}
+            architecture: ${{ matrix.arch }}
+
+  helloworld:
+    name: helloworld
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - plat: qemu
+          arch: x86_64
+        - plat: qemu
+          arch: arm64
+        - plat: xen
+          arch: x86_64
+        - plat: fc
+          arch: x86_64
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Fetch helloworld
+      uses: actions/checkout@v4
+      with:
+        repository: unikraft/app-helloworld
+        fetch-depth: 1
+        path: _helloworld
+
+    - name: Build helloworld
+      uses: unikraft/kraftkit@staging
+      with:
+        loglevel: debug
+        workdir: _helloworld
+        execute: false
+        plat: ${{ matrix.plat }}
+        arch: ${{ matrix.arch }}
+        kraftfile: |
+          specification: '0.5'
+          name: helloworld
+          unikraft:
+            source: ../
+            kconfig:
+              CONFIG_OPTIMIZE_WARNISERROR: "y"
+          targets:
+          - platform: ${{ matrix.plat }}
+            architecture: ${{ matrix.arch }}
+
+  catalog-tests:
+    needs: [libc-test, self-test, helloworld]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/staging' && github.repository_owner == 'unikraft' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check idle
+        run: |
+          set -e;
+
+          today=$(date -u +"%Y-%m-%d");
+
+          # Check if there are any ongoing tests (only one repository dispatch exists so we can just check for the status)
+          # We need to check separately for each status because the API does not support multiple statuses
+          idle_queued=$(gh run list --repo unikraft/catalog --event repository_dispatch --limit 200 --created "$today" --status queued 2> /dev/null)
+          idle_in_progress=$(gh run list --repo unikraft/catalog --event repository_dispatch --limit 200 --created "$today" --status in_progress 2> /dev/null)
+          idle_requested=$(gh run list --repo unikraft/catalog --event repository_dispatch --limit 200 --created "$today" --status requested 2> /dev/null)
+          idle_waiting=$(gh run list --repo unikraft/catalog --event repository_dispatch --limit 200 --created "$today" --status waiting 2> /dev/null)
+          if [ -n "$idle_queued" ] || [ -n "$idle_in_progress" ] || [ -n "$idle_requested" ] || [ -n "$idle_waiting" ]; then
+            echo "There are idle tests, try again later:";
+            echo "Queued:";
+            jq "$idle_queued";
+            echo "In Progress:";
+            jq "$idle_in_progress";
+            echo "Requested:";
+            jq "$idle_requested";
+            echo "Waiting:";
+            jq "$idle_waiting";
+            exit 1;
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_CATALOG_PAT }}
+
+      - name: Get the start time
+        id: start_time
+        run: echo "start=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$GITHUB_OUTPUT"
+
+      - name: Repository Dispatch
+        uses: octokit/request-action@v2.x
+        with:
+          route: POST /repos/{owner}/{repo}/dispatches
+          owner: unikraft
+          repo: catalog
+          event_type: core_merge
+          client_payload: '{"id": "${{ github.run_id }}"}'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_CATALOG_PAT }}
+
+      - name: Fetch catalog results
+        run: |
+          set -e;
+
+          # Wait for all tests to start
+          sleep 30;
+
+          today=$(date -u +"%Y-%m-%d");
+          stop=$(date -u +"%Y-%m-%dT%H:%M:%SZ");
+          start=${{ steps.start_time.outputs.start }};
+
+          echo "♻️ Running all catalog tests";
+
+          for _ in {1..60}; do
+            # If there are more than 100 tests, the list will be truncated
+            # TODO(craciunoiuc): Implement pagination or filter only for not concluded tests
+            joutput=$(gh run list --repo unikraft/catalog --event repository_dispatch --limit 100 --created "$today" --json name,url,displayTitle,conclusion,createdAt);
+
+            # Check all the tests if they are successful
+            # If there is a failure, the workflow will fail-fast
+            # Filter out tests that were created after $start and before stop and pick only the ones that have the displayTitle==core_merge
+            fail_output=$(echo "$joutput" | jq -r -c -M --arg start "$start" --arg stop "$stop" '.[] | select(.createdAt <= $stop) | select(.createdAt >= $start) | select(.displayTitle == "core_merge") | select(.conclusion == "failure")');
+            if [ -n "$fail_output" ]; then
+              echo "There are failed tests:";
+              echo "$fail_output" | while read -r i; do
+                name=$(echo "$i" | jq -r -c -M '.name');
+                url=$(echo "$i" | jq -r -c -M '.url');
+                echo "❌ $name";
+                echo "   $url";
+                echo "";
+              done
+              echo "Inspect the whole test suite at:"
+              echo "https://github.com/unikraft/catalog?tab=readme-ov-file#library"
+              exit 1;
+            fi
+
+            # If there are tests that are on-going still, we will wait for them to finish
+            # Filter out tests that were created after $start and before stop and pick only the ones that have the displayTitle==core_merge
+            ongoing_output=$(echo "$joutput" | jq -r -c -M --arg start "$start" --arg stop "$stop" '.[] | select(.createdAt <= $stop) | select(.createdAt >= $start) | select(.displayTitle == "core_merge") | select(.conclusion == "")')
+            if [ -z "$ongoing_output" ]; then
+              echo "✅ All tests have finished successfully";
+              exit 0;
+            fi
+
+            sleep 30;
+          done
+          echo "Timeout waiting for tests to finish";
+          exit 1;
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_CATALOG_PAT }}

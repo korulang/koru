@@ -1,0 +1,46 @@
+From 5bba402a1fe30e6bbad90599ba9373edf3da3ad3 Mon Sep 17 00:00:00 2001
+From: Florian Schmidt <florian.schmidt@neclab.eu>
+Date: Wed, 17 Apr 2019 15:37:20 +0200
+Subject: [PATCH] Don't provide file status flags when we have a libc
+
+Instead, trust that they will show up during compilation, just maybe a
+bit later. Otherwise, we might very well end up with conflicting
+definitions for the values of these flags.
+
+Signed-off-by: Florian Schmidt <florian.schmidt@neclab.eu>
+---
+ src/include/lwip/sockets.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/include/lwip/sockets.h b/src/include/lwip/sockets.h
+index d70d36c4..72169cd0 100644
+--- a/src/include/lwip/sockets.h
++++ b/src/include/lwip/sockets.h
+@@ -39,6 +39,8 @@
+ #ifndef LWIP_HDR_SOCKETS_H
+ #define LWIP_HDR_SOCKETS_H
+ 
++#include <uk/config.h>
++
+ #include "lwip/opt.h"
+ 
+ #if LWIP_SOCKET /* don't build if not configured for use in lwipopts.h */
+@@ -447,6 +449,7 @@ typedef struct ipv6_mreq {
+ #define F_SETFL 4
+ #endif
+ 
++#ifndef CONFIG_HAVE_LIBC
+ /* File status flags and file access modes for fnctl,
+    these are bits in an int. */
+ #ifndef O_NONBLOCK
+@@ -464,6 +467,7 @@ typedef struct ipv6_mreq {
+ #ifndef O_RDWR
+ #define O_RDWR      (O_RDONLY|O_WRONLY)
+ #endif
++#endif /* CONFIG_HAVE_LIBC */
+ 
+ #ifndef SHUT_RD
+   #define SHUT_RD   0
+-- 
+2.21.0
+

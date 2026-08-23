@@ -1,0 +1,1 @@
+x86_64-elf-objcopy --keep-global-symbols=/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/ukconsole/vgacons/exportsyms.uk        /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libvgacons.ld.o /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libvgacons.o

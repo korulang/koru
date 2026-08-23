@@ -1,0 +1,10 @@
+fpathconf
+sysconf
+sysinfo
+confstr
+pathconf
+getpagesize
+uname
+gethostname
+sethostname
+getcpu

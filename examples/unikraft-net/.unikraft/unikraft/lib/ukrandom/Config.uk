@@ -1,0 +1,73 @@
+menuconfig LIBUKRANDOM
+	bool "ukrandom: Random number generation"
+	select LIBUKDEBUG
+	select LIBUKLOCK
+	help
+		Provides cryptographically secure random numbers via
+		a software CSRNG. Requires enabling a hardware RNG,
+		or initialize the CSPRNG via the cmdline.
+
+if LIBUKRANDOM
+
+config LIBUKRANDOM_CMDLINE_SEED
+	bool "Obtain seed from the command line"
+	select LIBUKBOOT
+	select LIBUKLIBPARAM
+	help
+		Selecting this option will cause libukrandom to obtain its
+		seed from the cmdline, if the `random.seed` parameter is
+		passed with a 256-bit key formatted as an array of
+		32-bit words. This option has higher precedence than the
+		device-tree and drivers to hardware RNG devices. The user
+		must ensure that adequate security measures are deployed
+		to prevent leakage of the seed at its origin (loader / host).
+
+config LIBUKRANDOM_DTB_SEED
+	bool "Obtain seed from the device-tree"
+	depends on LIBUKOFW
+	select LIBUKBOOT
+	default y
+	help
+		Selecting this option will cause libukrandom to obtain its
+		seed from the fdt, if the `/chosen/rng-seed` node is present
+		and populated with a 256-bit key formatted as an array of
+		32-bit words. In that case any hardware RNG driver enabled
+		will be ignored.
+
+config LIBUKRANDOM_RESEED
+	bool "Periodic reseed"
+	depends on !LIBUKRANDOM_CMDLINE_SEED && !LIBUKRANDOM_DTB_SEED
+	default y
+	help
+		Periodically reseed the CSPRNG for forward secrecy.
+                Without reseeding, an attacker who obtains the internal
+		state of the RNG can derive past and future outputs.
+
+if LIBUKRANDOM_RESEED
+config LIBUKRANDOM_RESEED_INTERVAL
+	int "Reseed interval (sec)"
+	default 300
+endif
+
+config LIBUKRANDOM_GETRANDOM
+	bool "getrandom() system call"
+	depends on LIBSYSCALL_SHIM
+
+config LIBUKRANDOM_DEVFS
+	bool "Register random, urandom, and hwrng device to devfs"
+	depends on HAVE_VFS
+	select LIBDEVFS if LIBVFSCORE
+	select LIBUKFS_DEVFS if LIBPOSIX_VFS
+	help
+		Registers /dev/random, /dev/urandom and /dev/hwrng to devfs.
+		Both /dev/random and /dev/urandom are fed with randomness
+		via the CSPRNG, so both are non-blocking. /dev/hwrng provides
+		pass-through access to the underlying hardware device. If
+		LIBUKRANDOM_CMDLINE_PARAM is selected, /dev/hwrng is not
+		registered.
+
+config LIBUKRANDOM_TEST
+	bool "Enable unit tests"
+	select LIBUKTEST
+
+endif

@@ -1,0 +1,12 @@
+diff --git a/src/include/lwip/sockets.h b/src/include/lwip/sockets.h
+index ace9885..4e333ae 100644
+--- a/src/include/lwip/sockets.h
++++ b/src/include/lwip/sockets.h
+@@ -327,6 +327,7 @@ typedef struct ip_mreq {
+ #if LWIP_IPV4
+ struct in_pktinfo {
+   unsigned int   ipi_ifindex;  /* Interface index */
++  struct in_addr ipi_spec_dst;	/* Routing destination address  */
+   struct in_addr ipi_addr;     /* Destination (from header) address */
+ };
+ #endif /* LWIP_IPV4 */

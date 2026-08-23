@@ -1,0 +1,18 @@
+menuconfig LIBUKRANDOM_LCPU
+	bool "CPU generated randomness"
+	depends on (ARCH_X86_64 || (ARCH_ARM_64))
+	# TBD re-arch: Selecting a `HAVE` option from the driver
+	#              library may not be the best approach, but
+	#              right now we don't have a way to select
+	#              the highest architectural revision required
+	#              by different features of AArch64, so we
+	#              delegate generation of compiler flags to
+	#              a single makefile (arch/arm/arm64/Makefile.uk)
+	select HAVE_ARM64_FEAT_RNG if ARCH_ARM_64
+	select LIBUKBOOT
+	help
+		Provides CPU generated randomness. This is normally implemented
+		by dedicated instructions such as RDRAND / RDSEED in x86_64, or
+		RNDR / RNDRRS in arm64. On arm64 this requires a CPU that implements
+		FEAT_RNG, which was introduced in armv8.5-a.
+

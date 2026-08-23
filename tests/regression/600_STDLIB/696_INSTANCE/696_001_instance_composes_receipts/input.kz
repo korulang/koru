@@ -1,0 +1,43 @@
+// PIN 696_001 — instance composes receipts (type-system synthesis walk, 2026-08-23).
+//
+// DOCTRINE UNDER TEST:
+//   A reference property accepts ANY tor satisfying its signature. States
+//   cannot be forged, so every producer chain terminates at a real
+//   acquisition. Scalar properties accept their value. `instance` mints
+//   presence, not bytes: every byte was allocated by the verb that acquired
+//   it, at its own site, under its own obligation. Composition allocates
+//   nothing on its own behalf.
+//
+// Two DIFFERENT producers fill the same `*Engine<running!>` signature — the
+// stdlib-shaped verb and a user verb — proving the slot is open to any
+// satisfying tor, not hard-coded to one constructor. The compound return is
+// the schema's property list spelled as a bare record; destructuring
+// distributes each receipt's obligation to its binder, and downstream
+// handling is the ordinary obligation machinery. No new rule exists past
+// the return.
+
+~import std/store
+~import std/io
+
+~std/store:proto(garage) {
+    label: string
+    engine: *Engine<running!>
+}
+
+~tor start-engine {} -> *Engine<running!>
+
+~tor rebind { e: *Engine<running!> } -> *Engine<running!>
+
+~proc main {
+    std/store:instance(garage) {
+        engine: start-engine()
+        label: "alpha"
+    }
+    | ready a |> std/io:print.ln("alpha ready")
+
+    std/store:instance(garage) {
+        engine: rebind(start-engine())
+        label: "beta"
+    }
+    | ready b |> std/io:print.ln("beta ready")
+}

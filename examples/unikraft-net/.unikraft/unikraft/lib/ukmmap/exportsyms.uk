@@ -1,0 +1,5 @@
+mmap
+munmap
+madvise
+mremap
+mprotect

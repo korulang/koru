@@ -114,3 +114,53 @@ Three rulings fall out and are now load-bearing:
   seriously. This guard exists so the types-as-data framing is never read as
   "we should not build `std/types`" — the library is the type system's surface,
   and the registry is the power behind it.
+---
+
+## The ground shifted again: the type column is nearly empty BY DESIGN (2026-08-23)
+
+The synthesis walk (this session, with Lars) dissolved the remaining constructs
+and narrowed what an entry can BE. Rulings, each falsifiable:
+
+- **`std/types:struct` is retired, not redesigned.** Corpus verdict: 94 files
+  use it inside its own test clusters, ZERO organic consumers across hundreds
+  of sessions of real programs (json.kz reached for host+phantoms, boids for
+  stores, the compiler for host injection). A feature whose only demand is its
+  own test cluster was redundant with the language spine: composition is the
+  flow's native operation, so a composite-type construct duplicates it.
+  Doctrine going forward: a construct proposal must name the flow operation it
+  duplicates before it is taken seriously.
+- **Stamped names (`#`) die with the mint.** They were plumbing for standalone
+  mints; standalone mints no longer exist. Identity lives in structured entry
+  fields (family + ordered param refs), display names derived, emission
+  mangles deterministically. The 030_110–123 stamped cluster retires
+  un-pinned; its "demand marker" (030_112) proved circular — pressure came
+  only from the type tests themselves.
+- **Entries narrow to five kinds**: base types (seeded), schemas (born from
+  memory declarations — store create/grid reserve/kernel element), state
+  carriers (phantoms), projections (physical layouts). SHAPES ARE CHECKED,
+  NEVER MINTED — in-flight composites stay anonymous, checked point-to-point;
+  they become data only when comptime comprehends over them. Switch dissolves
+  into cond (values) + branch arms (variants, exhaustiveness by totality).
+- **The instance law** (pins: 600_STDLIB/695_INSTANCE): a constructor is a
+  forcing function over the property list — every property instantiated, each
+  according to its kind. Reference slots accept ANY tor satisfying the
+  `<Type<state!>>` signature (states cannot be forged, so producer chains root
+  at real acquisitions); scalar slots accept plain values. Storage duration
+  must not exceed permission duration — borrows lend bodies, obligations rent
+  indefinitely, so instantiated slots accept only bang-states. There is no
+  malloc verb, no constructor keyword, no aggregate value: scalars get bytes
+  once, pointers get witnesses, `instance` returns the property list as a bare
+  record with obligations pre-attached per field, and downstream handling is
+  the ordinary obligation machinery. The heap demotes to "where hosts live" —
+  Koru's own memory is static-declared (stores/grids) or ephemeral (values).
+- **Parked, adjacent, not designed**: bulk instantiation (1000 instances) is a
+  DIFFERENT case from single instantiation — likely one allocation shaped like
+  a std/list/array of the proto, closer to grid/store extent semantics than to
+  insert; possibly spelled like an `! each`-branch over a for. Reopens nothing
+  above; needs its own day.
+
+Falsification conditions, written down BEFORE pressure arrives: one real
+program that cannot be expressed honestly without a user-minted layout, a
+borrow slot at instantiation, or a named shape alias reopens the corresponding
+door. Go spent a decade resisting generics without a written reopening
+criterion; we did not repeat that.

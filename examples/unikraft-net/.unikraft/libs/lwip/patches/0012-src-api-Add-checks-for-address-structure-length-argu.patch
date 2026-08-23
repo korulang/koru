@@ -1,0 +1,61 @@
+From a520333383a5d9f2215e5bbe03f3655e7434ee1a Mon Sep 17 00:00:00 2001
+From: Sergiu Moga <sergiu@unikraft.io>
+Date: Fri, 31 May 2024 12:26:29 +0300
+Subject: [PATCH] src/api: Add checks for address structure length arguments
+
+Some applications call some sockets interfaces with address structure
+lengths way too big. This is documented as fine, in the manuals, as
+the kernel has to adjust accordingly and overwrite the argument passed
+address length with the actual filled in address length.
+
+e.g. in perl5.38's strace we can see the following call
+```
+accept4(3, {sa_family=AF_INET, sin_port=htons(45754), sin_addr=inet_addr("127.0.0.1")}, [4096 => 16], SOCK_CLOEXEC) = 4
+```
+As it can be seen, the addrlen argument is 4096 and gets adjusted to 16,
+the actual maximum length of the address structure.
+
+Signed-off-by: Sergiu Moga <sergiu@unikraft.io>
+---
+ src/api/sockets.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/src/api/sockets.c b/src/api/sockets.c
+index 5eb8362a..4c5a312e 100644
+--- a/src/api/sockets.c
++++ b/src/api/sockets.c
+@@ -702,6 +702,9 @@ lwip_accept(int s, struct sockaddr *addr, socklen_t *addrlen)
+     }
+ 
+     IPADDR_PORT_TO_SOCKADDR(&tempaddr, &naddr, port);
++    if (*addrlen > sizeof(*addr)) {
++      *addrlen = sizeof(*addr);
++    }
+     MEMCPY(addr, &tempaddr, *addrlen);
+ 
+     LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_accept(%d) returning new sock=%d addr=", s, newsock));
+@@ -1044,6 +1047,11 @@ lwip_sock_make_addr(struct netconn *conn, ip_addr_t *fromaddr, u16_t port,
+ #endif /* LWIP_IPV4 && LWIP_IPV6 */
+ 
+   IPADDR_PORT_TO_SOCKADDR(&saddr, fromaddr, port);
++  if (*fromlen < sizeof(*from)) {
++    truncated = 1;
++  } else {
++    *fromlen = sizeof(*from);
++  }
+   MEMCPY(from, &saddr, *fromlen);
+   return truncated;
+ }
+@@ -2740,6 +2748,9 @@ lwip_getaddrname(int s, struct sockaddr *name, socklen_t *namelen, u8_t local)
+   ip_addr_debug_print_val(SOCKETS_DEBUG, naddr);
+   LWIP_DEBUGF(SOCKETS_DEBUG, (" port=%"U16_F")\n", port));
+ 
++  if (*namelen > sizeof(*name)) {
++    *namelen = sizeof(*name);
++  }
+   MEMCPY(name, &saddr, *namelen);
+ 
+   sock_set_errno(sock, 0);
+-- 
+2.43.0
+

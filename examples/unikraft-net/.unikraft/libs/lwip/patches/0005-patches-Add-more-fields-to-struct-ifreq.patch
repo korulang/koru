@@ -1,0 +1,43 @@
+diff --git a/src/include/lwip/sockets.h b/src/include/lwip/sockets.h
+index ace9885..a6cec38 100644
+--- a/src/include/lwip/sockets.h
++++ b/src/include/lwip/sockets.h
+@@ -184,8 +184,38 @@ will need to increase long long */
+ #define IFNAMSIZ NETIF_NAMESIZE
+ struct ifreq {
+   char ifr_name[IFNAMSIZ]; /* Interface name */
++	union {
++		struct sockaddr ifru_addr;
++		struct sockaddr ifru_dstaddr;
++		struct sockaddr ifru_broadaddr;
++		struct sockaddr ifru_netmask;
++		struct sockaddr ifru_hwaddr;
++		short int ifru_flags;
++		int ifru_ivalue;
++		int ifru_mtu;
++		/*struct ifmap ifru_map;*/
++		char ifru_slave[IFNAMSIZ];
++		char ifru_newname[IFNAMSIZ];
++		char *ifru_data;
++	} ifr_ifru;
+ };
+ 
++#define ifr_hwaddr	ifr_ifru.ifru_hwaddr
++#define ifr_addr	ifr_ifru.ifru_addr
++#define ifr_dstaddr	ifr_ifru.ifru_dstaddr
++#define ifr_broadaddr	ifr_ifru.ifru_broadaddr
++#define ifr_netmask	ifr_ifru.ifru_netmask
++#define ifr_flags	ifr_ifru.ifru_flags
++#define ifr_metric	ifr_ifru.ifru_ivalue
++#define ifr_mtu		ifr_ifru.ifru_mtu
++#define ifr_map		ifr_ifru.ifru_map
++#define ifr_slave	ifr_ifru.ifru_slave
++#define ifr_data	ifr_ifru.ifru_data
++#define ifr_ifindex	ifr_ifru.ifru_ivalue
++#define ifr_bandwidth	ifr_ifru.ifru_ivalue
++#define ifr_qlen	ifr_ifru.ifru_ivalue
++#define ifr_newname	ifr_ifru.ifru_newname
++
+ /* Socket protocol types (TCP/UDP/RAW) */
+ #define SOCK_STREAM     1
+ #define SOCK_DGRAM      2
