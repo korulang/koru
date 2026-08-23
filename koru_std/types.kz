@@ -142,13 +142,29 @@ const std = @import("std");
         return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/types/proto({s}): an entry with no fields derives nothing — declare at least one `name: type` field", .{name}) };
     }
 
-    // Layout-silent self-erase: a comment carries the registry's content for
-    // anyone reading the emitted module; nothing else is emitted for the entry
-    // itself (the consumer's derived struct is what the program runs on).
+    // Layout-silent self-erase: a ONE-LINE comment carries the registry's
+    // content for anyone reading the emitted module; nothing else is emitted
+    // for the entry itself (the consumer's derived struct is what the program
+    // runs on). The collapse is load-bearing: a multi-line body left its
+    // second and later lines as RAW TEXT in the emitted Zig module (they are
+    // not comments — only the first line carries `//`), and the backend died
+    // on `serial: string` as a bare statement. Fields join with ", " — the
+    // same separator std/list's marker parser splits on.
+    const flat = blk: {
+        var buf = std.ArrayList(u8).initCapacity(allocator, source.text.len + 1) catch unreachable;
+        var it = std.mem.splitScalar(u8, source.text, '\n');
+        while (it.next()) |raw| {
+            const seg = std.mem.trim(u8, raw, " \t\r,");
+            if (seg.len == 0) continue;
+            if (buf.items.len > 0) buf.appendSlice(allocator, ", ") catch unreachable;
+            buf.appendSlice(allocator, seg) catch unreachable;
+        }
+        break :blk buf.toOwnedSlice(allocator) catch unreachable;
+    };
     const code = std.fmt.allocPrint(
         allocator,
         "// proto {s}: {s}",
-        .{ name, std.mem.trim(u8, source.text, " \t\r\n") },
+        .{ name, flat },
     ) catch unreachable;
 
     const inline_code_item = ast.Item{

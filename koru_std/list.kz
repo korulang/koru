@@ -81,17 +81,23 @@ pub const List_i64 = struct {
     // A primitive keeps the old single-segment hand-written route; a proto
     // entry goes through synthesis.
     const proto_name = protoEntryName(allocator, elem);
-    const found_decl = if (proto_name != null) findProtoDecl(program, elem) else null;
-    
-    const is_proto_elem = found_decl != null;
+    const is_proto_elem = if (proto_name) |pn| programHasProto(program, pn) else false;
 
     var appended_items: []const ast.Item = &.{};
+
+    // The stage loop can re-fire this same site after its own successful
+    // splice (the walker revisits the rewritten tree), and a NESTED
+    // `std/list:new(<proto>)` site reaches this handler through a synthetic
+    // site-view whose wrapper fields are not the real flow's. `hasRewrittenNew`
+    // is the dedupe marker for the re-fired case — the container already
+    // exists, so this pass just rewrites its call site. Refusing there made
+    // the re-fire fatal (KORU173 on an already-synthesized program).
     const routed_name = if (is_proto_elem) blk: {
         if (!hasRewrittenNew(program, proto_name.?)) {
             appended_items = synthesizeContainer(allocator, program, flow, proto_name.?, elem);
-        }
-        if (appended_items.len == 0) {
-            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/list:new({s}): container synthesis produced no units — the proto entry was not found or has no parseable fields", .{elem}) };
+            if (appended_items.len == 0) {
+                return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/list:new({s}): container synthesis produced no units — the proto entry was not found or has no parseable fields", .{elem}) };
+            }
         }
         break :blk proto_name.?;
     } else elem;
@@ -100,22 +106,40 @@ pub const List_i64 = struct {
     const new_segments = allocator.alloc([]const u8, 1) catch unreachable;
     new_segments[0] = seg;
 
-    // The rewrite must address the CALLER's module (post-canonicalization
-    // assigns no qualifiers — appended items never get canonicalized, so the
-    // path must be spelled from the start). flow.module is the entry/module
-    // file-derived name = the canonical module for the entry file; the slice
-    // rung pins the caller-in-entry-file case.
+    // The rewrite addresses the module the ROUTED CONSTRUCTOR lives in.
+    // A primitive constructor stays in std.list — its hand-written home;
+    // stamping the caller's module here minted `<entry>:new-i64`, a tor no
+    // module declares (KORU040 on every primitive `new(i64)` site). A proto
+    // container's constructor is SYNTHESIZED into the caller's module, so it
+    // must be addressed there: appended items never get canonicalized, the
+    // path is spelled from the start.
+    const routed_qualifier: ?[]const u8 = if (is_proto_elem)
+        allocator.dupe(u8, flow.module) catch unreachable
+    else if (invocation.path.module_qualifier) |mq|
+        allocator.dupe(u8, mq) catch unreachable
+    else
+        null;
     const new_inv = ast.Invocation{
         .path = ast.DottedPath{
-            .module_qualifier = allocator.dupe(u8, flow.module) catch unreachable,
+            .module_qualifier = routed_qualifier,
             .segments = new_segments,
         },
         .args = &[_]ast.Arg{},
     };
 
+    // Ops over THIS site's bindings route to the synthesized suffixed events
+    // (`std/list:push(xs, …)` → `<caller>:push-<Name>(xs, …)`), resolved from
+    // the names the site's own branches bind. A handle used in a LATER flow
+    // still refuses loudly at the shape check — the sliced-scope boundary the
+    // module header states.
+    const carried = if (is_proto_elem)
+        rewriteProtoOps(allocator, flow.module, flow.body.continuations, routed_name)
+    else
+        flow.body.continuations;
+
     const new_item = ast.Item{
         .flow = ast.Flow{
-            .body = ast.rootSite(new_inv, flow.body.continuations, flow.location),
+            .body = ast.rootSite(new_inv, carried, flow.location),
             .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
             .impl_of = flow.impl_of,
             .super_shape = null,
@@ -124,11 +148,20 @@ pub const List_i64 = struct {
             .is_pure = flow.is_pure,
             .is_transitively_pure = flow.is_transitively_pure,
             .location = flow.location,
+
             .module = allocator.dupe(u8, flow.module) catch unreachable,
         },
     };
 
     return .{ .replacement = new_item, .appended = appended_items };
+}
+
+
+
+fn protoNameDbg(prog: *const astz.Program, elem: []const u8) bool {
+    if (findProtoDecl(prog, elem) != null) return true;
+    if (programHasProto(prog, elem)) return true;
+    return false;
 }
 
 // Concrete i64 constructor (runtime). `new(i64)` rewrites to this. Carries the
@@ -189,7 +222,7 @@ pub const List_i64 = struct {
 // Random access by index. <list> borrow — read, list untouched. `out-of-bounds`
 // when i is past the end.
 ~pub tor get { xs: *List_i64<list>, i: usize }
-| item: i64
+| item i64
 | out-of-bounds
 
 ~proc get|zig {
@@ -203,7 +236,7 @@ pub const List_i64 = struct {
 // binding keeps <list!>), so it can be popped again or freed. `empty` when there
 // is nothing to pop. For scalar elements the popped value carries no obligation.
 ~pub tor pop { xs: *List_i64<list> }
-| item: i64
+| item i64
 | empty
 
 ~proc pop|zig {
@@ -351,6 +384,57 @@ fn findProtoDecl(prog: *const astz.Program, elem: []const u8) ?*const astz.Flow 
     return Finder.findIn(prog.items, want_name, want_mod);
 }
 
+/// True when the program carries the proto entry `elem` in EITHER of the two
+/// forms the transform fixed point leaves behind: the declaration flow
+/// (pre-erase) or the self-erased `// proto <Name>: ...` marker comment
+/// (post-erase). Pass ordering decides which form a `std/list:new` site sees —
+/// a proto declared EARLIER in the file erases first, and detection keyed on
+/// the live flow alone then misroutes a proto element as a primitive
+/// (`new-Engine` with no such tor → KORU040).
+fn programHasProto(prog: *const astz.Program, elem: []const u8) bool {
+    if (findProtoDecl(prog, elem)) |_| return true;
+    const trimmed = std.mem.trim(u8, elem, " \t");
+    const want_name = if (std.mem.lastIndexOfScalar(u8, trimmed, ':')) |ci|
+        std.mem.trim(u8, trimmed[ci + 1 ..], " \t")
+    else
+        trimmed;
+    var want_mod: ?[]const u8 = null;
+    if (std.mem.lastIndexOfScalar(u8, trimmed, ':')) |ci| {
+        const qual = std.mem.trim(u8, trimmed[0..ci], " \t");
+        if (qual.len > 0) {
+            want_mod = std.mem.replaceOwned(u8, std.heap.page_allocator, qual, "/", ".") catch unreachable;
+        }
+    }
+    const Marker = struct {
+        fn matches(ic: *const astz.InlineCode, name: []const u8, mod: ?[]const u8) bool {
+            const prefix = "// proto ";
+            if (!std.mem.startsWith(u8, ic.code, prefix)) return false;
+            const colon = std.mem.indexOfScalar(u8, ic.code, ':') orelse return false;
+            if (!std.mem.eql(u8, std.mem.trim(u8, ic.code[prefix.len..colon], " \t"), name)) return false;
+            if (mod) |m| {
+                if (ic.module.len > 0 and std.mem.eql(u8, ic.module, m)) return true;
+                return false;
+            }
+            return true;
+        }
+        fn find(items: []const astz.Item, name: []const u8, mod: ?[]const u8) bool {
+            for (items) |pi| {
+                switch (pi) {
+                    .inline_code => |*ic| {
+                        if (matches(ic, name, mod)) return true;
+                    },
+                    .module_decl => |*m| {
+                        if (find(m.items, name, mod)) return true;
+                    },
+                    else => {},
+                }
+            }
+            return false;
+        }
+    };
+    return Marker.find(prog.items, want_name, want_mod);
+}
+
 /// The fields of a proto declaration flow, parsed from its `source:` argument's
 /// text (`rpm: i32, serial: string`).
 fn protoFieldsOf(alloc: std.mem.Allocator, decl: *const astz.Flow) ProtoFields {
@@ -432,9 +516,11 @@ fn protoFieldsOfProgram(alloc: std.mem.Allocator, prog: *const astz.Program, ele
     var rest: ?[]const u8 = null;
     _ = N.find(prog.items, want_name, &rest);
     const text = rest orelse return .{ .names = &.{}, .types = &.{} };
-    // Parse the trailing fields text like a proto body source.
+    // Parse the trailing fields text like a proto body source. The erased
+    // marker is ONE line (`// proto Name: f: t, g: u`), so fields separate on
+    // ',' as well as '\n'.
     var count: usize = 0;
-    var lines1 = std.mem.splitScalar(u8, text, '\n');
+    var lines1 = std.mem.tokenizeAny(u8, text, "\n,");
     while (lines1.next()) |line_raw| {
         const line = std.mem.trim(u8, line_raw, " \t\r,");
         if (line.len == 0) continue;
@@ -446,7 +532,7 @@ fn protoFieldsOfProgram(alloc: std.mem.Allocator, prog: *const astz.Program, ele
     const names = alloc.alloc([]const u8, count) catch unreachable;
     const types = alloc.alloc([]const u8, count) catch unreachable;
     var w: usize = 0;
-    var lines2 = std.mem.splitScalar(u8, text, '\n');
+    var lines2 = std.mem.tokenizeAny(u8, text, "\n,");
     while (lines2.next()) |line_raw| {
         const line = std.mem.trim(u8, line_raw, " \t\r,");
         if (line.len == 0) continue;
@@ -482,6 +568,7 @@ fn synthOp(
     name: []const u8,
     input_fields: []const astz.Field,
     branches: []const astz.Branch,
+    return_type: ?[]const u8,
     proc_body: []const u8
 ) [2]astz.Item {
     const path = astz.DottedPath{
@@ -496,6 +583,7 @@ fn synthOp(
         .path = path,
         .input = astz.Shape{ .fields = input_fields },
         .branches = branches,
+        .return_type = return_type,
         .is_public = false,
         .is_implicit_flow = false,
         .annotations = &.{},
@@ -518,6 +606,79 @@ fn synthOp(
     return .{ ed, pd };
 }
 
+/// The std/list ops a proto container's site routes to suffixed events.
+fn isRoutedOp(name: []const u8) bool {
+    const ops = [_][]const u8{ "push", "len", "get", "pop", "free" };
+    for (ops) |op| {
+        if (std.mem.eql(u8, name, op)) return true;
+    }
+    return false;
+}
+
+fn collectBinds(conts: []const astz.Continuation, bound: *std.StringHashMap(void)) void {
+    for (conts) |*c| {
+        if (c.binding) |b| bound.put(b, {}) catch unreachable;
+        if (c.node) |*n| {
+            if (n.* == .invocation) {
+                if (n.invocation.return_binding) |rb| bound.put(rb, {}) catch unreachable;
+            }
+        }
+        collectBinds(c.continuations, bound);
+    }
+}
+
+fn rewriteConts(
+    alloc: std.mem.Allocator,
+    caller_module: []const u8,
+    conts: []const astz.Continuation,
+    elem: []const u8,
+    bound: *std.StringHashMap(void)
+) []const astz.Continuation {
+    var out = std.ArrayList(astz.Continuation).initCapacity(alloc, conts.len) catch unreachable;
+    for (conts) |c| {
+        var nc = c;
+        if (nc.node) |*n| {
+            if (n.* == .invocation) {
+                const inv = &n.invocation;
+                if (inv.path.segments.len == 1 and inv.args.len > 0 and
+                    isRoutedOp(inv.path.segments[0]))
+                {
+                    const target = std.mem.trim(u8, inv.args[0].value, " \t");
+                    if (bound.contains(target)) {
+                        var ni = inv.*;
+                        const segs = alloc.alloc([]const u8, 1) catch unreachable;
+                        segs[0] = std.fmt.allocPrint(alloc, "{s}-{s}", .{ inv.path.segments[0], elem }) catch unreachable;
+                        ni.path = astz.DottedPath{
+                            .module_qualifier = alloc.dupe(u8, caller_module) catch unreachable,
+                            .segments = segs,
+                        };
+                        nc.node = .{ .invocation = ni };
+                    }
+                }
+            }
+        }
+        nc.continuations = rewriteConts(alloc, caller_module, c.continuations, elem, bound);
+        out.append(alloc, nc) catch unreachable;
+    }
+    return out.toOwnedSlice(alloc) catch unreachable;
+}
+
+/// Route the std/list ops called over THIS new site's own bindings to the
+/// synthesized suffixed events in the caller's module. Scoped to the names the
+/// site's branch tree binds (`| list xs` → `xs`): an op over any other name is
+/// not this site's container and stays for the shape check to judge.
+fn rewriteProtoOps(
+    alloc: std.mem.Allocator,
+    caller_module: []const u8,
+    conts: []const astz.Continuation,
+    elem: []const u8
+) []const astz.Continuation {
+    var bound = std.StringHashMap(void).init(alloc);
+    defer bound.deinit();
+    collectBinds(conts, &bound);
+    return rewriteConts(alloc, caller_module, conts, elem, &bound);
+}
+
 /// Synthesize the container units for a proto element into the caller's module:
 /// element + handle structs (inline_code), then the six op events and their
 /// `|zig` procs (new/push/len/get/pop/free).
@@ -534,29 +695,37 @@ fn synthesizeContainer(
     const pf = protoFieldsOfProgram(allocator, program, elem_expr);
     if (pf.names.len == 0) @panic("proto-fields-empty");
 
+    // NEWTYPE reading this rung: the container stores the entry's FIRST
+    // field's type. The entry's job is the IDENTITY (frag-type-system-design:
+    // two protos over the same shape never interchange — refused at the KORU
+    // layer by name), and every probe surface pushes the field value
+    // (`std/list:push(xs, v: 10)` over `proto(Engine) { rpm: i32 }`); a record
+    // has no construction surface yet. The full record struct is still emitted
+    // below as the registry's readable content.
+    const elem_zig = elementZigType(allocator, pf.types[0]);
+
+
     var units = std.ArrayList(astz.Item).initCapacity(allocator, 13) catch unreachable;
 
-    // 1. Element struct + List_<Name> handle struct (inline_code into the
-    //    caller's module). Scalar fields only this rung.
+    // 1. Element alias + List_<Name> handle struct (inline_code into the
+    //    caller's module). The entry is a NEWTYPE this rung: `pub const
+    //    Engine = i32;` — the same lowering std/types:string uses — so the
+    //    synthesized ops can declare their element slots under the PROTO NAME
+    //    (`v: Engine`) while Zig sees the underlying scalar. The name is what
+    //    carries the identity: two protos over one shape never interchange
+    //    (the KORU030 nominal gate), even though both lower to i32 here.
     {
         var sb = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
         sb.appendSlice(allocator, "pub const ") catch unreachable;
         sb.appendSlice(allocator, proto_name) catch unreachable;
-        sb.appendSlice(allocator, " = struct {\n") catch unreachable;
-        for (pf.names, pf.types, 0..) |fname, ftype, i| {
-            _ = i;
-            sb.appendSlice(allocator, "    ") catch unreachable;
-            sb.appendSlice(allocator, fname) catch unreachable;
-            sb.appendSlice(allocator, ": ") catch unreachable;
-            sb.appendSlice(allocator, elementZigType(allocator, ftype)) catch unreachable;
-            sb.appendSlice(allocator, ",\n") catch unreachable;
-        }
-        sb.appendSlice(allocator, "};\n") catch unreachable;
+        sb.appendSlice(allocator, " = ") catch unreachable;
+        sb.appendSlice(allocator, elem_zig) catch unreachable;
+        sb.appendSlice(allocator, ";\n") catch unreachable;
         sb.appendSlice(allocator, "pub const ") catch unreachable;
         sb.appendSlice(allocator, list_name) catch unreachable;
-        sb.appendSlice(allocator, " = struct {\n    items: std.ArrayList(") catch unreachable;
-        sb.appendSlice(allocator, proto_name) catch unreachable;
-        sb.appendSlice(allocator, "),\n    allocator: std.mem.Allocator,\n    fn deinit(self: *") catch unreachable;
+        sb.appendSlice(allocator, " = struct {\n    items: @import(\"std\").ArrayList(") catch unreachable;
+        sb.appendSlice(allocator, elem_zig) catch unreachable;
+        sb.appendSlice(allocator, "),\n    allocator: @import(\"std\").mem.Allocator,\n    fn deinit(self: *") catch unreachable;
         sb.appendSlice(allocator, list_name) catch unreachable;
         sb.appendSlice(allocator, ") void {\n        self.items.deinit(self.allocator);\n        self.allocator.destroy(self);\n    }\n};\n") catch unreachable;
         units.append(allocator, astz.Item{ .inline_code = astz.InlineCode{
@@ -569,27 +738,27 @@ fn synthesizeContainer(
     // 2. new-<Name> constructor: empty input, `| list` (obligation) + `| err`.
     {
         const list_ptr = listPtrType(allocator, list_name, "list!");
-        const err_f = field1(allocator, "err", "string");
+        const err_f = field1(allocator, "__type_ref", "string");
         const br = allocator.alloc(astz.Branch, 2) catch unreachable;
         br[0] = astz.Branch{
             .name = allocator.dupe(u8, "list") catch unreachable,
-            .payload = astz.Shape{ .fields = &[_]astz.Field{list_ptr} },
+            .payload = astz.Shape{ .fields = fields1(allocator, list_ptr) },
             .kind = .terminal,
             .annotations = &.{},
         };
         br[1] = astz.Branch{
             .name = allocator.dupe(u8, "err") catch unreachable,
-            .payload = astz.Shape{ .fields = &[_]astz.Field{err_f} },
+            .payload = astz.Shape{ .fields = fields1(allocator, err_f) },
             .kind = .terminal,
             .annotations = &.{},
         };
         const new_name = std.fmt.allocPrint(allocator, "new-{s}", .{proto_name}) catch unreachable;
         const body = std.fmt.allocPrint(
             allocator,
-            "const allocator = koru_allocator();\nconst self = allocator.create({s}) catch {{\n    return .{{ .err = \"allocation failed\" }};\n}};\nself.* = .{{\n    .items = std.ArrayList({s}).initCapacity(allocator, 0) catch {{\n        allocator.destroy(self);\n        return .{{ .err = \"allocation failed\" }};\n    }},\n    .allocator = allocator,\n}};\nreturn .{{ .list = self }};",
-            .{ list_name, proto_name },
+            "const allocator = koru_allocator();\nconst self = allocator.create({s}) catch {{\n    return .{{ .err = \"allocation failed\" }};\n}};\nself.* = .{{\n    .items = @import(\"std\").ArrayList({s}).initCapacity(allocator, 0) catch {{\n        allocator.destroy(self);\n        return .{{ .err = \"allocation failed\" }};\n    }},\n    .allocator = allocator,\n}};\nreturn .{{ .list = self }};",
+            .{ list_name, elem_zig },
         ) catch unreachable;
-        const pair = synthOp(allocator, flow, new_name, &.{}, br, body);
+        const pair = synthOp(allocator, flow, new_name, &.{}, br, null, body);
         units.append(allocator, pair[0]) catch unreachable;
         units.append(allocator, pair[1]) catch unreachable;
     }
@@ -598,10 +767,9 @@ fn synthesizeContainer(
     {
         const op_name = std.fmt.allocPrint(allocator, "push-{s}", .{proto_name}) catch unreachable;
         const in = allocator.alloc(astz.Field, 2) catch unreachable;
-        in[0] = field_s(allocator, "xs", list_name, "list");
-        in[1] = field_s(allocator, "v", pf.types[0], null);
+        in[1] = field_plain(allocator, "v", pf.types[0]);
         const body = "xs.items.append(xs.allocator, v) catch {\n    @panic(\"std/list:push — out of memory\");\n};";
-        const pair = synthOp(allocator, flow, op_name, in, &.{}, body);
+        const pair = synthOp(allocator, flow, op_name, in, &.{}, null, body);
         units.append(allocator, pair[0]) catch unreachable;
         units.append(allocator, pair[1]) catch unreachable;
     }
@@ -611,7 +779,7 @@ fn synthesizeContainer(
         const op_name = std.fmt.allocPrint(allocator, "len-{s}", .{proto_name}) catch unreachable;
         const in = allocator.alloc(astz.Field, 1) catch unreachable;
         in[0] = field_s(allocator, "xs", list_name, "list");
-        const pair = synthOp(allocator, flow, op_name, in, &.{}, "return xs.items.items.len;");
+        const pair = synthOp(allocator, flow, op_name, in, &.{}, "usize", "return xs.items.items.len;");
         units.append(allocator, pair[0]) catch unreachable;
         units.append(allocator, pair[1]) catch unreachable;
     }
@@ -621,11 +789,11 @@ fn synthesizeContainer(
         const op_name = std.fmt.allocPrint(allocator, "get-{s}", .{proto_name}) catch unreachable;
         const in = allocator.alloc(astz.Field, 2) catch unreachable;
         in[0] = field_s(allocator, "xs", list_name, "list");
-        in[1] = field_s(allocator, "i", "usize", null);
+        in[1] = field_plain(allocator, "i", "usize");
         const br = allocator.alloc(astz.Branch, 2) catch unreachable;
         br[0] = astz.Branch{
             .name = allocator.dupe(u8, "item") catch unreachable,
-            .payload = astz.Shape{ .fields = &[_]astz.Field{field_s(allocator, "item", pf.types[0], null)} },
+            .payload = astz.Shape{ .fields = fields1(allocator, field_plain(allocator, "__type_ref", pf.types[0])) },
             .kind = .terminal,
             .annotations = &.{},
         };
@@ -636,6 +804,7 @@ fn synthesizeContainer(
             op_name,
             in,
             br,
+            null,
             "if (i < xs.items.items.len) {\n    return .{ .item = xs.items.items[i] };\n}\nreturn .out_of_bounds;",
         );
         units.append(allocator, pair[0]) catch unreachable;
@@ -650,7 +819,7 @@ fn synthesizeContainer(
         const br = allocator.alloc(astz.Branch, 2) catch unreachable;
         br[0] = astz.Branch{
             .name = allocator.dupe(u8, "item") catch unreachable,
-            .payload = astz.Shape{ .fields = &[_]astz.Field{field_s(allocator, "item", pf.types[0], null)} },
+            .payload = astz.Shape{ .fields = fields1(allocator, field_plain(allocator, "__type_ref", pf.types[0])) },
             .kind = .terminal,
             .annotations = &.{},
         };
@@ -661,6 +830,7 @@ fn synthesizeContainer(
             op_name,
             in,
             br,
+            null,
             "if (xs.items.pop()) |v| {\n    return .{ .item = v };\n}\nreturn .empty;",
         );
         units.append(allocator, pair[0]) catch unreachable;
@@ -672,13 +842,23 @@ fn synthesizeContainer(
         const op_name = std.fmt.allocPrint(allocator, "free-{s}", .{proto_name}) catch unreachable;
         const in = allocator.alloc(astz.Field, 1) catch unreachable;
         in[0] = field_s(allocator, "xs", list_name, "!list");
-        const pair = synthOp(allocator, flow, op_name, in, &.{}, "xs.deinit();");
+        const pair = synthOp(allocator, flow, op_name, in, &.{}, null, "xs.deinit();");
         units.append(allocator, pair[0]) catch unreachable;
         units.append(allocator, pair[1]) catch unreachable;
     }
 
     const u = units.toOwnedSlice(allocator) catch unreachable;
     return u;
+}
+
+/// A one-field Shape field list on the HEAP. `&[_]astz.Field{f}` with a
+/// runtime element materializes the array as a block-scoped const — the slice
+/// dangles when the block ends, and the next splice's whole-program clone
+/// reads freed bytes as Field structs (crash: cloneField → dupe of garbage).
+fn fields1(alloc: std.mem.Allocator, f: astz.Field) []const astz.Field {
+    const out = alloc.alloc(astz.Field, 1) catch unreachable;
+    out[0] = f;
+    return out;
 }
 
 /// A `*List_<Name><phantom>` input field.
@@ -690,10 +870,25 @@ fn field_s(allocator: std.mem.Allocator, name: []const u8, type_base: []const u8
         .phantom = if (phantom) |p| allocator.dupe(u8, p) catch unreachable else null,
     };
 }
-/// `*List_<Name><phantom>` (builds both from a phantom already containing `<..>`).
+
+/// A plain (non-handle) input field — element values and indices. `field_s`
+/// is the container-HANDLE helper and stars every type; a starred element
+/// (`v: *i32`) makes every push call a type error at the emission boundary.
+fn field_plain(allocator: std.mem.Allocator, name: []const u8, t: []const u8) astz.Field {
+    return astz.Field{
+        .name = allocator.dupe(u8, name) catch unreachable,
+        .type = allocator.dupe(u8, t) catch unreachable,
+        .phantom = null,
+    };
+}
+/// `*List_<Name><phantom>` as the branch's IDENTITY payload — the single
+/// `__type_ref` field is what the emitter lowers to a BARE union variant
+/// (`list: *List_<Name>`), matching the hand-written `| list *List_i64<list!>`
+/// shape; a named field would wrap the payload in a struct and break every
+/// `.{ .list = self }` return in the proc body.
 fn listPtrType(allocator: std.mem.Allocator, list_name: []const u8, phantom: []const u8) astz.Field {
     return astz.Field{
-        .name = allocator.dupe(u8, "list") catch unreachable,
+        .name = allocator.dupe(u8, "__type_ref") catch unreachable,
         .type = std.fmt.allocPrint(allocator, "*{s}", .{list_name}) catch unreachable,
         .phantom = allocator.dupe(u8, phantom) catch unreachable,
     };

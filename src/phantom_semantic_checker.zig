@@ -4191,7 +4191,7 @@ test "PhantomSemanticChecker - state mismatch rejected" {
     };
 
     // check() should return ValidationFailed
-    const result = checker.check(&program);
+    const result = checker.check(&program, &program);
     try std.testing.expectError(error.ValidationFailed, result);
 
     // Verify error message mentions phantom state mismatch
@@ -4289,7 +4289,7 @@ test "PhantomSemanticChecker - matching states accepted" {
     };
 
     // check() should succeed — no errors
-    try checker.check(&program);
+    try checker.check(&program, &program);
     try std.testing.expectEqual(@as(usize, 0), reporter.errors.items.len);
 }
 
@@ -4393,7 +4393,7 @@ test "PhantomSemanticChecker - cross-module state mismatch rejected" {
         .allocator = allocator,
     };
 
-    const result = checker.check(&program);
+    const result = checker.check(&program, &program);
     try std.testing.expectError(error.ValidationFailed, result);
 
     try std.testing.expect(reporter.errors.items.len > 0);
