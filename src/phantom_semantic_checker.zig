@@ -62,6 +62,15 @@ pub const PhantomSemanticChecker = struct {
         module_name: []const u8,
     };
 
+    /// A declared-type identity's registration site: where the declaring flow
+    /// sits and whether the registrant is a PROTO (the collision wall's honor
+    /// question — two proto declarations of one name are a loud error; the
+    /// legacy nominal wrappers stay idempotent).
+    const DeclaredTypeSite = struct {
+        location: errors.SourceLocation,
+        is_proto: bool,
+    };
+
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !PhantomSemanticChecker {
         return PhantomSemanticChecker{
             .allocator = allocator,
@@ -105,10 +114,15 @@ pub const PhantomSemanticChecker = struct {
         var iter = self.declared_types.keyIterator();
         while (iter.next()) |key| self.allocator.free(key.*);
         self.declared_types.clearRetainingCapacity();
-        try self.scanDeclaredTypes(declared_types_ast.items);
+        // One registration site per declared identity, tracked so a SECOND
+        // registrant of the same name is a loud two-registrant collision
+        // (proto rung, 2026-08-23) instead of a silent merge.
+        var sites = std.StringHashMap(DeclaredTypeSite).init(self.allocator);
+        defer sites.deinit();
+        try self.scanDeclaredTypes(declared_types_ast.items, &sites);
     }
 
-    fn scanDeclaredTypes(self: *PhantomSemanticChecker, items: []const ast.Item) !void {
+    fn scanDeclaredTypes(self: *PhantomSemanticChecker, items: []const ast.Item, sites: *std.StringHashMap(DeclaredTypeSite)) !void {
         for (items) |item| {
             switch (item) {
                 .flow => |flow| {
@@ -125,22 +139,79 @@ pub const PhantomSemanticChecker = struct {
                             std.mem.eql(u8, last_seg, "int") or
                             std.mem.eql(u8, last_seg, "float") or
                             std.mem.eql(u8, last_seg, "bool");
-                        if (is_decl_tor and inv.args.len > 0) {
+                        // PROTO rung (2026-08-23): `std/types:proto(Name)` is
+                        // the declared-type front door. The proto NAME is one
+                        // declared identity, and the container it promises to
+                        // derive — `List_<Name>` — is a SECOND, registered
+                        // here so that the nominal-distinctness gate refuses
+                        // values over two different protos' containers at the
+                        // KORU layer (container identities are distinct no
+                        // matter how much the shapes agree).
+                        const is_proto = std.mem.eql(u8, last_seg, "proto");
+                        if ((is_decl_tor or is_proto) and inv.args.len > 0) {
                             var name = inv.args[0].value;
                             if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"')
                                 name = name[1 .. name.len - 1];
-                            if (name.len > 0 and !self.declared_types.contains(name)) {
-                                const key = try self.allocator.dupe(u8, name);
-                                errdefer self.allocator.free(key);
-                                try self.declared_types.put(key, {});
+                            if (name.len > 0) {
+                                const site = DeclaredTypeSite{
+                                    .location = flow.location,
+                                    .is_proto = is_proto,
+                                };
+                                try self.registerDeclaredIdentity(name, site, sites);
+                                if (is_proto) {
+                                    // The container identity a proto derives.
+                                    const container = try std.fmt.allocPrint(self.allocator, "List_{s}", .{name});
+                                    const container_site = DeclaredTypeSite{
+                                        .location = flow.location,
+                                        .is_proto = true,
+                                    };
+                                    try self.registerDeclaredIdentity(container, container_site, sites);
+                                }
                             }
                         }
                     }
                 },
-                .module_decl => |module| try self.scanDeclaredTypes(module.items),
+                .module_decl => |module| try self.scanDeclaredTypes(module.items, sites),
                 else => {},
             }
         }
+    }
+
+    /// Register one declared identity, refusing a second registrant loudly —
+    /// two declaration sites claiming the same entry are a collision (the
+    /// hindsight of the two-walls doctrine: idempotent registration made the
+    /// SECOND declaration a silent no-op; the proto rung makes it a KORU error
+    /// citing BOTH registrants, per the 2026-08-23 rulings).
+    fn registerDeclaredIdentity(
+        self: *PhantomSemanticChecker,
+        name: []const u8,
+        site: DeclaredTypeSite,
+        sites: *std.StringHashMap(DeclaredTypeSite),
+    ) !void {
+        if (self.declared_types.contains(name)) {
+            // A name already registered — the collision wall fires only when at
+            // least one of the two registrants is a PROTO (the ruled front
+            // door); the legacy nominal wrappers stay idempotent.
+            const prior = sites.get(name);
+            const collides = site.is_proto or (prior != null and prior.?.is_proto);
+            if (collides and prior != null) {
+                const prior_loc = prior.?.location;
+                log.debug("[PHANTOM] ❌ DUPLICATE PROTO DECLARATION '{s}'\n", .{name});
+                try self.reporter.addError(
+                    .KORU030,
+                    site.location.line,
+                    site.location.column,
+                    "duplicate proto declaration '{s}' — a proto entry is registered once; the declaration at {s}:{d} collides with the prior registration at {s}:{d}",
+                    .{ name, site.location.file, site.location.line, prior_loc.file, prior_loc.line },
+                );
+                return error.ValidationFailed;
+            }
+            return;
+        }
+        const key = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(key);
+        try self.declared_types.put(key, {});
+        try sites.put(key, site);
     }
 
     /// Check phantom types in the entire AST
@@ -4120,7 +4191,7 @@ test "PhantomSemanticChecker - state mismatch rejected" {
     };
 
     // check() should return ValidationFailed
-    const result = checker.check(&program);
+    const result = checker.check(&program, &program);
     try std.testing.expectError(error.ValidationFailed, result);
 
     // Verify error message mentions phantom state mismatch
@@ -4218,7 +4289,7 @@ test "PhantomSemanticChecker - matching states accepted" {
     };
 
     // check() should succeed — no errors
-    try checker.check(&program);
+    try checker.check(&program, &program);
     try std.testing.expectEqual(@as(usize, 0), reporter.errors.items.len);
 }
 
@@ -4322,7 +4393,7 @@ test "PhantomSemanticChecker - cross-module state mismatch rejected" {
         .allocator = allocator,
     };
 
-    const result = checker.check(&program);
+    const result = checker.check(&program, &program);
     try std.testing.expectError(error.ValidationFailed, result);
 
     try std.testing.expect(reporter.errors.items.len > 0);
