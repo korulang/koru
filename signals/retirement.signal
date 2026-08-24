@@ -1,0 +1,6 @@
+name: retirement
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a mechanism is deliberately uninstalled while the system still works without it — the loop it closed no longer justifies its cost. First firing: org.koru.feedback-cron removed 2026-08-24 (57384c58); the morning triage agent went, site feedback pipeline followed in korulang_org c5c2cbe.
