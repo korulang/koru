@@ -1,9 +1,9 @@
 {
   "subject": "koru",
-  "generated_at": "2026-08-23T17:20:58.122Z",
+  "generated_at": "2026-08-24T17:52:20.150Z",
   "scoreboard": {
-    "passed": 1523,
-    "expected": 1633,
+    "passed": 1525,
+    "expected": 1635,
     "gap": 110,
     "pass_rate": "93.3"
   },
