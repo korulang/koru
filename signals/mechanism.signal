@@ -1,0 +1,6 @@
+name: mechanism
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a previously hand-maintained behaviour acquires a named mechanical enforcer. First firing: 2026-08-24 — the commit-msg hook's world-model engine began registering signal kinds as files (signals/*.signal) and measuring commit-silence, turning the discipline from convention into mechanism.
