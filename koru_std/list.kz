@@ -767,6 +767,7 @@ fn synthesizeContainer(
     {
         const op_name = std.fmt.allocPrint(allocator, "push-{s}", .{proto_name}) catch unreachable;
         const in = allocator.alloc(astz.Field, 2) catch unreachable;
+        in[0] = field_s(allocator, "xs", list_name, "list");
         in[1] = field_plain(allocator, "v", pf.types[0]);
         const body = "xs.items.append(xs.allocator, v) catch {\n    @panic(\"std/list:push — out of memory\");\n};";
         const pair = synthOp(allocator, flow, op_name, in, &.{}, null, body);
