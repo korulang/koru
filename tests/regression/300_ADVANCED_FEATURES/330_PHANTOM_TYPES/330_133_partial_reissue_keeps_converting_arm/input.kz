@@ -28,13 +28,18 @@
 // pin died on its own spelling and could not reach the predicate. Now
 // mk's result is bound (`~mk(): o |> settle(obj: o)`) with bare-return
 // bindings grounded on 330_027/330_123; settle's two arms keep their
-// tagged event spelling (two arms, so tags are legal). Re-measured this
-// session: STILL RED, now at the pinned target —
-//   error[KORU030]: Resource 'obj' obligation <built!> was not discharged.
-//                   No tor accepts <!built>.
-// while `settle` accepts <!built> two lines above. The refused arm's
-// discarded payload is where candidacy fires; the any-arm predicate
-// excludes settle despite its converting ok arm. Honest red.
+// tagged event spelling (two arms, so tags are legal).
+//
+// PREDICATE FIXED same day (phantom_semantic_checker.zig +
+// auto_discharge_inserter.zig): both copies now require conservation on
+// EVERY exit before excluding. Measured: settle is a candidate again —
+// the refusal reads `... was not discharged. Call: settle` — but the
+// program still refuses, because candidacy is not INSERTABILITY: the
+// auto-insert path takes only single-void disposers, and inserting
+// settle would mint <held!>, needing a second synthesized call. So this
+// pin stays RED, now one step further: the remaining gap is chained
+// discharge synthesis (insert settle -> then finish), or an authoring
+// rule that names where the author must write the chain themselves.
 
 const std = @import("std");
 const Obj = struct { v: i32 };

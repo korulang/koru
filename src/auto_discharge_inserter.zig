@@ -3152,46 +3152,71 @@ pub const AutoDischargeInserter = struct {
         // like tx.exec (`consumes <!active>` → `-> *Transaction<active!>`) hands
         // back its obligation through the bare return, not a branch. It never
         // discharges, so exclude it here the same way branch re-issuers are.
+        //
+        // EVERY-EXIT rule (330_133): exclusion requires the SAME obligation on
+        // EVERY exit. One converting or settling exit — different state, no
+        // issue phantom, an arm that never touches the base type, or no
+        // payload-bearing exits at all (the plain void disposer) — keeps the
+        // event a candidate. First-arm-wins here made partially-converting
+        // tors vanish from candidacy while their converting arm was called.
+        var any_exit = false;
         if (event_decl.return_type) |rt| {
             if (std.mem.eql(u8, rt, base_type)) {
+                any_exit = true;
+                var reissues_here = false;
                 if (event_decl.return_phantom) |rp| {
                     if (phantom_parser.PhantomState.parse(self.allocator, rp)) |*parsed_ret| {
                         defer @constCast(parsed_ret).deinit(self.allocator);
                         switch (parsed_ret.*) {
                             .concrete => |concrete| {
-                                if (concrete.requires_cleanup and std.mem.eql(u8, concrete.name, base_state_name)) return true;
+                                if (concrete.requires_cleanup and std.mem.eql(u8, concrete.name, base_state_name)) reissues_here = true;
                             },
                             .state_union => |u| {
                                 for (u.members) |member| {
-                                    if (member.requires_cleanup and std.mem.eql(u8, member.name, base_state_name)) return true;
+                                    if (member.requires_cleanup and std.mem.eql(u8, member.name, base_state_name)) reissues_here = true;
                                 }
                             },
                             .variable => {},
                         }
                     } else |_| {}
                 }
+                if (!reissues_here) return false;
             }
         }
         for (event_decl.branches) |branch| {
+            var arm_carries = false;
+            var arm_reissues = true;
             for (branch.payload.fields) |field| {
                 if (!std.mem.eql(u8, field.type, base_type)) continue;
-                const field_phantom = field.phantom orelse continue;
-                var parsed = phantom_parser.PhantomState.parse(self.allocator, field_phantom) catch continue;
+                arm_carries = true;
+                const field_phantom = field.phantom orelse {
+                    arm_reissues = false;
+                    break;
+                };
+                var parsed = phantom_parser.PhantomState.parse(self.allocator, field_phantom) catch {
+                    arm_reissues = false;
+                    break;
+                };
                 defer parsed.deinit(self.allocator);
                 switch (parsed) {
                     .concrete => |concrete| {
-                        if (concrete.requires_cleanup and std.mem.eql(u8, concrete.name, base_state_name)) return true;
+                        if (!(concrete.requires_cleanup and std.mem.eql(u8, concrete.name, base_state_name))) arm_reissues = false;
                     },
                     .state_union => |u| {
+                        var found = false;
                         for (u.members) |member| {
-                            if (member.requires_cleanup and std.mem.eql(u8, member.name, base_state_name)) return true;
+                            if (member.requires_cleanup and std.mem.eql(u8, member.name, base_state_name)) found = true;
                         }
+                        if (!found) arm_reissues = false;
                     },
-                    .variable => {},
+                    .variable => arm_reissues = false,
                 }
             }
+            if (!arm_carries) return false; // settled on this exit
+            if (!arm_reissues) return false; // converted on this exit
+            any_exit = true;
         }
-        return false;
+        return any_exit;
     }
 
     /// Auto-insert at scope exit can fill the obligation parameter from the binding.

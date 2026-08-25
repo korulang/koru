@@ -432,6 +432,13 @@ pub const PhantomSemanticChecker = struct {
     /// A CONVERTING tor stays a candidate: one that consumes <!open> on P and
     /// issues an obligation on a DIFFERENT base type has settled this debt,
     /// whatever it opened elsewhere. Hence the `base_type` guard on every arm.
+    ///
+    /// EVERY-EXIT rule (330_133): exclusion requires conservation on EVERY
+    /// exit. One exit that converts — issues a different state, drops the
+    /// value, or never touches the base type — settles the debt on that path,
+    /// and the tor stays a candidate. Returning "reissues" on the FIRST
+    /// conserving arm made partially-converting tors vanish from candidacy
+    /// entirely while their converting arm was being called explicitly.
     fn eventReIssuesObligation(
         self: *PhantomSemanticChecker,
         event_decl: *const ast.EventDecl,
@@ -460,21 +467,40 @@ pub const PhantomSemanticChecker = struct {
             }
         };
 
+        // Bare return carrying the base type: re-issue only if its phantom
+        // re-mints the SAME cleanup obligation. Matching type with no phantom
+        // (or a non-cleanup phantom) means the debt is not handed back here —
+        // this exit settles it.
+        var any_exit = false;
         if (event_decl.return_type) |rt| {
             if (obligationBaseTypeMatchesField(obligation_base_type, rt)) {
-                if (event_decl.return_phantom) |rp| {
-                    if (Reissues.check(self.allocator, rp, base_state_name)) return true;
-                }
+                any_exit = true;
+                const rp = event_decl.return_phantom orelse return false;
+                if (!Reissues.check(self.allocator, rp, base_state_name)) return false;
             }
         }
         for (event_decl.branches) |branch| {
+            var arm_carries = false;
+            var arm_reissues = true;
             for (branch.payload.fields) |field| {
                 if (!obligationBaseTypeMatchesField(obligation_base_type, field.type)) continue;
-                const fp = field.phantom orelse continue;
-                if (Reissues.check(self.allocator, fp, base_state_name)) return true;
+                arm_carries = true;
+                const fp = field.phantom orelse {
+                    arm_reissues = false;
+                    break;
+                };
+                if (!Reissues.check(self.allocator, fp, base_state_name)) {
+                    arm_reissues = false;
+                    break;
+                }
             }
+            if (!arm_carries) return false; // this arm never touches the debt — settled here
+            if (!arm_reissues) return false; // carries the value but not the SAME debt — converted
+            any_exit = true;
         }
-        return false;
+        // No payload-bearing exits at all: the plain void disposer. The debt
+        // ends at the call — the opposite of re-issuing.
+        return any_exit;
     }
 
     /// Find events that can discharge a given phantom state obligation
