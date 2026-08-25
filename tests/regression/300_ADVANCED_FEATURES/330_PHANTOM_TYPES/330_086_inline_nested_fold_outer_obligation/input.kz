@@ -3,6 +3,17 @@
 // scalar; at the inner back-edge `@iloop(c: k)` v is live+uncleaned but is NOT
 // the inner loop's to consume. If per-loop ownership is missing, the inner
 // back-edge false-flags v as a dropped obligation (KORU030).
+//
+// HISTORY: written 2026-07-24 with head-bindings on both fold heads
+// (`#oloop step(h: h0): v |> #iloop icount(c: 0): k |> ...`); KORU010 refused
+// the indented inner arms as "stray continuation". Re-spelled 2026-08-25:
+// binding moved into the `again` arm (per 074), nested fold spelled
+// `| again v |> #iloop icount(c: 0)` with indented inner arms — grounded on
+// GREEN 228_nested_labels (same-scope label nesting) and 074/083 (carry +
+// mid-arm composition). Measured TRUE this session: compiles, runs, prints
+// n=2 (= expected.txt); no false-flag at either back-edge. Together with
+// 330_084 (subflow variant) and GREEN 330_085, per-loop ownership holds in
+// both scopes.
 const std = @import("std");
 const Handle = struct { n: i32 };
 
@@ -38,8 +49,10 @@ const Handle = struct { n: i32 };
 
 ~tor spin {} -> *Handle<owned!>
 
-~spin = make(): h0 |> #oloop step(h: h0): v |> #iloop icount(c: 0): k |> @iloop(c: k)
+~spin = make(): h0 |> #oloop step(h: h0)
+| again v |> #iloop icount(c: 0)
+        | more k |> @iloop(c: k)
         | fin _ |> @oloop(h: v)
-    | stop r -> r
+| stop r -> r
 
 ~spin(): hf |> dispose(h: hf)

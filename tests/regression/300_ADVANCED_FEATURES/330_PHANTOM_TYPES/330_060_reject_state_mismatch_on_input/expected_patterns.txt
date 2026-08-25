@@ -1,16 +1,19 @@
 # Test 330_060: Phantom state mismatch on event input
 #
-# INTENT: `query` declares `conn: *Connection[connected]` but the
-# call site passes `c` from `| ok c |>` of `get_raw_connection`,
-# which has no tracked phantom state. Phantom checker should reject
-# this at semantic time with a clear KORU diagnostic about the
-# missing required state, pointing at the user's source.
+# INTENT: `query` declares `conn: *Connection<connected>` but the
+# call site passes `c` from `get-raw-connection`, which returns a
+# bare, unstated handle (`-> *Connection`). The phantom checker must
+# reject this at semantic time with a clear KORU diagnostic about
+# the missing required state, pointing at the user's source.
 #
-# CURRENTLY: Phantom checker lets it through; backend codegen emits
-# invalid Zig (`expected ')', found ':'` from output_emitted.zig).
-# Real compiler bug — pin captures INTENT, test stays red as
-# wrong-error until the phantom checker enforces input state on
-# `[connected]` (non-cleanup) arguments.
+# HISTORY: written 2026-07-24 against the pre-bare-return flow grammar
+# (`| ok c |> ...`); PARSE003 refused that spelling from 2026-08-18,
+# so the pin could not reach its target. Re-spelled 2026-08-25 to the
+# bare-return binding form grounded on 330_123 (`~make(): h |> bump(h)`)
+# and 330_027 (word-state `<connected>` as required non-cleanup input).
+# On re-measurement the checker DOES refuse — KORU030 "Phantom state
+# mismatch: argument 'conn' has no tracked phantom state" — so this pin
+# is now GREEN: input-side state enforcement exists for unstated handles.
 error\[KORU\d+\]
 phantom state
 connected

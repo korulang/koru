@@ -1,10 +1,22 @@
-// NEGATIVE: a label-fold (#loop) carries an OWNED obligation across the back-edge,
-// but one branch path neither re-issues nor disposes it -> the obligation is
-// DROPPED (leak). Linearity requires every consume of <!owned> to be matched by
-// an issue <owned!> or a disposal; the `stop` branch here returns a void event
-// payload, silently dropping the consumed handle.
-// Grammar grounded against 330_072_obligation_transfer_through_loop (transfer
-// shape) and 210_123_label_on_subflow_rhs_panics (#loop / @loop fold form).
+// NEGATIVE (RED — hole live, re-measured 2026-08-25): a label-fold (#loop)
+// carries an OWNED obligation across the back-edge, but one branch path
+// neither re-issues nor disposes it -> the obligation is DROPPED (leak).
+// Linearity requires every consume of <!owned> to be matched by an issue
+// <owned!> or a disposal; the `stop` branch here returns a bare i32,
+// silently dropping the carried handle. The compiler accepts the whole
+// program (exit 0) and the produced binary prints `n=3` with the handle
+// leaked — no KORU030, no auto-discharge insertion.
+//
+// HISTORY: written 2026-07-24 against the pre-bare-return flow grammar
+// (`| finished f |> ...`, one-arm event decl); PARSE003 refused that
+// spelling from 2026-08-18 and the pin could not reach its target.
+// Re-spelled 2026-08-25: spin is now a bare-returning tor with a param,
+// fold arms grounded on 330_074 (green twin: same loop WITH conservation),
+// chained bindings on 330_027. On re-measurement the drop still sails
+// through — this pin stays RED as must-error-passed until flow-level
+// linearity refuses a fold arm that neither re-issues nor disposes.
+// Note the asymmetry: 330_075 pins the BACK-EDGE drop being refused;
+// this pin shows the ARM-EXIT drop is not. Same loop, other exit.
 const std = @import("std");
 const Handle = struct { n: i32 };
 
@@ -16,7 +28,7 @@ const Handle = struct { n: i32 };
 }
 
 // Consumes the carried handle. `again` re-issues (linearity OK on that edge),
-// but `stop` drops it: a void branch with no <owned!> output and no disposal.
+// but `stop` drops it: a bare-i32 output with no <owned!> output and no disposal.
 ~tor step { h: *Handle<!owned> }
 | again *Handle<owned!>
 | stop i32
@@ -28,8 +40,7 @@ const Handle = struct { n: i32 };
     return .{ .stop = h.n };
 }
 
-~tor spin { h: *Handle<!owned> }
-| finished i32
+~tor spin { h: *Handle<!owned> } -> i32
 
 ~tor report { n: i32 }
 ~proc report|zig {
@@ -38,7 +49,6 @@ const Handle = struct { n: i32 };
 
 ~spin = #loop step(h)
 | again v |> @loop(h: v)
-| stop r => finished r   // carried obligation never discharged on this path -> leak
+| stop r -> r   // carried obligation never discharged on this path -> leak
 
-~make(): h0 |> spin(h: h0)
-    | finished f |> report(n: f)
+~make(): h0 |> spin(h: h0): f |> report(n: f)

@@ -22,6 +22,19 @@
 //
 // Found 2026-08-07 by the ukstore Unikraft lift, whose `add` tor had exactly
 // this shape (a "nothing happened, retry" refusal re-minting the input).
+//
+// RE-SPELLED 2026-08-25: the original flow hung named arms off mk's bare
+// return (`| ready obj |> ...`), which KORU021 (2026-08-18) refuses — the
+// pin died on its own spelling and could not reach the predicate. Now
+// mk's result is bound (`~mk(): o |> settle(obj: o)`) with bare-return
+// bindings grounded on 330_027/330_123; settle's two arms keep their
+// tagged event spelling (two arms, so tags are legal). Re-measured this
+// session: STILL RED, now at the pinned target —
+//   error[KORU030]: Resource 'obj' obligation <built!> was not discharged.
+//                   No tor accepts <!built>.
+// while `settle` accepts <!built> two lines above. The refused arm's
+// discarded payload is where candidacy fires; the any-arm predicate
+// excludes settle despite its converting ok arm. Honest red.
 
 const std = @import("std");
 const Obj = struct { v: i32 };
@@ -46,7 +59,6 @@ const Obj = struct { v: i32 };
     std.debug.print("settled\n", .{});
 }
 
-~mk()
-| ready obj |> settle(obj)
+~mk(): o |> settle(obj: o)
     | ok held |> finish(obj: held)
     | refused _ |> _

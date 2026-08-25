@@ -1,6 +1,12 @@
+const std = @import("std");
 const Connection = struct { id: i32 };
 ~pub tor query { conn: *Connection<connected>, sql: string }
 ~proc query|zig {
 }
-~pub tor get-raw-connection {}
-| ok c |> query(conn: c, sql: "SELECT 1")
+~pub tor get-raw-connection {} -> *Connection
+~proc get-raw-connection|zig {
+    const c = std.heap.page_allocator.create(Connection) catch unreachable;
+    c.* = Connection{ .id = 1 };
+    return c;
+}
+~get-raw-connection(): c |> query(conn: c, sql: "SELECT 1")

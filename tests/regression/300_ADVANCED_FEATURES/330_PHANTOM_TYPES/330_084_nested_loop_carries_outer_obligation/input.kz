@@ -1,11 +1,21 @@
 // PROBE for Limitation 1 (per-loop obligation ownership across NESTED loops):
 // the OUTER label-fold carries an owned obligation `v`; inside the `again`
-// branch — while `v` is live — an INNER label-fold runs, then the outer
-// back-edge `@oloop(h: v)` carries `v` forward. If the back-edge conservation
-// check is per-loop-aware, `v` is conserved at @oloop and the inner loop's
-// @iloop (which never touches v) is unaffected. If it is NOT, the inner back-edge
-// would false-flag `v` as a dropped obligation.
-// Grounded on 330_074 (the working carry) + 210_123 (label-fold grammar).
+// branch — while `v` is live — an INNER label-fold runs (the subflow `inner`,
+// itself a #iloop fold over a scalar), then the outer back-edge
+// `@oloop(h: v)` carries `v` forward. The claim: no false-flag of `v` as a
+// dropped obligation anywhere in the nest — program compiles and prints n=3.
+//
+// HISTORY: written 2026-07-24 with an inline mid-chain fold head binding
+// (`#oloop step(h: h0): v |> inner(): _ |> @oloop(h: v)`); KORU022 refused
+// it ("required branch 'again' not handled") because the fold head was
+// spelled as a bound chain step, and 074 documents why head-binding is
+// wrong anyway ("binds something that does not exist"). Re-spelled
+// 2026-08-25: arms below the fold carry the binding, mid-arm call grounded
+// on 330_083, punning spelled bare per PARSE005. Measured TRUE: compiles,
+// runs, n=3. NOTE the nuance: inner runs as a SUBFLOW, so its @iloop jumps
+// never see `v` in scope — this pin proves no cross-flow false-flag, not
+// that the jump-conservation check is per-label within one scope. The
+// same-scope variant of that question remains open (see 330_086).
 const std = @import("std");
 const Handle = struct { n: i32 };
 
@@ -47,7 +57,8 @@ const Handle = struct { n: i32 };
 
 ~tor spin {} -> *Handle<owned!>
 
-~spin = make(): h0 |> #oloop step(h: h0): v |> inner(): _ |> @oloop(h: v)
-    | stop r -> r
+~spin = make(): h0 |> #oloop step(h: h0)
+| again v |> inner(): _ |> @oloop(h: v)
+| stop r -> r
 
 ~spin(): hf |> done(h: hf)

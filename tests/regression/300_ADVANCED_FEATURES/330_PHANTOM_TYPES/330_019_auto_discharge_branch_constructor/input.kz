@@ -1,5 +1,19 @@
+// PINS: an obligation held at a subflow's EXIT gets its close AUTO-INSERTED
+// before the subflow returns — `check-file` ends still holding <opened!>
+// from `app/fs:open`, and the produced program must print the close.
+//
+// HISTORY: written 2026-07-24 as a branch-constructor arm
+// (`| opened _ -> "file exists"`); KORU021 (landed 2026-08-18) refuses
+// named arms on bare-returning tors, so the pin could not run.
+// Re-spelled 2026-08-25 onto bare-return grammar grounded on 310_006
+// (bind-and-pipe off a bare return) and 330_074 (flow-defined tor whose
+// params are visible in the body). The discharge-before-return claim is
+// measured TRUE on this spelling: both lines print, close auto-inserted.
 ~import app/fs
 ~tor check-file { path: string } -> string
-~check-file = app/fs:open(path)
-| opened _ -> "file exists"  // obligation should be auto-discharged before returning!
+~check-file = app/fs:open(path): f |> say-exists()
+~tor say-exists {} -> string
+~proc say-exists|zig {
+    return "file exists";
+}
 ~check-file(path: "test.txt")

@@ -1,7 +1,15 @@
+// PINS: union phantom-state INPUTS — `resume` accepts *Connection<paused|active>
+// and `close` accepts *Connection<active|paused>, so each state transition below
+// typechecks and every line of the runtime trace prints.
+//
+// HISTORY: written 2026-07-12 with tagged continuations (`| resumed c3 |> ...`)
+// on bare-returning tors; KORU021 (2026-08-18) refused that spelling, masking
+// the pin. Re-spelled 2026-08-25 to chained bare bindings grounded on
+// 330_027_db_transaction_pattern. Measured TRUE: all four flows compile and
+// the output is byte-identical to expected.txt. The call side is also pinned
+// by 330_051 (green); this pin adds the full four-path trace.
 ~import app/connection
-~app/connection:create(): c1 |> app/connection:connect(conn: c1): c2 |> app/connection:resume(conn: c2)  // active -> resume accepts it!
-        | resumed c3 |> app/connection:close(conn: c3)
-~app/connection:create(): c1 |> app/connection:connect(conn: c1): c2 |> app/connection:pause(conn: c2): c3 |> app/connection:resume(conn: c3)  // paused -> resume accepts it!
-            | resumed c4 |> app/connection:close(conn: c4)
-~app/connection:create(): c1 |> app/connection:connect(conn: c1): c2 |> app/connection:close(conn: c2)  // active -> close accepts it!
-~app/connection:create(): c1 |> app/connection:connect(conn: c1): c2 |> app/connection:pause(conn: c2): c3 |> app/connection:close(conn: c3)  // paused -> close accepts it!
+~app/connection:create(): c1 |> app/connection:connect(conn: c1): c2 |> app/connection:resume(conn: c2): c3 |> app/connection:close(conn: c3)
+~app/connection:create(): c1 |> app/connection:connect(conn: c1): c2 |> app/connection:pause(conn: c2): c3 |> app/connection:resume(conn: c3): c4 |> app/connection:close(conn: c4)
+~app/connection:create(): c1 |> app/connection:connect(conn: c1): c2 |> app/connection:close(conn: c2)
+~app/connection:create(): c1 |> app/connection:connect(conn: c1): c2 |> app/connection:pause(conn: c2): c3 |> app/connection:close(conn: c3)
