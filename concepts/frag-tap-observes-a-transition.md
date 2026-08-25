@@ -82,3 +82,30 @@ an UNBOUND head whose bare return carries an obligation
 Same lesson at a bigger radius: the weave, the discharge inserter, and the
 shape walls each hold locally and compose into a hole, because no one of them
 owns the composed flow's exit.
+
+## The observation record is testimony about the transition (2026-08-25)
+
+The record a metatype tap builds (Profile/Transition/Audit) is not a log line —
+it is **testimony**: it asserts, in vocabulary the reader takes on faith, what
+kind of crossing happened. When that vocabulary contradicts its own definition,
+the lie ships into every downstream profile and no test catches it, because
+records are rarely asserted against.
+
+Measured instance: bare-payload completions were spelled `__void` — the
+void-completion sentinel — while an i32 crossed. Every `: r` step in a profile
+read as "nothing crossed here". The 330_009/330_010 pins carried the right name
+("result") from the day they were written and sat red for a month for it.
+
+**The belief:** an observation record's fields must satisfy the same honesty
+the flow-level walls enforce on values — the branch field names what crossed,
+and a name defined as "nothing" may not label a something. Fix at the
+construction site (the weave), never at an emitter's render, so every target
+inherits the truth once.
+
+**Open edge (parked):** unbound payload returns (`~greet(...)` discarding a
+`-> string`) still spell the void sentinel today, because the weave only knows
+a value crossed via the head's bind being in scope. Making those honest needs
+the event's return type threaded to the weave and would re-pin green 310_018.
+The question this parks: is "what crossed" determined by the event's TYPE or by
+whether a NAME was bound? Type says result; binding-scope says void. They
+disagree exactly when the payload is discarded.

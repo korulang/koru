@@ -725,12 +725,22 @@ var metatype_global_counter: usize = 0;
                     }
 
                     // Create metatype_binding step (use unique binding name)
+                    // A bare return that produced a value (`source_produced`, the
+                    // head's `: r` bind) carried a payload across this transition —
+                    // naming it "__void" (the void-completion sentinel) lies in the
+                    // Profile record. The bare branch's name is "result", the same
+                    // vocabulary the tap registry tests and the 009/010 pins use.
+                    // Only a truly empty completion keeps "".
+                    const observed_branch = if (original.branch.len == 0 and source_produced != null)
+                        alloc.dupe(u8, "result") catch "result"
+                    else
+                        original.branch;
                     const metatype_step = ast.Step{ .metatype_binding = .{
                         .metatype = alloc.dupe(u8, tap_branch) catch tap_branch,
                         .binding = metatype_unique_binding orelse tap_binding orelse "_metatype",
                         .source_event = alloc.dupe(u8, src_event) catch src_event,
                         .dest_event = dest_event,
-                        .branch = alloc.dupe(u8, original.branch) catch original.branch,
+                        .branch = observed_branch,
                         .inserted_by_tap = true,
                         .from_opaque_tap = tap_is_opaque,
                     } };
