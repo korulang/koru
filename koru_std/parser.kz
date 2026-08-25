@@ -174,6 +174,12 @@ const std = @import("std");
             label_n: *usize, // unique Zig block labels
             fail: *?[]const u8, // first validation failure, as a refusal message
             cur_rule: *[]const u8, // name of the rule currently being emitted (the node tag)
+            /// SPAN MODE: when no consuming arm reads the parse tree, rules
+            /// return a flat span (end + text) and the generator emits no
+            /// __N/__leaf/__wrap/__render/__depth/__inner at all — the
+            /// July-18 flat-span parser that led Rust nom by ~2x. The tree
+            /// machinery stays available for arms that do traverse it.
+            span_mode: bool = false,
         };
 
         fn zigEscape(a: std2.mem.Allocator, s: []const u8) []const u8 {
@@ -300,6 +306,18 @@ const std = @import("std");
         /// chain walk but only gathers TEXT, never emits. Recognizer arms
         /// that discard the tree (`| value _ |> _`) reference none of
         /// render/depth/leaf, so the dispatch can skip computing them.
+        /// True if any consuming arm reads the parse tree (render/depth/leaf/
+        /// tag/kids — not mere text). Decides whether the generator must
+        /// emit the __N/__leaf/__wrap/render machinery, or can emit the
+        /// July-18 flat-span parser. Conservative: a hit forces tree mode.
+        fn treeNeeded(alt: *const ast2.Continuation, sfx: []const u8) bool {
+            _ = sfx;
+            const ints = [_][]const u8{ "render", "depth", "leaf", "tag", "kids" };
+            for (ints) |f| {
+                if (producesUseField(alt, f)) return true;
+            }
+            return false;
+        }
         fn producesUseField(alt: *const ast2.Continuation, field: []const u8) bool {
             // A field may be read via a DESTRUCTURING pattern on the branch
             // (`| value { leaf } |> ...`) as well as via a produce expression
@@ -367,7 +385,10 @@ const std = @import("std");
                 if (produceOf(n)) |e| {
                     // `-> e` names the rule's value explicitly: exactly one kid,
                     // whatever e evaluates to. Parts it did not name are not kids.
-                    const ret = std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .node = __wrap_{s}(\"{s}\", input[__start..__p], &.{{ ({s}) }}) }};\n", .{ ctx.sfx, zigEscape(ctx.a, ctx.cur_rule.*), e }) catch unreachable;
+                    const ret = if (ctx.span_mode)
+                        std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .text = ({s}) }};\n", .{e}) catch unreachable
+                    else
+                        std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .node = __wrap_{s}(\"{s}\", input[__start..__p], &.{{ ({s}) }}) }};\n", .{ ctx.sfx, zigEscape(ctx.a, ctx.cur_rule.*), e }) catch unreachable;
                     buf.appendSlice(ctx.a, ret) catch unreachable;
                     produced = true;
                     break;
@@ -392,8 +413,16 @@ const std = @import("std");
                     const rn = sanitize(ctx.a, rname);
                     const step = std2.fmt.allocPrint(ctx.a, "const __s{d} = __koru_pr_{s}_{s}(input, __p, __err) orelse {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :t{d}; }};\n", .{ sk, ctx.sfx, rn, zigEscape(ctx.a, rname), tail_label }) catch unreachable;
                     buf.appendSlice(ctx.a, step) catch unreachable;
-                    bindName(ctx, buf, inv.return_binding, std2.fmt.allocPrint(ctx.a, "__s{d}.node", .{sk}) catch unreachable);
-                    kids.append(ctx.a, std2.fmt.allocPrint(ctx.a, "__s{d}.node", .{sk}) catch unreachable) catch unreachable;
+                    const sub_named = if (ctx.span_mode)
+                        std2.fmt.allocPrint(ctx.a, "__s{d}.text", .{sk}) catch unreachable
+                    else
+                        std2.fmt.allocPrint(ctx.a, "__s{d}.node", .{sk}) catch unreachable;
+                    bindName(ctx, buf, inv.return_binding, sub_named);
+                    const kid_val = if (ctx.span_mode)
+                        std2.fmt.allocPrint(ctx.a, "__s{d}.text", .{sk}) catch unreachable
+                    else
+                        std2.fmt.allocPrint(ctx.a, "__s{d}.node", .{sk}) catch unreachable;
+                    kids.append(ctx.a, kid_val) catch unreachable;
                     const adv = std2.fmt.allocPrint(ctx.a, "__p = __s{d}.end;\n", .{sk}) catch unreachable;
                     buf.appendSlice(ctx.a, adv) catch unreachable;
                 } else if (isVerb(inv, "lit")) {
@@ -431,7 +460,11 @@ const std = @import("std");
                     kidlist.appendSlice(ctx.a, k) catch unreachable;
                 }
                 kidlist.appendSlice(ctx.a, " }") catch unreachable;
-                buf.appendSlice(ctx.a, std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .node = __wrap_{s}(\"{s}\", input[__start..__p], {s}) }};\n", .{ ctx.sfx, zigEscape(ctx.a, ctx.cur_rule.*), kidlist.items }) catch unreachable) catch unreachable;
+                const def_ret = if (ctx.span_mode)
+                    "return .{ .end = __p, .text = input[__start..__p] };\n"
+                else
+                    std2.fmt.allocPrint(ctx.a, "return .{{ .end = __p, .node = __wrap_{s}(\"{s}\", input[__start..__p], {s}) }};\n", .{ ctx.sfx, zigEscape(ctx.a, ctx.cur_rule.*), kidlist.items }) catch unreachable;
+                buf.appendSlice(ctx.a, def_ret) catch unreachable;
             }
             const needle = std2.fmt.allocPrint(ctx.a, "break :t{d};", .{tail_label}) catch unreachable;
             const labeled = std2.mem.indexOf(u8, body.items, needle) != null;
@@ -514,13 +547,19 @@ const std = @import("std");
                 const rn = sanitize(ctx.a, head_name);
                 const head = std2.fmt.allocPrint(ctx.a, "const __gh{d} = __koru_pr_{s}_{s}(input, __p, __err) orelse {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :g{d}; }};\n", .{ g, ctx.sfx, rn, zigEscape(ctx.a, head_name), g }) catch unreachable;
                 buf.appendSlice(ctx.a, head) catch unreachable;
-                head_val = std2.fmt.allocPrint(ctx.a, "__gh{d}.node", .{g}) catch unreachable;
+                head_val = if (ctx.span_mode)
+                    std2.fmt.allocPrint(ctx.a, "__gh{d}.text", .{g}) catch unreachable
+                else
+                    std2.fmt.allocPrint(ctx.a, "__gh{d}.node", .{g}) catch unreachable;
                 head_end = std2.fmt.allocPrint(ctx.a, "__gh{d}.end", .{g}) catch unreachable;
             } else {
                 const id = matcherFor(ctx, head_name);
                 const head = std2.fmt.allocPrint(ctx.a, "const __ge{d} = __koru_pt_{s}_{d}(input, __p) orelse {{ if (__err.expected.len == 0 or __p > __err.pos) {{ __err.pos = __p; __err.expected = \"{s}\"; }} break :g{d}; }};\n", .{ g, ctx.sfx, id, zigEscape(ctx.a, head_name), g }) catch unreachable;
                 buf.appendSlice(ctx.a, head) catch unreachable;
-                head_val = std2.fmt.allocPrint(ctx.a, "__leaf_{s}(input[__cp{d}..__ge{d}])", .{ ctx.sfx, cp_label, g }) catch unreachable;
+                head_val = if (ctx.span_mode)
+                    std2.fmt.allocPrint(ctx.a, "input[__cp{d}..__ge{d}]", .{ cp_label, g }) catch unreachable
+                else
+                    std2.fmt.allocPrint(ctx.a, "__leaf_{s}(input[__cp{d}..__ge{d}])", .{ ctx.sfx, cp_label, g }) catch unreachable;
                 head_end = std2.fmt.allocPrint(ctx.a, "__ge{d}", .{g}) catch unreachable;
             }
 
@@ -642,23 +681,49 @@ const std = @import("std");
     var label_n: usize = 0;
     var fail: ?[]const u8 = null;
     var cur_rule: []const u8 = "";
-    const ctx = H.Ctx{ .a = allocator, .sfx = sfx, .rules = rules.?, .matchers = &matchers, .pats = &pats, .label_n = &label_n, .fail = &fail, .cur_rule = &cur_rule };
+    // SPAN MODE: we choose it once, before generating any of the rule fns, if
+    // no consuming arm reads the parse tree. Tree-intrinsic members are
+    // render/depth/leaf/tag/kids; a destructure arm that binds e.g. `{ leaf }`
+    // reads one. `text` is a span and never forces tree mode. A recognizer
+    // (`| value _ |> _`) touches none ⇒ span mode ⇒ zero node allocations.
+    const span_mode = !H.treeNeeded(&top, sfx);
+    const ctx = H.Ctx{ .a = allocator, .sfx = sfx, .rules = rules.?, .matchers = &matchers, .pats = &pats, .label_n = &label_n, .fail = &fail, .cur_rule = &cur_rule, .span_mode = span_mode };
 
     // Result carries a real recursive node (*__N_<sfx>), not a string: every rule
     // builds a node tagged by its name whose kid is the child node it kept, so the
     // parse walk assembles a typed tree you traverse in code (tag / text / kids).
-    const structs = std.fmt.allocPrint(allocator, "const __N_{s} = struct {{ tag: []const u8 = \"\", text: []const u8 = \"\", kids: []const *const __N_{s} = &.{{}} }};\nconst __koru_perr_{s} = struct {{ pos: usize = 0, expected: []const u8 = \"\" }};\nconst __koru_pres_{s} = struct {{ end: usize, node: *const __N_{s} }};\nfn __koru_lit_eq_{s}(a: []const u8, b: []const u8) bool {{ if (a.len != b.len) return false; for (a, b) |x, y| {{ if (x != y) return false; }} return true; }}\n", .{ sfx, sfx, sfx, sfx, sfx, sfx }) catch unreachable;
+    // Build the whole structs/helpers preamble as ONE fully-substituted string
+    // (no {s}-injection of a brace-bearing piece), so the raw `{}` of the
+    // struct bodies stay inside a single fmt literal and the emitter re-escapes
+    // them as data — not as format metacharacters.
+    const structs = if (span_mode)
+        std.fmt.allocPrint(allocator,
+            "const __N_{s} = struct {{ tag: []const u8 = \"\", text: []const u8 = \"\", kids: []const *const __N_{s} = &.{{}} }};\n" ++
+            "const __koru_perr_{s} = struct {{ pos: usize = 0, expected: []const u8 = \"\" }};\n" ++
+            "const __koru_pres_{s} = struct {{ end: usize, text: []const u8 }};\n" ++
+            "fn __koru_lit_eq_{s}(a: []const u8, b: []const u8) bool {{ if (a.len != b.len) return false; for (a, b) |x, y| {{ if (x != y) return false; }} return true; }}\n",
+            .{ sfx, sfx, sfx, sfx, sfx }) catch unreachable
+    else
+        std.fmt.allocPrint(allocator,
+            "const __N_{s} = struct {{ tag: []const u8 = \"\", text: []const u8 = \"\", kids: []const *const __N_{s} = &.{{}} }};\n" ++
+            "const __koru_perr_{s} = struct {{ pos: usize = 0, expected: []const u8 = \"\" }};\n" ++
+            "const __koru_pres_{s} = struct {{ end: usize, node: *const __N_{s} }};\n" ++
+            "fn __koru_lit_eq_{s}(a: []const u8, b: []const u8) bool {{ if (a.len != b.len) return false; for (a, b) |x, y| {{ if (x != y) return false; }} return true; }}\n",
+            .{ sfx, sfx, sfx, sfx, sfx, sfx }) catch unreachable;
     matchers.appendSlice(allocator, structs) catch unreachable;
-    // Node constructors + walkers. `leaf(text)` = a terminal; `wrap(tag, kid)` =
-    // a one-child node (a rule keeping its child). `render` prints the tree,
-    // `depth`/`inner` walk it — proof it is a real graph, not a string.
-    matchers.appendSlice(allocator, std.fmt.allocPrint(allocator,
-        "fn __leaf_{s}(text: []const u8) *const __N_{s} {{ const s = @import(\"std\"); const n = s.heap.c_allocator.create(__N_{s}) catch unreachable; n.* = .{{ .text = text }}; return n; }}\n" ++
-        "fn __wrap_{s}(tag: []const u8, text: []const u8, kids: []const *const __N_{s}) *const __N_{s} {{ const s = @import(\"std\"); const ks = s.heap.c_allocator.alloc(*const __N_{s}, kids.len) catch unreachable; for (kids, 0..) |k, i| ks[i] = k; const n = s.heap.c_allocator.create(__N_{s}) catch unreachable; n.* = .{{ .tag = tag, .text = text, .kids = ks }}; return n; }}\n" ++
-        "fn __render_{s}(n: *const __N_{s}) []const u8 {{ const s = @import(\"std\"); if (n.kids.len == 0) return n.text; var acc: []const u8 = \"\"; for (n.kids, 0..) |k, i| {{ const part = __render_{s}(k); acc = if (i == 0) part else s.fmt.allocPrint(s.heap.c_allocator, \"{{s}},{{s}}\", .{{ acc, part }}) catch unreachable; }} return s.fmt.allocPrint(s.heap.c_allocator, \"{{s}}({{s}})\", .{{ n.tag, acc }}) catch unreachable; }}\n" ++
-        "fn __depth_{s}(n: *const __N_{s}) usize {{ if (n.kids.len == 0) return 0; var m: usize = 0; for (n.kids) |k| {{ const d = __depth_{s}(k); if (d > m) m = d; }} return 1 + m; }}\n" ++
-        "fn __inner_{s}(n: *const __N_{s}) []const u8 {{ var c = n; while (c.kids.len > 0) c = c.kids[0]; return c.text; }}\n",
-        .{ sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx }) catch unreachable) catch unreachable;
+    if (!span_mode) {
+        // Node constructors + walkers (tree surface ONLY — a span-mode parser
+        // emits none of this). `leaf(text)` = a terminal; `wrap(tag, kid)` = a
+        // node; `render` prints the tree, `depth`/`inner` walk it — proof it is
+        // a real graph, not a string.
+        matchers.appendSlice(allocator, std.fmt.allocPrint(allocator,
+            "fn __leaf_{s}(text: []const u8) *const __N_{s} {{ const s = @import(\"std\"); const n = s.heap.c_allocator.create(__N_{s}) catch unreachable; n.* = .{{ .text = text }}; return n; }}\n" ++
+            "fn __wrap_{s}(tag: []const u8, text: []const u8, kids: []const *const __N_{s}) *const __N_{s} {{ const s = @import(\"std\"); const ks = s.heap.c_allocator.alloc(*const __N_{s}, kids.len) catch unreachable; for (kids, 0..) |k, i| ks[i] = k; const n = s.heap.c_allocator.create(__N_{s}) catch unreachable; n.* = .{{ .tag = tag, .text = text, .kids = ks }}; return n; }}\n" ++
+            "fn __render_{s}(n: *const __N_{s}) []const u8 {{ const s = @import(\"std\"); if (n.kids.len == 0) return n.text; var acc: []const u8 = \"\"; for (n.kids, 0..) |k, i| {{ const part = __render_{s}(k); acc = if (i == 0) part else s.fmt.allocPrint(s.heap.c_allocator, \"{{s}},{{s}}\", .{{ acc, part }}) catch unreachable; }} return s.fmt.allocPrint(s.heap.c_allocator, \"{{s}}({{s}})\", .{{ n.tag, acc }}) catch unreachable; }}\n" ++
+            "fn __depth_{s}(n: *const __N_{s}) usize {{ if (n.kids.len == 0) return 0; var m: usize = 0; for (n.kids) |k| {{ const d = __depth_{s}(k); if (d > m) m = d; }} return 1 + m; }}\n" ++
+            "fn __inner_{s}(n: *const __N_{s}) []const u8 {{ var c = n; while (c.kids.len > 0) c = c.kids[0]; return c.text; }}\n",
+            .{ sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx, sfx }) catch unreachable) catch unreachable;
+    }
 
     for (rules.?) |*r| H.checkStaticPicker(&ctx, r);
     for (rules.?) |*r| H.genRuleFn(&ctx, r);
@@ -695,19 +760,20 @@ const std = @import("std");
     const want_render = H.producesUseField(&top, "render");
     const want_depth = H.producesUseField(&top, "depth");
     const want_leaf = H.producesUseField(&top, "leaf");
-    const render_splice: []const u8 = if (want_render)
+    const node_ref = if (span_mode) "__koru_pres.text" else "__koru_pres.node.text";
+    const render_splice: []const u8 = if (want_render and !span_mode)
         std.fmt.allocPrint(allocator, "__render_{s}(__koru_pres.node)", .{sfx}) catch unreachable
     else
         "\"\"";
-    const depth_splice: []const u8 = if (want_depth)
+    const depth_splice: []const u8 = if (want_depth and !span_mode)
         std.fmt.allocPrint(allocator, "__depth_{s}(__koru_pres.node)", .{sfx}) catch unreachable
     else
         "0";
-    const inner_splice: []const u8 = if (want_leaf)
+    const inner_splice: []const u8 = if (want_leaf and !span_mode)
         std.fmt.allocPrint(allocator, "__inner_{s}(__koru_pres.node)", .{sfx}) catch unreachable
     else
         "\"\"";
-    const body = std.fmt.allocPrint(allocator, "if (__koru_pr_{s}_{s}(__koru_pin, 0, &__koru_pe)) |__koru_pres| {{\nif (__koru_pres.end == __koru_pin.len) {{ __koru_inline_{d}(.{{ .render = {s}, .depth = {s}, .leaf = {s}, .text = __koru_pres.node.text }}); }}\nelse {{ if (__koru_pe.expected.len == 0 or __koru_pres.end > __koru_pe.pos) {{ __koru_pe.pos = __koru_pres.end; __koru_pe.expected = \"end of input\"; }}\n{s} }}\n}} else {{\n{s} }}\n}}", .{ sfx, rn, top_idx.?, render_splice, depth_splice, inner_splice, errsplice, errsplice }) catch unreachable;
+    const body = std.fmt.allocPrint(allocator, "if (__koru_pr_{s}_{s}(__koru_pin, 0, &__koru_pe)) |__koru_pres| {{\nif (__koru_pres.end == __koru_pin.len) {{ __koru_inline_{d}(.{{ .render = {s}, .depth = {s}, .leaf = {s}, .text = {s} }}); }}\nelse {{ if (__koru_pe.expected.len == 0 or __koru_pres.end > __koru_pe.pos) {{ __koru_pe.pos = __koru_pres.end; __koru_pe.expected = \"end of input\"; }}\n{s} }}\n}} else {{\n{s} }}\n}}", .{ sfx, rn, top_idx.?, render_splice, depth_splice, inner_splice, node_ref, errsplice, errsplice }) catch unreachable;
     dispatch.appendSlice(allocator, body) catch unreachable;
 
     // --- Rebuild the flow: @pass_ran, dispatch inline_body, continuations kept ---
