@@ -112,6 +112,217 @@ pub const AutoDischargeInserter = struct {
         return false;
     }
 
+    /// Does any continuation in this tree reach a flow terminator? A tree with
+    /// none has no exit the terminator-disposal machinery can fire on.
+    fn flowHasTerminator(conts: []const ast.Continuation) bool {
+        for (conts) |*cont| {
+            if (cont.node) |node| {
+                switch (node) {
+                    .terminal, .branch_constructor => return true,
+                    .foreach => |fe| {
+                        for (fe.branches) |branch| {
+                            if (flowHasTerminator(branch.body)) return true;
+                        }
+                    },
+                    else => {},
+                }
+            }
+            if (flowHasTerminator(cont.continuations)) return true;
+        }
+        return false;
+    }
+
+    /// Does this tree declare or jump a label fold? Fold arms carry
+    /// obligations across back-edges to their own exits — the observer-exit
+    /// rule must not fire there.
+    fn flowHasLabelFold(conts: []const ast.Continuation) bool {
+        for (conts) |*cont| {
+            if (cont.node) |node| {
+                switch (node) {
+                    .label_apply, .label_with_invocation, .label_jump => return true,
+                    .foreach => |fe| {
+                        for (fe.branches) |branch| {
+                            if (flowHasLabelFold(branch.body)) return true;
+                        }
+                    },
+                    else => {},
+                }
+            }
+            if (flowHasLabelFold(cont.continuations)) return true;
+        }
+        return false;
+    }
+
+    /// Exit point of the first @scope observer chain: the DEEPEST-LAST
+    /// descendant of the first @scope-annotated continuation. The tap weave
+    /// leaves non-leaf shapes under observers (e.g. a null-node implicit
+    /// terminal), so childlessness is the wrong leaf test — the exit is the
+    /// end of the chain. Returns the tree pointer so
+    /// replaceContinuationAnywhere can graft onto it.
+    fn firstScopedLeaf(conts: []const ast.Continuation) ?*const ast.Continuation {
+        for (conts) |*cont| {
+            if (hasScope(cont)) {
+                var cur = cont;
+                while (cur.continuations.len > 0) cur = &cur.continuations[cur.continuations.len - 1];
+                return cur;
+            }
+            if (firstScopedLeaf(cont.continuations)) |leaf| return leaf;
+        }
+        return null;
+    }
+
+    /// Does this continuation tree already carry this exact disposal call?
+    /// Recursive: the observer-exit graft lands deep inside the @scope chain,
+    /// so top-level scanning misses it and the transform loops forever.
+    fn bodyHasTrailingDisposal(
+        conts: []const ast.Continuation,
+        binding_path: []const u8,
+        disposal: DisposalEvent,
+    ) bool {
+        for (conts) |*cont| {
+            if (cont.node) |node| {
+                if (node == .invocation) {
+                    const inv = &node.invocation;
+                    // Match the disposer: parse qualified_name ("module:event")
+                    // and compare module qualifier + last path segment.
+                    const colon_idx = std.mem.indexOf(u8, disposal.qualified_name, ":") orelse 0;
+                    const want_module = disposal.qualified_name[0..colon_idx];
+                    const want_event = disposal.qualified_name[colon_idx + 1 ..];
+                    const segs = inv.path.segments;
+                    if (segs.len > 0) {
+                        const last_seg = segs[segs.len - 1];
+                        const module_ok = if (inv.path.module_qualifier) |mq|
+                            std.mem.eql(u8, mq, want_module)
+                        else
+                            !(want_module.len > 0 and colon_idx > 0);
+                        if (std.mem.eql(u8, last_seg, want_event) and module_ok) {
+                            for (inv.args) |arg| {
+                                if (std.mem.eql(u8, arg.value, binding_path)) return true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (bodyHasTrailingDisposal(cont.continuations, binding_path, disposal)) return true;
+        }
+        return false;
+    }
+
+    /// A body-level trailing disposal invocation: `branch=''`, no binding, the
+    /// disposer called with the obligation's binding path. Appended AFTER the
+    /// last body continuation it reads exactly like the call the author would
+    /// have written at the flow's exit.
+    fn buildTrailingDisposalCont(
+        self: *AutoDischargeInserter,
+        last: *const ast.Continuation,
+        binding_path: []const u8,
+        disposal: DisposalEvent,
+    ) !ast.Continuation {
+        const colon_idx = std.mem.indexOf(u8, disposal.qualified_name, ":") orelse 0;
+        const disposal_module = disposal.qualified_name[0..colon_idx];
+        const disposal_event = disposal.qualified_name[colon_idx + 1 ..];
+
+        const segments = try self.eventNameToSegments(disposal_event);
+        var args = try self.allocator.alloc(ast.Arg, 1);
+        args[0] = .{
+            .name = try self.allocator.dupe(u8, disposal.field_name),
+            .value = try self.allocator.dupe(u8, binding_path),
+            .expression_value = null,
+            .source_value = null,
+        };
+
+        // Stamp the machinery's own exit settlement so the KORU032 wall can
+        // tell it apart from an author-written discharge inside a scope.
+        var inv_annotations = try self.allocator.alloc([]const u8, 1);
+        inv_annotations[0] = try self.allocator.dupe(u8, "@auto-exit-disposal");
+
+        return .{
+            .branch = "",
+            .binding = null,
+            .binding_annotations = &[_][]const u8{},
+            .condition = null,
+            .node = .{ .invocation = ast.Invocation{
+                .path = .{
+                    .segments = segments,
+                    .module_qualifier = try self.allocator.dupe(u8, disposal_module),
+                },
+                .args = args,
+                .annotations = inv_annotations,
+            } },
+            .indent = last.indent,
+            .continuations = &[_]ast.Continuation{},
+            .location = last.location,
+        };
+    }
+
+    fn hasAnnotationNamed(annotations: []const []const u8, want: []const u8) bool {
+        for (annotations) |ann| {
+            if (std.mem.eql(u8, ann, want)) return true;
+        }
+        return false;
+    }
+
+    /// Graft the disposal continuations at the END of the first @scope chain:
+    /// descend each scoped cont's deepest-last path and attach there. The
+    /// observer-wrapped terminus's flow exit lives at that position; a
+    /// body-level sibling would trip SHAPE002 (the observer carries children).
+    fn appendDisposalAtScopedExit(
+        conts: []const ast.Continuation,
+        disposals: []const ast.Continuation,
+        allocator: std.mem.Allocator,
+    ) ![]const ast.Continuation {
+        var out = try allocator.alloc(ast.Continuation, conts.len);
+        for (conts, 0..) |*cont, i| {
+            if (hasScope(cont)) {
+                out[i] = try appendDeepAtExit(cont, disposals, allocator);
+            } else {
+                out[i] = try ast_functional.cloneContinuation(allocator, cont);
+            }
+        }
+        return out;
+    }
+
+    fn appendDeepAtExit(
+        cont: *const ast.Continuation,
+        disposals: []const ast.Continuation,
+        allocator: std.mem.Allocator,
+    ) !ast.Continuation {
+        var cloned = try ast_functional.cloneContinuation(allocator, cont);
+        if (cloned.continuations.len == 0) {
+            if (cloned.node == null and disposals.len >= 1) {
+                // Bodiless implicit-terminal marker: BECOME the disposal call.
+                // The marker exists only to say "the flow ends here"; ending on
+                // a consuming invocation is the same statement with the debt
+                // settled (and enforcement reads invocation-no-kids as an
+                // implicit terminator too). Multiple settlements chain.
+                var repl = disposals[0];
+                repl.indent = cloned.indent;
+                repl.location = cloned.location;
+                var tail: *ast.Continuation = &repl;
+                for (disposals[1..]) |d| {
+                    const link = try allocator.alloc(ast.Continuation, 1);
+                    link[0] = d;
+                    tail.continuations = link;
+                    tail = &link[0];
+                }
+                return repl;
+            }
+            // Bodied chain end: hang the settlement as a child (legal — the
+            // parent has a body; KORU105 only fires under bodiless branches).
+            var kids = try allocator.alloc(ast.Continuation, disposals.len);
+            for (disposals, 0..) |d, j| kids[j] = d;
+            cloned.continuations = kids;
+            return cloned;
+        }
+        const n = cloned.continuations.len;
+        const new_last = try appendDeepAtExit(&cloned.continuations[n - 1], disposals, allocator);
+        var kids = try allocator.alloc(ast.Continuation, n);
+        @memcpy(kids, cloned.continuations);
+        kids[n - 1] = new_last;
+        cloned.continuations = kids;
+        return cloned;
+    }
+
     /// A NAMED LABEL continuation with a real binding on a bare-return head
     /// (`create() | made c |> ...`) binds the head result — the label is
     /// binding sugar for `: c`, and the emitter lowers both spellings to the
@@ -1189,6 +1400,11 @@ pub const AutoDischargeInserter = struct {
             switch (item.*) {
                 .flow => {
                     const flow = &item.flow;
+                    if (std.posix.getenv("KORU_OBS_EXIT_DEBUG") != null) {
+                        const en = try self.pathToString(flow.inv().path);
+                        defer self.allocator.free(en);
+                        std.debug.print("[obs-exit] item flow[{d}] {s}\n", .{ item_idx, en });
+                    }
                     const result = try self.checkAndTransformFlow(flow, program, item_idx, mode);
                     if (result.transformed) return result;
                 },
@@ -1199,12 +1415,21 @@ pub const AutoDischargeInserter = struct {
                         _ = mod_item_idx;
                         if (mod_item.* == .flow) {
                             const flow = &mod_item.flow;
+                            if (std.posix.getenv("KORU_OBS_EXIT_DEBUG") != null) {
+                                const en2 = try self.pathToString(flow.inv().path);
+                                defer self.allocator.free(en2);
+                                std.debug.print("[obs-exit] moddecl flow[{d}] {s}\n", .{ item_idx, en2 });
+                            }
                             const result = try self.checkAndTransformFlow(flow, program, item_idx, mode);
                             if (result.transformed) return result;
                         }
                     }
                 },
-                else => {},
+                else => {
+                    if (std.posix.getenv("KORU_OBS_EXIT_DEBUG") != null) {
+                        std.debug.print("[obs-exit] item[{d}] other: {s}\n", .{ item_idx, @tagName(item.*) });
+                    }
+                },
             }
         }
 
@@ -1223,6 +1448,10 @@ pub const AutoDischargeInserter = struct {
         // Get event info for this flow
         const event_name = try self.pathToString(flow.inv().path);
         defer self.allocator.free(event_name);
+
+        if (std.posix.getenv("KORU_OBS_EXIT_DEBUG") != null) {
+            std.debug.print("[obs-exit] enter mode={s} flow={s} conts={d}\n", .{ @tagName(mode), event_name, flow.body.continuations.len });
+        }
 
         const module_name = flow.inv().path.module_qualifier orelse flow.module;
         const qualified_name = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ module_name, event_name });
@@ -1346,6 +1575,10 @@ pub const AutoDischargeInserter = struct {
         // Walk continuations looking for terminators with obligations
         var context = BindingContext.init(self.allocator);
         defer context.deinit();
+
+        if (std.posix.getenv("KORU_OBS_EXIT_DEBUG") != null and std.mem.eql(u8, event_name, "open")) {
+            std.debug.print("[obs-exit] open reached bodywalk mode={s} rb={s} obligations-seeded-next\n", .{ @tagName(mode), flow.inv().return_binding orelse "(null)" });
+        }
 
         // Flow-head bare-return bind: `~make(): h0 |> ...` binds `h0` to the head
         // event's `-> T<phantom>` return. Seed its obligation at scope 0 so it is
@@ -1554,6 +1787,86 @@ pub const AutoDischargeInserter = struct {
             const result_ptr = try self.allocator.create(ast.Program);
             result_ptr.* = new_program;
             return .{ .transformed = true, .program = result_ptr };
+        }
+
+        // Observer-only flow (tap-wrapped terminus, 330_030/031): the tap weave
+        // replaces the author's terminus with @scope observer continuations, so
+        // NO terminal exists anywhere in the body and the terminator-disposal
+        // machinery never fires — the head's obligation leaks silently. The
+        // flow's exit is AFTER the observers: graft the disposal invocation at
+        // the end of the first @scope chain (the weave leaves a null-node
+        // implicit terminal there — this rewrites that exit into the call the
+        // author would have written). A body-level sibling would trip SHAPE002
+        // (the observer carries children); the graft position needs the
+        // `@auto-exit-disposal` stamp so the KORU032 wall can tell the
+        // machinery's own settlement from an author-written discharge inside a
+        // scope — an observer still cannot satisfy anything; this call exists
+        // because the flow ENDS here. Guarded to unfold-less flows — a fold's
+        // arms carry obligations across back-edges to their own exits — and to
+        // trees that still hold an obligation after a full walk. Plain
+        // (non-@scope) chain ends keep their existing paths; in particular an
+        // unbound mid-chain return stays the 330_097 wall, not a silent
+        // discharge.
+        if (mode == .full and flow.body.continuations.len > 0 and
+            !flowHasTerminator(flow.body.continuations) and
+            !flowHasLabelFold(flow.body.continuations) and
+            context.hasObligations() and
+            firstScopedLeaf(flow.body.continuations) != null)
+        {
+            const ordered_obls = try self.obligationsInLifoOrder(&context);
+            defer self.allocator.free(ordered_obls);
+            var appended: usize = 0;
+            var disposal_conts = try self.allocator.alloc(ast.Continuation, ordered_obls.len);
+            for (ordered_obls) |entry| {
+                if (entry.info.not_auto_dischargeable) continue;
+                const disposals = try self.findDisposalEvents(entry.info.phantom_state, entry.info.base_type);
+                defer self.allocator.free(disposals);
+                const disposal = selectDisposal(disposals) orelse continue;
+                // IDEMPOTENCE GUARD: the flow-level context is re-seeded from
+                // the head bind every sweep and never sees the walk's internal
+                // crediting (that happens on discarded clones), so without this
+                // check every sweep would append another identical disposal
+                // until memory died. Structural presence is the truth.
+                if (bodyHasTrailingDisposal(flow.body.continuations, entry.binding_path, disposal)) continue;
+                disposal_conts[appended] = try self.buildTrailingDisposalCont(
+                    &flow.body.continuations[flow.body.continuations.len - 1],
+                    entry.binding_path,
+                    disposal,
+                );
+                appended += 1;
+            }
+            if (appended > 0) {
+                var new_annotations = try self.allocator.alloc([]const u8, flow.annotations.len);
+                for (flow.annotations, 0..) |ann, i| new_annotations[i] = try self.allocator.dupe(u8, ann);
+                const rebuilt = ast.Flow{
+                    .body = ast.rootSite(
+                        try ast_functional.cloneInvocation(self.allocator, flow.inv()),
+                        try appendDisposalAtScopedExit(flow.body.continuations, disposal_conts[0..appended], self.allocator),
+                        flow.location,
+                    ),
+                    .annotations = new_annotations,
+                    .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
+                    .super_shape = flow.super_shape,
+                    .inline_body = if (flow.inline_body) |b| try self.allocator.dupe(u8, b) else null,
+                    .preamble_code = if (flow.preamble_code) |p| try self.allocator.dupe(u8, p) else null,
+                    .is_pure = flow.is_pure,
+                    .is_transitively_pure = flow.is_transitively_pure,
+                    .location = flow.location,
+                    .module = try self.allocator.dupe(u8, flow.module),
+                    .impl_of = if (flow.impl_of) |io| try ast_functional.cloneDottedPath(self.allocator, &io) else null,
+                    .impl_variant = if (flow.impl_variant) |v| try self.allocator.dupe(u8, v) else null,
+                    .is_impl = flow.is_impl,
+                };
+                const new_program = try ast_functional.replaceFlowRecursive(
+                    self.allocator,
+                    program,
+                    flow,
+                    .{ .flow = rebuilt },
+                ) orelse return .{ .transformed = false, .program = program };
+                const result_ptr = try self.allocator.create(ast.Program);
+                result_ptr.* = new_program;
+                return .{ .transformed = true, .program = result_ptr };
+            }
         }
 
         // Silent drops audited at the flow level, not at terminals: a dropped
@@ -2693,7 +3006,7 @@ pub const AutoDischargeInserter = struct {
         defer self.allocator.free(qualified_name);
 
         const event_info = self.event_map.get(qualified_name) orelse return;
-        try self.creditConsumingArgsForDecl(context, invocation.args, event_info.decl, flow);
+        try self.creditConsumingArgsForDecl(context, invocation.args, event_info.decl, flow, invocation.annotations);
     }
 
     /// Credit a back-edge `@label(args)` jump: resolve the fold's round event
@@ -2713,7 +3026,7 @@ pub const AutoDischargeInserter = struct {
         const qualified_name = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ inv_module, event_name });
         defer self.allocator.free(qualified_name);
         const event_info = self.event_map.get(qualified_name) orelse return;
-        try self.creditConsumingArgsForDecl(context, jump_args, event_info.decl, flow);
+        try self.creditConsumingArgsForDecl(context, jump_args, event_info.decl, flow, seed_inv.annotations);
     }
 
     /// The shared crediting walk: which args bind consuming (`<!state>`)
@@ -2724,6 +3037,7 @@ pub const AutoDischargeInserter = struct {
         args: []const ast.Arg,
         event_decl: *const ast.EventDecl,
         flow: *const ast.Flow,
+        invocation_annotations: []const []const u8,
     ) !void {
         // Check each argument to see if it satisfies (discharges) an obligation.
         //
@@ -2770,7 +3084,12 @@ pub const AutoDischargeInserter = struct {
             // ERROR: Cannot manually dispose outer-scope obligation inside @scope
             // boundary (loops, taps, custom constructs). is_repeating is true
             // when we're inside a @scope boundary.
-            if (context.is_repeating) {
+            // EXEMPTION: an `@auto-exit-disposal` invocation is the machinery's
+            // own flow-exit settlement for an observer-wrapped terminus
+            // (330_030/031), not an author-written discharge inside a scope —
+            // the wall guards the latter. The observer still cannot satisfy
+            // anything; this call only exists because the flow ENDS here.
+            if (context.is_repeating and !hasAnnotationNamed(invocation_annotations, "@auto-exit-disposal")) {
                 if (context.loop_entry_scope) |scope_entry| {
                     if (context.cleanup_obligations.get(arg.value)) |obl_info| {
                         if (obl_info.scope_depth < scope_entry) {

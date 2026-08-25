@@ -109,3 +109,37 @@ the event's return type threaded to the weave and would re-pin green 310_018.
 The question this parks: is "what crossed" determined by the event's TYPE or by
 whether a NAME was bound? Type says result; binding-scope says void. They
 disagree exactly when the payload is discarded.
+
+## The observer-wrapped exit is answerable — and the walls pick its shape (2026-08-25)
+
+The parked question above — WHERE is the flow exit of a flow whose every
+continuation was synthesized by an observer weave? — has an answer now, and
+getting to it took three refusals, each teaching where the settlement may
+legally land:
+
+- A body-level sibling after the observer trips SHAPE002: the weave leaves
+  children under the observer, so it is not a flat sequential step.
+- A graft under the bodiless implicit-terminal marker trips KORU105: nothing
+  picks a branch under a branch that has no body.
+- The same graft, unmarked, trips KORU032: the creditor reads any consume of a
+  head-level debt inside the @scope boundary as an observer satisfying an
+  obligation.
+
+The resolution that satisfies all three: **the settlement REPLACES the
+bodiless marker** (the marker only ever said "the flow ends here"; ending on
+the consuming call says it with the debt settled), stamped
+`@auto-exit-disposal` so KORU032 can tell the machinery's own flow-exit
+settlement from an author-written discharge inside a scope. The distinction
+the wall keeps is exactly the one this fragment drew in 2026-08-08: observers
+observe; they never satisfy. What changed is that the FLOW may settle at their
+end without that counting as the observer acting.
+
+One engineering law this cost real memory to learn: **idempotence by
+structural presence, never by context state.** The flow-level context
+re-seeds every transform sweep and never sees walk-internal crediting, so a
+"have I already discharged?" check against context state appends forever. Ask
+the tree.
+
+Open edge from the earlier section stands: unbound payload returns still spell
+the void sentinel; type-vs-binding-scope still disagree when the payload is
+discarded.
