@@ -7652,7 +7652,21 @@ fn emitInvocation(
                     if (event_decl.?.module.len > 0) break :blk event_decl.?.module;
                     break :blk null;
                 };
-                try writeBareReturnType(emitter, event_decl.?.return_type.?, ctx.main_module_name, decl_mod);
+                // Re-attach the parser-lifted return phantom so a module-
+                // qualified one (`-> *List_i64<std/list:list!>`) qualifies the
+                // base to its home module here too — same resolution as the
+                // handler Output (660_027). Without it the annotation emits
+                // via declaring_module and names a type this scope never
+                // declared (`*main_module.List_i64`).
+                var rt_out = event_decl.?.return_type.?;
+                var rejoined: ?[]const u8 = null;
+                if (event_decl.?.return_phantom) |rp| {
+                    if (emitter.allocator) |a| {
+                        rejoined = std.fmt.allocPrint(a, "{s}<{s}>", .{ event_decl.?.return_type.?, rp }) catch null;
+                        if (rejoined) |b| rt_out = b;
+                    }
+                }
+                try writeBareReturnType(emitter, rt_out, ctx.main_module_name, decl_mod);
             } else {
                 try emitInvocationTarget(emitter, ctx, &invocation.path);
                 try emitter.write(".Output");
@@ -11721,8 +11735,22 @@ pub fn emitArrayLiteralForField(
 /// handled in exactly one place.
 pub fn emitBareReturnOutput(emitter: *CodeEmitter, event: *const ast.EventDecl, main_module_name: ?[]const u8) !bool {
     if (event.return_type) |rt| {
+        // The parser lifts the return type's trailing `<phantom>` into the
+        // separate `return_phantom` field, so writeBareReturnType never sees it
+        // inline. Re-attach it here: a module-qualified phantom
+        // (`-> *List_i64<std/list:list!>`) names the base type's home module,
+        // which the bare-return path resolves for Output qualification
+        // (660_027 — otherwise Output emits the undeclared bare base).
+        var rt_out = rt;
+        var rejoined: ?[]const u8 = null;
+        if (event.return_phantom) |rp| {
+            if (emitter.allocator) |a| {
+                rejoined = std.fmt.allocPrint(a, "{s}<{s}>", .{ rt, rp }) catch null;
+                if (rejoined) |b| rt_out = b;
+            }
+        }
         try emitter.write("pub const Output = ");
-        try writeBareReturnType(emitter, rt, main_module_name, null);
+        try writeBareReturnType(emitter, rt_out, main_module_name, null);
         try emitter.write(";\n");
         return true;
     }
@@ -11770,6 +11798,10 @@ pub fn writeBareReturnType(
     // for anything but a phantom (no language generics), so strip a `<...>` group
     // here — it is a compile-time-only annotation, absent from the Zig type. The
     // whole-value obligation is enforced separately (auto_discharge_inserter).
+    // The stripped group's INNER text is kept: a module-qualified phantom on a
+    // bare-return type names the base type's home module (resolved below), the
+    // same resolution an event-payload field gets from its lifted `field.phantom`.
+    var phantom_inner: ?[]const u8 = null;
     const phantom_stripped: []const u8 = if (std.mem.indexOfScalar(u8, rt, '<')) |lt| blk: {
         var depth: usize = 0;
         var end: ?usize = null;
@@ -11783,6 +11815,7 @@ pub fn writeBareReturnType(
             }
         }
         if (end) |e| {
+            phantom_inner = rt[lt + 1 .. e];
             const a = emitter.allocator orelse std.heap.page_allocator;
             const joined = std.fmt.allocPrint(a, "{s}{s}", .{ rt[0..lt], rt[e + 1 ..] }) catch break :blk rt;
             break :blk joined;
@@ -11880,6 +11913,34 @@ pub fn writeBareReturnType(
             prefix = candidate;
             remaining = remaining[candidate.len..];
             break;
+        }
+    }
+    // A bare base with an INLINE module-qualified phantom (`*List_i64<std/list:list!>`)
+    // names its home module the same way an event-payload field's lifted phantom
+    // does (writeFieldType → effective_module_path): qualify the base to the
+    // phantom's module when the registry has evidence that module declares it.
+    // Without this the emitted Output references the bare base name, undeclared
+    // outside the home module (660_027: `pub const Output = *List_i64;`).
+    // Takes PRECEDENCE over the declaring_module fallback below: an explicit
+    // qualifier on the type beats whichever module happens to be writing it.
+    if (phantom_inner) |pi| {
+        if (std.mem.indexOfScalar(u8, pi, ':')) |pcolon| {
+            const pmod = pi[0..pcolon];
+            const pmod_ident = pmod.len > 0 and blk: {
+                for (pmod) |ch| {
+                    const ok = (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or
+                        (ch >= '0' and ch <= '9') or ch == '/' or ch == '-' or ch == '_' or ch == '.';
+                    if (!ok) break :blk false;
+                }
+                break :blk true;
+            };
+            if (pmod_ident and isModuleLocalBareTypeBase(remaining) and moduleDeclaresType(remaining, pmod)) {
+                try emitter.write(prefix);
+                try writeModulePath(emitter, pmod, main_module_name);
+                try emitter.write(".");
+                try emitter.write(remaining);
+                return;
+            }
         }
     }
     if (declaring_module) |mod_path| {

@@ -17,12 +17,10 @@
 ~import std/io
 ~import std/list
 
-~pub tor roundtrip { cur: *List_i64<std/list:!list> }
-| out *List_i64<std/list:list!>
+~pub tor roundtrip { cur: *List_i64<std/list:!list> } -> *List_i64<std/list:list!>
 
-~roundtrip => out cur
+~roundtrip -> cur
 
 ~std/list:new(i64)
-| list xs |> roundtrip(cur: xs)
-    | out xs |> std/list:len(xs): n |> std/io:print.ln("len={{ n:d }}") |> std/list:free(xs)
+| list xs |> roundtrip(cur: xs): ys |> std/list:len(xs: ys): n |> std/io:print.ln("len={{ n:d }}") |> std/list:free(xs: ys)
 | err e |> std/io:print.ln("ERR seed {{ e:s }}")
