@@ -295,6 +295,46 @@ const std = @import("std");
             }
         }
 
+        /// True if any produce expression reachable from this continuation's
+        /// chain mentions `.<field>` on the bound value. Mirrors genTail's
+        /// chain walk but only gathers TEXT, never emits. Recognizer arms
+        /// that discard the tree (`| value _ |> _`) reference none of
+        /// render/depth/leaf, so the dispatch can skip computing them.
+        fn producesUseField(alt: *const ast2.Continuation, field: []const u8) bool {
+            // A field may be read via a DESTRUCTURING pattern on the branch
+            // (`| value { leaf } |> ...`) as well as via a produce expression
+            // (`... |> x.leaf`). Conservative: any hit keeps the computation,
+            // so a miss is the only correctness risk — scan both. The field
+            // names (render/depth/leaf/text) are distinctive enough that a
+            // bare-name substring of the branch is a safe over-approximation
+            // (false positives only cost perf, never semantics).
+            if (std2.mem.indexOf(u8, alt.branch, field) != null) return true;
+            // A destructuring arm (`| value { leaf } |> ...`) reads the field
+            // by name through the continuation's destructure slots, not a
+            // produce expression — check those names too.
+            for (alt.destructure) |df| {
+                if (std2.mem.eql(u8, df.name, field)) return true;
+            }
+            const needle = std2.fmt.allocPrint(std2.heap.page_allocator, ".{s}", .{field}) catch unreachable;
+            defer std2.heap.page_allocator.free(needle);
+            var node_opt = if (alt.node) |*n| n else null;
+            var cont_list = alt.continuations;
+            while (node_opt) |n| {
+                if (produceOf(n)) |e| {
+                    if (std2.mem.indexOf(u8, e, needle) != null) return true;
+                }
+                if (n.* != .invocation) return false;
+                node_opt = null;
+                if (cont_list.len == 1 and cont_list[0].branch.len == 0) {
+                    node_opt = if (cont_list[0].node) |*nn| nn else null;
+                    cont_list = cont_list[0].continuations;
+                } else {
+                    return false;
+                }
+            }
+            return false;
+        }
+
         /// Emit one alternative's TAIL: bind the (already-parsed) head value,
         /// walk the chain steps, end in a produce-return (or the default
         /// consumed-span return). Falling out of the labeled block = this
@@ -645,7 +685,29 @@ const std = @import("std");
     }
 
     const rn = H.sanitize(allocator, top.branch);
-    const body = std.fmt.allocPrint(allocator, "if (__koru_pr_{s}_{s}(__koru_pin, 0, &__koru_pe)) |__koru_pres| {{\nif (__koru_pres.end == __koru_pin.len) {{ __koru_inline_{d}(.{{ .render = __render_{s}(__koru_pres.node), .depth = __depth_{s}(__koru_pres.node), .leaf = __inner_{s}(__koru_pres.node), .text = __koru_pres.node.text }}); }}\nelse {{ if (__koru_pe.expected.len == 0 or __koru_pres.end > __koru_pe.pos) {{ __koru_pe.pos = __koru_pres.end; __koru_pe.expected = \"end of input\"; }}\n{s} }}\n}} else {{\n{s} }}\n}}", .{ sfx, rn, top_idx.?, sfx, sfx, sfx, errsplice, errsplice }) catch unreachable;
+    // Only compute render/depth/inner WHEN a consuming arm reads them: each is
+    // a tree walk or (for render) a recursive string build over the whole
+    // parse tree. A recognizer arm that discards the result (`| value _ |> _`)
+    // reads none, so emit cheap constants and skip the work entirely. `.text`
+    // is an O(1) span read and always kept. This closes the lane contract: the
+    // recognized-only consumer no longer pays for serializing a tree it threw
+    // away (was the sole remaining json-parse hotspot past the allocator fix).
+    const want_render = H.producesUseField(&top, "render");
+    const want_depth = H.producesUseField(&top, "depth");
+    const want_leaf = H.producesUseField(&top, "leaf");
+    const render_splice: []const u8 = if (want_render)
+        std.fmt.allocPrint(allocator, "__render_{s}(__koru_pres.node)", .{sfx}) catch unreachable
+    else
+        "\"\"";
+    const depth_splice: []const u8 = if (want_depth)
+        std.fmt.allocPrint(allocator, "__depth_{s}(__koru_pres.node)", .{sfx}) catch unreachable
+    else
+        "0";
+    const inner_splice: []const u8 = if (want_leaf)
+        std.fmt.allocPrint(allocator, "__inner_{s}(__koru_pres.node)", .{sfx}) catch unreachable
+    else
+        "\"\"";
+    const body = std.fmt.allocPrint(allocator, "if (__koru_pr_{s}_{s}(__koru_pin, 0, &__koru_pe)) |__koru_pres| {{\nif (__koru_pres.end == __koru_pin.len) {{ __koru_inline_{d}(.{{ .render = {s}, .depth = {s}, .leaf = {s}, .text = __koru_pres.node.text }}); }}\nelse {{ if (__koru_pe.expected.len == 0 or __koru_pres.end > __koru_pe.pos) {{ __koru_pe.pos = __koru_pres.end; __koru_pe.expected = \"end of input\"; }}\n{s} }}\n}} else {{\n{s} }}\n}}", .{ sfx, rn, top_idx.?, render_splice, depth_splice, inner_splice, errsplice, errsplice }) catch unreachable;
     dispatch.appendSlice(allocator, body) catch unreachable;
 
     // --- Rebuild the flow: @pass_ran, dispatch inline_body, continuations kept ---
