@@ -18,24 +18,35 @@ spelling that its own pointers predated — they just sat unrespelled on
 dead syntax while the ledger called the wall up. An index entry can be
 stale in BOTH directions; check the join, not the prose.
 
-Board at the sweep: **44 AoC tests, 39 green, 5 red.**
+Board after this session's closes: **44 AoC tests, 40 green, 4 red** (day 5 part 2 and day 10 part 1 went green 2026-08-26; see Closed).
 
 ---
 
 ## 1. Day 19 — a growing set of distinct strings plus a rule table
 
-**The gap, honestly stated as uncertain.** Store now has owned-string
-columns green (`690_053`, `690_060`–`690_065`, `690_238`) and declared-
-capacity inserts (`690_011`), so this may already be portable.
-string-map keyed dedup through a user tor also works now (day 5 part 2's
-walk passes `<std/string-map:map>` handles as qualified borrows), so the
-remaining question is only the replacement scan itself. No green test does
-string-dedup across rows, so it is unproven rather than blocked.
+**The gap, now precisely characterized (attempted 2026-08-26).** The full
+spelling exists (outer pass finds the molecule; inner read-lines replays
+rules; index-of walks occurrences; results dedup into a string-map via
+qualified-borrow threading) and every branch is armed — but the backend
+refuses the deepest tor (`emit-at`, four levels of event-arming under
+piped binds) with phantom KORU022 ok/err pairs. Bisected: gutting ONLY
+`emit-at` clears all six diagnostics; the same topology two levels
+shallower is green (day 5 part 2's walk, day 10's say-round). Related
+measured friction, same session: a linear `|>` run whose void stages sit
+before a branchy stage trips KORU031 choke-replication (void stages carry
+empty payloads that clash with the branchy stage's), forcing an
+always-true `if` template to break the chain; and void→bare-bind tails
+demand branches in some contexts while identical shapes pass at top
+level. The unifying suspicion: the point-free desugarer's stage/choke
+model (ast_transform.zig ~960-1030) misjudges which stage owns arms once
+binds and voids interleave past the first level.
 
-**Pointers:** `810_191_day19_part1`, `810_192_day19_part2`.
+**Pointers:** `810_191_day19_part1`, `810_192_day19_part2` (still red on
+PARSE003 rot; the construction above is written and waiting in git his
+tory of this session for the checker fix).
 
-**This is the best fresh attempt on the board** — the one place existing
-surfaces plausibly close an AoC red that nobody has tried since it landed.
+**This is the best-characterized frontier on the board** — the spelling
+is done; only the checker's arm-ownership question blocks it.
 
 ## 2. Borrow surface for string views
 
@@ -99,6 +110,13 @@ pristine spelling never needed the 676-alternation encoding — see that
 day's ledger). The DfaTooLarge ceiling itself remains loud and named
 (`640_004`); if a future day truly needs huge alternations, the entry can
 be re-written then, with a pointer that actually points.
+
+**Day 10 part 1 — CLOSED 2026-08-26.** The old ledger blamed ownership
+transfer across fold iterations; the pristine spelling never crossed
+anything owned. The sequence IS a number (day 11's ratified base-N
+encoding, base 10): a round is a pure scalar transform, five rounds are
+five chained binds, runs pack two decimal positions each, and the whole
+walk is div/mod recursion with every return site a bind-a-call.
 
 Day 6 — the 1000×1000 light grid the old index held up as the flagship case
 for a collection surface — has been green **on `std/grid`** since
