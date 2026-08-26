@@ -82,8 +82,8 @@ capture { nice: 0[i64] }
                         |> std/string-map:free(m: cm)
                         |> std/string:free(s: hh)
                         |> captured { nice: acc.nice + r }
-            | err _es |> _
-        | err _em |> _
+            | err _ |> _
+        | err _ |> _
     | done _ |> _
     | failed e |> std/io:print.ln("FAILED {{ e:s }}")
 | captured total |> std/io:print.ln("{{ total.nice:d }}")

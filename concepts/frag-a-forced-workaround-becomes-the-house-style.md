@@ -7,6 +7,9 @@ ts: 2026-08-04
 
 # A workaround forced in one place becomes the style everywhere, including where nothing forces it (belief)
 
+> **Extended 2026-08-26.** The strongest arrest is a grammar wall — make the
+> workaround un-parseable, not just re-derived away. See "What follows".
+
 The boids demo needed two things Koru could not do: draw from a store sweep (the
 frame borrow does not survive into one, koru `690_252`) and pipe anything after
 a grid write (koru `697_012`). Both are real, both are pinned.
@@ -45,6 +48,20 @@ concluded "you write loops", which is false and would have been sourced from us.
 - **Count your constructs before publishing a demo.** `grep -oE 'std/[a-z]+:[a-z]+'
   | sort | uniq -c` took one command and said `grid:new 1, grid:stored 7` and
   nothing else. A demo of a data surface that names two verbs is not a demo.
+- **The strongest move is to make the workaround UN-PARSEABLE, not to rely on
+  the author's discipline.** Author-side rules ("re-derive every site", "count
+  your constructs") fight the drift one incident at a time. The durable arrest
+  is a wall the compiler refuses at the grammar: when a spelling exists solely
+  to let a library/module work around a limitation, harden the language so that
+  spelling is not a valid name. Demonstration 2026-08-26: `| err _blah |>` (an
+  underscore-prefixed binding that is neither a real name nor the bare `_`
+  discard) was exactly that — a workaround that dodged the unused-binding wall
+  because flow_checker treats any `_`-prefixed binding as discard. It is now a
+  KORU034 error at the binding position (`010_065`), and the two AoC tests that
+  only ever compiled through it (`810_052`, `810_101`) were respelled to bare
+  `_` with no semantic change. The re-derive rule still catches the *author*
+  side; this is the *language* side — the corpus cannot re-introduce the
+  workaround because the spelling itself is gone.
 - **The sibling in koru is
   [[frag-a-corpus-exercises-its-authors-idioms]]**, which is the same drift at
   corpus scale and cost a correctness bug there (`697_012` survived because

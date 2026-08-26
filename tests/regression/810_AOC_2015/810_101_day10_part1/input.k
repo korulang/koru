@@ -72,7 +72,7 @@ std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_101_day10_part1/input
             |> digits(n: e2): ln
             |> std/io:print.ln("{{ e2:d }}")
             |> std/io:print.ln("{{ ln:d }}")
-        | err _ei |> _
-    | err _ep |> _
+        | err _ |> _
+    | err _ |> _
 | done _ |> _
 | failed e |> std/io:print.ln("FAILED {{ e:s }}")

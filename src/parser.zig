@@ -2166,6 +2166,26 @@ pub const Parser = struct {
         }
     }
 
+    /// Reject a leading underscore in a BINDING position (< not bare `_`).
+    /// Bare `_` is the discard primitive and stays legal; `_auto_N`, `__koru_*`,
+    /// `__thread*` are compiler synthetics minted post-parse and never reach
+    /// here. A user-written `_blah` at a binding slot is neither a discard nor a
+    /// real name — nothing `| err _blah |>` does that `| err _ |>` does not — and
+    /// it dodges the unused-binding wall (flow_checker treats any `_`-prefixed
+    /// binding as discard). Reject with the same KORU034 snake-name rule.
+    fn rejectLeadingUnderscoreBinding(self: *Parser, name: []const u8, line_index: usize, kind: []const u8) !void {
+        if (name.len > 1 and name[0] == '_') {
+            try self.reporter.addError(
+                .KORU034,
+                line_index,
+                1,
+                "'_' is not allowed in a Koru {s} name '{s}' — use '-' for word separation ('_' is reserved for digit separators)",
+                .{ kind, name },
+            );
+            return error.ParseError;
+        }
+    }
+
     /// Reject `.` used as a NAMESPACE separator. `/` is the sole namespace
     /// separator (matching the import string + filesystem); `.` is member access
     /// AFTER the `:` pivot. So a `.` in the module-qualifier (the part before the
@@ -7390,6 +7410,9 @@ pub const Parser = struct {
                             );
                             return error.InvalidBinding;
                         }
+                        // Reject a user `_blah` binding (not bare `_`): neither
+                        // a discard nor a real name.
+                        try self.rejectLeadingUnderscoreBinding(binding_name, self.current, "binding");
                         binding = try self.allocator.dupe(u8, binding_name);
                         _ = parts.next(); // consume binding
                     } else {
@@ -7598,6 +7621,11 @@ pub const Parser = struct {
                     );
                     return error.InvalidBinding;
                 }
+                // Single-underscore-identifier validation lives in the
+                // existing isValidIdentifier check above. Reject a user
+                // `_blah` binding (not bare `_`): it is neither a discard nor
+                // a real name, and it dodges the unused-binding wall.
+                try self.rejectLeadingUnderscoreBinding(identifier, self.current, "binding");
                 // This is a binding
                 binding = try self.allocator.dupe(u8, identifier);
                 _ = parts.next(); // consume it

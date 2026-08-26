@@ -1,0 +1,1 @@
+error\[KORU034\]:.*'_' is not allowed in a Koru .* name '_ignored'
