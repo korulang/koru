@@ -94,6 +94,21 @@ different doors into the same room, and the general form is the one to hold:
 *a published board is checkable only if every input that can move it is named
 by the commit it cites.*
 
+**Fifth door: the violator can be YOUR OWN session's intermediate run.** Every
+instance above is a tree the publisher did not control — a foreign session's
+work, machine load, a next commit, the consumer side. 2026-08-26, a publish
+staged three snapshots from a single working day's runs and two of them were
+measured while the SAME session's parser change sat uncommitted: one
+(`18-02`) recorded the transient 100-failed state *between* landing that
+change and respelling the AoC tests it broke. Both stamped `gitCommit:
+8b7cbee3` — a commit that never had those numbers. The fix was to withdraw
+them and leave only the one clean run (`20-12`, measured after the fix commit
+landed). The rule was not new; the doorway was: when you run a suite multiple
+times across a change, an intermediate run is a dirty measurement even if
+*you* made the edit, and staging every `test-results/*.json` in a build
+directory collects them. Publish only the snapshot measured at the HEAD you
+are publishing.
+
 **Open:** the harness could refuse, or annotate. A snapshot could carry a
 `dirty: [paths]` field and the site could show a board measured on an unclean
 tree differently from one that is reproducible. Today the only thing standing
