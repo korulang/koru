@@ -40,6 +40,20 @@ if [ -d "$DIR/koru" ]; then
     echo "[koru] ok"
 fi
 
+# C — a plain strict-FP scalar loop, so Koru's reduce can be compared against a
+# hand-written native reduction under the same (non-reassociating) float rules.
+# The reassociation headroom reference (compile the same bench.c with
+# -ffast-math) is documented in the workload README, not built here.
+if [ -d "$DIR/c" ]; then
+    echo "[c] building..."
+    cd "$DIR/c"
+    rm -f bench
+    cc -O3 -march=native bench.c -o bench
+    [ -f bench ] || { echo "[c] FAILED"; exit 1; }
+    BUILT="$BUILT c"
+    echo "[c] ok"
+fi
+
 # C#
 if [ -d "$DIR/csharp" ]; then
     echo "[csharp] building..."

@@ -18,6 +18,7 @@ case "$IMPL" in
     python)     CMD="python3 bench.py $N" ;;
     javascript) CMD="node bench.js $N" ;;
     rust)       CMD="./target/release/bench $N" ;;
+    c)          CMD="./bench $N" ;;
     go)         CMD="./bench $N" ;;
     *)          echo "$WL,$IMPL,$N,,,,,unknown-language"; exit 1 ;;
 esac
