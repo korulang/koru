@@ -1,0 +1,1 @@
+std/kernel:reduce body names an accumulator `weird` that is not declared

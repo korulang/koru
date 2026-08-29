@@ -439,6 +439,10 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
         // Call-site variant tag (`std/kernel:self|mlir { ... }`): selects the
         // backend the fused emission generates for this op. null = Zig loop.
         variant: ?[]const u8 = null,
+        // For a `reduce` op: the body STATEMENTS only (the declared `name[type]`
+        // accumulator header has been split off). The loop emitter rewrites and
+        // emits THIS, never the raw body_text (which still carries the header).
+        reduce_statements: ?[]const u8 = null,
     };
 
     // A named scalar produced by `std/kernel:reduce` (e.g. `total_mass += k.mass`
@@ -797,7 +801,7 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
     const generateKernelOpsCode = struct {
         fn call(
             alloc: std.mem.Allocator,
-            ops: []const KernelOp,
+            ops: []KernelOp,
             step_range: ?[]const u8,
             binding: []const u8,
             static_name_ref: []const u8,
@@ -827,56 +831,75 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                 code.appendSlice(alloc, ptr_line) catch unreachable;
             }
 
-            // PRE-PASS: declare reduce accumulators (zero-initialized) at the top
-            // of the fused body, so they outlive any step loop and the `| reduce |>`
-            // exit sees the final values. Discovery happens here (not in the op
-            // loop) so declarations land before any reduction is emitted.
+            // PRE-PASS: read the reduce block's declared `name[type]` accumulator
+            // header, then validate the body statements reference only declared
+            // accumulators (plus the kernel binding). The declaration GUIDES the
+            // codegen — the names and types are declared, never guessed — and the
+            // emission itself is unchanged. Declared names are block-scoped and, for
+            // a reduce op, become the `| reduce |>` payload fields.
             for (ops) |*rop| {
                 if (!std.mem.eql(u8, rop.op_type, "reduce")) continue;
-                var stmts = std.mem.splitSequence(u8, rop.body_text, ";");
-                while (stmts.next()) |stmt_raw| {
-                    const stmt = std.mem.trim(u8, stmt_raw, " \t\n\r");
-                    if (stmt.len == 0) continue;
-                    const eq = std.mem.indexOfScalar(u8, stmt, '=') orelse {
-                        std.debug.print("error[KORU123]: std/kernel:reduce body must be `<name> <op>= <expr>` statements — got `{s}`\n", .{stmt});
-                        std.process.exit(1);
-                    };
-                    const compound = eq > 0 and (stmt[eq - 1] == '+' or stmt[eq - 1] == '-' or stmt[eq - 1] == '*' or stmt[eq - 1] == '/');
-                    const acc_name = std.mem.trim(u8, if (compound) stmt[0 .. eq - 1] else stmt[0..eq], " \t");
-                    const rhs = std.mem.trim(u8, stmt[eq + 1 ..], " \t");
-                    if (acc_name.len == 0) {
-                        std.debug.print("error[KORU123]: std/kernel:reduce needs `{s}` to name an accumulator\n", .{stmt});
-                        std.process.exit(1);
-                    }
-                    // Type: if the RHS reduces a shape field (`<binding>.<field>`),
-                    // the accumulator takes that field's declared type; otherwise f64.
-                    var rtype: []const u8 = "f64";
-                    if (std.mem.indexOf(u8, rhs, binding)) |bi| {
-                        if (bi + binding.len < rhs.len and rhs[bi + binding.len] == '.') {
-                            var r = rhs[bi + binding.len + 1 ..];
-                            var fe: usize = 0;
-                            while (fe < r.len and (std.ascii.isAlphanumeric(r[fe]) or r[fe] == '_')) fe += 1;
-                            const fname = r[0..fe];
-                            for (shape_fields) |fld| {
-                                if (std.mem.eql(u8, fld.name, fname)) {
-                                    rtype = fld.type;
-                                    break;
-                                }
-                            }
+                var declared = std.ArrayList(ReduceAccumulator).initCapacity(alloc, 2) catch unreachable;
+                var stmts = std.ArrayList(u8).initCapacity(alloc, rop.body_text.len) catch unreachable;
+                // Entries are separated by `;` or a newline: a declared accumulator
+                // is `<name>[<type>]`; everything else is a body statement
+                // `<name> <op>= <expr>`.
+                var it = std.mem.tokenizeAny(u8, rop.body_text, ";\r\n");
+                while (it.next()) |raw| {
+                    const entry = std.mem.trim(u8, raw, " \t");
+                    if (entry.len == 0) continue;
+                    const eq = std.mem.indexOfScalar(u8, entry, '=');
+                    if (eq == null) {
+                        // `<name>[<type>]` — a declared accumulator slot.
+                        const lbr = std.mem.indexOfScalar(u8, entry, '[') orelse {
+                            std.debug.print("error[KORU123]: std/kernel:reduce entry must be `<name>[<type>]` (a declared accumulator) or `<name> <op>= <expr>` (a body statement) — got `{s}`\n", .{entry});
+                            std.process.exit(1);
+                        };
+                        const rbr = std.mem.lastIndexOfScalar(u8, entry, ']') orelse {
+                            std.debug.print("error[KORU123]: std/kernel:reduce accumulator declaration must be `<name>[<type>]` — got `{s}`\n", .{entry});
+                            std.process.exit(1);
+                        };
+                        const decl_name = std.mem.trim(u8, entry[0..lbr], " \t");
+                        const decl_type = std.mem.trim(u8, entry[lbr + 1 .. rbr], " \t");
+                        if (decl_name.len == 0 or decl_type.len == 0) {
+                            std.debug.print("error[KORU123]: std/kernel:reduce accumulator declaration must be `<name>[<type>]` — got `{s}`\n", .{entry});
+                            std.process.exit(1);
                         }
-                    }
-                    var seen = false;
-                    for (reduce_out.items) |acc| {
-                        if (std.mem.eql(u8, acc.name, acc_name)) {
-                            seen = true;
-                            break;
+                        var seen = false;
+                        for (declared.items) |d| {
+                            if (std.mem.eql(u8, d.name, decl_name)) { seen = true; break; }
                         }
-                    }
-                    if (!seen) {
-                        reduce_out.append(alloc, .{ .name = acc_name, .type = rtype }) catch unreachable;
-                        code.appendSlice(alloc, std.fmt.allocPrint(alloc, "\nvar {s}: {s} = 0;", .{ acc_name, rtype }) catch unreachable) catch unreachable;
+                        if (!seen) declared.append(alloc, .{ .name = decl_name, .type = decl_type }) catch unreachable;
+                    } else {
+                        // `<name> <op>= <expr>` — the LHS must be a declared accumulator.
+                        const eqv = eq.?;
+                        const compound = eqv > 0 and (entry[eqv - 1] == '+' or entry[eqv - 1] == '-' or entry[eqv - 1] == '*' or entry[eqv - 1] == '/');
+                        const acc_name = std.mem.trim(u8, if (compound) entry[0 .. eqv - 1] else entry[0..eqv], " \t");
+                        if (acc_name.len == 0) {
+                            std.debug.print("error[KORU123]: std/kernel:reduce body statement must be `<name> <op>= <expr>` — got `{s}`\n", .{entry});
+                            std.process.exit(1);
+                        }
+                        var found = false;
+                        for (declared.items) |d| {
+                            if (std.mem.eql(u8, d.name, acc_name)) { found = true; break; }
+                        }
+                        if (!found) {
+                            std.debug.print("error[KORU123]: std/kernel:reduce body names an accumulator `{s}` that is not declared — add `<name>[<type>]` to the block header (e.g. `{s}[f64]`)\n", .{ acc_name, acc_name });
+                            std.process.exit(1);
+                        }
+                        if (stmts.items.len > 0) stmts.append(alloc, ';') catch unreachable;
+                        stmts.appendSlice(alloc, entry) catch unreachable;
                     }
                 }
+                if (declared.items.len == 0) {
+                    std.debug.print("error[KORU123]: std/kernel:reduce needs at least one declared accumulator `<name>[<type>]` (e.g. `total[f64]`)\n", .{});
+                    std.process.exit(1);
+                }
+                for (declared.items) |d| {
+                    reduce_out.append(alloc, .{ .name = d.name, .type = d.type }) catch unreachable;
+                    code.appendSlice(alloc, std.fmt.allocPrint(alloc, "\nvar {s}: {s} = 0;", .{ d.name, d.type }) catch unreachable) catch unreachable;
+                }
+                rop.reduce_statements = stmts.toOwnedSlice(alloc) catch unreachable;
             }
 
             if (step_range) |range| {
@@ -1661,23 +1684,24 @@ fn kernelLowerOpBody(alloc: std.mem.Allocator, text: []const u8, is_js: bool) []
                         std.debug.print("error[KORU122]: kernel op `reduce` supports no variants yet (got `|{s}`)\n", .{vt});
                         std.process.exit(1);
                     }
+                    const reduce_body = op.reduce_statements orelse op.body_text;
                     const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
-                    var body = std.ArrayList(u8).initCapacity(alloc, op.body_text.len * 2) catch unreachable;
+                    var body = std.ArrayList(u8).initCapacity(alloc, reduce_body.len * 2) catch unreachable;
                     var ridx: usize = 0;
-                    while (ridx < op.body_text.len) {
-                        if (ridx + binding.len <= op.body_text.len and std.mem.eql(u8, op.body_text[ridx .. ridx + binding.len], binding)) {
-                            const at_end = (ridx + binding.len >= op.body_text.len);
-                            const next_ok = at_end or (!std.ascii.isAlphanumeric(op.body_text[ridx + binding.len]) and op.body_text[ridx + binding.len] != '_');
-                            const prev_ok = (ridx == 0) or (!std.ascii.isAlphanumeric(op.body_text[ridx - 1]) and op.body_text[ridx - 1] != '_');
+                    while (ridx < reduce_body.len) {
+                        if (ridx + binding.len <= reduce_body.len and std.mem.eql(u8, reduce_body[ridx .. ridx + binding.len], binding)) {
+                            const at_end = (ridx + binding.len >= reduce_body.len);
+                            const next_ok = at_end or (!std.ascii.isAlphanumeric(reduce_body[ridx + binding.len]) and reduce_body[ridx + binding.len] != '_');
+                            const prev_ok = (ridx == 0) or (!std.ascii.isAlphanumeric(reduce_body[ridx - 1]) and reduce_body[ridx - 1] != '_');
                             if (next_ok and prev_ok) {
                                 body.appendSlice(alloc, self_ref) catch unreachable;
                                 ridx += binding.len;
                             } else {
-                                body.append(alloc, op.body_text[ridx]) catch unreachable;
+                                body.append(alloc, reduce_body[ridx]) catch unreachable;
                                 ridx += 1;
                             }
                         } else {
-                            body.append(alloc, op.body_text[ridx]) catch unreachable;
+                            body.append(alloc, reduce_body[ridx]) catch unreachable;
                             ridx += 1;
                         }
                     }

@@ -41,7 +41,29 @@ under `step` was initially diagnosed as dropping the `self` pass (a silent
 mis-compile). That was a misread — the emit contains both loops and the compose
 works (pinned `390_112_reduce_self_under_step`). No such defect exists.
 
+## The surface declares its slots, never mints them (added 2026-08-29)
+
+The reduce block declares its accumulators as scoped slots — `<name>[<type>]` — in
+a header, then the body accumulates into those DECLARED names. This is the honest
+consequence of the fold being an associative fold: the accumulators are the op's
+outputs, so they are introduced by declaration, not conjured from a `+=` in the
+body. The declaration GUIDES an unchanged codegen (same `var name: type = 0`, the
+accumulate loop, the payload; the `@setFloatMode(.optimized)` contract) — it does
+not change it. It only removes the string-scan that used to guess names and types.
+
+This is a general rule, not a reduce-only patch: **a `Source`-block mini-DSL
+declares the names it introduces; a name is never minted from use.** In a reduce
+body, a name that isn't a provided binding (`k`, `k.other`) and isn't declared in
+the header is a located compile error (`390_113`). `const` and `capture` already
+follow this (they declare); `reduce` was the one exception and now is not.
+
+This repudiates an earlier framing in this session: the implicit accumulator was
+NOT "the feature" — it was the one place a `Source`-block introduced a name without
+a declaration, which is a wart, and it was wrong to present it as elegant. The
+declared surface is the honest version of the same computation.
+
 What would correct this belief: if `reduce` were ever required to reproduce a
 strict-scalar result bit-for-bit (then reassociation would be a bug, not a
-contract), or if the associative boundary were shown to need compiler-level
-enforcement rather than a library rule.
+contract), if the associative boundary were shown to need compiler-level
+enforcement rather than a library rule, or if the declared-slot rule proved too
+constraining for a legitimate aggregate shape.
