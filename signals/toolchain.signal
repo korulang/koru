@@ -1,0 +1,11 @@
+name: toolchain
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: |
+  Auto-registered during d97ad839: the koruc init scaffold had not kept up with
+  the resolver default for the `koru` path alias. A generated project config that
+  overrides a toolchain default with a stale local path is a toolchain-honesty
+  issue, not a language issue. Refine this signal type when the next toolchain
+  scaffold / default mismatch is found.
