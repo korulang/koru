@@ -6170,8 +6170,7 @@ pub fn main() !void {
             \\  "version": "0.1.0",
             \\  "entry": "app.kz",
             \\  "paths": {{
-            \\    "node": "./node_modules",
-            \\    "koru": "./node_modules/@korulang"
+            \\    "node": "./node_modules"
             \\  }}
             \\}}
             \\
