@@ -31,6 +31,12 @@ graph — its file list was true at write time and false within 24 hours
 `frag-a-header-citing-a-pin-is-a-measurement-at-write-time`). This frame
 bakes that discipline in as a step, not a footnote.*
 
+*The first replay under that discipline (2026-08-31) purged 5,511 committed
+files — a cargo `target/` tree, a unikraft build tree, 1,041 board
+snapshots, benchmark binaries, generated AST dumps — and left the deny-list
+walls that keep them out. The committed tree is the other half of this
+frame's subject.*
+
 ---
 
 ## The brief (sealed — you are the contestant)
@@ -40,6 +46,33 @@ Run one full repo-cleanup pass, to the checklist. The worked example is
 frame replays. Your pass will differ: junk accumulates differently each
 time, and the variance this frame is for is *which* junk, *which* holes, and
 *which* preserves the current tree holds.
+
+## The committed tree — the repo as a clone sees it
+
+The working tree is not the repo. A cleanup that stops at untracked junk has
+missed what the ceremonies shipped: build artifacts, binaries, tarballs, and
+generated dumps — tracked, committed, and read by nobody. Measured
+2026-08-31: 12,716 tracked files, of which the compiler was 102 — the rest
+was a bevy `target/` (1,190), a unikraft build tree (3,248), 1,041 board
+snapshots, benchmark binaries, and 14 AST dumps, all purged in one session.
+
+- **Inventory with git's predicate, and read the sizes.** `git ls-files` +
+  `git ls-tree -r -l HEAD`. The biggest blobs are the story: cargo `target/`,
+  compiled binaries, tarballs. A tracked file is not deliberate; it is
+  committed.
+- **Reader-verification before any deletion.** `git grep` each class across
+  the tracked tree. Nothing reads it and nothing builds it → purgable. The
+  build consumes it → bootstrap, stays (`koru_std/compiler.zig` is generated
+  but wired into `build.zig`). **Resolve symlinks before removing their
+  targets**: `test-results/latest.json` was a symlink to a dated board, and a
+  purge that deleted the board broke the snapshot the website reads — the
+  tooling's "no snapshot" was the tell.
+- **One class per commit, deny-list in the same commit.** Delete the class,
+  add the ignore rule (`target/`, `*.rlib`, `.unikraft/`, `**/program.ast.json`,
+  `test-results/2*.json`), and the commit is both the purge and the wall.
+- **Verify after.** `zig build`, a filtered regression run, and the status
+  tooling (`generate-status.js`, `--status`) — a purge that breaks the
+  snapshot read is a purge that broke the repo.
 
 ## Pre-flight
 
