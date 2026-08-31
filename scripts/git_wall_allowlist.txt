@@ -8,13 +8,7 @@ koru_std/program_ast.zig
 # ADD seed snapshots — tracked deliberately under .claude/.add/
 .claude/.add/
 
-# Grandfathered benchmark backends — purge in a repo-cleanup replay, then drop
+# Grandfathered benchmark backends — purge when benchmarks regenerate without
+# committing backend.zig (019 follow-up)
 tests/benchmarks/001_sum_fold/backend.zig
 tests/benchmarks/002_statistics_fold/backend.zig
-
-# Extensionless test fixtures — rename to expected_*.txt in a follow-up, then drop
-tests/regression/100_PARSER/100_060_single_line_source_blocks/expected_output
-tests/regression/100_PARSER/100_070_nested_tilde_invocations/expected_error
-tests/regression/200_COMPILER_FEATURES/210_PARSER/210_039_file_source_syntax/hello.txt
-tests/regression/.gitignore
-tests/regression/900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT/nbody/.gitignore

@@ -50,6 +50,10 @@
 # Keep file-source template fixtures (620_008/620_009 read a template at
 # compile time; the fixture is the test's content every bit as much as input.k)
 !**/banner.txt
+!**/hello.txt
+
+# Nested .gitignore files are deliberate (nbody/, local fixture rules)
+!**/.gitignore
 
 # Keep documentation and marker files (at any depth)
 !**/README.md
