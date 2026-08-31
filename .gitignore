@@ -303,9 +303,6 @@ demos/**/output_emitted.zig
 demos/**/a.out
 demos/**/compile_*.err
 examples/**/output_emitted.zig
-benchmarks/workloads/*/go/bench
-benchmarks/workloads/*/c/bench
-benchmarks/workloads/*/c/bench_fast
 
 # Regression suite locks (runtime state, never committed)
 .regression-run.lock/
