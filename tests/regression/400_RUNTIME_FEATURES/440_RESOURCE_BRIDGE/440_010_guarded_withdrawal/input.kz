@@ -9,6 +9,7 @@
 //
 // This is the shape the First Pull of the cordis gauntlet declared
 // inexpressible: "the dependent-provider graph has no seat in KOPIUM".
+// Campaign ledger: ~/src/kopium/gauntlet/cordis/
 // It now has one, derived from the phantom-registered args.
 //
 // The observable assertion is the release ORDER in the [BRIDGE] lines:
