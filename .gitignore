@@ -280,6 +280,10 @@ examples/**/build_output.zig
 examples/**/compiler_env.zig
 examples/**/program.ast.json
 examples/**/generated/
+# Generated AST dumps — never commit (13 rode in under benchmarks/probes once;
+# the runtime reads program.ast.json beside the entry it generates)
+**/program.ast.json
+**/program_ast.zig
 # Ward runtime state — the host writes setup.ini on POST /api/setup
 examples/ward/setup.ini
 
