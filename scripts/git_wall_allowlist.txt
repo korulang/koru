@@ -2,9 +2,6 @@
 # One path prefix or exact path per line; # comments and blank lines skipped.
 # Shrink this file by purging the grandfathered row, never by widening the wall.
 #
-# Bootstrap — generated, wired into build.zig (019 reader-verification)
-koru_std/program_ast.zig
-
 # ADD seed snapshots — tracked deliberately under .claude/.add/
 .claude/.add/
 
