@@ -179,6 +179,14 @@ integration_results.txt
 test_output.txt
 *_results.txt
 
+# Rust / cargo build output — never commit a target/ tree (1,190 files rode
+# in once from the bevy benchmark; run.sh regenerates it)
+target/
+*.rlib
+*.rmeta
+*.dylib
+*.so
+
 # Temporary test outputs
 tests/scratchpad/
 
