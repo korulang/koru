@@ -8,7 +8,5 @@ koru_std/program_ast.zig
 # ADD seed snapshots — tracked deliberately under .claude/.add/
 .claude/.add/
 
-# Grandfathered benchmark backends — purge when benchmarks regenerate without
-# committing backend.zig (019 follow-up)
-tests/benchmarks/001_sum_fold/backend.zig
-tests/benchmarks/002_statistics_fold/backend.zig
+# Probe zig build entry — generated beside backend.zig; drop when probes compile clean from .k only
+probes/r1/build.zig

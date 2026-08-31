@@ -236,9 +236,30 @@ tests/regression/**/koru_output
 # Benchmark generated files (ignored at any depth)
 tests/benchmarks/**/backend
 tests/benchmarks/**/backend.zig
+tests/benchmarks/**/build.zig
+tests/benchmarks/**/build_backend.zig
 tests/benchmarks/**/backend_output_emitted.zig
 tests/benchmarks/**/output_emitted.zig
 tests/benchmarks/**/actual.txt
+tests/benchmarks/**/koru_runtime
+tests/benchmarks/**/koru_sum
+tests/benchmarks/**/runtime_zig
+tests/benchmarks/**/flecs_churn/flecs_churn
+tests/benchmarks/**/zig_striped/zig_striped
+
+# binary-size-comparison — compare.sh rm -rf build/ and regenerates every run
+scripts/binary-size-comparison/build/
+
+# quarantine boards are local scratch, never published (019 retention)
+test-results/quarantine/
+
+# probe compile output (probes/*/p1_step_arm.k is the source)
+probes/**/backend.zig
+probes/**/build_backend.zig
+probes/**/compiler_env.zig
+
+# language-shootout scenario binaries — sources live beside them
+tests/regression/**/scenarios/**/rust/benchmark
 
 # ============================================================================
 # Environment and IDE

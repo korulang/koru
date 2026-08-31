@@ -1,4 +1,0 @@
-~import "std/io"
-~std.io:print.blk {
-    Hello, World!
-}
