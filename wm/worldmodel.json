@@ -1,112 +1,13 @@
 {
   "subject": "koru",
-  "generated_at": "2026-08-26T20:12:37.960Z",
+  "generated_at": "2026-08-31T23:47:41.617Z",
   "scoreboard": {
-    "passed": 1538,
-    "expected": 1636,
-    "gap": 98,
+    "passed": 1539,
+    "expected": 1638,
+    "gap": 99,
     "pass_rate": "94.0"
   },
-  "perf": {
-    "promise_host": "at parity with the host language (Zig) — any gap is measurement noise",
-    "workloads": [
-      {
-        "workload": "filter_map_reduce",
-        "koru": 186.238,
-        "rival": {
-          "lang": "rust",
-          "ms": 187.63
-        },
-        "fieldCount": 4,
-        "max": 187.63,
-        "fastest": true,
-        "host_backed": false
-      },
-      {
-        "workload": "multi_kind_dispatch",
-        "koru": 154.493,
-        "rival": {
-          "lang": "rust",
-          "ms": 158.2
-        },
-        "fieldCount": 4,
-        "max": 158.2,
-        "fastest": true,
-        "host_backed": false
-      },
-      {
-        "workload": "regex_match",
-        "koru": 46.387,
-        "rival": {
-          "lang": "rust",
-          "ms": 95.083
-        },
-        "fieldCount": 4,
-        "max": 95.083,
-        "fastest": true,
-        "host_backed": false
-      },
-      {
-        "workload": "regex_match_bound",
-        "koru": 47.731,
-        "rival": null,
-        "fieldCount": 0,
-        "max": 47.731,
-        "fastest": true,
-        "host_backed": false
-      },
-      {
-        "workload": "regex_match_groups",
-        "koru": 111.883,
-        "rival": {
-          "lang": "rust",
-          "ms": 303.906
-        },
-        "fieldCount": 4,
-        "max": 303.906,
-        "fastest": true,
-        "host_backed": false
-      },
-      {
-        "workload": "regex_redos",
-        "koru": 29.546,
-        "rival": {
-          "lang": "rust",
-          "ms": 29.999
-        },
-        "fieldCount": 4,
-        "max": 29.999,
-        "fastest": true,
-        "host_backed": false
-      },
-      {
-        "workload": "sum_range_foldable",
-        "koru": 24.141,
-        "rival": {
-          "lang": "rust",
-          "ms": 24.05
-        },
-        "fieldCount": 4,
-        "max": 24.141,
-        "fastest": false,
-        "host_backed": false
-      },
-      {
-        "workload": "sum_range_xor",
-        "koru": 136.838,
-        "rival": {
-          "lang": "rust",
-          "ms": 139.727
-        },
-        "fieldCount": 4,
-        "max": 139.727,
-        "fastest": true,
-        "host_backed": false
-      }
-    ],
-    "host_backed": 0,
-    "koru_fastest": 7
-  },
+  "perf": null,
   "instruments": [
     {
       "id": "wm-adapter",
