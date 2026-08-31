@@ -31,7 +31,8 @@ echo "prose-check — no-prose / pipeline coherence"
 # Two defects came out of that, and both are fixed here rather than tolerated.
 # Regeneration used to write over the tracked files, making checking and
 # mutating one act — so the emptied corpus was left in the working tree for the
-# next `git add -A` to publish. And the emptied result was reported as an honest
+# next ceremony commit to publish (the ceremony stages by name, never `-A`,
+# 2026-08-31). And the emptied result was reported as an honest
 # "differs", which is a true sentence about nothing.
 GEN_PATHS=(koru-by-example.md koru-tutorial.md docs/by-example \
            skills/koru/SKILL.md skills/koru-templates/SKILL.md skills/koru-metaprogramming/SKILL.md)

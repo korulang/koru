@@ -10,8 +10,8 @@
 # by default, and only an explicit rule further down stops it. The header used
 # to claim "ignore everything at root by default", which is the opposite of
 # what happens to directories, and a 2.8 MB `.shell-probe/` of build scratch
-# sat untracked-but-trackable until a ceremony's `git add -A` nearly swept it
-# in (2026-08-07).
+# sat untracked-but-trackable until a ceremony commit nearly swept it in
+# (2026-08-07; the ceremony now stages by name, never `-A`, 2026-08-31).
 
 # Ignore root-level files
 /*

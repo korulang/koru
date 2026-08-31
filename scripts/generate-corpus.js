@@ -38,7 +38,8 @@ const ROOT = path.resolve(__dirname, '..');
 // regeneration against the committed artifact WITHOUT rewriting the tracked
 // file — regenerating in place made checking and mutating the same act, and a
 // concurrent suite clearing SUCCESS markers mid-run left an emptied corpus in
-// the working tree for the next `git add -A` to publish.
+// the working tree for the next ceremony commit to publish (the ceremony stages
+// by name, never `-A`, 2026-08-31).
 const OUT_ROOT = process.env.KORU_GEN_OUT_ROOT
   ? path.resolve(process.env.KORU_GEN_OUT_ROOT)
   : ROOT;

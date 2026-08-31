@@ -67,10 +67,12 @@ caught before the add); the near-miss was the bet having already lost once, not
 a prevention.
 
 The fix is the same in both directions: anchor the rule to the shape it means
-(`/.orphan-staging/`, `/package.json`), and after any `git add -A` count what
-landed against what you would name as intentional. For a ceremony that count is
-a pre-publish check — no staged backend.zig / *.err / FAILURE /
-.cache-fingerprint outside the dirs the suite is allowed to dirty.
+(`/.orphan-staging/`, `/package.json`), and count what landed against what you
+would name as intentional. For a ceremony that count is now the instruction:
+the ceremony stages by name, never `-A` (status-ceremony steps 2 and 4,
+2026-08-31) — the sweep that carried 74c9fd1d no longer exists in the
+instruction set — and every line of `git status --short` must be accounted for
+before the commit. A ceremony commit stages nothing unseen.
 
 ## Open
 
@@ -80,8 +82,10 @@ lockfile whose manifest is neither staged nor tracked. It generalises past npm
 tell written down. Unclear whether the class is frequent enough here to earn a
 gate, or whether that is one more cheap check accruing unearned trust.
 
-Same question for the ceremony direction: a publish-gate that refuses a staged
-file matching the generated-artifact names (`backend.zig`, `*.err`, `FAILURE`,
-`.cache-fingerprint`, `program.ast.json`) outside the suite's dirty dirs. The
-corpus already carries the failure (74c9fd1d) and the rule set is finite — the
-open call is whether a publish gate is worth one more wall.
+Same question for the ceremony direction — closed 2026-08-31: the wall was
+cheaper than a gate. The mechanism was the ceremony's own instruction
+(`git add -A`); it is removed — steps 2 and 4 stage by name, and the guard is
+account-for-every-status-line. A publish gate that refuses the
+generated-artifact names (`backend.zig`, `*.err`, `FAILURE`,
+`.cache-fingerprint`, `program.ast.json`) is still available if the
+instruction-level fix proves insufficient, but the mechanism is gone first.

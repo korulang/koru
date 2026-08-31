@@ -59,7 +59,7 @@ Generated output (`.zig-cache/`, `zig-out/`, `zig-out-run-*/`, `status.json`) is
 ignored and regenerable. Note the `.gitignore` is a whitelist: `!*/` and `!.*`
 re-include every directory and dotfile at the root, so a new scratch directory
 is tracked until it is explicitly named — name it, or it rides the next
-ceremony's `git add -A`.
+ceremony commit.
 
 ## Links
 
