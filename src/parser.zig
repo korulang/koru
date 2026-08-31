@@ -510,14 +510,13 @@ fn splitTrailingReturnArrow(self: *Parser, s: []const u8, decl_line: usize) !Ret
     // same wall as payloads, on the phantom-stripped base. `string` is the
     // canonical text type; the slice is only the Zig lowering.
     if (surfaceTypeContainsRawByteSlice(rt)) {
-        try self.reporter.addError(
+        return self.fail(
             .PARSE003,
             decl_line,
             1,
             "'[]const u8' is not a Koru return type. Use 'string' for text — it lowers to []const u8 for Zig",
             .{},
         );
-        return error.ParseError;
     }
     const return_type: ?[]const u8 = if (rt.len > 0) try self.allocator.dupe(u8, rt) else null;
     return .{ .head = head, .return_type = return_type, .return_phantom = return_phantom };
@@ -546,14 +545,13 @@ fn finishOpenReturnType(self: *Parser, return_type: *?[]const u8, start_line: us
         try buf.appendSlice(self.allocator, trimmed);
     }
     if (netBraces(buf.items) > 0) {
-        try self.reporter.addError(
+        return self.fail(
             .PARSE001,
             start_line,
             1,
             "unclosed '{{' in tor return type — close the record (`-> {{ a: T, b: U }}`)",
             .{},
         );
-        return error.ParseError;
     }
     self.allocator.free(rt);
     return_type.* = try buf.toOwnedSlice(self.allocator);
@@ -758,6 +756,18 @@ pub const Parser = struct {
         },
     };
 
+    /// Report a parse error and fail with `error.ParseError`.
+    fn fail(self: *Parser, code: errors.ErrorCode, line: usize, column: usize, comptime fmt: []const u8, args: anytype) error{OutOfMemory, ParseError} {
+        self.reporter.addError(code, line, column, fmt, args) catch return error.OutOfMemory;
+        return error.ParseError;
+    }
+
+    /// Report a parse error with a teaching hint and fail with `error.ParseError`.
+    fn failWithHint(self: *Parser, code: errors.ErrorCode, line: usize, column: usize, comptime fmt: []const u8, args: anytype, comptime hint_fmt: []const u8, hint_args: anytype) error{OutOfMemory, ParseError} {
+        self.reporter.addErrorWithHint(code, line, column, fmt, args, hint_fmt, hint_args) catch return error.OutOfMemory;
+        return error.ParseError;
+    }
+
     fn isInProc(self: *Parser) bool {
         // Check if any context in the stack allows full expressions
         // Both procs and subflow impls are implementation code that allows arithmetic/complex expressions
@@ -880,8 +890,7 @@ pub const Parser = struct {
         var phantom_type: ?[]const u8 = null;
         if (typed) {
             const angle_start = std.mem.lastIndexOf(u8, trimmed[0 .. marker_idx + 1], "<") orelse {
-                try self.reporter.addError(.PARSE001, self.current, 0, "File source syntax requires scope type: ~tor <type>\"path\"", .{});
-                return error.ParseError;
+                return self.fail(.PARSE001, self.current, 0, "File source syntax requires scope type: ~tor <type>\"path\"", .{});
             };
             phantom_type = try self.allocator.dupe(u8, trimmed[angle_start + 1 .. marker_idx]);
             invocation_str = lexer.trim(trimmed[0..angle_start]);
@@ -897,8 +906,7 @@ pub const Parser = struct {
         if (std.mem.startsWith(u8, rest, ":")) {
             const bind_rest = lexer.trim(rest[1..]);
             if (bind_rest.len > 0 and bind_rest[0] == '{') {
-                try self.reporter.addError(.PARSE001, location.line - 1, 0, "destructure bind after a file source is not supported yet", .{});
-                return error.ParseError;
+                return self.fail(.PARSE001, location.line - 1, 0, "destructure bind after a file source is not supported yet", .{});
             }
             var bind_end: usize = bind_rest.len;
             for (bind_rest, 0..) |c, k| {
@@ -1036,7 +1044,7 @@ pub const Parser = struct {
     fn checkRedundantPunning(self: *Parser, parsed_args: []const lexer.ArgPair, line: usize) !void {
         for (parsed_args) |arg| {
             if (lexer.isRedundantExplicitLabel(arg)) {
-                try self.reporter.addErrorWithHint(
+                return self.failWithHint(
                     .PARSE005,
                     line,
                     1,
@@ -1045,7 +1053,6 @@ pub const Parser = struct {
                     "drop the label: write '{s}' instead of '{s}: {s}'",
                     .{ arg.value, arg.name, arg.value },
                 );
-                return error.ParseError;
             }
         }
     }
@@ -1093,14 +1100,13 @@ pub const Parser = struct {
                 // `~` is the host->Koru switch; in a host-free file it is
                 // meaningless. One way to write things — forbid it outright.
                 if (trimmed[0] == '~') {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current + 1,
                         lexer.getIndent(line) + 1,
                         "'~' is the host->Koru switch and has no meaning in a pure-Koru '.k' file — write the construct without it",
                         .{},
                     );
-                    return error.ParseError;
                 }
                 // Host declarations (Zig/JS) have no place in a pure-Koru file.
                 // Catch the common ones explicitly so the failure names the
@@ -1121,14 +1127,13 @@ pub const Parser = struct {
                 const host_decls = [_][]const u8{ "var ", "comptime ", "fn ", "inline fn ", "export fn ", "extern fn " };
                 for (host_decls) |kw| {
                     if (std.mem.startsWith(u8, decl_body, kw)) {
-                        try self.reporter.addError(
+                        return self.fail(
                             .PARSE003,
                             self.current + 1,
                             lexer.getIndent(line) + 1,
                             "host syntax '{s}{s}' is not valid in a pure-Koru '.k' file — constants, functions, and types live in a '.kz'/'.kjs' companion (Koru has no native constant/function declaration yet)",
                             .{ if (qualifier != null) "pub " else "", lexer.trim(kw) },
                         );
-                        return error.ParseError;
                     }
                 }
                 // Branch/continuation lines (`|`, `!`) belong to a construct and
@@ -1480,14 +1485,13 @@ pub const Parser = struct {
                 // (import, event, proc, …) that skipped the switch — no import-only
                 // special case.
                 if (!self.is_k and looksLikeBareKoruModuleConstruct(trimmed)) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current + 1,
                         lexer.getIndent(line) + 1,
                         "Koru constructs in host-embedded files (`.kz`, `.kjs`, etc.) must start with `~` — the host→Koru switch",
                         .{},
                     );
-                    return error.ParseError;
                 }
                 // Pass through host language line
                 const owned_line = try self.allocator.dupe(u8, line);
@@ -1652,8 +1656,7 @@ pub const Parser = struct {
             }
             const remaining = content_with_bracket[close_bracket + 1 ..];
             if (remaining.len > 0 and remaining[0] == '~') {
-                try self.reporter.addError(.PARSE008, opening_line_idx + 1, close_bracket + 2, "a `~` after a closing `]` is a second switch — the `~[` already entered Koru; write the declaration directly after `]`", .{});
-                return error.ParseError;
+                return self.fail(.PARSE008, opening_line_idx + 1, close_bracket + 2, "a `~` after a closing `]` is a second switch — the `~[` already entered Koru; write the declaration directly after `]`", .{});
             }
             prose_buf.deinit(self.allocator); // inline blocks are one line: no room for prose
             return AnnotationBlockResult{
@@ -1700,8 +1703,7 @@ pub const Parser = struct {
                     // tilde. Refuse it so the surface has exactly one
                     // spelling (`]pub tor`, never `]~pub tor`) — drift between
                     // two accepted spellings is how walls rot.
-                    try self.reporter.addError(.PARSE008, self.current + 1, bracket_idx + 2, "a `~` after a closing `]` is a second switch — the `~[` already entered Koru; write the declaration directly after `]`", .{});
-                    return error.ParseError;
+                    return self.fail(.PARSE008, self.current + 1, bracket_idx + 2, "a `~` after a closing `]` is a second switch — the `~[` already entered Koru; write the declaration directly after `]`", .{});
                 }
                 self.current += 1;
                 return AnnotationBlockResult{
@@ -1743,8 +1745,7 @@ pub const Parser = struct {
 
         // Ran out of lines without finding ]. Blame the line that OPENED the
         // block — the scan ended at EOF, which is nowhere the author can act on.
-        try self.reporter.addError(.PARSE003, opening_line_idx + 1, 1, "unclosed annotation bracket", .{});
-        return error.ParseError;
+        return self.fail(.PARSE003, opening_line_idx + 1, 1, "unclosed annotation bracket", .{});
     }
 
     /// True when `trimmed` begins a Koru module-level construct. Host-embedded
@@ -1798,14 +1799,13 @@ pub const Parser = struct {
         for (entries) |entry| {
             var diag: []const u8 = "";
             const res = comptime_eval.evalAnnotationEntryDiag(self.allocator, &provider, entry, &diag) catch {
-                try self.reporter.addError(
+                return self.fail(
                     .KORU150,
                     report_line + 1,
                     1,
                     "conditional import: the gate cannot evaluate entry `{s}` ({s}). Entries deciding AST membership must evaluate — the vocabulary is bare flag atoms, comparisons, and/or/not, and cflag()/env()/command()",
                     .{ entry, diag },
                 );
-                return error.ParseError;
             };
             if (res.truthy) any_true = true;
             w.print("  `{s}` -> {s}", .{ entry, if (res.truthy) "true" else "false" }) catch return error.OutOfMemory;
@@ -1874,28 +1874,26 @@ pub const Parser = struct {
             return .{ .import_decl = try self.parseImportDecl() };
         } else if (lexer.startsWith(remaining, "pub event ") or lexer.startsWith(remaining, "event ")) {
             // `event` is not a Koru keyword. Declarations are introduced with `tor`.
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current + 1,
                 1,
                 "'event' is not a Koru keyword - a declaration is introduced with 'tor' (e.g. 'tor jump {{ how-high: i32 }}')",
                 .{},
             );
-            return error.ParseError;
         } else if (lexer.startsWith(remaining, "tor ")) {
             // Private event declaration with annotations
             return .{ .event_decl = try self.parseEventDeclWithAnnotations(false, annotations.items) };
         } else if (lexer.startsWith(remaining, "pub proc ") or lexer.startsWith(remaining, "pub ~proc")) {
             // pub proc is not valid - only events can be public
             // Also catch "pub ~proc" variant
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current + 1,
                 1,
                 "'pub' is not valid on proc declarations - only events can be public",
                 .{},
             );
-            return error.ParseError;
         } else if (lexer.startsWith(remaining, "proc ")) {
             return .{ .proc_decl = try self.parseProcDeclWithAnnotations(annotations.items) };
         } else if (lexer.startsWith(after_tilde, "#")) {
@@ -2046,14 +2044,13 @@ pub const Parser = struct {
         }
 
         if (brace_depth != 0) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE004,
                 start_line,
                 @intCast(brace_start + 1), // Convert to 1-based column
                 "unmatched '{{' in tor shape",
                 .{},
             );
-            return error.ParseError;
         }
 
         return self.parseShape(shape_content.items);
@@ -2071,14 +2068,13 @@ pub const Parser = struct {
             }
 
             if (lexer.isBranchContinuation(line)) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     error_line,
                     1,
                     "tor declaration missing input shape",
                     .{},
                 );
-                return error.ParseError;
             }
 
             if (std.mem.indexOf(u8, trimmed, "{")) |brace_start| {
@@ -2086,24 +2082,22 @@ pub const Parser = struct {
                 return self.parseEventInputShapeFromLine(trimmed, brace_start);
             }
 
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 error_line,
                 1,
                 "tor declaration missing input shape",
                 .{},
             );
-            return error.ParseError;
         }
 
-        try self.reporter.addError(
+        return self.fail(
             .PARSE003,
             error_line,
             1,
             "tor declaration missing input shape",
             .{},
         );
-        return error.ParseError;
     }
 
     /// A `|target` variant tag belongs on a `~proc`, never on the `~tor` that
@@ -2125,7 +2119,7 @@ pub const Parser = struct {
         }
         const name_part = raw[0..end];
         const bar = std.mem.indexOfScalar(u8, name_part, '|') orelse return;
-        try self.reporter.addErrorWithHint(
+        return self.failWithHint(
             .PARSE003,
             line_index + 1,
             1,
@@ -2134,7 +2128,6 @@ pub const Parser = struct {
             "declare '~tor {s}' and put the variant on its implementation: '~proc {s} {{ ... }}'",
             .{ name_part[0..bar], name_part },
         );
-        return error.ParseError;
     }
 
     /// Reject `_` in a Koru NAME. Kebab `-` is the sole word separator for Koru
@@ -2155,14 +2148,13 @@ pub const Parser = struct {
         // (a name can't start with `-`), so they are exempt from the rule.
         if (name_part.len > 0 and name_part[0] == '_') return;
         if (std.mem.indexOfScalar(u8, name_part, '_') != null) {
-            try self.reporter.addError(
+            return self.fail(
                 .KORU034,
                 line_index + 1,
                 1,
                 "'_' is not allowed in a Koru {s} name '{s}' — use '-' for word separation ('_' is reserved for digit separators)",
                 .{ kind, name_part },
             );
-            return error.ParseError;
         }
     }
 
@@ -2175,14 +2167,13 @@ pub const Parser = struct {
     /// binding as discard). Reject with the same KORU034 snake-name rule.
     fn rejectLeadingUnderscoreBinding(self: *Parser, name: []const u8, line_index: usize, kind: []const u8) !void {
         if (name.len > 1 and name[0] == '_') {
-            try self.reporter.addError(
+            return self.fail(
                 .KORU034,
                 line_index,
                 1,
                 "'_' is not allowed in a Koru {s} name '{s}' — use '-' for word separation ('_' is reserved for digit separators)",
                 .{ kind, name },
             );
-            return error.ParseError;
         }
     }
 
@@ -2203,14 +2194,13 @@ pub const Parser = struct {
         const colon = lexer.findModuleQualifierColon(head) orelse return; // no qualifier
         const qualifier = head[0..colon];
         if (std.mem.indexOfScalar(u8, qualifier, '.') != null) {
-            try self.reporter.addError(
+            return self.fail(
                 .KORU035,
                 line_index + 1,
                 1,
                 "'.' is not a namespace separator in '{s}' — use '/' (e.g. 'std/io:...', not 'std.io:...'). '.' is member access after ':'.",
                 .{qualifier},
             );
-            return error.ParseError;
         }
     }
 
@@ -2257,14 +2247,13 @@ pub const Parser = struct {
         else if (lexer.afterPrefix(remaining, "tor")) |ae|
             ae
         else {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current - 1,
                 1,
                 "malformed tor declaration",
                 .{},
             );
-            return error.ParseError;
         };
 
         // Split a top-level `-> T` return suffix off the decl line BEFORE path /
@@ -2285,14 +2274,13 @@ pub const Parser = struct {
             trimmed_after_event;
 
         if (parsed_path_str.len == 0) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 event_line_index + 1,
                 1,
                 "tor declaration missing name",
                 .{},
             );
-            return error.ParseError;
         }
 
         try self.rejectVariantTagOnTor(parsed_path_str, event_line_index);
@@ -2323,14 +2311,13 @@ pub const Parser = struct {
                 return_type = tail_split.return_type;
                 return_phantom = tail_split.return_phantom;
             } else {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     tail_line,
                     1,
                     "unexpected content after the closing '}}' of a multi-line tor shape: '{s}' (only a bare return `-> T` may follow)",
                     .{tail},
                 );
-                return error.ParseError;
             }
         }
 
@@ -2393,14 +2380,13 @@ pub const Parser = struct {
                         }
                         break :blk null;
                     } orelse {
-                        try self.reporter.addError(
+                        return self.fail(
                             .PARSE003,
                             event_line_index + 1,
                             @intCast(shape_end + 1), // Column where the annotation block starts
                             "tor annotation missing closing ']'",
                             .{},
                         );
-                        return error.ParseError;
                     };
 
                     const annotation_content = lexer.trim(branch_content[1..close_bracket_idx]);
@@ -2425,14 +2411,13 @@ pub const Parser = struct {
                     // so the old form fails at compile time; the AST variant and
                     // `is_deferred` flag are gone.
                     if (lexer.startsWith(branch_content, "&")) {
-                        try self.reporter.addError(
+                        return self.fail(
                             .PARSE003,
                             event_line_index + 1,
                             1,
                             "deferred branch `| &<branch>` was removed — the deferred/deref mechanism is retired. Declare the call site with a required effect-branch instead.",
                             .{},
                         );
-                        return error.ParseError;
                     }
 
                     // Check for ?! prefix (panic branch) before ? (optional).
@@ -2477,14 +2462,13 @@ pub const Parser = struct {
                             name_end += 1;
                         }
                         if (name_end == 0) {
-                            try self.reporter.addError(
+                            return self.fail(
                                 .PARSE003,
                                 event_line_index + 1,
                                 1,
                                 "branch missing name",
                                 .{},
                             );
-                            return error.ParseError;
                         }
                         const branch_name = head[0..name_end];
                         try self.rejectSnakeName(branch_name, event_line_index, "branch");
@@ -2512,14 +2496,13 @@ pub const Parser = struct {
                         // Check for duplicate branch names
                         for (branches.items) |existing| {
                             if (std.mem.eql(u8, existing.name, branch_name)) {
-                                try self.reporter.addError(
+                                return self.fail(
                                     .PARSE003,
                                     event_line_index + 1,
                                     1,
                                     "duplicate branch name '{s}'",
                                     .{branch_name},
                                 );
-                                return error.ParseError;
                             }
                         }
 
@@ -2562,14 +2545,13 @@ pub const Parser = struct {
                     // Check for duplicate branch names
                     for (branches.items) |existing| {
                         if (std.mem.eql(u8, existing.name, branch_name)) {
-                            try self.reporter.addError(
+                            return self.fail(
                                 .PARSE003,
                                 event_line_index + 1,
                                 1,
                                 "duplicate branch name '{s}'",
                                 .{branch_name},
                             );
-                            return error.ParseError;
                         }
                     }
 
@@ -2609,14 +2591,13 @@ pub const Parser = struct {
                         }
                         break :blk null;
                     } orelse {
-                        try self.reporter.addError(
+                        return self.fail(
                             .PARSE003,
                             self.current,
                             @intCast(close_idx + 1),
                             "tor annotation missing closing ']'",
                             .{},
                         );
-                        return error.ParseError;
                     };
 
                     const annotation_content = lexer.trim(after_brace[1..close_bracket_idx]);
@@ -2660,14 +2641,13 @@ pub const Parser = struct {
             // Check for duplicate branch names
             for (branches.items) |existing| {
                 if (std.mem.eql(u8, existing.name, branch.name)) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current,
                         1,
                         "duplicate branch name '{s}'",
                         .{branch.name},
                     );
-                    return error.ParseError;
                 }
             }
 
@@ -2700,14 +2680,13 @@ pub const Parser = struct {
         for (all_annotations.items) |ann| {
             if (std.mem.eql(u8, ann, "keyword")) {
                 if (!is_public) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         event_line_index,
                         1,
                         "[keyword] annotation requires 'pub' - only public events can be keywords",
                         .{},
                     );
-                    return error.ParseError;
                 }
                 break;
             }
@@ -2721,14 +2700,13 @@ pub const Parser = struct {
         // (ruled 2026-06-27; pinned by 400_152). Effect branches allow
         // {0, one payloadless arm, many}; terminal branches do not.
         if (branches.items.len == 1 and branches.items[0].kind == .terminal and branches.items[0].payload.fields.len == 0 and !branches.items[0].payload.is_wildcard) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 event_line_index + 1,
                 1,
                 "single branch '{s}' with no payload is redundant - remove it to make this a void tor (no branches)",
                 .{branches.items[0].name},
             );
-            return error.ParseError;
         }
 
         // Reject single PAYLOAD-carrying TERMINAL branch (210_131, the
@@ -2775,14 +2753,13 @@ pub const Parser = struct {
                 }
                 try shape.appendSlice(self.allocator, " }");
             }
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 event_line_index + 1,
                 1,
                 "single continuation branch '{s}' carrying a payload is a one-variant tag union — declare the single output as a bare return instead: `-> {s}`",
                 .{ branches.items[0].name, shape.items },
             );
-            return error.ParseError;
         }
 
         // Braced single-field payload (`| ok { c: i32 }`) → collapse the redundant
@@ -2796,14 +2773,13 @@ pub const Parser = struct {
             if (br.payload.is_wildcard) continue;
             if (br.payload.fields.len != 1) continue;
             if (std.mem.eql(u8, br.payload.fields[0].name, "__type_ref")) continue;
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 event_line_index + 1,
                 1,
                 "single field in braces - use identity syntax '| {s} {s}' instead of '| {s} {{ {s}: {s} }}'",
                 .{ br.name, br.payload.fields[0].type, br.name, br.payload.fields[0].name, br.payload.fields[0].type },
             );
-            return error.ParseError;
         }
 
         // Single-field record RETURN (`-> { a: i64 }`) collapses to the scalar
@@ -2811,14 +2787,13 @@ pub const Parser = struct {
         // above; only a 2+-field record earns the braces. (210_149)
         if (return_type) |rt| {
             if (isSingleFieldRecordType(rt)) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     event_line_index + 1,
                     1,
                     "single field in record return `{s}` — collapse to the scalar `-> <type>`; a record return is for two or more fields",
                     .{rt},
                 );
-                return error.ParseError;
             }
         }
 
@@ -2834,14 +2809,13 @@ pub const Parser = struct {
         if (annotation_parser.hasPart(all_annotations.items, "transform") and
             !annotation_parser.hasPart(all_annotations.items, "comptime"))
         {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 event_line_index + 1,
                 1,
                 "tor '{s}' has [transform] but is missing [comptime] — [transform] declares the intent, [comptime] is what emits the pass; without both the transform is never registered and every call site silently does nothing",
                 .{if (path.segments.len > 0) path.segments[path.segments.len - 1] else "?"},
             );
-            return error.ParseError;
         }
 
         // Copy annotations verbatim — comptime is explicit, never synthesized.
@@ -2903,14 +2877,13 @@ pub const Parser = struct {
         else if (lexer.afterPrefix(line, "~tor")) |ae|
             ae
         else {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "malformed tor declaration",
                 .{},
             );
-            return error.ParseError;
         };
 
         // Check for annotations: [pure|fusible|...]
@@ -2947,14 +2920,13 @@ pub const Parser = struct {
             trimmed_path_start;
 
         if (parsed_path_str.len == 0) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 event_line_index + 1,
                 1,
                 "tor declaration missing name",
                 .{},
             );
-            return error.ParseError;
         }
 
         try self.rejectVariantTagOnTor(parsed_path_str, event_line_index);
@@ -3004,14 +2976,13 @@ pub const Parser = struct {
             // Check for duplicate branch names
             for (branches.items) |existing| {
                 if (std.mem.eql(u8, existing.name, branch.name)) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current,
                         1,
                         "duplicate branch name '{s}'",
                         .{branch.name},
                     );
-                    return error.ParseError;
                 }
             }
 
@@ -3083,28 +3054,26 @@ pub const Parser = struct {
 
         // Reject "pub proc" - only events can be public
         if (lexer.afterPrefix(remaining, "pub proc")) |_| {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current - 1,
                 1,
                 "'pub' is not valid on proc declarations - only events can be public",
                 .{},
             );
-            return error.ParseError;
         }
 
         // Handle "proc" prefix
         const after_proc = if (lexer.afterPrefix(remaining, "proc")) |ap|
             ap
         else {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current - 1,
                 1,
                 "malformed proc declaration",
                 .{},
             );
-            return error.ParseError;
         };
 
         // Find the path (everything before {)
@@ -3115,26 +3084,24 @@ pub const Parser = struct {
         // Reject ~proc X = ... syntax — procs contain host language, not flow expressions
         if (equals_idx_opt) |equals_idx| {
             if (brace_idx_opt == null or equals_idx < brace_idx_opt.?) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current - 1,
                     1,
                     "proc declarations must use braces for host language code. The '=' syntax is only valid on flows.",
                     .{},
                 );
-                return error.ParseError;
             }
         }
 
         const delimiter_idx = brace_idx_opt orelse {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current - 1,
                 1,
                 "proc declaration missing body",
                 .{},
             );
-            return error.ParseError;
         };
 
         const parsed_path_str = lexer.trim(after_proc[0..delimiter_idx]);
@@ -3235,14 +3202,13 @@ pub const Parser = struct {
 
         // Parse: ~proc[annotations] <path> { ... }
         const after_proc = lexer.afterPrefix(line, "~proc") orelse {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "malformed proc declaration",
                 .{},
             );
-            return error.ParseError;
         };
 
         // Check for annotations: [pure|async|...]
@@ -3273,14 +3239,13 @@ pub const Parser = struct {
 
         // Find the path (everything before the first {)
         const brace_idx = std.mem.indexOf(u8, path_start, "{") orelse {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "proc declaration missing body",
                 .{},
             );
-            return error.ParseError;
         };
 
         const parsed_path_str = lexer.trim(path_start[0..brace_idx]);
@@ -3806,13 +3771,11 @@ pub const Parser = struct {
             if (std.mem.eql(u8, arg.name, "source")) source_text = arg.value;
         }
         const body = source_text orelse {
-            try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths requires a block: {s}std/compiler:paths {{ alias: ./path }}", .{self.tilde()});
-            return error.ParseError;
+            return self.fail(.KORU172, directive_line, 1, "std/compiler:paths requires a block: {s}std/compiler:paths {{ alias: ./path }}", .{self.tilde()});
         };
 
         const resolver = self.resolver orelse {
-            try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths declares import aliases, so it needs a module resolver - this parse was started without one", .{});
-            return error.ParseError;
+            return self.fail(.KORU172, directive_line, 1, "std/compiler:paths declares import aliases, so it needs a module resolver - this parse was started without one", .{});
         };
 
         var lines = std.mem.tokenizeAny(u8, body, "\n");
@@ -3824,24 +3787,20 @@ pub const Parser = struct {
             if (line.len == 0) continue;
 
             const colon = std.mem.indexOfScalar(u8, line, ':') orelse {
-                try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths - each line is `alias: path`, got `{s}`", .{line});
-                return error.ParseError;
+                return self.fail(.KORU172, directive_line, 1, "std/compiler:paths - each line is `alias: path`, got `{s}`", .{line});
             };
 
             const alias = lexer.trim(line[0..colon]);
             const target = lexer.trim(line[colon + 1 ..]);
 
             if (!isUsableAlias(alias)) {
-                try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths - `{s}` cannot be an import alias; an alias is a bare identifier (letters, digits, `_`), because every use site splits on the first `/`", .{alias});
-                return error.ParseError;
+                return self.fail(.KORU172, directive_line, 1, "std/compiler:paths - `{s}` cannot be an import alias; an alias is a bare identifier (letters, digits, `_`), because every use site splits on the first `/`", .{alias});
             }
             if (std.mem.eql(u8, alias, "main")) {
-                try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths - the alias `main` is reserved for the entry module", .{});
-                return error.ParseError;
+                return self.fail(.KORU172, directive_line, 1, "std/compiler:paths - the alias `main` is reserved for the entry module", .{});
             }
             if (target.len == 0) {
-                try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths - alias `{s}` has no path", .{alias});
-                return error.ParseError;
+                return self.fail(.KORU172, directive_line, 1, "std/compiler:paths - alias `{s}` has no path", .{alias});
             }
 
             // A `{{ flag:name }}` naming a flag nobody supplied is refused at the
@@ -3849,8 +3808,7 @@ pub const Parser = struct {
             var ref_buf: [8][]const u8 = undefined;
             for (module_resolver_mod.ModuleResolver.flagRefs(target, &ref_buf)) |ref| {
                 if (resolver.flagValue(ref) == null) {
-                    try self.reporter.addError(.KORU172, directive_line, 1, "std/compiler:paths - alias `{s}` interpolates `{{{{ flag:{s} }}}}` but no `--{s}=<value>` was supplied", .{ alias, ref, ref });
-                    return error.ParseError;
+                    return self.fail(.KORU172, directive_line, 1, "std/compiler:paths - alias `{s}` interpolates `{{{{ flag:{s} }}}}` but no `--{s}=<value>` was supplied", .{ alias, ref, ref });
                 }
             }
 
@@ -3934,20 +3892,17 @@ pub const Parser = struct {
             if (line.len == 0) continue;
 
             const colon = std.mem.indexOfScalar(u8, line, ':') orelse {
-                try self.reporter.addError(.KORU171, directive_line, 1, "std/vendor:bindings - each line is `module: ./path`, got `{s}`", .{line});
-                return error.ParseError;
+                return self.fail(.KORU171, directive_line, 1, "std/vendor:bindings - each line is `module: ./path`, got `{s}`", .{line});
             };
 
             const module = lexer.trim(line[0..colon]);
             const target = lexer.trim(line[colon + 1 ..]);
 
             if (!isUsableModulePrefix(module)) {
-                try self.reporter.addError(.KORU171, directive_line, 1, "std/vendor:bindings - `{s}` cannot be a module name; each segment is a bare identifier (letters, digits, `_`) separated by `/`", .{module});
-                return error.ParseError;
+                return self.fail(.KORU171, directive_line, 1, "std/vendor:bindings - `{s}` cannot be a module name; each segment is a bare identifier (letters, digits, `_`) separated by `/`", .{module});
             }
             if (target.len == 0) {
-                try self.reporter.addError(.KORU171, directive_line, 1, "std/vendor:bindings - `{s}` has no path", .{module});
-                return error.ParseError;
+                return self.fail(.KORU171, directive_line, 1, "std/vendor:bindings - `{s}` has no path", .{module});
             }
 
             // The path is written relative to the FILE that declares it — the only
@@ -3976,8 +3931,7 @@ pub const Parser = struct {
             // in its own anchor is agreement, not conflict.
             if (resolver.config.paths.get(module)) |existing| {
                 if (existing.len != 1 or !self.sameDirectory(existing[0], effective, resolver)) {
-                    try self.reporter.addError(.KORU171, directive_line, 1, "std/vendor:bindings pins `{s}` at `{s}`, but it already resolves to `{s}` - one of the two is importing a tree it is not checking", .{ module, target, existing[0] });
-                    return error.ParseError;
+                    return self.fail(.KORU171, directive_line, 1, "std/vendor:bindings pins `{s}` at `{s}`, but it already resolves to `{s}` - one of the two is importing a tree it is not checking", .{ module, target, existing[0] });
                 }
                 continue;
             }
@@ -4099,8 +4053,7 @@ pub const Parser = struct {
                 const path_str = try self.pathToString(original.path);
                 defer self.allocator.free(path_str);
 
-                try self.reporter.addError(.PARSE001, self.current, 0, "Implicit source block syntax [Type]{{ }} requires parameter named 'source'. Event '{s}' has Source parameter named '{s}'. Either rename parameter to 'source' or use explicit syntax: ~{s}({s}: [Type]{{ }})", .{ path_str, alt_name, path_str, alt_name });
-                return error.ParseError;
+                return self.fail(.PARSE001, self.current, 0, "Implicit source block syntax [Type]{{ }} requires parameter named 'source'. Event '{s}' has Source parameter named '{s}'. Either rename parameter to 'source' or use explicit syntax: ~{s}({s}: [Type]{{ }})", .{ path_str, alt_name, path_str, alt_name });
             }
             return original;
         }
@@ -4354,14 +4307,13 @@ pub const Parser = struct {
                     log_debug("  Last line: {s}\n", .{last});
                 }
             }
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE004,
                 self.current,
                 1,
                 "unbalanced braces in proc body",
                 .{},
             );
-            return error.ParseError;
         }
 
         // Join lines with newlines
@@ -4460,8 +4412,7 @@ pub const Parser = struct {
             // The file path runs from just after the `@"`/`>"` to the next quote.
             const path_start = marker.marker_idx + 2;
             const path_rel_end = std.mem.indexOf(u8, trimmed_after[path_start..], "\"") orelse {
-                try self.reporter.addError(.PARSE001, self.current, 0, "File source syntax requires a closing quote", .{});
-                return error.ParseError;
+                return self.fail(.PARSE001, self.current, 0, "File source syntax requires a closing quote", .{});
             };
             const path_end = path_start + path_rel_end;
             const file_path = trimmed_after[path_start..path_end];
@@ -4531,8 +4482,7 @@ pub const Parser = struct {
                 errdefer invocation.deinit(self.allocator);
 
                 const file_content = self.readSourceFile(file_path) catch |err| {
-                    try self.reporter.addError(.PARSE001, self.current, 0, "Failed to read source file '{s}': {s}", .{ file_path, @errorName(err) });
-                    return error.ParseError;
+                    return self.fail(.PARSE001, self.current, 0, "Failed to read source file '{s}': {s}", .{ file_path, @errorName(err) });
                 };
 
                 uses_implicit_source = true;
@@ -4695,8 +4645,7 @@ pub const Parser = struct {
                             // Check if there's a word after the space (branch name)
                             const after_pipe = lexer.trim(remaining[i + 1 ..]);
                             if (after_pipe.len > 0 and after_pipe[0] != '>' and after_pipe[0] != '?') {
-                                try self.reporter.addError(.PARSE001, self.current, @as(u16, @intCast(i)), "Branch continuation '|' must start on a new line with proper indentation", .{});
-                                return error.ParseError;
+                                return self.fail(.PARSE001, self.current, @as(u16, @intCast(i)), "Branch continuation '|' must start on a new line with proper indentation", .{});
                             }
                         }
                     }
@@ -5014,14 +4963,13 @@ pub const Parser = struct {
                             }
                         }
                         const be = brace_end orelse {
-                            try self.reporter.addError(
+                            return self.fail(
                                 .PARSE001,
                                 self.current,
                                 0,
                                 "unclosed '{{' in bind-position destructure (e.g. `~f(): {{ x, y }} |> ...`)",
                                 .{},
                             );
-                            return error.ParseError;
                         };
                         return_destructure = try self.parseDestructureFields(lexer.trim(clean[k + 1 .. be]), 0);
                         const temp_name = try std.fmt.allocPrint(self.allocator, "__ret_destr_{d}", .{self.destructure_ret_counter});
@@ -5040,14 +4988,13 @@ pub const Parser = struct {
                             clean[name_end] == '_' or clean[name_end] == '-')) : (name_end += 1)
                     {}
                     if (name_end == k) {
-                        try self.reporter.addError(
+                        return self.fail(
                             .PARSE001,
                             self.current,
                             0,
                             "expected a binding name after `:` (e.g. `~greet(...): result |> ...`)",
                             .{},
                         );
-                        return error.ParseError;
                     }
                     return_binding = try self.allocator.dupe(u8, clean[k..name_end]);
                     // Optional binding annotations: `: r[mutable]` — the call-site twin
@@ -5056,14 +5003,13 @@ pub const Parser = struct {
                     var rest_start = name_end;
                     if (name_end < clean.len and clean[name_end] == '[') {
                         const ann_close = std.mem.indexOfScalarPos(u8, clean, name_end, ']') orelse {
-                            try self.reporter.addError(
+                            return self.fail(
                                 .PARSE001,
                                 self.current,
                                 0,
                                 "unterminated binding annotation; expected `]` (e.g. `~greet(...): r[mutable] |> ...`)",
                                 .{},
                             );
-                            return error.ParseError;
                         };
                         const inner = clean[name_end + 1 .. ann_close];
                         var ann_list = try std.ArrayList([]const u8).initCapacity(self.allocator, 2);
@@ -5115,14 +5061,13 @@ pub const Parser = struct {
                 else
                     false;
                 if (!bound_before_arrow) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE001,
                         self.current,
                         0,
                         "bind a result with `:` not `->` (e.g. `~greet(...): result |> ...`) — `->` is the produce glyph",
                         .{},
                     );
-                    return error.ParseError;
                 }
             }
         }
@@ -5194,14 +5139,13 @@ pub const Parser = struct {
                 const brace_start = marker_idx + 1; // Position of {
                 const close_brace_idx = lexer.findMatchingBrace(invocation_part, brace_start);
                 if (close_brace_idx == null) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE001,
                         self.current,
                         0,
                         "Source block missing closing brace",
                         .{},
                     );
-                    return error.ParseError;
                 }
 
                 const source_text = lexer.trim(invocation_part[brace_start + 1 .. close_brace_idx.?]);
@@ -5322,14 +5266,13 @@ pub const Parser = struct {
             // Find the closing brace
             const close_brace_idx = lexer.findMatchingBrace(invocation_part, b_idx);
             if (close_brace_idx == null) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE001,
                     self.current,
                     0,
                     "Source block missing closing brace",
                     .{},
                 );
-                return error.ParseError;
             }
 
             const source_text = lexer.trim(invocation_part[b_idx + 1 .. close_brace_idx.?]);
@@ -5457,14 +5400,13 @@ pub const Parser = struct {
             if (depth != 0) {
                 // Unbalanced args are a USER error — never silently drop them
                 // (the old behavior compiled `if(c == '(')` with EMPTY args).
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current,
                     1,
                     "unbalanced parentheses in invocation arguments",
                     .{},
                 );
-                return error.ParseError;
             }
 
             if (depth == 0) {
@@ -5479,14 +5421,13 @@ pub const Parser = struct {
                     // Reject Zig-style struct syntax in parameter values: name: .{ .field = value }
                     // Koru uses named parameters: name: value — not anonymous struct literals
                     if (lexer.startsWith(arg.value, ".{")) {
-                        try self.reporter.addError(
+                        return self.fail(
                             .PARSE003,
                             self.current,
                             1,
                             "Zig-style struct syntax '.{{' is not valid in Koru parameter values — pass fields as named parameters instead",
                             .{},
                         );
-                        return error.ParseError;
                     }
 
                     var ast_arg = ast.Arg{
@@ -5659,7 +5600,7 @@ pub const Parser = struct {
         // every one it recognised, and rejects the rest with its own diagnostic.
         // `~` re-enters Koru explicitly and opens a construct of its own.
         if (trimmed[0] == '|' or trimmed[0] == '!' or trimmed[0] == '~') return;
-        try self.reporter.addErrorWithHint(
+        return self.failWithHint(
             .KORU010,
             self.current + 1,
             lexer.getIndent(line) + 1,
@@ -5668,7 +5609,6 @@ pub const Parser = struct {
             "Koru sequences a body with `|>`, not by listing lines. Chain it onto the step above (`… |> {s}`), or dedent it so it reads as the separate flow it would otherwise silently become.",
             .{trimmed},
         );
-        return error.ParseError;
     }
 
     fn parseSubflowImplBody(self: *Parser, annotations: [][]const u8) !ast.Item {
@@ -5775,14 +5715,13 @@ pub const Parser = struct {
             // Reject Zig-style struct syntax: .{ .field = value }
             // Koru uses: branch_name { field: value }
             if (lexer.startsWith(body_str, ".{")) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current,
                     1,
                     "Zig-style struct syntax '.{{' is not valid Koru — use 'branch_name {{ field: value }}' instead",
                     .{},
                 );
-                return error.ParseError;
             }
 
             // Check for branch constructor pattern: word followed by {
@@ -6149,14 +6088,13 @@ pub const Parser = struct {
         // Reject Zig-style struct syntax: .{ .field = value }
         // Koru uses: branch_name { field: value }
         if (lexer.startsWith(trimmed_body, ".{")) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current + 1,
                 1,
                 "Zig-style struct syntax '.{{' is not valid Koru — use 'branch_name {{ field: value }}' instead",
                 .{},
             );
-            return error.ParseError;
         }
 
         // Check for branch constructor (immediate return syntax)
@@ -6492,8 +6430,7 @@ pub const Parser = struct {
                             bind_rest[name_end] == '_' or bind_rest[name_end] == '-')) : (name_end += 1)
                     {}
                     if (name_end == 0) {
-                        try self.reporter.addError(.PARSE001, self.current, 0, "expected a binding name after the colon on the source-block close line (close-brace colon name then a chain or produce operator)", .{});
-                        return error.ParseError;
+                        return self.fail(.PARSE001, self.current, 0, "expected a binding name after the colon on the source-block close line (close-brace colon name then a chain or produce operator)", .{});
                     }
                     bind_name_slice = bind_rest[0..name_end];
                     rest = lexer.trim(bind_rest[name_end..]);
@@ -7016,14 +6953,13 @@ pub const Parser = struct {
             // effect-branch expresses "I need something to call here",
             // monomorphized and with no indirection. See
             // frag-deferred-deref-repudiated.
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 location.line,
                 1,
                 "deref continuation `| *<binding>` was removed — the deferred/deref mechanism is retired. Declare the call site with a required effect-branch instead.",
                 .{},
             );
-            return error.ParseError;
         } else {
             // Branch continuation
             cont = try self.parseBranchContinuationBase(after_bar, indent, location);
@@ -7066,14 +7002,13 @@ pub const Parser = struct {
             // effect-branch expresses "I need something to call here",
             // monomorphized and with no indirection. See
             // frag-deferred-deref-repudiated.
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 location.line,
                 1,
                 "deref continuation `| *<binding>` was removed — the deferred/deref mechanism is retired. Declare the call site with a required effect-branch instead.",
                 .{},
             );
-            return error.ParseError;
         } else {
             // Branch continuation
             cont = try self.parseBranchContinuationBase(after_bar, indent, location);
@@ -7311,14 +7246,13 @@ pub const Parser = struct {
             var end_pos: usize = 1;
             while (end_pos < trimmed_content.len and trimmed_content[end_pos] != '`') : (end_pos += 1) {}
             if (end_pos >= trimmed_content.len) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current + 1,
                     indent + 2,
                     "unmatched '`' in quoted branch name",
                     .{},
                 );
-                return error.ParseError;
             }
             branch_name = trimmed_content[1..end_pos];
             rest_after_branch = lexer.trim(trimmed_content[end_pos + 1 ..]);
@@ -7338,14 +7272,13 @@ pub const Parser = struct {
             }
 
             if (depth != 0) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current + 1,
                     indent + 2,
                     "unmatched '[' in quoted branch name",
                     .{},
                 );
-                return error.ParseError;
             }
 
             // end_pos is one past the matching ']' — inner excludes both glyphs.
@@ -7355,14 +7288,13 @@ pub const Parser = struct {
             // Normal branch: tokenize on space
             var parts = std.mem.tokenizeAny(u8, content, " ");
             branch_name = parts.next() orelse {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current + 1,
                     indent + 2,
                     "missing branch name in continuation",
                     .{},
                 );
-                return error.ParseError;
             };
             rest_after_branch = parts.rest();
         }
@@ -7390,14 +7322,13 @@ pub const Parser = struct {
                     // e.g., |? Transition t |> ... or |? Audit _ |> ...
                     if (parts.peek()) |binding_name| {
                         if (std.mem.startsWith(u8, binding_name, "|>")) {
-                            try self.reporter.addError(
+                            return self.fail(
                                 .PARSE001,
                                 self.current,
                                 indent + 2,
                                 "Metatype '{s}' requires a binding (e.g., |? {s} t |>) or explicit discard (|? {s} _ |>).",
                                 .{ catchall_metatype.?, catchall_metatype.?, catchall_metatype.? },
                             );
-                            return error.ParseError;
                         }
                         // Validate binding is a valid identifier (or _ for discard)
                         if (!std.mem.eql(u8, binding_name, "_") and !lexer.isValidIdentifier(binding_name)) {
@@ -7416,14 +7347,13 @@ pub const Parser = struct {
                         binding = try self.allocator.dupe(u8, binding_name);
                         _ = parts.next(); // consume binding
                     } else {
-                        try self.reporter.addError(
+                        return self.fail(
                             .PARSE001,
                             self.current,
                             indent + 2,
                             "Metatype '{s}' requires a binding (e.g., |? {s} t |>) or explicit discard (|? {s} _ |>).",
                             .{ catchall_metatype.?, catchall_metatype.?, catchall_metatype.? },
                         );
-                        return error.ParseError;
                     }
                     rest = parts.rest();
                 }
@@ -7457,14 +7387,13 @@ pub const Parser = struct {
             if (std.mem.indexOf(u8, rest, "|>")) |idx| {
                 const after = std.mem.trim(u8, rest[idx + 2 ..], " \t");
                 if (std.mem.eql(u8, after, "_")) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .KORU026,
                         self.current,
                         indent + 2,
                         "pay-for-nothing catch-all: body discards without engagement. Either remove the catch-all (unhandled optional branches are already no-ops) or use a metatype-bound form that does work (e.g., `|? Transition t |> log(t)`).",
                         .{},
                     );
-                    return error.ParseError;
                 }
             }
 
@@ -7502,14 +7431,13 @@ pub const Parser = struct {
             try self.rejectSnakeName(branch_name, self.current, "branch");
         }
         if (!is_pattern_branch and !is_raw_branch and !isValidIdentifier(branch_name)) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current + 1,
                 indent + 2,
                 "invalid branch name '{s}' - must be a valid identifier",
                 .{branch_name},
             );
-            return error.ParseError;
         }
 
         const owned_branch = try self.allocator.dupe(u8, branch_name);
@@ -7662,14 +7590,13 @@ pub const Parser = struct {
                     lexer.trim(remaining);
 
                 if (condition_str.len == 0) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current + 1,
                         indent + 2,
                         "missing condition after 'when'",
                         .{},
                     );
-                    return error.ParseError;
                 }
 
                 // Reject `when (X)` — outer parens enclosing the whole expression
@@ -7723,14 +7650,13 @@ pub const Parser = struct {
             defer expr_parser.deinit();
 
             condition_expr = expr_parser.parse() catch |err| {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current + 1,
                     indent + 2,
                     "invalid when condition '{s}': {s}",
                     .{ cond_str, @errorName(err) },
                 );
-                return error.ParseError;
             };
         }
 
@@ -8311,8 +8237,7 @@ var produce_tail: ?[]const u8 = null;
             // closing quote is its block-close twin (`}: f |> …`).
             const path_start = marker.marker_idx + 2;
             const path_rel_end = std.mem.indexOf(u8, content[path_start..], "\"") orelse {
-                try self.reporter.addError(.PARSE005, location.line - 1, 0, "File source syntax requires a closing quote", .{});
-                return error.ParseError;
+                return self.fail(.PARSE005, location.line - 1, 0, "File source syntax requires a closing quote", .{});
             };
             const path_end = path_start + path_rel_end;
             const file_path = content[path_start..path_end];
@@ -8324,8 +8249,7 @@ var produce_tail: ?[]const u8 = null;
             defer self.allocator.free(path_str);
 
             const file_content = self.readSourceFile(file_path) catch |err| {
-                try self.reporter.addError(.PARSE005, location.line - 1, 0, "Failed to read source file '{s}': {s}", .{ file_path, @errorName(err) });
-                return error.ParseError;
+                return self.fail(.PARSE005, location.line - 1, 0, "Failed to read source file '{s}': {s}", .{ file_path, @errorName(err) });
             };
 
             var final_invocation: ast.Invocation = undefined;
@@ -8560,14 +8484,13 @@ var produce_tail: ?[]const u8 = null;
                 };
             }
 
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE001,
                 self.current,
                 indent,
                 "Pipeline continuation '|>' requires a step. Nested flows (~) are not allowed here.",
                 .{},
             );
-            return error.ParseError;
         }
 
         // Line-start `|>` continuation (KORU010 territory) — not a branch body.
@@ -8896,14 +8819,13 @@ var produce_tail: ?[]const u8 = null;
         // Check for nested flow invocation (~event) - NOT ALLOWED in pipeline steps
         // Flows (~) can only appear at the top level, not nested inside continuations
         if (lexer.startsWith(clean_content, "~")) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE001,
                 self.current,
                 0,
                 "Nested flows (~) are not allowed inside continuations. Use a bare tor call instead: remove the ~ prefix.",
                 .{},
             );
-            return error.ParseError;
         }
 
         // `=>`-introduced step: a branch construction. The delimiter is
@@ -8941,14 +8863,13 @@ var produce_tail: ?[]const u8 = null;
         }
 
         if (!std.mem.eql(u8, clean_content, "_")) {
-            try self.reporter.addError(
+            return self.fail(
                 .KORU103,
                 self.current,
                 0,
                 "`|>` chains a step; it cannot introduce the value `{s}` — produce a value with `->` (e.g. `-> {s}`)",
                 .{ clean_content, clean_content },
             );
-            return error.ParseError;
         }
 
         // Anything else at body position is a Zig expression node: string
@@ -9091,26 +9012,24 @@ var produce_tail: ?[]const u8 = null;
         // Format: branch_name { field: value, field: value }
         // OR shorthand: .{ .branch_name = .{ fields } }
         const brace_idx = std.mem.indexOf(u8, content, "{") orelse {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current + 1,
                 1,
                 "expected '{{' in branch constructor",
                 .{},
             );
-            return error.ParseError;
         };
 
         // Find the closing brace first (needed for both regular and shorthand forms)
         const closing_idx = std.mem.lastIndexOf(u8, content, "}") orelse {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE004,
                 self.current + 1,
                 @intCast(brace_idx + 1),
                 "unmatched '{{' in branch constructor",
                 .{},
             );
-            return error.ParseError;
         };
 
         var branch_name = lexer.trim(content[0..brace_idx]);
@@ -9121,7 +9040,7 @@ var produce_tail: ?[]const u8 = null;
         // has_expressions), a two-spellings-one-meaning wart. Ruled illegal
         // 2026-07-02: a payloadless construct has exactly one spelling.
         if (!std.mem.eql(u8, branch_name, ".") and lexer.trim(fields_content).len == 0) {
-            try self.reporter.addErrorWithHint(
+            return self.failWithHint(
                 .PARSE003,
                 self.current + 1,
                 @intCast(brace_idx + 1),
@@ -9130,21 +9049,19 @@ var produce_tail: ?[]const u8 = null;
                 "drop the braces: write '=> {s}' instead of '=> {s} {{}}'",
                 .{ branch_name, branch_name },
             );
-            return error.ParseError;
         }
 
         // A regular `name { ... }` construction requires a valid single-identifier
         // branch name (`.` is the `.{ ... }` immediate shorthand, handled below).
         // Rejects malformed names like `invalid name { ... }` (space in name).
         if (!std.mem.eql(u8, branch_name, ".") and !isValidIdentifier(branch_name)) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current + 1,
                 1,
                 "invalid branch constructor name '{s}' — must be a single identifier",
                 .{branch_name},
             );
-            return error.ParseError;
         }
 
         // Check for .{ shorthand (immediate return)
@@ -9166,47 +9083,43 @@ var produce_tail: ?[]const u8 = null;
                     if (inner_brace_idx != null and inner_closing_idx != null) {
                         fields_content = after_eq[inner_brace_idx.? + 1 .. inner_closing_idx.?];
                     } else {
-                        try self.reporter.addError(
+                        return self.fail(
                             .PARSE003,
                             self.current + 1,
                             0,
                             "invalid .{{ shorthand syntax - expected .{{ .branch_name = .{{ fields }} }}",
                             .{},
                         );
-                        return error.ParseError;
                     }
                 } else {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current + 1,
                         0,
                         "invalid .{{ shorthand syntax - expected .{{ .branch_name = ... }}",
                         .{},
                     );
-                    return error.ParseError;
                 }
             } else {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current + 1,
                     0,
                     "invalid .{{ shorthand syntax - expected .{{ .branch_name = ... }}",
                     .{},
                 );
-                return error.ParseError;
             }
         }
 
         // Validate branch name is a valid identifier
         if (!isValidIdentifier(branch_name)) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current + 1,
                 0,
                 "invalid branch name '{s}' in constructor - must be a valid identifier",
                 .{branch_name},
             );
-            return error.ParseError;
         }
 
         const fields_str = lexer.trim(fields_content);
@@ -9297,14 +9210,13 @@ var produce_tail: ?[]const u8 = null;
                 // Reject Zig-style struct syntax: .{ .field = value }
                 // Koru uses: branch_name { field: value }
                 if (lexer.startsWith(field_name, ".")) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current + 1,
                         1,
                         "Zig-style struct syntax '.{s}' is not valid Koru — use 'field_name: value' instead of '.field_name = value'",
                         .{field_name},
                     );
-                    return error.ParseError;
                 }
 
                 const field_value = if (sep_idx) |idx|
@@ -9323,7 +9235,7 @@ var produce_tail: ?[]const u8 = null;
                         .had_explicit_label = true,
                     };
                     if (lexer.isRedundantExplicitLabel(punning_arg)) {
-                        try self.reporter.addErrorWithHint(
+                        return self.failWithHint(
                             .PARSE005,
                             self.current,
                             1,
@@ -9332,7 +9244,6 @@ var produce_tail: ?[]const u8 = null;
                             "drop the label: write '{s}' instead of '{s}: {s}'",
                             .{ field_value, field_name, field_value },
                         );
-                        return error.ParseError;
                     }
                 }
 
@@ -9343,14 +9254,13 @@ var produce_tail: ?[]const u8 = null;
                 // (Shares the one expression-admission predicate with the KORU104
                 // wall in flow_checker — never a second implementation.)
                 if (expression_parser.textContainsCall(self.allocator, field_value)) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current + 1,
                         1,
                         "branch constructor field '{s}' contains a function call — branch constructors must be pure. Use tor chaining instead.",
                         .{field_name},
                     );
-                    return error.ParseError;
                 }
 
                 // Always store expression string for code generation
@@ -9478,14 +9388,13 @@ var produce_tail: ?[]const u8 = null;
         }
 
         if (brace_depth != 0) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE004,
                 start_line,
                 @intCast(brace_start),
                 "unmatched '{{' in branch payload shape",
                 .{},
             );
-            return error.ParseError;
         }
 
         return self.parseShape(shape_content.items);
@@ -9541,7 +9450,7 @@ var produce_tail: ?[]const u8 = null;
                 break;
             }
         }
-        try self.reporter.addErrorWithHint(
+        return self.failWithHint(
             .KORU033,
             report_line,
             report_col,
@@ -9550,7 +9459,6 @@ var produce_tail: ?[]const u8 = null;
             "phantom state uses angle brackets — write `{s}<{s}>`",
             .{ s[0..at], content },
         );
-        return error.ParseError;
     }
 
     /// Cross-module type references use slash-separated module qualifiers — the
@@ -9574,14 +9482,13 @@ var produce_tail: ?[]const u8 = null;
                 break;
             }
         }
-        try self.reporter.addError(
+        return self.fail(
             .KORU035,
             report_line,
             report_col,
             "'.' is not a namespace separator in '{s}' — use '/' (e.g. 'std/io:Type', not 'std.io:Type'). '.' is member access after ':'.",
             .{module_path},
         );
-        return error.ParseError;
     }
 
     /// Effect branches fire 0-to-N times, so obligation markers on their
@@ -9609,7 +9516,7 @@ var produce_tail: ?[]const u8 = null;
                 const ph = lexer.trim(raw);
                 if (ph.len > 0 and ph[0] == '!') {
                     const col = self.columnOfInLine(branch_line, ph);
-                    try self.reporter.addErrorWithHint(
+                    return self.failWithHint(
                         .KORU027,
                         branch_line,
                         col,
@@ -9618,7 +9525,6 @@ var produce_tail: ?[]const u8 = null;
                         "a `!` effect branch fires 0-to-N times, so `<{s}>` (discharge) is incoherent — drop the leading `!` for plain state matching, or issue one obligation per firing with `<{s}!>`",
                         .{ ph, ph[1..] },
                     );
-                    return error.ParseError;
                 }
             }
         }
@@ -9629,7 +9535,7 @@ var produce_tail: ?[]const u8 = null;
             const rp = lexer.trim(raw);
             if (rp.len > 0 and rp[rp.len - 1] == '!') {
                 const col = self.columnOfInLine(branch_line, rp);
-                try self.reporter.addErrorWithHint(
+                return self.failWithHint(
                     .KORU027,
                     branch_line,
                     col,
@@ -9638,7 +9544,6 @@ var produce_tail: ?[]const u8 = null;
                     "a `!` effect branch fires 0-to-N times, so resuming `<{s}>` (issue) would let the obligation escape un-discharged — drop the trailing `!`, or discharge in-scope with `<!{s}>`",
                     .{ rp, rp[0 .. rp.len - 1] },
                 );
-                return error.ParseError;
             }
         }
 
@@ -9650,7 +9555,7 @@ var produce_tail: ?[]const u8 = null;
                     const ap = lexer.trim(raw);
                     if (ap.len > 0 and ap[ap.len - 1] == '!') {
                         const col = self.columnOfInLine(branch_line, ap);
-                        try self.reporter.addErrorWithHint(
+                        return self.failWithHint(
                             .KORU027,
                             branch_line,
                             col,
@@ -9659,7 +9564,6 @@ var produce_tail: ?[]const u8 = null;
                             "a `!` effect branch fires 0-to-N times, so resuming `<{s}>` (issue) would let the obligation escape un-discharged — drop the trailing `!`, or discharge in-scope with `<!{s}>`",
                             .{ ap, ap[0 .. ap.len - 1] },
                         );
-                        return error.ParseError;
                     }
                 }
             }
@@ -9734,24 +9638,22 @@ var produce_tail: ?[]const u8 = null;
     fn parseResumeArm(self: *Parser, content: []const u8, line_index: usize) !ast.ResumeArm {
         const trimmed = lexer.trim(content);
         if (trimmed.len == 0) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 line_index + 1,
                 1,
                 "empty resume arm - expected 'name' or 'name Type' after '|'",
                 .{},
             );
-            return error.ParseError;
         }
         if (std.mem.indexOf(u8, trimmed, "->") != null) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 line_index + 1,
                 1,
                 "'->' is not allowed in a resume arm - the arm's type IS what the handler resumes with",
                 .{},
             );
-            return error.ParseError;
         }
 
         // Arm name: first whitespace-delimited token. `-` is kebab word-glue,
@@ -9767,14 +9669,13 @@ var produce_tail: ?[]const u8 = null;
         // Same wall as branch payloads: `()` is not a type; a payload-less
         // arm is spelled by omission (`| timeout`).
         if (std.mem.eql(u8, type_src, "()")) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 line_index + 1,
                 1,
                 "'()' is not a payload type - a payload-less resume arm is spelled by omission (write `| {s}`)",
                 .{arm_name},
             );
-            return error.ParseError;
         }
 
         return ast.ResumeArm{
@@ -9811,14 +9712,13 @@ var produce_tail: ?[]const u8 = null;
         for (arms, 0..) |*arm, i| {
             for (arms[0..i]) |*earlier| {
                 if (std.mem.eql(u8, earlier.name, arm.name)) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         line_index + 1,
                         1,
                         "duplicate resume arm name '{s}'",
                         .{arm.name},
                     );
-                    return error.ParseError;
                 }
             }
         }
@@ -9845,25 +9745,23 @@ var produce_tail: ?[]const u8 = null;
 
             const line_trimmed = lexer.trim(line);
             if (line_trimmed[0] == '!') {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current + 1,
                     1,
                     "effect branches never nest - composition lives in the '|' resume arms",
                     .{},
                 );
-                return error.ParseError;
             }
             if (arm_indent) |ai| {
                 if (indent != ai) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current + 1,
                         1,
                         "resume arms must align at exactly one level under their effect branch",
                         .{},
                     );
-                    return error.ParseError;
                 }
             } else {
                 arm_indent = indent;
@@ -9880,14 +9778,13 @@ var produce_tail: ?[]const u8 = null;
         if (arms.items.len == 0) return;
 
         if (branch.resume_type != null) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "effect branch cannot declare both a '-> T' resume and named resume arms - the arms are the resume",
                 .{},
             );
-            return error.ParseError;
         }
 
         // Merge with any same-line arms (mixed spelling is legal: arms riding
@@ -9922,14 +9819,13 @@ var produce_tail: ?[]const u8 = null;
         // frag-deferred-deref-repudiated). Rejected loudly instead of parsed.
         var branch_start = after_bar;
         if (lexer.startsWith(after_bar, "&")) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "deferred branch `| &<branch>` was removed — the deferred/deref mechanism is retired. Declare the call site with a required effect-branch instead.",
                 .{},
             );
-            return error.ParseError;
         }
 
         // Check for ?! prefix (panic branch) before ? (optional).
@@ -9956,14 +9852,13 @@ var produce_tail: ?[]const u8 = null;
         var raw_branch_name: ?[]const u8 = null;
         if (branch_start.len > 0 and branch_start[0] == '`') {
             const close = std.mem.indexOfScalarPos(u8, branch_start, 1, '`') orelse {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current - 1,
                     1,
                     "unterminated raw branch name - missing closing '`'",
                     .{},
                 );
-                return error.ParseError;
             };
             raw_branch_name = branch_start[1..close];
             branch_start = lexer.trim(branch_start[close + 1 ..]);
@@ -9982,14 +9877,13 @@ var produce_tail: ?[]const u8 = null;
                 }
             }
             const end = close orelse {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current - 1,
                     1,
                     "unterminated raw branch name - missing closing ']'",
                     .{},
                 );
-                return error.ParseError;
             };
             raw_branch_name = branch_start[1..end];
             branch_start = lexer.trim(branch_start[end + 1 ..]);
@@ -10045,14 +9939,13 @@ var produce_tail: ?[]const u8 = null;
                     // `-> ResumeT` resume type. (A `->` in a branch HANDLER is
                     // fine: that produces the value and is parsed elsewhere.)
                     if (branch_kind == .terminal) {
-                        try self.reporter.addError(
+                        return self.fail(
                             .PARSE003,
                             self.current - 1,
                             1,
                             "'->' is not allowed in a continuation branch declaration - the bare-return arrow belongs on the tor signature (`tor x {{}} -> T`), not a `|` branch",
                             .{},
                         );
-                        return error.ParseError;
                     }
                     var rt = lexer.trim(branch_start[idx + 2 ..]);
                     // Phantom-capture the resume type, same as a branch payload:
@@ -10097,28 +9990,26 @@ var produce_tail: ?[]const u8 = null;
         // scalar `! ask -> i64`; only a 2+-field record earns the braces. (210_150)
         if (resume_type) |rt| {
             if (isSingleFieldRecordType(rt)) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current - 1,
                     1,
                     "single field in record resume `{s}` — collapse to the scalar `-> <type>`; a record resume is for two or more fields",
                     .{rt},
                 );
-                return error.ParseError;
             }
         }
 
         // An effect's resume is EITHER a single anonymous `-> T` OR a named
         // sum of arms — never both (the arms ARE the resume).
         if (resume_type != null and resume_arms != null) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current - 1,
                 1,
                 "effect branch cannot declare both a '-> T' resume and named resume arms - the arms are the resume",
                 .{},
             );
-            return error.ParseError;
         }
 
         // Check for struct shape { ... } vs identity type
@@ -10155,14 +10046,13 @@ var produce_tail: ?[]const u8 = null;
                 }
 
                 if (name_end == 0) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current,
                         1,
                         "branch missing name",
                         .{},
                     );
-                    return error.ParseError;
                 }
 
                 branch_name = branch_start[0..name_end];
@@ -10171,14 +10061,13 @@ var produce_tail: ?[]const u8 = null;
 
                 // Validate branch name is a valid identifier
                 if (!isValidIdentifier(branch_name)) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current - 1,
                         1,
                         "invalid branch name '{s}' - must be a valid identifier",
                         .{branch_name},
                     );
-                    return error.ParseError;
                 }
                 after_name = branch_start[name_end..];
             }
@@ -10192,14 +10081,13 @@ var produce_tail: ?[]const u8 = null;
             // ML/Rust unit instinct gets a guiding koru-level diagnostic
             // instead of a misleading KORU030 three stages later.
             if (std.mem.eql(u8, type_and_annotation, "()")) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current,
                     1,
                     "'()' is not a payload type - an empty payload is spelled by omission (write `! {s}`; resume arms may follow: `! {s} | ok i32 | fail`)",
                     .{ branch_name, branch_name },
                 );
-                return error.ParseError;
             }
 
             // Check if this is an empty payload (just branch name, no type)
@@ -10286,14 +10174,13 @@ var produce_tail: ?[]const u8 = null;
             // slice; `string` is KEPT in the AST as the surface type and
             // lowered to []const u8 only at the Zig emission boundary.
             if (surfaceTypeContainsRawByteSlice(type_str)) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current,
                     1,
                     "'[]const u8' is not a Koru tor-payload type. Use 'string' for text — it lowers to []const u8 for Zig",
                     .{},
                 );
-                return error.ParseError;
             }
 
             // Parse cross-module type reference: module.path:TypeName
@@ -10367,14 +10254,13 @@ var produce_tail: ?[]const u8 = null;
 
             // Validate branch name is a valid identifier
             if (!isValidIdentifier(scanned)) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current - 1,
                     1,
                     "invalid branch name '{s}' - must be a valid identifier",
                     .{scanned},
                 );
-                return error.ParseError;
             }
             break :blk scanned;
         };
@@ -10390,14 +10276,13 @@ var produce_tail: ?[]const u8 = null;
         // Exception: wildcards (is_wildcard flag set) are allowed via bare `*`
         // syntax (handled in the identity-path above) — `{ * }` is rejected.
         if (payload.fields.len == 0 and !payload.is_wildcard) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 @intCast(brace_idx.? + 1),
                 "empty braces in branch payload - remove braces for void branch or use identity syntax '| {s} Type'",
                 .{branch_name},
             );
-            return error.ParseError;
         }
         // A single-field brace payload (`| ok { c: i32 }`) collapses to identity
         // (`| ok i32`) — but the RIGHT advice depends on branch count, which isn't
@@ -10445,14 +10330,13 @@ var produce_tail: ?[]const u8 = null;
                     }
                     break :blk null;
                 } orelse {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE003,
                         self.current - 1,
                         @intCast(close_idx + 1),
                         "branch annotation missing closing ']'",
                         .{},
                     );
-                    return error.ParseError;
                 };
 
                 const annotation_content = lexer.trim(after_brace[1..close_bracket_idx]);
@@ -10522,14 +10406,13 @@ var produce_tail: ?[]const u8 = null;
     fn parseArgsReported(self: *Parser, args_str: []const u8) ![]lexer.ArgPair {
         return lexer.parseArgs(self.allocator, args_str) catch |err| switch (err) {
             error.UnbalancedArgs => {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE004,
                     self.current,
                     1,
                     "unbalanced ')' or ']' in arguments — closing delimiter has no matching opener",
                     .{},
                 );
-                return error.ParseError;
             },
             else => return err,
         };
@@ -10557,28 +10440,26 @@ var produce_tail: ?[]const u8 = null;
                 // and producing a misleading "single field in braces" error.
                 // Reject the real cause loudly at the earliest layer.
                 if (bracket_depth < 0) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE004,
                         self.current,
                         1,
                         "unbalanced ']' in payload shape — closing bracket has no matching '['",
                         .{},
                     );
-                    return error.ParseError;
                 }
             } else if (ch == '(') {
                 paren_depth += 1;
             } else if (ch == ')') {
                 paren_depth -= 1;
                 if (paren_depth < 0) {
-                    try self.reporter.addError(
+                    return self.fail(
                         .PARSE004,
                         self.current,
                         1,
                         "unbalanced ')' in payload shape — closing paren has no matching '('",
                         .{},
                     );
-                    return error.ParseError;
                 }
             } else if (ch == ',' and bracket_depth == 0 and paren_depth == 0) {
                 // Found a field separator at top level (outside all brackets and parens)
@@ -10617,14 +10498,13 @@ var produce_tail: ?[]const u8 = null;
 
         // Reject `{ * }` — the wildcard syntax is bare `*`, not braces around `*`.
         if (std.mem.eql(u8, lexer.trim(content), "*")) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "wildcard payload is bare '*' — write '| branch *' instead of '| branch {{ * }}'",
                 .{},
             );
-            return error.ParseError;
         }
 
         // Parse fields: name: type, name: type, ...
@@ -10797,14 +10677,13 @@ var produce_tail: ?[]const u8 = null;
             // faithful) and is lowered to []const u8 only at the Zig emission
             // boundary. Holds in .k AND .kz.
             if (surfaceTypeContainsRawByteSlice(field_type)) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current + 1,
                     1,
                     "'[]const u8' is not a Koru tor-payload type. Use 'string' for text — it lowers to []const u8 for Zig",
                     .{},
                 );
-                return error.ParseError;
             }
 
             // Check for cross-module type reference: module.path:TypeName
@@ -10827,8 +10706,7 @@ var produce_tail: ?[]const u8 = null;
             const colon_count = std.mem.count(u8, field_type, ":");
             if (colon_count > 1) {
                 // Multiple colons are ambiguous - which is the module boundary?
-                try self.reporter.addError(.PARSE003, self.current + 1, 1, "Multiple colons in type reference '{s}' - expected format 'module.path:Type' or just 'Type'", .{field_type});
-                return error.ParseError;
+                return self.fail(.PARSE003, self.current + 1, 1, "Multiple colons in type reference '{s}' - expected format 'module.path:Type' or just 'Type'", .{field_type});
             }
 
             // Parse cross-module type reference and build owned type string
@@ -10916,14 +10794,13 @@ var produce_tail: ?[]const u8 = null;
 
         // Parse: ~@name
         const after_at = lexer.afterPrefix(line, "~@") orelse {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "malformed label declaration",
                 .{},
             );
-            return error.ParseError;
         };
 
         const name = lexer.trim(after_at);
@@ -10948,14 +10825,13 @@ var produce_tail: ?[]const u8 = null;
         const after_import = if (lexer.startsWith(after_tilde, "import "))
             lexer.trim(after_tilde[7..])
         else {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "invalid import syntax",
                 .{},
             );
-            return error.ParseError;
         };
 
         // Bare `import` in `.kz` is rejected at the line level in parse() before
@@ -10974,14 +10850,13 @@ var produce_tail: ?[]const u8 = null;
         if (lexer.startsWith(path_str, "\"") or lexer.startsWith(path_str, "'")) {
             // An import path is an identifier-path, not a string.
             const stripped = std.mem.trim(u8, path_str, "\"'");
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "imports take a bare path, not a string: write `~import {s}` (no quotes)",
                 .{stripped},
             );
-            return error.ParseError;
         } else {
             // Unquoted path (for simplicity)
             path = path_str;
@@ -10991,14 +10866,13 @@ var produce_tail: ?[]const u8 = null;
         // 1. Forbid ../ for security and simplicity (only allowed in koru.json)
         // 1. Forbid ../ for security and simplicity
         if (std.mem.indexOf(u8, path, "../") != null) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "import paths cannot contain '../' - declare an alias for the directory instead: {s}std/compiler:paths {{ name: ../path }}",
                 .{self.tilde()},
             );
-            return error.ParseError;
         }
 
         // Extract the alias (first segment)
@@ -11018,14 +10892,13 @@ var produce_tail: ?[]const u8 = null;
         };
 
         if (!is_valid_alias) {
-            try self.reporter.addError(
+            return self.fail(
                 .PARSE003,
                 self.current,
                 1,
                 "import paths must start with an alias (e.g., 'std/io', 'src/helper') - declare one with {s}std/compiler:paths {{ name: ./path }}",
                 .{self.tilde()},
             );
-            return error.ParseError;
         }
 
         // 3. Enforce maximum import depth: alias/a/b (2 segments max)
@@ -11040,7 +10913,7 @@ var produce_tail: ?[]const u8 = null;
             }
 
             if (segment_count > 2) {
-                try self.reporter.addError(
+                return self.fail(
                     .PARSE003,
                     self.current,
                     1,
@@ -11050,7 +10923,6 @@ var produce_tail: ?[]const u8 = null;
                         "  Then use: {s}import mylib/... (Suggested: extract '{s}' as its own alias)",
                     .{ path, segment_count, self.tilde(), self.tilde(), alias },
                 );
-                return error.ParseError;
             }
         }
 
@@ -11185,14 +11057,12 @@ var produce_tail: ?[]const u8 = null;
 
         // Read the file
         const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
-            try self.reporter.addError(.PARSE003, self.current, 1, "failed to open import file '{s}': {s}", .{ file_path, @errorName(err) });
-            return error.ParseError;
+            return self.fail(.PARSE003, self.current, 1, "failed to open import file '{s}': {s}", .{ file_path, @errorName(err) });
         };
         defer file.close();
 
         const source = file.readToEndAlloc(self.allocator, 10 * 1024 * 1024) catch |err| {
-            try self.reporter.addError(.PARSE003, self.current, 1, "failed to read import file '{s}': {s}", .{ file_path, @errorName(err) });
-            return error.ParseError;
+            return self.fail(.PARSE003, self.current, 1, "failed to read import file '{s}': {s}", .{ file_path, @errorName(err) });
         };
         defer self.allocator.free(source);
 
