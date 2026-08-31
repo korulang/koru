@@ -13,10 +13,10 @@
 - Before writing nontrivial Koru, inspect a passing regression test with the same shape.
 - If no passing example exists for the syntax shape, say so and add or request a minimal repro instead of inventing syntax.
 
-## A header comment is not a live blocker
-Package and test headers (`draw_per_entity.k`, `bounce.k`, `boids.k`, …) record a measurement **at write time**. They do not update when a cited pin goes green. `690_252` SUCCESS does not mean every comment that named `690_252` is still true.
+## A claim from another session is not ground truth
+Package and test headers (`draw_per_entity.k`, `bounce.k`, `boids.k`, …) record a measurement **at write time** — and so does any artifact from another session: a scan, an architecture review, a report. It measured a tree at a moment that has since moved; 2026-08-31, a review listed `src/*.bak` files a purge commit deleted hours later — true at write time, false within a day. Treat every such claim as **unmeasured** until you have checked it against the current tree **this session** — and against the right clock: “live” includes the backend graph (`koru_std/compiler.kz`, `koru_std/build.zig`), not just `zig build`'s `exe.root_module` (see `frag-zig-build-does-not-compile-all-of-src`). Cite the tree, not the report. When you produce a scan or review, pin the tree you measured (`git rev-parse HEAD` + branch) at the top, or staleness is invisible.
 
-Before you spend a session on a “gap,” compile the join **in this session**. Three claims, pick one, first sentence:
+Before you spend a session on a claimed gap — from a header, a review, or another session — check the claim **in this session**, against the current tree. Three claims, pick one, first sentence:
 
 - **blocker** — you compiled it; it refused (quote the diagnostic).
 - **not a blocker** — you compiled it, or a passing test *is* that join.
