@@ -1,0 +1,125 @@
+---
+challenge: repo-cleanup
+kind: frame
+status: standing
+yields: one repo-hygiene pass, done to the checklist — committed junk purged, gitignore holes closed, the working tree verified, the preserves named
+family: toolchain
+---
+
+*Walker context — the recurrence that earned this frame. Junk keeps arriving
+because the root `.gitignore` is a whitelist that admits it by default:
+`/*` does not ignore directories (`!*/` re-includes every one) or dotfiles
+(`!.*` re-includes every one), so a scratch directory dropped at the repo
+root is tracked until someone names it. The near-miss was a 2.8 MB
+`.shell-probe/` that a ceremony's `git add -A` almost swept into a commit
+(2026-08-07, documented in the `.gitignore` header). The first real
+occurrence fired: `.orphan-staging/`'s build artifacts — `backend.zig`,
+`*.err`, `FAILURE`, `program.ast.json` — rode a `git add -A` into the
+publish commit `74c9fd1d`. The first full pass was `becc6a7f` (2026-08-31):
+purged committed backups and dead spikes, closed the holes (`*.bak`,
+`*.bak2`, `*.backup`, `.orphan-staging/`), moved stale docs, purged ~21k
+ignored artifacts in the working tree. Within a day, 240 `zig-out-run-*`
+directories regenerated. A cleanup is never a one-shot — that is exactly why
+this is a replayable frame, not a chore you cross off.*
+
+*The second pass (same day) added the discipline the first pass's author
+already knew: verify before you delete, against the current tree, on both
+clocks. The 2026-08-30 architecture review listed `.bak` files the purge had
+deleted hours earlier and named six "dead" modules live on the backend
+graph — its file list was true at write time and false within 24 hours
+(`frag-zig-build-does-not-compile-all-of-src`,
+`frag-a-header-citing-a-pin-is-a-measurement-at-write-time`). This frame
+bakes that discipline in as a step, not a footnote.*
+
+---
+
+## The brief (sealed — you are the contestant)
+
+Run one full repo-cleanup pass, to the checklist. The worked example is
+`becc6a7f` — `git show becc6a7f` before you start; it is the shape this
+frame replays. Your pass will differ: junk accumulates differently each
+time, and the variance this frame is for is *which* junk, *which* holes, and
+*which* preserves the current tree holds.
+
+## Pre-flight
+
+- **No suite may be live.** `pgrep -fl "run_regression|zig build"` — a purge
+  that touches `src/` or `koru_std/` while a board is running turns reds
+  that name your own edit. This includes boards in other worktrees.
+- **Read the ground before you move it.** `git status`, `git log` since the
+  last cleanup commit, `git worktree list` — junk may live in a worktree
+  while main is clean.
+- **Pin your tree.** `git rev-parse HEAD` + branch. Your pass names the tree
+  it measured.
+
+## Step 1 — Inventory with the enforcer's predicate
+
+`git ls-files` is the predicate: tracked = live surface or deliberate;
+untracked-and-unignored = future junk. Count with git's predicate, never
+your reading of the tree. **Do not trust any prior scan's file list** — the
+`.bak` list from 2026-08-30 was true at write time and gone within a day.
+Re-derive every candidate this session.
+
+## Step 2 — The whitelist hazard
+
+Read the `.gitignore` header comment before touching anything. `/*` ignores
+root files, but `!*/` and `!.*` hand directories and dotfiles back. For
+every junk class you found, ask *what hole let it in?* — and close that
+hole. A purge without a hole-closing is a rerun, not a cleanup.
+
+## Step 3 — Verify before you delete
+
+For every candidate, confirm it is junk **this session**, on both clocks:
+`build.zig`'s `exe.root_module` AND the backend graph in
+`koru_std/compiler.kz` / `koru_std/build.zig`. A file in either graph is
+live, however "unused" it looks from the top-level build. Then rule it:
+
+- **not a blocker** — verified junk (tracked backup, dead spike, generated
+  artifact, scratch dir). → Delete.
+- **blocker** — it is live, deliberate, or preserved. → Keep, and name why.
+- **unmeasured** — you have not checked it this session. → Stop talking
+  about it. Never delete on an old claim.
+
+## Step 4 — The preserves
+
+Name what must not be touched *before* you delete anything: `.env.local`,
+`.vercel/`, `.claude/settings.local.json`, `.fallow/`, `.koru-studio/`,
+`zig-out/`, and any worktree symlinks (`becc6a7f`'s list). Deliberate
+structures are not junk: `concepts/`, `signals/`, `challenges/`, and
+`test-results/` are the belief corpus and the ceremony snapshot, tracked by
+design. The 2026-08-30 review's worst error was mislabeling these as
+clutter — a cleanup that purges the corpus is the frame's one unforgivable
+move.
+
+## Step 5 — Working-tree hygiene
+
+`git clean -fdX -n` must list only the preserves. Ignored regenerables
+(`zig-out-run-*`, `.zig-cache`, per-test backend builds) can be purged for
+disk — but say in your commit that they regenerate; the next pass will find
+them again.
+
+## Step 6 — Verify the result
+
+- `git status` shows only this commit's changes.
+- `git clean -fdX -n` lists only the preserves.
+- A control that was green at HEAD is still green.
+
+## What "done" looks like
+
+- Each junk class: found, purged, and its hole closed — or refused with the
+  reason, named out loud.
+- The preserves list in the commit message or the pass notes.
+- The measured tree pinned.
+- The commit says what regenerates, so the next replay starts from honesty.
+
+## Failure modes
+
+- **Purging deliberate infrastructure** — `concepts/`, `test-results/`, the
+  corpus. Unforgivable; the review did it in prose, do not do it in git.
+- **Deleting on an old claim** — the `.bak` lesson. Re-check this session.
+- **Deleting without naming the preserves.** The list comes first.
+- **Running while a suite is live.** The reds will name your own edit.
+- **`git add -A` sweeping junk into a ceremony commit** — the `74c9fd1d`
+  sin. Stage deliberately.
+- **A purge that leaves the hole open.** The gitignore line is the actual
+  fix; the deletion is the symptom.
