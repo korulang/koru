@@ -51,7 +51,6 @@ directory is deliberate; the map is so the glance reads that way.
 | `tools/` | Editor tooling (`koru-lsp`). |
 | `skills/` | Root-level skills (the toolchain's active skills live in `.claude/skills/`). |
 | `inbox/` | Held dispositions from mergebacks. |
-| `docker-test/` | Docker-based test harness. |
 | `lib/` | Runtime/backend space; currently holds an example. |
 | `.claude/`, `.fallow/`, `.koru-studio/`, `.vercel/`, `.env.local` | Agent and environment state (private or local). |
 
