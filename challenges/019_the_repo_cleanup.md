@@ -37,6 +37,14 @@ snapshots, benchmark binaries, generated AST dumps — and left the deny-list
 walls that keep them out. The committed tree is the other half of this
 frame's subject.*
 
+*The git wall (2026-09-01, `57ca6bc5`) compiles those deny-lines into the
+commit boundary: `scripts/git_wall.sh` uses `git check-ignore --no-index` as
+the oracle, pre-commit runs `--staged`, the suite runs `--committed`.
+Grandfather rows live in `scripts/git_wall_allowlist.txt` and **shrink** as
+this frame's replays purge them — the wall never widens. This frame still
+replays for committed rot and allowlist shrink; the wall holds the line
+against fresh junk.*
+
 ---
 
 ## The brief (sealed — you are the contestant)

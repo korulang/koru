@@ -115,6 +115,11 @@ Every harness guard must have a row in `scripts/WALLS.md`; `scripts/wall_check.s
 fails the run on an unregistered one, and its **mirror column** — the direction
 a wall does *not* guard — is a live worklist, not a disclaimer.
 
+**Git wall:** `scripts/git_wall.sh --committed` runs in the coherence watchers;
+`hooks/pre-commit` runs `--staged`. The oracle is `.gitignore` via
+`check-ignore --no-index`. Grandfather rows in `scripts/git_wall_allowlist.txt`
+must shrink — never widen without a purge.
+
 ## Snapshots
 
 After each full run, a snapshot is saved to `test-results/` with:
