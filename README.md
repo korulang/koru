@@ -39,18 +39,16 @@ directory is deliberate; the map is so the glance reads that way.
 | `models/` | World-model instruments (`commit_cadence`, `breath`). |
 | `hooks/` | The membrane gate: `commit-msg` (World Model + Membrane sections) and `post-commit`. |
 | `scripts/` | Harness and tooling: `regression_lib.sh`, `generate-status.js`, and friends. |
-| `docs/` | Design docs (stale ones live here, swept by the 2026-08-31 purge). |
+| `docs/` | Design docs (stale ones live here, swept by the 2026-08-31 purge), plus `docs/inbox/` — held mergeback dispositions. |
 | `visual/` + `visual-identity.json` | Visual identity assets and their manifest. |
 | `examples/` | Reference programs. |
 | `benchmarks/` | Benchmark workloads. |
 | `probes/` | Probe experiments (e.g. `r1`, concurrency calibration). |
-| `demos/` | Demo projects. |
 | `gauntlet/` | The cross-language gauntlet — a consumer that exercises `koruc`. |
 | `invariants/` | The invariants manifest; `koruc` emits its backend here. |
 | `todo/` | The residual manifest dir: `todo.kz` + `selftest.kz`. |
 | `tools/` | Editor tooling (`koru-lsp`). |
 | `skills/` | Root-level skills (the toolchain's active skills live in `.claude/skills/`). |
-| `inbox/` | Held dispositions from mergebacks. |
 | `lib/` | Runtime/backend space; currently holds an example. |
 | `.claude/`, `.fallow/`, `.koru-studio/`, `.vercel/`, `.env.local` | Agent and environment state (private or local). |
 
