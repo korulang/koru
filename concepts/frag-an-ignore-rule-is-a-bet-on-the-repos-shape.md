@@ -52,6 +52,26 @@ never the hard part. Knowing the rule has gone stale is.
   tree of 18 files that is one `git status --short | wc -l` against a number you
   say out loud first.
 
+## The mirror: a whitelist admits, and a ceremony publishes
+
+The 2026-07-30 case was a blanket rule amputating too little — a new subtree's
+definition silently dropped from the index. The mirror is a whitelist admitting
+too much. Koru's root `.gitignore` is a whitelist: `/*` ignores root files, then
+`!*/` and `!.*` re-admit every directory and every dotfile, so any new root
+directory is tracked-by-default and only an explicit rule stops it.
+`.orphan-staging/` never got its rule, and a ceremony's `git add -A` carried a
+staging test's whole runtime state — backend.zig, *.err, FAILURE,
+program.ast.json — into a publish commit (74c9fd1d). The repo's own `.gitignore`
+header already framed this class as a 2026-08-07 near-miss (`.shell-probe`,
+caught before the add); the near-miss was the bet having already lost once, not
+a prevention.
+
+The fix is the same in both directions: anchor the rule to the shape it means
+(`/.orphan-staging/`, `/package.json`), and after any `git add -A` count what
+landed against what you would name as intentional. For a ceremony that count is
+a pre-publish check — no staged backend.zig / *.err / FAILURE /
+.cache-fingerprint outside the dirs the suite is allowed to dirty.
+
 ## Open
 
 Whether this deserves a mechanical check — a pre-commit that flags a staged
@@ -59,3 +79,9 @@ lockfile whose manifest is neither staged nor tracked. It generalises past npm
 (`Cargo.lock`/`Cargo.toml`, `uv.lock`/`pyproject.toml`) and it is the orphan-pair
 tell written down. Unclear whether the class is frequent enough here to earn a
 gate, or whether that is one more cheap check accruing unearned trust.
+
+Same question for the ceremony direction: a publish-gate that refuses a staged
+file matching the generated-artifact names (`backend.zig`, `*.err`, `FAILURE`,
+`.cache-fingerprint`, `program.ast.json`) outside the suite's dirty dirs. The
+corpus already carries the failure (74c9fd1d) and the rule set is finite — the
+open call is whether a publish gate is worth one more wall.

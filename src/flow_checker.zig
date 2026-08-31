@@ -586,7 +586,7 @@ pub const FlowChecker = struct {
     /// Emit KORU110 if every matching ~proc for this invocation's path is bare
     /// (target == null). Abstract events ([abstract] annotation) are exempt —
     /// they use a distinct override mechanism whose interaction with variants
-    /// is a separate design decision (see MULTI_VARIANT_PLAN.md).
+    /// is a separate design decision (see docs/MULTI_VARIANT_PLAN.md).
     fn checkInvocationVariants(self: *FlowChecker, inv: *const ast.Invocation, location: errors.SourceLocation) !void {
         const items = self.ast_items orelse return;
 

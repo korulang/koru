@@ -100,6 +100,11 @@ node_modules/
 
 .koru-studio/
 
+# Orphan-test staging. Swept into a ceremony commit wholesale by `git add -A`
+# (2026-08, 74c9fd1d carried the 641_020 build artifacts); a staging dir is
+# never a home for backend.zig / *.err / FAILURE runtime state.
+.orphan-staging/
+
 # ============================================================================
 # Executables (Anywhere in Project)
 # ============================================================================
@@ -158,6 +163,9 @@ output_*.zig
 # Backup files
 *_backup.zig
 *_backup.kz
+*.bak
+*.bak2
+*.backup
 
 # ============================================================================
 # Test Results and Temporary Files

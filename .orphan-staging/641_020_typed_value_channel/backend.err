@@ -1,9 +1,0 @@
-🎯 Compiler coordination: Passes: 17 (flow-based: frontend, analysis, emission)
-Error: /opt/homebrew/Cellar/zig/0.15.2_1/lib/zig/std/Io/Writer.zig:1773:5: error: invalid format string 'd' for type '[]const u8'
-    @compileError("invalid format string '" ++ fmt ++ "' for type '" ++ @typeName(@TypeOf(value)) ++ "'");
-    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-referenced by:
-    printValue__anon_3640: /opt/homebrew/Cellar/zig/0.15.2_1/lib/zig/std/Io/Writer.zig:1051:40
-    print__anon_3076: /opt/homebrew/Cellar/zig/0.15.2_1/lib/zig/std/Io/Writer.zig:700:25
-    8 reference(s) hidden; use '-freference-trace=10' to see all references
-
