@@ -68,3 +68,10 @@ then the runtime must grow a general compiler and the cheapness claim dies.
 
 Related: [[frag-a-scope-must-describe-its-own-vocabulary]] — the derived prompt
 is the earlier belief, generalized from one surface to the whole runtime.
+
+## Closed 2026-09-01 — Cordis gauntlet home
+
+External-oracle campaigns against KOPIUM (ledger, verdict, cross-language
+closer) belong in `~/src/kopium/gauntlet/`, not the compiler repo. Koru keeps
+the regression pins (`440_*`) because they exercise `koru_std`; kopium keeps the
+campaign narrative (`gauntlet/cordis/`). Stub at `koru/gauntlet/README.md`.
