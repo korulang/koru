@@ -1,7 +1,0 @@
-config LIBVIRTIO_PCI
-	bool "Virtio PCI transport"
-	depends on VIRTIO_DEVICE
-	depends on HAVE_PCI
-	select LIBUKBUS_PCI
-	help
-		Support virtio devices on PCI bus

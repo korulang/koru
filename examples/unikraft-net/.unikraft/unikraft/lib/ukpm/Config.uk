@@ -1,3 +1,0 @@
-config LIBUKPM
-	bool "ukpm: Power management driver interface"
-	select LIBUKLCPU

@@ -1,3 +1,0 @@
-$(eval $(call addlib,appukserve))
-APPUKSERVE_SRCS-y += $(APPUKSERVE_BASE)/main.c
-APPUKSERVE_ALIBS-y += $(APPUKSERVE_BASE)/libkoruapp.a

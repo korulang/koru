@@ -1,1 +1,0 @@
-x86_64-elf-objcopy --keep-global-symbols=/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/plat/native/exportsyms.uk        /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libukplat_native.ld.o /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libukplat_native.o

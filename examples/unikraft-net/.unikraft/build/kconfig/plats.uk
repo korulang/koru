@@ -1,5 +1,0 @@
-# Auto generated file. DO NOT EDIT
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/plat/kvm/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/plat/native/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/plat/xen/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/plat/Config.uk"

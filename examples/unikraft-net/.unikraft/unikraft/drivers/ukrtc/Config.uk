@@ -1,5 +1,0 @@
-menu "Real Time Clock"
-
-source "$(KCONFIG_DRIV_BASE)/ukrtc/pl031/Config.uk"
-
-endmenu

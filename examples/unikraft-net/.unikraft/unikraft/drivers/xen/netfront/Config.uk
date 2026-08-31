@@ -1,9 +1,0 @@
-config LIBNETFRONT
-	bool "netfront: Xen network interfaces"
-	select LIBXENHEADERS
-	select LIBXENBUS
-	select LIBXENGNTTAB
-	depends on HAVE_XENBUS
-	depends on LIBUKNETDEV
-	help
-		Driver for netfront devices

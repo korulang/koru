@@ -1,1 +1,0 @@
-x86_64-elf-objcopy --keep-global-symbols=/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/lib/uklock/exportsyms.uk        /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libuklock.ld.o /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libuklock.o

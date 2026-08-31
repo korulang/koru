@@ -1,1 +1,0 @@
-x86_64-elf-objcopy --keep-global-symbols=/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/lib/posix-socket/exportsyms.uk        /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libposix_socket.ld.o /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libposix_socket.o

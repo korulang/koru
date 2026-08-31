@@ -1,1 +1,0 @@
-x86_64-elf-objcopy --keep-global-symbols=/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/ukconsole/ns16550/exportsyms.uk        /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libns16550.ld.o /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libns16550.o

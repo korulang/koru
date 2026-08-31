@@ -1,9 +1,0 @@
-# Auto generated file. DO NOT EDIT
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/xen/9pfront/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/xen/blkfront/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/xen/netfront/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/xen/xenbus/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/xen/xencons/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/xen/xenemgcons/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/xen/xengnttab/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/xen/xenheaders/Config.uk"

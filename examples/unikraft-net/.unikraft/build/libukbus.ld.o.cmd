@@ -1,1 +1,0 @@
-x86_64-elf-gcc -nostdlib -Wl,-r -Wl,-d -Wl,--build-id=none -no-pie -nostdinc    /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libukbus/bus.o /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libukbus/libinfo.libuklibid.o   -Wl,--start-group     -Wl,--end-group -o /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libukbus.ld.o

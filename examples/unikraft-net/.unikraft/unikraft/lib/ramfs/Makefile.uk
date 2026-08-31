@@ -1,4 +1,0 @@
-$(eval $(call addlib_s,libramfs,$(CONFIG_LIBRAMFS)))
-
-LIBRAMFS_SRCS-y += $(LIBRAMFS_BASE)/ramfs_vfsops.c
-LIBRAMFS_SRCS-y += $(LIBRAMFS_BASE)/ramfs_vnops.c

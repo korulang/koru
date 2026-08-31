@@ -1,3 +1,0 @@
-config LIBISRLIB
-    bool "isrlib: Interrupt-safe standard routines"
-    default n

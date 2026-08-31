@@ -1,4 +1,0 @@
-# Auto generated file. DO NOT EDIT
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/ukconsole/ns16550/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/ukconsole/pl011/Config.uk"
-source "/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/ukconsole/vgacons/Config.uk"

@@ -1,1 +1,0 @@
-x86_64-elf-objcopy --keep-global-symbols=/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/drivers/ukbus/platform/exportsyms.uk        /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libukbus_platform.ld.o /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/libukbus_platform.o

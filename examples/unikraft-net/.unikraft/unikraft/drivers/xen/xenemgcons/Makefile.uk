@@ -1,3 +1,0 @@
-$(eval $(call addlib_s,libxenemgcon,$(CONFIG_LIBXENEMGCONS)))
-
-LIBXENEMGCONS_SRCS-y          += $(LIBXENEMGCONS_BASE)/emg_console.c|isr

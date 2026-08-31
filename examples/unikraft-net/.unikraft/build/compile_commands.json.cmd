@@ -1,1 +1,0 @@
-/Users/larsde/src/koru/examples/unikraft-net/.unikraft/unikraft/support/scripts/mkcompiledb.py /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build > /Users/larsde/src/koru/examples/unikraft-net/.unikraft/build/compile_commands.json
