@@ -22,7 +22,7 @@ STORE="$(cd "${2:-$TARGET}" && pwd)"     # default: self-contained (store = repo
 HOOKS="$(git -C "$TARGET" rev-parse --absolute-git-dir)/hooks"
 mkdir -p "$HOOKS" "$STORE/concepts"
 [ -e "$STORE/concepts/.gitkeep" ] || : > "$STORE/concepts/.gitkeep"
-for h in commit-msg commit-msg.cjs post-commit post-commit.cjs; do
+for h in commit-msg commit-msg.cjs post-commit post-commit.cjs pre-commit; do
   cp "$HERE/$h" "$HOOKS/$h"; chmod +x "$HOOKS/$h"
 done
 # ONE POINTER MECHANISM, and only when it says something. This used to write a
@@ -42,7 +42,7 @@ if [ "$STORE" != "$TARGET" ]; then
   printf '{ "store": "%s" }\n' "$REL" > "$TARGET/.claude/membrane.json"
 fi
 
-echo "installed commit-msg + post-commit -> $HOOKS"
+echo "installed commit-msg + post-commit + pre-commit -> $HOOKS"
 if [ "$STORE" = "$TARGET" ]; then
   echo "store pointer                       -> none (in-repo corpus, the default)"
   echo "topology: self-contained (this repo is its own corpus)"

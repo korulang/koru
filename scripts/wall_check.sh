@@ -76,6 +76,7 @@ extract_checks() {
         grep -qF 'ORPHAN_EMIT (emitted, never declared)' scripts/registry_check.zig 2>/dev/null && echo "registry:ORPHAN_EMIT"
         grep -qF 'DEAD (declared, never emitted'         scripts/registry_check.zig 2>/dev/null && echo "registry:DEAD"
         grep -qF 'ROTTEN_PIN (pinned by a test'          scripts/registry_check.zig 2>/dev/null && echo "registry:ROTTEN_PIN"
+        grep -qF 'git-wall — tracked tree vs .gitignore' scripts/git_wall.sh 2>/dev/null && echo "git-wall:committed"
     } | sort -u
 }
 
@@ -85,7 +86,7 @@ trap 'rm -f "$LIVE" "$REG"' EXIT
 
 { extract_verdicts | sed 's/^/verdict:/'; extract_checks; } | sort -u > "$LIVE"
 
-grep -E '^\| *(verdict:|prose-check:|registry:)' "$MANIFEST" \
+grep -E '^\| *(verdict:|prose-check:|registry:|git-wall:)' "$MANIFEST" \
     | awk -F'|' '{gsub(/^ +| +$/,"",$2); print $2}' | sort -u > "$REG"
 
 echo "wall-check — the guard surface vs its register (scripts/WALLS.md)"

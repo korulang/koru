@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# git-wall — refuse commits that stage repo rot (.gitignore is the oracle).
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+exec bash "$ROOT/scripts/git_wall.sh" --staged

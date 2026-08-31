@@ -77,6 +77,17 @@ run_coherence_watchers() {
         echo -e "${RED}❌ wall-check fired — the guard surface drifted from its register${NC}"
     fi
 
+    # Git wall: the committed tree must not carry paths .gitignore refuses.
+    # The oracle is .gitignore via check-ignore --no-index; grandfather rows
+    # live in scripts/git_wall_allowlist.txt and shrink as cleanup replays
+    # purge them. Pre-commit runs the staged twin (hooks/pre-commit).
+    echo ""
+    echo -e "${BLUE}Running git-wall (committed tree vs .gitignore)...${NC}"
+    if ! bash "$SCRIPT_DIR/scripts/git_wall.sh" --committed; then
+        FAILED_TESTS="$FAILED_TESTS git-wall"
+        echo -e "${RED}❌ git-wall fired — tracked repo rot or an unregistered allowlist gap${NC}"
+    fi
+
     # Variant coverage: every emittable stdlib helper symbol must appear as
     # bare code in at least one test's output_emitted.zig. A variant no test
     # produces is invisible surface — it ships with zero executions behind it

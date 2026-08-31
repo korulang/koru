@@ -76,16 +76,19 @@ before the commit. A ceremony commit stages nothing unseen.
 
 ## Open
 
-Whether this deserves a mechanical check — a pre-commit that flags a staged
-lockfile whose manifest is neither staged nor tracked. It generalises past npm
-(`Cargo.lock`/`Cargo.toml`, `uv.lock`/`pyproject.toml`) and it is the orphan-pair
-tell written down. Unclear whether the class is frequent enough here to earn a
-gate, or whether that is one more cheap check accruing unearned trust.
+Nothing open on the gitignore gate — the question moved to allowlist hygiene:
+every grandfather row must name a purge target and a date it was measured, or
+it is a widening by another name.
 
-Same question for the ceremony direction — closed 2026-08-31: the wall was
-cheaper than a gate. The mechanism was the ceremony's own instruction
-(`git add -A`); it is removed — steps 2 and 4 stage by name, and the guard is
-account-for-every-status-line. A publish gate that refuses the
-generated-artifact names (`backend.zig`, `*.err`, `FAILURE`,
-`.cache-fingerprint`, `program.ast.json`) is still available if the
-instruction-level fix proves insufficient, but the mechanism is gone first.
+## Closed 2026-09-01 — the git wall
+
+The instruction-level fix was necessary but not sufficient: `.gitignore` is a
+bet on the repo's shape, and bets go stale whether the rule is too broad or too
+narrow. **`scripts/git_wall.sh` compiles the bet into the commit boundary.**
+The oracle is `.gitignore` itself via `git check-ignore --no-index` — no
+second pattern list that drifts. Pre-commit runs `--staged`; the suite runs
+`--committed`. Grandfather rows live in `scripts/git_wall_allowlist.txt` and
+**shrink** as repo-cleanup replays purge them; the wall never widens.
+
+Orphan lockfile pairs (lock without manifest in the same directory) are refused
+at the same gate — the npm tell from 2026-07-30, now mechanical.

@@ -87,6 +87,7 @@ stopping on any unexplained flip.
 | registry:ORPHAN_EMIT | scripts/registry_check.zig | no diagnostic code is emitted without being declared | |
 | registry:DEAD | scripts/registry_check.zig | no declared code goes unemitted without a reserved-list entry | |
 | registry:ROTTEN_PIN | scripts/registry_check.zig | no test pins a code that cannot resolve | PINNED reads `expected*` and `EXPECT` files only — a pin expressed inside a `post.sh` is invisible to the registry |
+| git-wall:committed | scripts/git_wall.sh | no tracked path matches .gitignore unless allowlisted (`scripts/git_wall_allowlist.txt`) | pre-commit `--staged` is the mirror for fresh junk; the allowlist must shrink, never widen without a purge |
 
 ## Anchored walls
 
@@ -113,3 +114,4 @@ stopping on any unexplained flip.
 | anchor:test-wall-690_099 | tests/regression/600_STDLIB/690_STORE/690_099_unknown_store_still_refuses_under_the_guard | EXISTS | a wall spelled as a test: goes red if the store-name guard loosens from prefix-anchored to substring |
 | anchor:test-wall-110_029 | tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_029_koru_alias_is_a_default | EXISTS | a wall spelled as a test: imports a module that cannot exist, so it asserts the alias rather than the author's machine |
 | anchor:test-wall-990-watchdog | tests/regression/990_WATCHDOG_SELFTEST | EXISTS | the timeout net's self-test cluster: a hang must be caught, and a catchable hang that finishes is itself a failure |
+| anchor:git-wall-precommit | hooks/pre-commit | git_wall.sh | pre-commit refuses staged paths .gitignore rejects and orphan lockfile pairs |
