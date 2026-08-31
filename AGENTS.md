@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 - `src/` is the metacircular compiler pipeline; wire passes in `build.zig` and trace dependencies.
-- `lib/`, `libs/` for runtime/backends; `koru_std/` is the standard library (`KORU_STDLIB`).
+- `koru_std/` is the standard library (`KORU_STDLIB`).
 - `tests/` holds `regression/`, `features/`, and `benchmarks/`; new repros go to `tests/regression/` (the cluster tree under it is the structure).
 - `examples/` has reference programs; `scripts/` hosts helpers; `zig-out/` holds build artifacts (ignore in git).
 - Docs: `README.md`, `CONTRIBUTING.md`, and regression-local `README.md`/`BUG.md` files.
