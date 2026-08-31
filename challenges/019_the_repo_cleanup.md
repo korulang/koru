@@ -70,8 +70,9 @@ snapshots, benchmark binaries, and 14 AST dumps, all purged in one session.
   committed.
 - **Reader-verification before any deletion.** `git grep` each class across
   the tracked tree. Nothing reads it and nothing builds it → purgable. The
-  build consumes it → bootstrap, stays (`koru_std/compiler.zig` is generated
-  but wired into `build.zig`). **Resolve symlinks before removing their
+  build consumes it → bootstrap, stays (`koru_std/build.zig` /
+  `koru_std/build_backend.zig` / `koru_std/compiler_env.zig` are generated
+  but wired into the stdlib backend graph). **Resolve symlinks before removing their
   targets**: `test-results/latest.json` was a symlink to a dated board, and a
   purge that deleted the board broke the snapshot the website reads — the
   tooling's "no snapshot" was the tell.

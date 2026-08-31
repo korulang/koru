@@ -215,9 +215,10 @@ tests/scratchpad/
 !tests/regression/**/*.c
 
 # Vestigial pre-refactor compiler-backend snapshot. The live compiler emits a
-# thin-driver backend.zig per-compile (with PROGRAM_AST split into
-# program_ast.zig); this monolith is not consumed by the build or suite.
+# thin-driver backend.zig per-compile; AST lives in program.ast.json at runtime.
 koru_std/backend.zig
+# Vestigial AST-in-Zig serializer dump (compiler_bootstrap.kz era) — not imported.
+koru_std/compiler.zig
 
 # Regression test generated files (ignored at any depth)
 tests/regression/**/backend
@@ -255,6 +256,7 @@ test-results/quarantine/
 
 # probe compile output (probes/*/p1_step_arm.k is the source)
 probes/**/backend.zig
+probes/**/build.zig
 probes/**/build_backend.zig
 probes/**/compiler_env.zig
 

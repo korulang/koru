@@ -102,3 +102,14 @@ path writes `program.ast.json` at compile time (`main.zig`, `koru_std/build.zig`
 The row survived because 019's bootstrap bullet named `compiler.zig`, not this
 file, and nobody measured the import graph before grandfathering. Purged;
 allowlist 3 → 2 rows.
+
+## Closed 2026-09-01 (second pass) — `koru_std/compiler.zig` and `probes/r1/build.zig`
+
+`koru_std/compiler.zig` was the bootstrap-named file 019 actually meant — but
+it was the *old* AST-in-Zig serializer (`compiler_bootstrap.kz`, 4,310 lines),
+not the live stdlib backend graph (`build.zig` / `program.ast.json`). Zero
+imports; root `build.zig` notes CompilerBootstrap removed. Deny-line added.
+
+`probes/r1/build.zig` was koruc output beside `p1_step_arm.k`; now denied by
+`probes/**/build.zig` like the other probe artifacts. Regenerates on compile.
+Allowlist 2 → 1 row (`.claude/.add/` only).
