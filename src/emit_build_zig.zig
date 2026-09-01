@@ -252,9 +252,11 @@ pub fn emitOutputBuildZig(
         \\            .optimize = __koru_optimize,
         \\        }),
         \\    });
-        \\    // koru_allocator() backs onto std.heap.c_allocator (real libc malloc/free,
-        \\    // not a debug allocator that munmaps on every free) — needs libc linked.
-        \\    __koru_exe.linkLibC();
+        \\    // Native binaries need libc for koru_allocator(); wasm freestanding reactors opt out in requires.
+        \\    switch (__koru_target.result.cpu.arch) {
+        \\        .wasm32, .wasm64 => {},
+        \\        else => __koru_exe.linkLibC(),
+        \\    }
         \\
         \\
     );

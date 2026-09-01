@@ -31,6 +31,15 @@ const flow_checker = @import("flow_checker");
 const FlowChecker = flow_checker.FlowChecker;
 const codegen_utils = @import("codegen_utils");
 const emitter_helpers = @import("emitter_helpers");
+
+/// Native-only link steps (OpenSSL, etc.) must not run on wasm reactor builds.
+fn buildRequireSkippedOnWasm(req: []const u8) bool {
+    const build_target = emitter_helpers.getBuildConfig("target") orelse return false;
+    if (std.mem.indexOf(u8, build_target, "wasm") == null) return false;
+    return std.mem.indexOf(u8, req, "linkSystemLibrary(\"ssl\")") != null or
+        std.mem.indexOf(u8, req, "linkSystemLibrary(\"crypto\")") != null or
+        std.mem.indexOf(u8, req, "openssl@3") != null;
+}
 const ccp = @import("ccp.zig");
 const import_pipeline = @import("import_pipeline.zig");
 
@@ -395,7 +404,14 @@ fn hasFileLineColPrefix(line: []const u8) bool {
 /// backend.zig so backend.zig stays byte-identical across user programs.
 /// CompilerEnv carries the user's CLI flags + env vars and is the only
 /// per-user-flag-driven content that the backend compilation unit needs.
-fn generateCompilerEnvCode(allocator: std.mem.Allocator, config: *const CompilerConfig) ![]const u8 {
+fn generateCompilerEnvCode(
+    allocator: std.mem.Allocator,
+    config: *const CompilerConfig,
+    entry_file: []const u8,
+    entry_dir: []const u8,
+    project_root: []const u8,
+    koru_home: []const u8,
+) ![]const u8 {
     var buffer = try std.ArrayList(u8).initCapacity(allocator, 4 * 1024);
     const writer = buffer.writer(allocator);
 
@@ -418,6 +434,15 @@ fn generateCompilerEnvCode(allocator: std.mem.Allocator, config: *const Compiler
     // library's are its exports, a program's are its flows.
     try writer.print("    /// True when built with `koruc lib` — exports are roots\n", .{});
     try writer.print("    pub const library: bool = {s};\n\n", .{if (config.library) "true" else "false"});
+
+    try writer.print("    /// Absolute entry file path (for post-transform import weld)\n", .{});
+    try writer.print("    pub const entry_file: []const u8 = \"{s}\";\n\n", .{entry_file});
+    try writer.print("    /// Entry directory (for module resolver {{ ENTRY }})\n", .{});
+    try writer.print("    pub const entry_dir: []const u8 = \"{s}\";\n\n", .{entry_dir});
+    try writer.print("    /// Project root (directory containing koru.json)\n", .{});
+    try writer.print("    pub const project_root: []const u8 = \"{s}\";\n\n", .{project_root});
+    try writer.print("    /// Koru toolchain home (${{REL_TO_ROOT}} substitution root)\n", .{});
+    try writer.print("    pub const koru_home: []const u8 = \"{s}\";\n\n", .{koru_home});
 
     try writer.writeAll("    /// All compiler flags (for runtime checking)\n");
     try writer.writeAll("    pub const flags = &[_][]const u8{\n");
@@ -1392,10 +1417,11 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\        const result = __koru_std.process.Child.run(.{
             \\            .allocator = allocator,
             \\            .argv = bo_argv[0..bo_argc],
+            \\            .max_output_bytes = 10 * 1024 * 1024,
             \\        }) catch |err| {
             \\            const stderr = __koru_std.fs.File.stderr();
             \\            var err_buf: [512]u8 = undefined;
-            \\            const err_msg = try __koru_std.fmt.bufPrint(&err_buf, "✗ Failed to spawn zig compiler: {}\n", .{err});
+            \\            const err_msg = try __koru_std.fmt.bufPrint(&err_buf, "✗ zig build failed: {}\n", .{err});
             \\            try stderr.writeAll(err_msg);
             \\            __koru_std.process.exit(1);
             \\        };
@@ -1486,10 +1512,11 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\        const result = __koru_std.process.Child.run(.{
             \\            .allocator = allocator,
             \\            .argv = exe_argv[0..exe_argc],
+            \\            .max_output_bytes = 10 * 1024 * 1024,
             \\        }) catch |err| {
             \\            const stderr = __koru_std.fs.File.stderr();
             \\            var err_buf: [512]u8 = undefined;
-            \\            const err_msg = try __koru_std.fmt.bufPrint(&err_buf, "✗ Failed to spawn zig compiler: {}\n", .{err});
+            \\            const err_msg = try __koru_std.fmt.bufPrint(&err_buf, "✗ zig build-exe failed: {}\n", .{err});
             \\            try stderr.writeAll(err_msg);
             \\            __koru_std.process.exit(1);
             \\        };
@@ -7450,7 +7477,7 @@ pub fn main() !void {
     // re-exports via `pub const CompilerEnv = @import("compiler_env").CompilerEnv`.
     const compiler_env_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "compiler_env.zig" });
     defer allocator.free(compiler_env_path);
-    const compiler_env_code = try generateCompilerEnvCode(compile_allocator, &compiler_config);
+    const compiler_env_code = try generateCompilerEnvCode(compile_allocator, &compiler_config, entry_file_absolute, input_dir_absolute, project_root, resolver.koru_home);
     const compiler_env_file = try std.fs.cwd().createFile(compiler_env_path, .{});
     defer compiler_env_file.close();
     try compiler_env_file.writeAll(compiler_env_code);
@@ -7653,6 +7680,7 @@ pub fn main() !void {
         defer output_build_reqs.deinit(allocator);
 
         for (build_requirements_raw) |req| {
+            if (buildRequireSkippedOnWasm(req)) continue;
             try output_build_reqs.append(allocator, .{
                 .module_name = "user",
                 .source_code = req,
@@ -7953,6 +7981,7 @@ pub fn main() !void {
                 .allocator = allocator,
                 .argv = &zig_build_args,
                 .cwd = output_dir_for_build,
+                .max_output_bytes = 10 * 1024 * 1024,
             });
             defer allocator.free(compile_result.stdout);
             defer allocator.free(compile_result.stderr);
