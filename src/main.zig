@@ -7500,7 +7500,16 @@ pub fn main() !void {
         // Also as build.zig for zig build convenience
         const build_user_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build.zig" });
         defer allocator.free(build_user_path);
-        try emit_build_zig.emitBuildZig(allocator, backend_build_reqs.items, build_user_path, koru_lib_path);
+        emit_build_zig.emitBuildZig(allocator, backend_build_reqs.items, build_user_path, koru_lib_path) catch |err| switch (err) {
+            error.RefuseOverwriteBuildZig => {
+                try printStderr(allocator, "error: refusing to overwrite {s}\n\n" ++
+                    "  koruc emits build.zig beside the input file. This path already holds a\n" ++
+                    "  Zig build script for something else (the compiler itself, or another project).\n" ++
+                    "  Compile from a subdirectory instead — see examples/greet/hello.k.\n", .{build_user_path});
+                std.process.exit(1);
+            },
+            else => return err,
+        };
         try printStdout(allocator, "✓ Generated {s} (for backend compilation)\n", .{build_user_path});
     }
 

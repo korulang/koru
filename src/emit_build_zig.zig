@@ -18,6 +18,30 @@ pub const BuildRequirement = struct {
     source_code: []const u8,
 };
 
+pub const RefuseOverwriteBuildZig = error{RefuseOverwriteBuildZig};
+
+/// Refuse to overwrite a non-koru-generated build.zig. Koru emits
+/// `pub fn build(__koru_b: *std.Build)`; compiler and hand-written Zig projects
+/// use `pub fn build(b: *std.Build)` and paths like src/ast.zig.
+pub fn guardNonKoruBuildZig(output_path: []const u8) RefuseOverwriteBuildZig!void {
+    if (!std.mem.eql(u8, std.fs.path.basename(output_path), "build.zig")) return;
+
+    const existing = std.fs.cwd().openFile(output_path, .{}) catch return;
+    defer existing.close();
+
+    var head_buf: [8192]u8 = undefined;
+    const head = existing.read(&head_buf) catch return;
+    const content = head_buf[0..head];
+
+    if (std.mem.indexOf(u8, content, "__koru_b") != null) return;
+    if (std.mem.indexOf(u8, content, "pub fn build(b: *std.Build)") != null) {
+        return error.RefuseOverwriteBuildZig;
+    }
+    if (std.mem.indexOf(u8, content, "src/ast.zig") != null) {
+        return error.RefuseOverwriteBuildZig;
+    }
+}
+
 /// Generate a build.zig file from collected requirements
 ///
 /// Parameters:
@@ -161,6 +185,8 @@ pub fn emitBuildZig(
 
     log.debug("📦 Generated {d} bytes of build.zig\n", .{final_content.len});
     log.debug("📦 Writing to: {s}\n", .{output_path});
+
+    try guardNonKoruBuildZig(output_path);
 
     // Write to file
     const file = try std.fs.cwd().createFile(output_path, .{});
@@ -315,6 +341,26 @@ test "sanitizeModuleName basic" {
     const expected = "foo_bar_baz_qux";
 
     try std.testing.expectEqualSlices(u8, expected, result[0..input.len]);
+}
+
+test "guardNonKoruBuildZig refuses compiler-shaped build.zig" {
+    const testing = std.testing;
+
+    const test_dir = "test_build_guard";
+    std.fs.cwd().makeDir(test_dir) catch {};
+    defer std.fs.cwd().deleteTree(test_dir) catch {};
+
+    const compiler_build =
+        \\const std = @import("std");
+        \\
+        \\pub fn build(b: *std.Build) void {
+        \\    _ = b.path("src/ast.zig");
+        \\}
+    ;
+    const path = test_dir ++ "/build.zig";
+    try std.fs.cwd().writeFile(path, compiler_build);
+
+    try testing.expectError(error.RefuseOverwriteBuildZig, guardNonKoruBuildZig(path));
 }
 
 test "emitBuildZig basic" {
