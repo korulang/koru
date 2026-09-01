@@ -71,16 +71,18 @@ design night):
   resolve; comparison-RHS is a value position. Rhymes with `~[build(macos)]`
   variant keys, where the parenthesized word is already a value.
 
-**Scope limit discovered 2026-07-27, not yet resolved.** The claim above that
-the import gate "MUST evaluate" its entries assumed the gate evaluates the same
-way everywhere. It does not — only the ENTRY file's gates see the build's
-provider chain, and a gate one import deeper resolves everything to absent.
-`310_113` is the red pin carrying the contradiction, and `310_104` is its green
-entry-file twin; the two differ only in which file holds the annotation. So the
-belief stands as the RULING and fails as a description of the implementation.
-Which way it resolves — thread the flags down, or declare nested gates
-deliberately flag-blind — is unruled, and the pin holds the question open
-rather than a doc sentence.
+**Scope limit discovered 2026-07-27 — closed 2026-09-01 (bettermaker pass).** The
+claim above that the import gate "MUST evaluate" its entries assumed the gate
+evaluates the same way everywhere. It did not — only the ENTRY file's gates saw
+the build's provider chain, and a gate one import deeper resolved everything to
+absent. `310_113` was the red pin carrying the contradiction; `310_104` is its
+green entry-file twin. **Fix:** `compiler_flags` now thread through
+`loadFileWithCompanions` and nested `Parser.init` so gated imports one module
+down see the same provider chain as the entry file. Pin: `310_113` (gate),
+`513_profiler_multiline_conditional_import` (multiline `[profile]import` +
+Chrome trace — inline form was `510`; tap-only gate was `310_104`). Oracle:
+`./scripts/bettermaker_profiler_oracle.sh` (7 controls, `--parallel 1` — shared
+`/tmp/koru_profile.json`).
 
 Still open, deliberately unpinned: brackets vs parens for entry
 parameterization (brackets rhyme with the variant/selection language, parens

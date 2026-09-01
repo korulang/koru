@@ -1,0 +1,2 @@
+multiline profile ok
+multiline profiler run complete

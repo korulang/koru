@@ -11066,8 +11066,10 @@ var produce_tail: ?[]const u8 = null;
         };
         defer self.allocator.free(source);
 
-        // Parse the imported file
-        var import_parser = try Parser.init(self.allocator, source, file_path, &[_][]const u8{}, self.resolver);
+        // Parse the imported file — inherit compiler_flags so nested gated
+        // imports (e.g. `[profile]import` one module down) see the same
+        // provider chain as the entry file (310_113).
+        var import_parser = try Parser.init(self.allocator, source, file_path, self.compiler_flags, self.resolver);
         defer import_parser.deinit();
 
         // Parse import - propagate errors with context

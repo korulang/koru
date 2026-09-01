@@ -9,9 +9,11 @@ cd "$ROOT"
 CONTROLS=(
     512_profiler_store_query
     511_profiler_plural_store
+    513_profiler_multiline_conditional_import
     510_profiler_end_to_end
     420_003_profiler_loop
     690_121_twenty_six_component_stores
+    310_113_gated_import_inside_imported_module
 )
 
 RUN_SCALE=false
@@ -22,13 +24,14 @@ usage() {
     cat <<'EOF'
 Usage: ./scripts/bettermaker_profiler_oracle.sh [--scale] [--probe path.kz]
 
-  default     Run profiler regression control set (5 tests)
+  default     Run profiler regression control set (7 tests)
   --scale     Also compile/run examples/profiler_scale.kz and check trace stats
   --probe P   Compile P with --profile, build in /tmp, run output binary once
 
 Gates:
   - no live regression/zig build (pgrep)
-  - regression controls pass (Running N tests == N)
+  - regression controls pass (Running N tests == N, or RESULTS: N/N passed)
+  - profiler controls run sequentially (--parallel 1) — shared /tmp/koru_profile.json
   - scale: >= 50 transition bars, 0 write-* self-obs, JSON closed
 EOF
 }
@@ -57,7 +60,7 @@ if [[ ! -x "$KORUC" ]]; then
 fi
 
 echo "== profiler oracle: regression controls (${#CONTROLS[@]} tests) =="
-OUT="$("$ROOT/run_regression.sh" "${CONTROLS[@]}" 2>&1)" || {
+OUT="$("$ROOT/run_regression.sh" --parallel 1 "${CONTROLS[@]}" 2>&1)" || {
     echo "$OUT"
     echo "FAIL: regression controls" >&2
     exit 1
@@ -65,6 +68,9 @@ OUT="$("$ROOT/run_regression.sh" "${CONTROLS[@]}" 2>&1)" || {
 echo "$OUT" | tail -8
 
 RUNNING=$(echo "$OUT" | sed -n 's/^Running \([0-9]*\) tests\.\.\./\1/p' | tail -1)
+if [[ -z "${RUNNING:-}" ]]; then
+    RUNNING=$(echo "$OUT" | sed -n 's/^RESULTS: \([0-9]*\)\/[0-9]* passed/\1/p' | tail -1)
+fi
 if [[ "${RUNNING:-0}" != "${#CONTROLS[@]}" ]]; then
     echo "FAIL: asked ${#CONTROLS[@]} tests, harness reported Running ${RUNNING:-?} tests" >&2
     exit 1

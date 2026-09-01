@@ -3,4 +3,4 @@ kind: inferred
 shape: categorical
 face: in
 membrane: false
-note: auto-registered orphan — declared before it was defined; refine me
+note: comptime transform + tap observer interaction broke (KORU161); void-branch continuations are not semantic store arms

@@ -238,7 +238,7 @@ taps, `--profile`, store transforms), read **`.claude/skills/bettermaker/koru-to
 and run the mechanical oracle:
 
 ```bash
-./scripts/bettermaker_profiler_oracle.sh           # 4-test control set
+./scripts/bettermaker_profiler_oracle.sh           # 7-test control set
 ./scripts/bettermaker_profiler_oracle.sh --scale   # + 10×10 loop trace probe
 ```
 

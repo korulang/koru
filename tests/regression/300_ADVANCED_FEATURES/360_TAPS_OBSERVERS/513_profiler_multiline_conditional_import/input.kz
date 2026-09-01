@@ -1,0 +1,18 @@
+// Pins profiler + multiline conditional import gate: a vertical annotation
+// block with `- profile` must keep std/profiler when --profile is passed,
+// and runtime profiling must emit a valid Chrome trace (510 pins inline form;
+// 310_104 pins the gate with a tap module but not std/profiler trace).
+~import std/io
+~[
+- profile
+Tracing is opt-in; std/profiler rides along only when asked for.
+]import std/profiler
+
+~tor ping {}
+
+~proc ping|zig {
+    const std = @import("std");
+    std.debug.print("multiline profile ok\n", .{});
+}
+
+~ping() |> std/io:print.ln("multiline profiler run complete")

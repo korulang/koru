@@ -26,9 +26,11 @@ Read `koru-toolchain` skill first for compile/run hygiene.
 
 Exit 0 = gate passed. Non-zero prints which gate failed.
 
+Profiler controls run with `--parallel 1` — every pin shares `/tmp/koru_profile.json`.
+
 ## Default controls
 
-`512_profiler_store_query` · `511_profiler_plural_store` · `510_profiler_end_to_end` · `420_003_profiler_loop` · `690_121_twenty_six_component_stores`
+`512_profiler_store_query` · `511_profiler_plural_store` · `513_profiler_multiline_conditional_import` · `510_profiler_end_to_end` · `420_003_profiler_loop` · `690_121_twenty_six_component_stores` · `310_113_gated_import_inside_imported_module`
 
 Always verify harness line: `Running N tests` equals the number of filters passed.
 

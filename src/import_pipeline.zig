@@ -348,7 +348,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
                 // call the file-import path makes. It also owns the arena dupe of
                 // the path the parser hangs every SourceLocation.file off, which
                 // matters because the `files` slice is freed when this returns.
-                const loaded = try loadFileWithCompanions(alloc, parse_alloc, file_path);
+                const loaded = try loadFileWithCompanions(alloc, parse_alloc, file_path, res.compiler_flags);
 
                 try submodules.append(alloc, ImportedModule{
                     .logical_name = try alloc.dupe(u8, submod_name),
@@ -415,7 +415,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
 
         // index file exists - parse it and use its content
         log.debug("  Loading index file from directory: {s}\n", .{index_path});
-        const index_data = try loadFileWithCompanions(allocator, parse_allocator, index_path);
+        const index_data = try loadFileWithCompanions(allocator, parse_allocator, index_path, resolver.compiler_flags);
 
         return ImportedModule{
             .logical_name = module_name,
@@ -429,7 +429,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
         // ONLY file
         log.debug("  Importing file only: {s}\n", .{import_decl.path});
 
-        const merged = try loadFileWithCompanions(allocator, parse_allocator, resolved.file_path.?);
+        const merged = try loadFileWithCompanions(allocator, parse_allocator, resolved.file_path.?, resolver.compiler_flags);
 
         return ImportedModule{
             .logical_name = module_name,
@@ -463,9 +463,10 @@ fn loadFileWithCompanions(
     allocator: std.mem.Allocator,
     parse_allocator: std.mem.Allocator,
     primary_path: []const u8,
+    compiler_flags: []const []const u8,
 ) !LoadedFile {
     const loadFile = struct {
-        fn load(alloc: std.mem.Allocator, parse_alloc: std.mem.Allocator, file_path: []const u8) !LoadedFile {
+        fn load(alloc: std.mem.Allocator, parse_alloc: std.mem.Allocator, file_path: []const u8, flags: []const []const u8) !LoadedFile {
             const file = try std.fs.cwd().openFile(file_path, .{});
             defer file.close();
 
@@ -476,7 +477,7 @@ fn loadFileWithCompanions(
             const file_path_owned = try parse_alloc.dupe(u8, file_path);
 
             const source = try file.readToEndAlloc(parse_alloc, 1024 * 1024);
-            var parser = try Parser.init(parse_alloc, source, file_path_owned, &[_][]const u8{}, null);
+            var parser = try Parser.init(parse_alloc, source, file_path_owned, flags, null);
             parser.fail_fast = false;
             defer parser.deinit();
 
@@ -511,7 +512,7 @@ fn loadFileWithCompanions(
         allocator.free(companions);
     }
 
-    const primary = try loadFile(allocator, parse_allocator, primary_path);
+    const primary = try loadFile(allocator, parse_allocator, primary_path, compiler_flags);
 
     if (companions.len == 0) {
         return primary;
@@ -531,7 +532,7 @@ fn loadFileWithCompanions(
 
     for (companions) |companion_path| {
         log.debug("    Companion: {s}\n", .{companion_path});
-        const companion = try loadFile(allocator, parse_allocator, companion_path);
+        const companion = try loadFile(allocator, parse_allocator, companion_path, compiler_flags);
         try merged_items.appendSlice(parse_allocator, companion.source_file.items);
         try merged_annotations.appendSlice(parse_allocator, companion.source_file.module_annotations);
         try merged_events.appendSlice(allocator, companion.public_events);
