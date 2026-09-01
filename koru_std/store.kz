@@ -2323,6 +2323,46 @@ fn storeLowerText(
             }
             break :blk_pmr false;
         };
+        const TapPeel = struct {
+            fn voidBranch(conts: []const ast.Continuation) ?*const ast.Continuation {
+                for (conts) |*k| {
+                    if (std.mem.trim(u8, k.branch, " ").len == 0) return k;
+                }
+                if (conts.len == 1) return &conts[0];
+                return null;
+            }
+            fn findArm(conts: []const ast.Continuation, arm: []const u8) ?*const ast.Continuation {
+                var found: ?*const ast.Continuation = null;
+                for (conts) |*c| {
+                    const bname = std.mem.trim(u8, c.branch, " ");
+                    if (bname.len == 0) continue;
+                    if (!std.mem.eql(u8, bname, arm)) continue;
+                    if (found != null) return null;
+                    found = c;
+                }
+                return found;
+            }
+            fn peel(c: *const ast.Continuation) ?*const ast.Continuation {
+                var cur: *const ast.Continuation = c;
+                var depth: usize = 0;
+                while (depth < 12) : (depth += 1) {
+                    const node = cur.node orelse return null;
+                    switch (node) {
+                        .label_with_invocation => return cur,
+                        .invocation => |inv| {
+                            if (!inv.inserted_by_tap) return cur;
+                            if (cur.continuations.len == 0) return null;
+                            cur = voidBranch(cur.continuations) orelse return null;
+                        },
+                        else => {
+                            if (cur.continuations.len == 0) return null;
+                            cur = voidBranch(cur.continuations) orelse return null;
+                        },
+                    }
+                }
+                return null;
+            }
+        };
         var qsites = std.ArrayList(QuerySite).initCapacity(allocator, 4) catch unreachable;
         for (flatItems(allocator, program.items)) |pi| {
             if (pi.* != .flow) continue;
@@ -2342,13 +2382,9 @@ fn storeLowerText(
             if (q_is_preorder and !is_tree) {
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:preorder({s}): preorder needs a [tree] store - '{s}' has no synthesized parent column (declare it as [tree]std/store:new({s}) {{ ... }})", .{ store_name, store_name, store_name }) } };
             }
-            if (qf.body.continuations.len != 1) {
+            const qc = TapPeel.findArm(qf.body.continuations, q_arm) orelse {
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): exactly one `! {s} {{ ... }}` branch per site this rung", .{ q_verb, store_name, q_arm }) } };
-            }
-            const qc = &qf.body.continuations[0];
-            if (!std.mem.eql(u8, std.mem.trim(u8, qc.branch, " "), q_arm)) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, qf.location, qf.module, "std/store:{s}({s}): branch '{s}' - the row branch is spelled `! {s} <row>`", .{ q_verb, store_name, qc.branch, q_arm }) } };
-            }
+            };
             // The row branch is an EFFECT arm the site FIRES (`! query`), not an
             // outcome it returns — the continuation marker must be `!`, never `|`.
             // A `|` here is the marker/kind mismatch (400_172): today it is
@@ -2418,7 +2454,8 @@ fn storeLowerText(
             // load, a stack slot and an event input per row, paid whether the
             // body names it or not. Under-projecting fails LOUDLY as an
             // unknown identifier in emitted Zig, which is the safe direction.
-            const body_clone = ast_functional.cloneContinuation(allocator, qc) catch unreachable;
+            const peel_src = TapPeel.peel(qc) orelse qc;
+            const body_clone = ast_functional.cloneContinuation(allocator, peel_src) catch unreachable;
             // [name]/[depends_on] off the attach flow (bare idents canonical).
             const ann_parser = @import("annotation_parser");
             var q_rule_name: ?[]const u8 = null;
@@ -4702,11 +4739,16 @@ fn storeLowerText(
             const body_node = qs.body.node orelse {
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}): the query branch needs a body (`|> ...`)", .{store_name}) } };
             };
-            if (body_node != .invocation) {
+            if (body_node != .invocation and body_node != .label_with_invocation) {
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:rule({s}): the query body must start with an invocation this rung", .{store_name}) } };
             }
+            const rule_inv = switch (body_node) {
+                .invocation => body_node.invocation,
+                .label_with_invocation => body_node.label_with_invocation.invocation,
+                else => unreachable,
+            };
             appended_items.append(allocator, ast.Item{ .flow = ast.Flow{
-                .body = ast.rootSite(body_node.invocation, qs.body.continuations, flow.location),
+                .body = ast.rootSite(rule_inv, qs.body.continuations, flow.location),
                 .pre_label = null,
                 .impl_of = H.mkPathH(allocator, home_ns, qbody_name),
                 .super_shape = null,
@@ -4716,7 +4758,7 @@ fn storeLowerText(
                 // flow's root, and the impl emitter reads the FLOW's
                 // inline_body — promote it, or the emitter falls back to
                 // calling a `koru_control.if_event` that is never emitted.
-                .inline_body = body_node.invocation.inline_body,
+                .inline_body = rule_inv.inline_body,
                 .preamble_code = null,
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -8744,13 +8786,49 @@ fn storeLowerText(
     // in a `stored` target alike. Which columns this site touches is DERIVED
     // from those references, not listed by the author: the projection block
     // said the same thing twice and let the two halves disagree.
-    if (flow.body.continuations.len != 1) {
+    const TapPeel = struct {
+        fn voidBranch(conts: []const ast.Continuation) ?*const ast.Continuation {
+            for (conts) |*k| {
+                if (std.mem.trim(u8, k.branch, " ").len == 0) return k;
+            }
+            if (conts.len == 1) return &conts[0];
+            return null;
+        }
+        fn findArm(conts: []const ast.Continuation, arm: []const u8) ?*const ast.Continuation {
+            var found: ?*const ast.Continuation = null;
+            for (conts) |*c| {
+                const bname = std.mem.trim(u8, c.branch, " ");
+                if (bname.len == 0) continue;
+                if (!std.mem.eql(u8, bname, arm)) continue;
+                if (found != null) return null;
+                found = c;
+            }
+            return found;
+        }
+        fn peel(c: *const ast.Continuation) ?*const ast.Continuation {
+            var cur: *const ast.Continuation = c;
+            var depth: usize = 0;
+            while (depth < 12) : (depth += 1) {
+                const node = cur.node orelse return null;
+                switch (node) {
+                    .label_with_invocation => return cur,
+                    .invocation => |inv| {
+                        if (!inv.inserted_by_tap) return cur;
+                        if (cur.continuations.len == 0) return null;
+                        cur = voidBranch(cur.continuations) orelse return null;
+                    },
+                    else => {
+                        if (cur.continuations.len == 0) return null;
+                        cur = voidBranch(cur.continuations) orelse return null;
+                    },
+                }
+            }
+            return null;
+        }
+    };
+    const sc = TapPeel.findArm(flow.body.continuations, "query") orelse {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): exactly one `! query <row>` branch per site", .{store_name}) } };
-    }
-    const sc = &flow.body.continuations[0];
-    if (!std.mem.eql(u8, std.mem.trim(u8, sc.branch, " "), "query")) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the row branch is spelled `! query <row>`", .{store_name}) } };
-    }
+    };
     // A destructure block on the query arm is a REQUEST. Each entry carries a
     // PREFIX annotation naming what the visit should synthesize for it, and the
     // transform provides exactly what is asked for and nothing more:
@@ -8827,13 +8905,19 @@ fn storeLowerText(
     const srow_name = std.fmt.allocPrint(allocator, "__koru_sdix_{s}_L{d}", .{ bind_key, sc.location.line }) catch unreachable;
 
     // --- the body: transplanted into a sweepbody impl flow (like query's qbody) ---
-    const body_clone = ast_functional.cloneContinuation(allocator, sc) catch unreachable;
+    const peel_src = TapPeel.peel(sc) orelse sc;
+    const body_clone = ast_functional.cloneContinuation(allocator, peel_src) catch unreachable;
     const body_node = body_clone.node orelse {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the sweep branch needs a body (`|> ...`)", .{store_name}) } };
     };
-    if (body_node != .invocation) {
+    if (body_node != .invocation and body_node != .label_with_invocation) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the sweep body must start with an invocation this rung", .{store_name}) } };
     }
+    const sweep_inv = switch (body_node) {
+        .invocation => body_node.invocation,
+        .label_with_invocation => body_node.label_with_invocation.invocation,
+        else => unreachable,
+    };
 
     // A sweep arm READS and WRITES the row it is standing on (690_083), and both
     // are spelled `<row>.<field>`. Three lowered forms, chosen by position:
@@ -9611,7 +9695,7 @@ fn storeLowerText(
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } }) catch unreachable;
     appended.append(allocator, ast.Item{ .flow = ast.Flow{
-        .body = ast.rootSite(body_node.invocation, body_clone.continuations, flow.location),
+        .body = ast.rootSite(sweep_inv, body_clone.continuations, flow.location),
         .pre_label = null,
         .impl_of = H.mkPathH(allocator, home_ns, sbody_name),
         .super_shape = null,

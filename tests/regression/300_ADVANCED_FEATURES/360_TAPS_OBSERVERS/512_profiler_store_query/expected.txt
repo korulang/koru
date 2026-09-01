@@ -1,0 +1,4 @@
+v=10
+v=20
+query profile ok
+profiled query run complete

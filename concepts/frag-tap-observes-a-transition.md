@@ -156,3 +156,10 @@ transform read the void branch as interceptor branch `''` and refuse with
 KORU161. Fix: any consumer scanning `flow.body.continuations` for authored
 semantic arms must skip void-branch tap instrumentation. Pin:
 `511_profiler_plural_store`. Oracle: `./scripts/bettermaker_profiler_oracle.sh`.
+
+When the tap transform runs **before** a store effect transform (`store:query`,
+`store:rule`), the effect arm's body node becomes metatype_binding and/or
+tap `inserted_by_tap` invocations on void branches — not an invocation the
+sweep transplant can read directly. Fix: peel through void-branch tap wrappers
+to the author's step; skip void-branch siblings when locating the `! query` /
+`! row` arm. Pin: `512_profiler_store_query`.

@@ -7,6 +7,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 CONTROLS=(
+    512_profiler_store_query
     511_profiler_plural_store
     510_profiler_end_to_end
     420_003_profiler_loop
@@ -21,7 +22,7 @@ usage() {
     cat <<'EOF'
 Usage: ./scripts/bettermaker_profiler_oracle.sh [--scale] [--probe path.kz]
 
-  default     Run profiler regression control set (4 tests)
+  default     Run profiler regression control set (5 tests)
   --scale     Also compile/run examples/profiler_scale.kz and check trace stats
   --probe P   Compile P with --profile, build in /tmp, run output binary once
 
