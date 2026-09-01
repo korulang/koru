@@ -1,6 +1,10 @@
 ---
 name: bettermaker
-description: Close the last mile on ONE thing and prove it from where it is actually used. A replayable improvement pass — a diffuse nudge: pick a single path a person or agent really traverses, use it exactly as they do, and do the OBVIOUS thing that makes it better. When the obvious defect is there, close it; when it isn't, envision what better looks like and close one increment toward that. When even that yields nothing concrete, go to the frame shelf — a pre-written bettermaker increment — and close one there. Every register runs on a CONFIDENCE GATE: an oracle (a diff, a suite delta, a reference match), never a feel — so a run can ship unattended, and only a truly-aesthetic yield stops it for the human's taste-gate. Never invent damage. Use when the user says "bettermaker", "make this better", "another pass", or "close the last mile"; before declaring that anything works; whenever a fix was verified one layer below where it failed; after building something that has never been used from the outside; and whenever a pass looks like it has nothing left to fix.
+description: >-
+  Close the last mile on ONE thing and prove it from where it is actually used.
+  Replayable pass: one real user path, one increment — fix the obvious defect,
+  envision better, or close a frame-shelf mile. Oracle-gated, never invent damage.
+  Use for /bettermaker, "make this better", "another pass", or "close the last mile".
 disable-model-invocation: true
 ---
 
