@@ -29,7 +29,7 @@ Requires Zig 0.15.1 or later.
 - [Website](https://korulang.org)
 - [X](https://x.com/korulang)
 - [Learn](https://korulang.org/learn)
-- [Status](https://korulang.org/status)
+- [Status](https://korulang.org/status) — or verify the snapshot locally: `./run_regression.sh --status`
 - [Discord](https://discord.gg/tYWvdrda8h)
 - [Examples](https://www.github.com/korulang/koru-examples)
 - [Benchmarks](https://www.github.com/korulang/koru-benchmarks)
