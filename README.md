@@ -12,11 +12,14 @@ greet -> "Hello, " ++ name ++ "!"
 greet (name: "World"): msg |> std/io:print.ln(msg)
 ```
 
-Save as `hello.k` and compile from this directory (needs the repo's `koru.json` for `std/`):
+The same program lives at `examples/greet/hello.k` (compile from the repo root —
+**not** the root itself: `koruc` emits `build.zig` beside the input, and that
+would overwrite this repo's compiler build):
 
 ```bash
 zig build
-./zig-out/bin/koruc hello.k
+./zig-out/bin/koruc examples/greet/hello.k
+./examples/greet/a.out
 ```
 
 Requires Zig 0.15.1 or later.
