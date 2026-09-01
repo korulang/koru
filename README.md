@@ -5,20 +5,21 @@ Koru is an event continuation/effect language with backends for Zig and JavaScri
 ```koru
 import std/io
 
-event greet { name: string } -> string
+tor greet { name: string } -> string
 
 greet -> "Hello, " ++ name ++ "!"
 
-greet ("World"): msg |> std/io:print.ln(msg)
+greet (name: "World"): msg |> std/io:print.ln(msg)
 ```
 
-## Building
-
-Requires Zig 0.15.1 or later.
+Save as `hello.k` and compile from this directory (needs the repo's `koru.json` for `std/`):
 
 ```bash
 zig build
+./zig-out/bin/koruc hello.k
 ```
+
+Requires Zig 0.15.1 or later.
 
 ## Links
 
