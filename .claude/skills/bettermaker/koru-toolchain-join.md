@@ -26,7 +26,9 @@ Read `koru-toolchain` skill first for compile/run hygiene.
 
 Exit 0 = gate passed. Non-zero prints which gate failed.
 
-Profiler controls run with `--parallel 1` — every pin shares `/tmp/koru_profile.json`.
+Profiler post.sh reads `koru_profile.snapshot.json` in the test dir — the harness
+copies `/tmp/koru_profile.json` immediately after `./output` so parallel runs
+do not race on the global path.
 
 ## Default controls
 

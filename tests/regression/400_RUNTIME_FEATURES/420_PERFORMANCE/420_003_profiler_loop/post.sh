@@ -2,7 +2,11 @@
 # Validates the Chrome trace under nested label loops: the program's loop
 # transitions are captured, the JSON is closed, and the profiler is invisible
 # to itself.
-PROFILE_FILE="/tmp/koru_profile.json"
+if [ -f "koru_profile.snapshot.json" ]; then
+    PROFILE_FILE="koru_profile.snapshot.json"
+else
+    PROFILE_FILE="/tmp/koru_profile.json"
+fi
 
 if [ ! -f "$PROFILE_FILE" ]; then
     echo "ERROR: no trace at $PROFILE_FILE"

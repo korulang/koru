@@ -1500,6 +1500,12 @@ EOF
         fi
         RUN_EXIT=$?
 
+        # Profiler pins all write /tmp/koru_profile.json; parallel workers race on
+        # it before post.sh runs. Snapshot immediately into the test dir.
+        if [ -f "$test_dir/post.sh" ] && [ -f /tmp/koru_profile.json ]; then
+            cp /tmp/koru_profile.json "$test_dir/koru_profile.snapshot.json"
+        fi
+
         # A trap names the message it dies with. Without that it pins only
         # "something went wrong" and stays green through a different death —
         # the bare-MUST_ERROR pathology, one organ over. Judged before the exit

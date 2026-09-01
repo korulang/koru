@@ -32,7 +32,7 @@ Usage: ./scripts/bettermaker_profiler_oracle.sh [--scale] [--probe path.kz]
 Gates:
   - no live regression/zig build (pgrep)
   - regression controls pass (Running N tests == N, or RESULTS: N/N passed)
-  - profiler controls run sequentially (--parallel 1) — shared /tmp/koru_profile.json
+  - profiler post.sh reads koru_profile.snapshot.json (harness copies after run)
   - scale: >= 50 transition bars, 0 write-* self-obs, JSON closed
 EOF
 }
@@ -61,7 +61,7 @@ if [[ ! -x "$KORUC" ]]; then
 fi
 
 echo "== profiler oracle: regression controls (${#CONTROLS[@]} tests) =="
-OUT="$("$ROOT/run_regression.sh" --parallel 1 "${CONTROLS[@]}" 2>&1)" || {
+OUT="$("$ROOT/run_regression.sh" "${CONTROLS[@]}" 2>&1)" || {
     echo "$OUT"
     echo "FAIL: regression controls" >&2
     exit 1

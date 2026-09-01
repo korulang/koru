@@ -1,6 +1,10 @@
 #!/bin/bash
 # Validates Chrome trace: user tap + profiler both live.
-PROFILE_FILE="/tmp/koru_profile.json"
+if [ -f "koru_profile.snapshot.json" ]; then
+    PROFILE_FILE="koru_profile.snapshot.json"
+else
+    PROFILE_FILE="/tmp/koru_profile.json"
+fi
 
 if [ ! -f "$PROFILE_FILE" ]; then
     echo "ERROR: no trace at $PROFILE_FILE"

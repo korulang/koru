@@ -2,7 +2,11 @@
 # Validates the Chrome Tracing trace the profiler emitted: the program's real
 # transitions are present, the JSON is closed, and the profiler is invisible
 # to itself (its write-* events are inserted by [opaque] taps).
-PROFILE_FILE="/tmp/koru_profile.json"
+if [ -f "koru_profile.snapshot.json" ]; then
+    PROFILE_FILE="koru_profile.snapshot.json"
+else
+    PROFILE_FILE="/tmp/koru_profile.json"
+fi
 
 if [ ! -f "$PROFILE_FILE" ]; then
     echo "ERROR: no trace at $PROFILE_FILE"
