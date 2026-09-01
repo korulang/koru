@@ -1924,6 +1924,8 @@ fn storeLowerText(
         };
         for (flow.body.continuations) |*ic| {
             const bname = std.mem.trim(u8, ic.branch, " ");
+            // Profiler taps splice void-branch continuations here — not store interceptors.
+            if (bname.len == 0) continue;
             if (ic.condition != null) {
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): guarded interceptors are a later slice - interceptors are the store's unconditional contract", .{store_name}) } };
             }
@@ -5669,6 +5671,7 @@ fn storeLowerText(
     var updated_iceptors = std.ArrayList(ast.Continuation).initCapacity(allocator, 2) catch unreachable;
     for (flow.body.continuations) |*ic| {
         const bname = std.mem.trim(u8, ic.branch, " ");
+        if (bname.len == 0) continue;
         if (ic.condition != null) {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): guarded interceptors are a later slice - interceptors are the store's unconditional contract", .{store_name}) } };
         }
@@ -8425,6 +8428,7 @@ fn storeLowerText(
     if (site_is_head) {
         for (flow.body.continuations) |*c| {
             const bname = std.mem.trim(u8, c.branch, " ");
+            if (bname.len == 0) continue;
             if (std.mem.eql(u8, bname, "row")) {
                 has_row_cont = true;
             } else if (std.mem.eql(u8, bname, "full")) {

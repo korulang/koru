@@ -1,0 +1,2 @@
+store profile ok
+profiled store run complete

@@ -143,3 +143,16 @@ the tree.
 Open edge from the earlier section stands: unbound payload returns still spell
 the void sentinel; type-vs-binding-scope still disagree when the payload is
 discarded.
+
+## Void-branch tap continuations are not semantic arms (2026-09-01)
+
+Universal profiler taps splice **void-branch** continuations (`branch == ""`)
+onto terminal invocations — `std/store:new`, `std/store:insert`, bare completes.
+Those continuations carry Profile/write-event instrumentation; they are **not**
+store `! inserted` interceptors or insert `| row` arms.
+
+Measured: `[profile]import std/profiler` + plural `store:new` made the store
+transform read the void branch as interceptor branch `''` and refuse with
+KORU161. Fix: any consumer scanning `flow.body.continuations` for authored
+semantic arms must skip void-branch tap instrumentation. Pin:
+`511_profiler_plural_store`. Oracle: `./scripts/bettermaker_profiler_oracle.sh`.

@@ -236,6 +236,19 @@ Each of these has actually happened; treat any of them as a stop:
 Never manufacture a green. A pass that reports success it did not verify is worse
 than no pass, because it certifies.
 
+## Koru registers (repo-specific playbooks)
+
+When the bed is **koru** and the path is compiler/stdlib observation (profiler,
+taps, `--profile`, store transforms), read **`.claude/skills/bettermaker/koru-toolchain-join.md`**
+and run the mechanical oracle:
+
+```bash
+./scripts/bettermaker_profiler_oracle.sh           # 4-test control set
+./scripts/bettermaker_profiler_oracle.sh --scale   # + 10×10 loop trace probe
+```
+
+Frame shelf entry: `challenges/020_profiler_toolchain_join.md`.
+
 ## Replaying
 
 Each pass is independent. Re-read this file, pick a different path, and go. Prefer

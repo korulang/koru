@@ -1,0 +1,41 @@
+// Scale probe for bettermaker profiler oracle (--scale).
+// 10×10 nested label loops; expect ~101 transition bars in /tmp/koru_profile.json.
+const std = @import("std");
+
+~[profile]import std/profiler
+
+~tor outer { x: i32, max_inner: i32 }
+| next-outer { x: i32, max_inner: i32 }
+| done-outer
+
+~proc outer|zig {
+    if (x < 10) {
+        return .{ .next_outer = .{ .x = x, .max_inner = max_inner } };
+    } else {
+        return .{ .done_outer = .{} };
+    }
+}
+
+~tor inner { x: i32, y: i32, max_inner: i32 }
+| next-inner { x: i32, y: i32, max_inner: i32 }
+| done-inner { x: i32, max_inner: i32 }
+
+~proc inner|zig {
+    if (y < max_inner) {
+        return .{ .next_inner = .{ .x = x, .y = y + 1, .max_inner = max_inner } };
+    } else {
+        return .{ .done_inner = .{ .x = x + 1, .max_inner = max_inner } };
+    }
+}
+
+~tor start {}
+
+~proc start|zig {
+    std.debug.print("Scaled nested loops (10 x 10)...\n", .{});
+}
+
+~start() |> #outer_loop outer(x: 1, max_inner: 10)
+| next-outer o |> #inner_loop inner(o.x, y: 1, o.max_inner)
+    | next-inner i |> @inner_loop(i.x, i.y, i.max_inner)
+    | done-inner d |> @outer_loop(d.x, d.max_inner)
+| done-outer |> _
