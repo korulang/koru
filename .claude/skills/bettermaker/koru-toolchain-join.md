@@ -30,7 +30,7 @@ Profiler controls run with `--parallel 1` — every pin shares `/tmp/koru_profil
 
 ## Default controls
 
-`512_profiler_store_query` · `511_profiler_plural_store` · `513_profiler_multiline_conditional_import` · `510_profiler_end_to_end` · `420_003_profiler_loop` · `690_121_twenty_six_component_stores` · `310_113_gated_import_inside_imported_module`
+`512_profiler_store_query` · `511_profiler_plural_store` · `513_profiler_multiline_conditional_import` · `514_profiler_comptime_event_taps` · `510_profiler_end_to_end` · `420_003_profiler_loop` · `690_121_twenty_six_component_stores` · `310_113_gated_import_inside_imported_module`
 
 Always verify harness line: `Running N tests` equals the number of filters passed.
 

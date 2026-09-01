@@ -48,6 +48,7 @@ Standing **frame**. The oracle is mechanical: `./scripts/bettermaker_profiler_or
 | `512_profiler_store_query` | profiler + `store:query` sweep |
 | `511_profiler_plural_store` | profiler + plural `store:new` + insert |
 | `513_profiler_multiline_conditional_import` | profiler + multiline `[profile]import` + Chrome trace |
+| `514_profiler_comptime_event_taps` | profiler + comptime `tap(e -> *)` observers + Chrome trace |
 | `510_profiler_end_to_end` | inline `[profile]import` + Chrome trace |
 | `420_003_profiler_loop` | nested label loops in trace |
 | `690_121_twenty_six_component_stores` | large store program still green (no profile — sanity) |

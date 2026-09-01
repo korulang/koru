@@ -928,7 +928,10 @@ var metatype_global_counter: usize = 0;
             var any_modified = false;
 
             for (continuations, 0..) |*cont, i| {
-                if (continuationFromOpaqueTap(cont)) {
+                // Opaque instrumentation (profiler) is invisible to other opaque
+                // taps — but user-authored taps must still observe the transition
+                // (514 / 310_006 + --profile).
+                if (continuationFromOpaqueTap(cont) and tap_is_opaque) {
                     new_conts[i] = cont.*;
                     continue;
                 }

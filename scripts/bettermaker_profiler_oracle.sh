@@ -10,6 +10,7 @@ CONTROLS=(
     512_profiler_store_query
     511_profiler_plural_store
     513_profiler_multiline_conditional_import
+    514_profiler_comptime_event_taps
     510_profiler_end_to_end
     420_003_profiler_loop
     690_121_twenty_six_component_stores
@@ -24,7 +25,7 @@ usage() {
     cat <<'EOF'
 Usage: ./scripts/bettermaker_profiler_oracle.sh [--scale] [--probe path.kz]
 
-  default     Run profiler regression control set (7 tests)
+  default     Run profiler regression control set (8 tests)
   --scale     Also compile/run examples/profiler_scale.kz and check trace stats
   --probe P   Compile P with --profile, build in /tmp, run output binary once
 

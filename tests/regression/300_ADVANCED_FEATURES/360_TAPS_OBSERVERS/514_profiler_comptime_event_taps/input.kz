@@ -1,0 +1,24 @@
+// Pins profiler + comptime event taps (310_006): tap(hello -> *) must still
+// fire when [profile]import std/profiler + --profile are active — opaque
+// profiler instrumentation must not hide transitions from user-authored taps.
+const std = @import("std");
+~import std/taps
+~import std/io
+~[profile]import std/profiler
+
+~tor hello {} -> string
+
+~proc hello|zig {
+    std.debug.print("Main flow executed\n", .{});
+    return "go";
+}
+
+~tor tap-action {}
+
+~proc tap-action|zig {
+    std.debug.print("TAP observed!\n", .{});
+}
+
+~tap(hello -> *): v |> tap-action()
+
+~hello() |> std/io:print.ln("profiled tap run complete")

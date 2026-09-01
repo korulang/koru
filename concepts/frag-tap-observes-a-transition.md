@@ -163,3 +163,13 @@ tap `inserted_by_tap` invocations on void branches — not an invocation the
 sweep transplant can read directly. Fix: peel through void-branch tap wrappers
 to the author's step; skip void-branch siblings when locating the `! query` /
 `! row` arm. Pin: `512_profiler_store_query`.
+
+## User taps must observe through opaque profiler instrumentation (2026-09-01)
+
+Measured: `310_006_event_taps` + `[profile]import std/profiler` + `--profile`
+compiled and ran but `tap(hello -> *)` never fired — opaque profiler
+`* -> *` wraps made `continuationFromOpaqueTap` skip the site for every later
+tap transform, not just other opaque taps. Fix: skip opaque-marked continuations
+only when the tap being applied is itself `[opaque]`. Pin:
+`514_profiler_comptime_event_taps`. Oracle:
+`./scripts/bettermaker_profiler_oracle.sh` (8 controls, `--parallel 1`).
