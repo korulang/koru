@@ -8891,9 +8891,11 @@ pub const Parser = struct {
         // A construction must NAME a branch. A call-shaped RHS (`=> void-sink()`,
         // `=> print.ln(f)`) has no name — the parens used to ride along as a
         // "payloadless constructor named 'void-sink()'" and the emitter produced
-        // garbage. Enforce the single-identifier rule here, the same rule
-        // parseBranchConstructorWithContext enforces for the braced form.
-        if (!isValidIdentifier(candidate_name)) {
+        // garbage. Refuse exactly that: a paren-bearing name. NOT all
+        // non-identifier names — a value-shaped RHS (`=> 42` on an effect
+        // resume) must reach the glyph-discipline check (KORU102, 400_122)
+        // rather than die here as a misnamed constructor.
+        if (std.mem.indexOfAny(u8, candidate_name, &[_]u8{ '(', ')' }) != null) {
             return self.fail(
                 .PARSE003,
                 self.current + 1,
@@ -9026,10 +9028,9 @@ pub const Parser = struct {
         // The braceless `=> construct` path never validated its name — a
         // call-shaped RHS (`=> void-sink()`, `=> print.ln(f)`) rode along as
         // a "payloadless constructor named 'void-sink()'" and the emitter
-        // produced garbage. The braced path enforces the single-identifier
-        // rule (see parseBranchConstructorWithContext); enforce it here too,
-        // so `=>` can only ever construct a real branch.
-        if (!isValidIdentifier(branch_name)) {
+        // produced garbage. Refuse exactly the paren-bearing name; a
+        // value-shaped RHS must reach its own downstream check (KORU102).
+        if (std.mem.indexOfAny(u8, branch_name, &[_]u8{ '(', ')' }) != null) {
             return self.fail(
                 .PARSE003,
                 self.current + 1,
