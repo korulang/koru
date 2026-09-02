@@ -37,7 +37,7 @@ pub const CheckMode = enum {
 pub const FlowChecker = struct {
     allocator: std.mem.Allocator,
     reporter: *errors.ErrorReporter,
-    ast_items: ?[]const ast.Item,  // Full AST for event lookups
+    ast_items: ?[]const ast.Item, // Full AST for event lookups
     mode: CheckMode,
 
     /// `~[prototype]` module opt-in — see ShapeChecker.prototype_mode. Set by
@@ -732,16 +732,40 @@ pub const FlowChecker = struct {
                 };
 
                 if (!skip_check and !self.isBindingUsed(cont, binding)) {
-                    // ERROR: Unused binding
-                    try self.reporter.addErrorWithHint(
-                        .KORU100,
-                        cont.location.line,
-                        cont.location.column,
-                        "unused binding '{s}'",
-                        .{binding},
-                        "discard the binding using `_` if not needed",
-                        .{},
-                    );
+                    // A binding continued into a tor that declares NO input is
+                    // structurally guaranteed unused: the thread has nowhere to
+                    // land. Name the real cause instead of the generic
+                    // "unused binding" (the void-input corner, 210_215).
+                    var void_input_target: ?[]const u8 = null;
+                    if (cont.node) |n| {
+                        if (n == .invocation) {
+                            if (self.findEventDecl(&n.invocation.path)) |event_decl| {
+                                if (event_decl.input.fields.len == 0) {
+                                    void_input_target = n.invocation.path.segments[n.invocation.path.segments.len - 1];
+                                }
+                            }
+                        }
+                    }
+                    if (void_input_target) |target| {
+                        try self.reporter.addError(
+                            .KORU100,
+                            cont.location.line,
+                            cont.location.column,
+                            "binding '{s}' has nowhere to go — the continuation target '{s}' takes no input",
+                            .{ binding, target },
+                        );
+                    } else {
+                        // ERROR: Unused binding
+                        try self.reporter.addErrorWithHint(
+                            .KORU100,
+                            cont.location.line,
+                            cont.location.column,
+                            "unused binding '{s}'",
+                            .{binding},
+                            "discard the binding using `_` if not needed",
+                            .{},
+                        );
+                    }
                 }
             }
         }
@@ -1378,15 +1402,8 @@ pub const FlowChecker = struct {
                 if (isOptionalEffectBranchGroup(declared, branch_name, branch_continuations)) continue;
 
                 // ERROR: Not exhaustive - missing else case
-                log.debug("ERROR: Branch '{s}' has {d} when-clauses but no else case (non-exhaustive)\n",
-                    .{branch_name, branch_continuations.len});
-                try self.reporter.addError(
-                    .KORU050,
-                    location.line,
-                    location.column,
-                    "branch '{s}' has multiple when-clauses but no else case - add one continuation without 'when'",
-                    .{branch_name}
-                );
+                log.debug("ERROR: Branch '{s}' has {d} when-clauses but no else case (non-exhaustive)\n", .{ branch_name, branch_continuations.len });
+                try self.reporter.addError(.KORU050, location.line, location.column, "branch '{s}' has multiple when-clauses but no else case - add one continuation without 'when'", .{branch_name});
             } else if (else_count > 1) {
                 // Void `!` effect multicast: N unguarded effect handlers are
                 // subscribe-all (composition), not exclusive "elses". Matches
@@ -1397,15 +1414,8 @@ pub const FlowChecker = struct {
                 if (isVoidEffectMulticastGroup(declared, branch_name, branch_continuations)) continue;
 
                 // ERROR: Ambiguous - multiple else cases
-                log.debug("ERROR: Branch '{s}' has {d} else cases (ambiguous)\n",
-                    .{branch_name, else_count});
-                try self.reporter.addError(
-                    .KORU051,
-                    location.line,
-                    location.column,
-                    "branch '{s}' has {d} continuations without 'when' (ambiguous) - only one else case allowed",
-                    .{branch_name, else_count}
-                );
+                log.debug("ERROR: Branch '{s}' has {d} else cases (ambiguous)\n", .{ branch_name, else_count });
+                try self.reporter.addError(.KORU051, location.line, location.column, "branch '{s}' has {d} continuations without 'when' (ambiguous) - only one else case allowed", .{ branch_name, else_count });
             } else {
                 // Exactly one unguarded arm — valid ONLY if it comes LAST.
                 //
@@ -1434,15 +1444,8 @@ pub const FlowChecker = struct {
                         }
                     }
                     const shadowed = branch_continuations.len - unguarded_idx - 1;
-                    log.debug("ERROR: Branch '{s}' unguarded arm at {d} shadows {d} later arm(s)\n",
-                        .{branch_name, unguarded_idx, shadowed});
-                    try self.reporter.addError(
-                        .KORU053,
-                        location.line,
-                        location.column,
-                        "branch '{s}': the unguarded handler is #{d} of {d}, so the {d} when-guarded handler(s) after it are unreachable - an unguarded arm is the else of an exclusive group and must come last",
-                        .{ branch_name, unguarded_idx + 1, branch_continuations.len, shadowed }
-                    );
+                    log.debug("ERROR: Branch '{s}' unguarded arm at {d} shadows {d} later arm(s)\n", .{ branch_name, unguarded_idx, shadowed });
+                    try self.reporter.addError(.KORU053, location.line, location.column, "branch '{s}': the unguarded handler is #{d} of {d}, so the {d} when-guarded handler(s) after it are unreachable - an unguarded arm is the else of an exclusive group and must come last", .{ branch_name, unguarded_idx + 1, branch_continuations.len, shadowed });
                 }
             }
         }
@@ -1604,14 +1607,13 @@ pub const FlowChecker = struct {
                 "(unknown)";
 
             for (result.missing_branches) |branch_name| {
-                log.debug("ERROR: Required branch '{s}' not handled in flow invoking '{s}'\n",
-                    .{branch_name, event_name});
+                log.debug("ERROR: Required branch '{s}' not handled in flow invoking '{s}'\n", .{ branch_name, event_name });
                 try self.reporter.addError(
                     .KORU022,
                     location.line,
                     location.column,
                     "required branch '{s}' not handled - event '{s}' requires this branch",
-                    .{branch_name, event_name},
+                    .{ branch_name, event_name },
                 );
             }
         }
@@ -1840,9 +1842,9 @@ test "when-clause exhaustiveness - ambiguous else" {
 
 fn isIdentifierChar(c: u8) bool {
     return (c >= 'a' and c <= 'z') or
-           (c >= 'A' and c <= 'Z') or
-           (c >= '0' and c <= '9') or
-           c == '_';
+        (c >= 'A' and c <= 'Z') or
+        (c >= '0' and c <= '9') or
+        c == '_';
 }
 
 fn pathSegmentsEqual(a: []const []const u8, b: []const []const u8) bool {

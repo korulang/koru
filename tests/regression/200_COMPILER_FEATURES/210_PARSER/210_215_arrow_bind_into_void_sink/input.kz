@@ -1,9 +1,9 @@
 // The bind-into-void corner: `| ok v |> void-sink()` threads the payload
 // into a tor that declares NO input. The refusal is right — the linear
-// discipline binds-or-discards, and `v` is neither — but the diagnostic
-// (KORU100 unused binding) names the wrong cause: the real problem is that
-// void-sink has no input for the thread to land in. Pins today's refusal;
-// flips when the diagnostic names the void-input cause.
+// discipline binds-or-discards, and `v` is neither — and since the
+// flow-checker fix the diagnostic names the real cause: "binding 'v' has
+// nowhere to go — the continuation target 'void-sink' takes no input"
+// (previously the generic KORU100 "unused binding", which hid why).
 ~import std/io
 
 const std = @import("std");
