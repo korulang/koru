@@ -259,6 +259,17 @@ probes/**/backend.zig
 probes/**/build.zig
 probes/**/build_backend.zig
 probes/**/compiler_env.zig
+probes/**/backend_output_emitted.zig
+probes/**/program.ast.json
+probes/**/.zig-cache/
+probes/**/zig-out/
+
+# Python bytecode — scripts/js-sweep.py etc.; only invariants/checks/ was denied before
+**/__pycache__/
+**/*.pyc
+
+# Stale one-off build logs — never a contract (Initial-commit artifact, zero readers)
+tests/build_debug.txt
 
 # language-shootout scenario binaries — sources live beside them
 tests/regression/**/scenarios/**/rust/benchmark

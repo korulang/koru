@@ -113,3 +113,19 @@ imports; root `build.zig` notes CompilerBootstrap removed. Deny-line added.
 `probes/r1/build.zig` was koruc output beside `p1_step_arm.k`; now denied by
 `probes/**/build.zig` like the other probe artifacts. Regenerates on compile.
 Allowlist 2 → 1 row (`.claude/.add/` only).
+
+## Closed 2026-09-02 — Python bytecode and probe caches
+
+`scripts/__pycache__/js-sweep.cpython-314.pyc` rode an unrelated commit
+(`791b110a`) — bytecode with zero readers, while only
+`invariants/checks/__pycache__/` was denied. Global `**/__pycache__/` and
+`**/*.pyc` close the class.
+
+`tests/build_debug.txt` was a stale `zig build` failure log from the Initial
+commit era — zero `git grep` readers, not a harness contract.
+
+Probe compile output already denied `backend.zig` / `build*.zig` /
+`compiler_env.zig`; the replay added `backend_output_emitted.zig`,
+`program.ast.json`, `.zig-cache/`, and `zig-out/` under `probes/**/` — the
+r1 tree had ~64M of ignored regenerables on disk after `build.zig` was purged
+from the index.
