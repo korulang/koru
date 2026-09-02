@@ -1,0 +1,17 @@
+// INVALID SHAPE: `=>` constructs a branch of the event, and a `_` discard is
+// not a constructor operand — `| ok _ => err _` re-raises with a discarded
+// payload. The frontend accepts it; the emitted Zig dies ("'_' used as an
+// identifier") and no Koru diagnostic is produced. Pins the boundary; flips
+// when the compiler learns the shape in Koru terms.
+~import std/io
+
+const std = @import("std");
+
+~pub tor stage { }
+| ok string
+| err string
+~proc stage|zig { return .{ .ok = "hi" }; }
+
+~stage()
+| ok _ => err _
+| err e |> std/io:print.ln("err: {{ e:s }}")

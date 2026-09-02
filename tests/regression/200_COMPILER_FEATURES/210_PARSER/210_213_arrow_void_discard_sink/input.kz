@@ -1,0 +1,27 @@
+// INVALID SHAPE by design: `=>` returns one of the EVENT's branches, and a
+// void event like void-sink has no branches to return — the shape can never
+// be satisfied. The valid consumer is the continuation: `| ok _ |>
+// void-sink()`.
+//
+// The bind spelling of this invalid shape is pinned (210_211 — the parser
+// accepts it structurally and the choke replication stumbles, KORU100); the
+// DISCARD spelling `| ok _ => void-sink()` takes a different, worse road:
+// the frontend accepts it, the emitted Zig dies ("expected ',' after
+// initializer"), and no Koru diagnostic is produced at all. Pins the
+// boundary; flips when the compiler learns to reject the shape in Koru
+// terms.
+~import std/io
+
+const std = @import("std");
+
+~pub tor stage { }
+| ok string
+| err string
+~proc stage|zig { return .{ .ok = "hi" }; }
+
+~pub tor void-sink { }
+~proc void-sink|zig { std.debug.print("sink\n", .{}); }
+
+~stage()
+| ok _ => void-sink()
+| err e |> std/io:print.ln("err: {{ e:s }}")

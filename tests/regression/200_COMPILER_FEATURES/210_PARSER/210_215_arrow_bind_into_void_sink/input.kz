@@ -1,0 +1,21 @@
+// The bind-into-void corner: `| ok v |> void-sink()` threads the payload
+// into a tor that declares NO input. The refusal is right — the linear
+// discipline binds-or-discards, and `v` is neither — but the diagnostic
+// (KORU100 unused binding) names the wrong cause: the real problem is that
+// void-sink has no input for the thread to land in. Pins today's refusal;
+// flips when the diagnostic names the void-input cause.
+~import std/io
+
+const std = @import("std");
+
+~pub tor stage { }
+| ok string
+| err string
+~proc stage|zig { return .{ .ok = "hi" }; }
+
+~pub tor void-sink { }
+~proc void-sink|zig { std.debug.print("sink\n", .{}); }
+
+~stage()
+| ok v |> void-sink()
+| err e |> std/io:print.ln("err: {{ e:s }}")
