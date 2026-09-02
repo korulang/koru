@@ -127,8 +127,7 @@ pub const ModuleResolver = struct {
     compiler_flags: []const []const u8,  // For {{ flag:name }} interpolation
     parsing_files: std.StringHashMap(void),  // Track files currently being parsed (for cycle detection)
 
-    pub fn init(allocator: std.mem.Allocator, config: *Config, project_root: []const u8, entry_dir: []const u8, compiler_flags: []const []const u8) !ModuleResolver {
-        // Get KORU_HOME from executable path
+    fn detectKoruHomeFromExe(allocator: std.mem.Allocator) ![]const u8 {
         // Development: <project>/zig-out/bin/koruc → koru_home = <project>
         // npm package: <package>/bin/koruc → koru_home = <package>
         var exe_path_buf: [4096]u8 = undefined;
@@ -149,6 +148,21 @@ pub const ModuleResolver = struct {
         for (koru_home) |*c| {
             if (c.* == '\\') c.* = '/';
         }
+        return koru_home;
+    }
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        config: *Config,
+        project_root: []const u8,
+        entry_dir: []const u8,
+        compiler_flags: []const []const u8,
+        koru_home_override: ?[]const u8,
+    ) !ModuleResolver {
+        const koru_home = if (koru_home_override) |home|
+            try allocator.dupe(u8, home)
+        else
+            try detectKoruHomeFromExe(allocator);
 
         var resolver = ModuleResolver{
             .allocator = allocator,

@@ -73,7 +73,7 @@ pub fn initContext(gpa: std.mem.Allocator, file_path: []const u8, compiler_flags
     out.project_config = try Config.load(gpa, out.project_root) orelse try Config.default(gpa);
     errdefer out.project_config.deinit();
 
-    out.resolver = try ModuleResolver.init(gpa, &out.project_config, out.project_root, out.entry_dir_absolute, compiler_flags);
+    out.resolver = try ModuleResolver.init(gpa, &out.project_config, out.project_root, out.entry_dir_absolute, compiler_flags, null);
 }
 
 fn prepareSourceWithCompilerInject(

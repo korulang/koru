@@ -1,0 +1,9 @@
+// Welded runtime — init is invoked; tick must be dead-stripped.
+
+~pub tor init {}
+
+~proc init|zig {}
+
+~pub tor tick {}
+
+~proc tick|zig {}

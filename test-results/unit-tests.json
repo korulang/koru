@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-08-31T23:28:24.692Z",
+  "timestamp": "2026-09-01T23:14:40.517Z",
   "summary": {
-    "passed": 329,
+    "passed": 332,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 341,
-    "suiteCount": 41,
+    "total": 344,
+    "suiteCount": 42,
     "status": "success"
   },
   "suites": [
@@ -81,6 +81,14 @@
       "failed": 0,
       "skipped": 0,
       "total": 6,
+      "status": "success"
+    },
+    {
+      "name": "dead_strip_tests",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "total": 3,
       "status": "success"
     },
     {

@@ -886,6 +886,18 @@ pub fn build(b: *std.Build) void {
     purity_analyzer_tests.root_module.addImport("purity_analyzer", purity_analyzer_module);
     const run_purity_analyzer_tests = b.addRunArtifact(purity_analyzer_tests);
 
+    const dead_strip_tests = b.addTest(.{
+        .name = "dead_strip_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/dead_strip.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    dead_strip_tests.root_module.addImport("ast", ast_module);
+    dead_strip_tests.root_module.addImport("log", log_module);
+    const run_dead_strip_tests = b.addRunArtifact(dead_strip_tests);
+
     // Compiler passes integration tests
     const compiler_passes_tests = b.addTest(.{
         .name = "compiler_passes_tests",
@@ -1418,6 +1430,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_integration_tests.step);
     test_step.dependOn(&run_shape_checker_integration_tests.step);
     test_step.dependOn(&run_purity_analyzer_tests.step);
+    test_step.dependOn(&run_dead_strip_tests.step);
     test_step.dependOn(&run_compiler_passes_tests.step);
     // Gated: visitor_enhanced tests exercise purity/effects metadata
     // analyzers and inline-flow-in-proc-body parsing — both feature surfaces

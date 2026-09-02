@@ -1,0 +1,21 @@
+// PINS post-transform weld + dead_strip for transform-appended imports.
+// A transform appends `fixture/rt/alpha` and rewrites boot → fixture.rt.alpha:init.
+// dead_strip must keep init_event (reachable) and strip tick_event (not invoked).
+
+~import fixture/hub
+
+~fixture/hub:boot() |> check-emit
+
+~tor check-emit {}
+
+~proc check-emit|zig {
+    const std = @import("std");
+    const alpha = koru_fixture.koru_rt.koru_alpha;
+    if (!@hasDecl(alpha, "init_event")) {
+        @panic("dead_strip removed init_event from welded runtime");
+    }
+    if (@hasDecl(alpha, "tick_event")) {
+        @panic("dead_strip kept tick_event though only init is invoked");
+    }
+    std.debug.print("PASS: post-weld dead_strip keeps init, strips tick\n", .{});
+}

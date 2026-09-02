@@ -68,7 +68,7 @@ pub const DeadStripPass = struct {
         if (self.library_roots) try self.seedExportedRoots(program.items, program.main_module_name);
 
         // Phase 2: Filter items, removing unreferenced event_decl and proc_decl
-        const new_items = try self.filterItems(program.items);
+        const new_items = try self.filterItems(program.items, null);
 
         // Build new program with filtered items
         const new_program = try self.allocator.create(ast.Program);
@@ -95,7 +95,7 @@ pub const DeadStripPass = struct {
             // (`lib.k` → "lib"), so "no qualifier" selects nothing at all.
             const mq = ev.path.module_qualifier orelse continue;
             if (entry_module.len == 0 or !std.mem.eql(u8, mq, entry_module)) continue;
-            const path = try self.pathToString(&ev.path);
+            const path = try self.pathToStringInner(&ev.path);
             defer self.allocator.free(path);
             if (!self.used.contains(path)) {
                 try self.used.put(try self.allocator.dupe(u8, path), {});
@@ -230,23 +230,31 @@ pub const DeadStripPass = struct {
     }
 
     fn markPath(self: *DeadStripPass, path: *const ast.DottedPath) !void {
-        const key = try self.pathToString(path);
+        const key = try self.pathToStringInner(path);
         self.used.put(key, {}) catch {
             self.allocator.free(key);
         };
     }
 
-    fn pathToString(self: *DeadStripPass, path: *const ast.DottedPath) ![]const u8 {
+    fn pathToString(self: *DeadStripPass, path: *const ast.DottedPath, module_logical_name: ?[]const u8) ![]const u8 {
+        if (path.module_qualifier != null) return self.pathToStringInner(path);
+        if (module_logical_name) |mq| {
+            const bare = try self.pathToStringInner(path);
+            defer self.allocator.free(bare);
+            return std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ mq, bare });
+        }
+        return self.pathToStringInner(path);
+    }
+
+    fn pathToStringInner(self: *DeadStripPass, path: *const ast.DottedPath) ![]const u8 {
         var len: usize = 0;
         if (path.module_qualifier) |mq| {
             len += mq.len + 1; // "module:"
         }
-        for (path.segments, 0..) |seg, i| {
-            if (i > 0) len += 1; // "."
-            len += seg.len;
-        }
+        len += segmentsStringLen(path.segments);
 
         const buf = try self.allocator.alloc(u8, len);
+        errdefer self.allocator.free(buf);
         var pos: usize = 0;
 
         if (path.module_qualifier) |mq| {
@@ -255,15 +263,37 @@ pub const DeadStripPass = struct {
             buf[pos] = ':';
             pos += 1;
         }
-        for (path.segments, 0..) |seg, i| {
-            if (i > 0) {
-                buf[pos] = '.';
-                pos += 1;
-            }
-            @memcpy(buf[pos .. pos + seg.len], seg);
-            pos += seg.len;
-        }
+        pos = try writeSegments(buf, pos, path.segments);
 
+        return buf;
+    }
+
+    fn segmentsStringLen(segments: []const []const u8) usize {
+        var len: usize = 0;
+        for (segments, 0..) |seg, i| {
+            if (i > 0) len += 1;
+            len += seg.len;
+        }
+        return len;
+    }
+
+    fn writeSegments(buf: []u8, pos: usize, segments: []const []const u8) !usize {
+        var p = pos;
+        for (segments, 0..) |seg, i| {
+            if (i > 0) {
+                buf[p] = '.';
+                p += 1;
+            }
+            @memcpy(buf[p .. p + seg.len], seg);
+            p += seg.len;
+        }
+        return p;
+    }
+
+    fn segmentsToString(self: *DeadStripPass, path: *const ast.DottedPath) ![]const u8 {
+        const len = segmentsStringLen(path.segments);
+        const buf = try self.allocator.alloc(u8, len);
+        _ = try writeSegments(buf, 0, path.segments);
         return buf;
     }
 
@@ -271,26 +301,26 @@ pub const DeadStripPass = struct {
     // Phase 2: Filter unreachable declarations
     // ========================================================================
 
-    fn filterItems(self: *DeadStripPass, items: []const ast.Item) ![]const ast.Item {
+    fn filterItems(self: *DeadStripPass, items: []const ast.Item, module_logical_name: ?[]const u8) ![]const ast.Item {
         var result = try std.ArrayList(ast.Item).initCapacity(self.allocator, items.len);
 
         for (items) |item| {
             switch (item) {
                 .event_decl => |decl| {
-                    if (try self.isPathUsed(&decl.path) or hasRetain(decl.annotations)) {
+                    if (try self.isPathUsed(&decl.path, module_logical_name) or hasRetain(decl.annotations)) {
                         try result.append(self.allocator, item);
                     } else {
-                        const name = try self.pathToString(&decl.path);
+                        const name = try self.pathToString(&decl.path, module_logical_name);
                         defer self.allocator.free(name);
                         log.debug("[DEAD-STRIP] Removing event_decl: {s}\n", .{name});
                         self.stripped_count += 1;
                     }
                 },
                 .proc_decl => |decl| {
-                    if (try self.isPathUsed(&decl.path) or hasRetain(decl.annotations)) {
+                    if (try self.isPathUsed(&decl.path, module_logical_name) or hasRetain(decl.annotations)) {
                         try result.append(self.allocator, item);
                     } else {
-                        const name = try self.pathToString(&decl.path);
+                        const name = try self.pathToString(&decl.path, module_logical_name);
                         defer self.allocator.free(name);
                         log.debug("[DEAD-STRIP] Removing proc_decl: {s}\n", .{name});
                         self.stripped_count += 1;
@@ -298,7 +328,7 @@ pub const DeadStripPass = struct {
                 },
                 .module_decl => |mod| {
                     // Recurse into modules — filter their items too
-                    const filtered_items = try self.filterItems(mod.items);
+                    const filtered_items = try self.filterItems(mod.items, mod.logical_name);
                     var new_mod = mod;
                     new_mod.items = filtered_items;
                     try result.append(self.allocator, .{ .module_decl = new_mod });
@@ -313,10 +343,24 @@ pub const DeadStripPass = struct {
         return result.toOwnedSlice(self.allocator);
     }
 
-    fn isPathUsed(self: *DeadStripPass, path: *const ast.DottedPath) !bool {
-        const key = try self.pathToString(path);
+    fn isPathUsed(self: *DeadStripPass, path: *const ast.DottedPath, module_logical_name: ?[]const u8) !bool {
+        const key = try self.pathToStringInner(path);
         defer self.allocator.free(key);
-        return self.used.contains(key);
+        if (self.used.contains(key)) return true;
+
+        // Welded modules may parse with basename qualifiers (`breath:init`) or
+        // bare segments (`init`) while invocations use the dotted logical name
+        // (`koru.signal_rt.breath:init`). canonicalize_names stamps logical names
+        // only when module_qualifier is null — stale basename qualifiers skip
+        // that path (frag-0002). Match via the enclosing module_decl name too.
+        if (module_logical_name) |mq| {
+            const seg_key = try self.segmentsToString(path);
+            defer self.allocator.free(seg_key);
+            const qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ mq, seg_key });
+            defer self.allocator.free(qualified);
+            if (self.used.contains(qualified)) return true;
+        }
+        return false;
     }
 
     fn hasRetain(annotations: []const []const u8) bool {
@@ -326,3 +370,280 @@ pub const DeadStripPass = struct {
         return false;
     }
 };
+
+const testProcBody = struct {
+    fn call(text: []const u8) ast.Source {
+        return .{
+            .text = text,
+            .scope = .{ .bindings = &.{} },
+        };
+    }
+}.call;
+
+fn freeFilteredProgram(allocator: std.mem.Allocator, program: *const ast.Program) void {
+    for (program.items) |item| {
+        if (item == .module_decl) {
+            allocator.free(item.module_decl.items);
+        }
+    }
+    allocator.free(program.items);
+    allocator.destroy(program);
+}
+
+test "keeps welded-module events when invocation uses logical module name" {
+    const allocator = std.testing.allocator;
+
+    var pass = DeadStripPass.init(allocator);
+    defer pass.deinit();
+
+    const mq = "koru.signal_rt.breath";
+    var invoke_segs = [_][]const u8{"init"};
+    const invoke_path = ast.DottedPath{
+        .module_qualifier = mq,
+        .segments = &invoke_segs,
+    };
+    const invoke_node = ast.Node{ .invocation = ast.Invocation{
+        .path = invoke_path,
+        .args = &.{},
+    } };
+    const user_flow = ast.Item{ .flow = ast.Flow{
+        .body = ast.rootSite(ast.Invocation{
+            .path = invoke_path,
+            .args = &.{},
+        }, &.{}, .{ .file = "input.kz", .line = 1, .column = 0 }),
+    } };
+    _ = invoke_node;
+
+    var event_segs = [_][]const u8{"init"};
+    const event_decl = ast.Item{ .event_decl = ast.EventDecl{
+        .path = ast.DottedPath{
+            .module_qualifier = null,
+            .segments = &event_segs,
+        },
+        .input = .{ .fields = &.{} },
+        .branches = &.{},
+        .return_type = null,
+        .return_phantom = null,
+        .is_public = true,
+        .is_implicit_flow = false,
+        .annotations = &.{},
+        .prose = "",
+        .location = .{ .file = "breath.kz", .line = 1, .column = 0 },
+        .module = "breath",
+    } };
+
+    var proc_segs = [_][]const u8{"init"};
+    const proc_decl = ast.Item{ .proc_decl = ast.ProcDecl{
+        .path = ast.DottedPath{
+            .module_qualifier = null,
+            .segments = &proc_segs,
+        },
+        .target = null,
+        .body = testProcBody("return .{ .ok = .{} };"),
+        .annotations = &.{},
+        .location = .{ .file = "breath.kz", .line = 2, .column = 0 },
+        .module = "breath",
+    } };
+
+    const welded_module = ast.Item{ .module_decl = ast.ModuleDecl{
+        .logical_name = mq,
+        .canonical_path = "/tmp/breath.kz",
+        .items = &.{ event_decl, proc_decl },
+        .is_system = false,
+        .annotations = &.{},
+        .location = .{ .file = "/tmp/breath.kz", .line = 1, .column = 0 },
+    } };
+
+    const program = ast.Program{
+        .items = &.{ user_flow, welded_module },
+        .module_annotations = &.{},
+        .main_module_name = "input",
+        .allocator = allocator,
+    };
+
+    const filtered = try pass.run(&program, null);
+    defer freeFilteredProgram(allocator, filtered);
+
+    var kept_event = false;
+    var kept_proc = false;
+    for (filtered.items) |item| {
+        if (item == .module_decl) {
+            for (item.module_decl.items) |mod_item| {
+                if (mod_item == .event_decl) kept_event = true;
+                if (mod_item == .proc_decl) kept_proc = true;
+            }
+        }
+    }
+    try std.testing.expect(kept_event);
+    try std.testing.expect(kept_proc);
+}
+
+test "strips sibling events in welded module when only init is invoked" {
+    const allocator = std.testing.allocator;
+
+    var pass = DeadStripPass.init(allocator);
+    defer pass.deinit();
+
+    const mq = "koru.signal_rt.breath";
+    var invoke_segs = [_][]const u8{"init"};
+    const invoke_path = ast.DottedPath{
+        .module_qualifier = mq,
+        .segments = &invoke_segs,
+    };
+    const user_flow = ast.Item{ .flow = ast.Flow{
+        .body = ast.rootSite(ast.Invocation{
+            .path = invoke_path,
+            .args = &.{},
+        }, &.{}, .{ .file = "input.kz", .line = 1, .column = 0 }),
+    } };
+
+    var init_segs = [_][]const u8{"init"};
+    const init_event = ast.Item{ .event_decl = ast.EventDecl{
+        .path = ast.DottedPath{ .module_qualifier = null, .segments = &init_segs },
+        .input = .{ .fields = &.{} },
+        .branches = &.{},
+        .return_type = null,
+        .return_phantom = null,
+        .is_public = true,
+        .is_implicit_flow = false,
+        .annotations = &.{},
+        .prose = "",
+        .location = .{ .file = "breath.kz", .line = 1, .column = 0 },
+        .module = "breath",
+    } };
+    const init_proc = ast.Item{ .proc_decl = ast.ProcDecl{
+        .path = ast.DottedPath{ .module_qualifier = null, .segments = &init_segs },
+        .target = null,
+        .body = testProcBody("return .{ .ok = .{} };"),
+        .annotations = &.{},
+        .location = .{ .file = "breath.kz", .line = 2, .column = 0 },
+        .module = "breath",
+    } };
+
+    var tick_segs = [_][]const u8{"tick"};
+    const tick_event = ast.Item{ .event_decl = ast.EventDecl{
+        .path = ast.DottedPath{ .module_qualifier = null, .segments = &tick_segs },
+        .input = .{ .fields = &.{} },
+        .branches = &.{},
+        .return_type = null,
+        .return_phantom = null,
+        .is_public = true,
+        .is_implicit_flow = false,
+        .annotations = &.{},
+        .prose = "",
+        .location = .{ .file = "breath.kz", .line = 10, .column = 0 },
+        .module = "breath",
+    } };
+    const tick_proc = ast.Item{ .proc_decl = ast.ProcDecl{
+        .path = ast.DottedPath{ .module_qualifier = null, .segments = &tick_segs },
+        .target = null,
+        .body = testProcBody("return .{ .out = .{} };"),
+        .annotations = &.{},
+        .location = .{ .file = "breath.kz", .line = 11, .column = 0 },
+        .module = "breath",
+    } };
+
+    const welded_module = ast.Item{ .module_decl = ast.ModuleDecl{
+        .logical_name = mq,
+        .canonical_path = "/tmp/breath.kz",
+        .items = &.{ init_event, init_proc, tick_event, tick_proc },
+        .is_system = false,
+        .annotations = &.{},
+        .location = .{ .file = "/tmp/breath.kz", .line = 1, .column = 0 },
+    } };
+
+    const program = ast.Program{
+        .items = &.{ user_flow, welded_module },
+        .module_annotations = &.{},
+        .main_module_name = "input",
+        .allocator = allocator,
+    };
+
+    const filtered = try pass.run(&program, null);
+    defer freeFilteredProgram(allocator, filtered);
+
+    var init_kept = false;
+    var tick_kept = false;
+    for (filtered.items) |item| {
+        if (item != .module_decl) continue;
+        for (item.module_decl.items) |mod_item| {
+            if (mod_item == .event_decl) {
+                if (mod_item.event_decl.path.segments.len == 1 and std.mem.eql(u8, mod_item.event_decl.path.segments[0], "init")) {
+                    init_kept = true;
+                }
+                if (mod_item.event_decl.path.segments.len == 1 and std.mem.eql(u8, mod_item.event_decl.path.segments[0], "tick")) {
+                    tick_kept = true;
+                }
+            }
+        }
+    }
+    try std.testing.expect(init_kept);
+    try std.testing.expect(!tick_kept);
+}
+
+test "keeps welded-module events when decl carries stale basename qualifier" {
+    const allocator = std.testing.allocator;
+
+    var pass = DeadStripPass.init(allocator);
+    defer pass.deinit();
+
+    const mq = "koru.signal_rt.breath";
+    var invoke_segs = [_][]const u8{"init"};
+    const invoke_path = ast.DottedPath{
+        .module_qualifier = mq,
+        .segments = &invoke_segs,
+    };
+    const user_flow = ast.Item{ .flow = ast.Flow{
+        .body = ast.rootSite(ast.Invocation{
+            .path = invoke_path,
+            .args = &.{},
+        }, &.{}, .{ .file = "input.kz", .line = 1, .column = 0 }),
+    } };
+
+    // Simulate parse output before canonicalize_names upgrades null qualifiers:
+    // basename module_qualifier that canonicalize would leave untouched.
+    const stale_mq = "breath";
+    var event_segs = [_][]const u8{"init"};
+    const event_decl = ast.Item{ .event_decl = ast.EventDecl{
+        .path = ast.DottedPath{
+            .module_qualifier = stale_mq,
+            .segments = &event_segs,
+        },
+        .input = .{ .fields = &.{} },
+        .branches = &.{},
+        .return_type = null,
+        .return_phantom = null,
+        .is_public = true,
+        .is_implicit_flow = false,
+        .annotations = &.{},
+        .prose = "",
+        .location = .{ .file = "breath.kz", .line = 1, .column = 0 },
+        .module = "breath",
+    } };
+
+    const welded_module = ast.Item{ .module_decl = ast.ModuleDecl{
+        .logical_name = mq,
+        .canonical_path = "/tmp/breath.kz",
+        .items = &.{event_decl},
+        .is_system = false,
+        .annotations = &.{},
+        .location = .{ .file = "/tmp/breath.kz", .line = 1, .column = 0 },
+    } };
+
+    const program = ast.Program{
+        .items = &.{ user_flow, welded_module },
+        .module_annotations = &.{},
+        .main_module_name = "input",
+        .allocator = allocator,
+    };
+
+    const filtered = try pass.run(&program, null);
+    defer freeFilteredProgram(allocator, filtered);
+
+    try std.testing.expectEqual(@as(usize, 2), filtered.items.len);
+    for (filtered.items) |item| {
+        if (item == .module_decl) {
+            try std.testing.expectEqual(@as(usize, 1), item.module_decl.items.len);
+        }
+    }
+}

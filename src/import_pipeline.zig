@@ -884,3 +884,263 @@ pub fn combineImports(
         .imported_paths = try path_list.toOwnedSlice(gpa),
     };
 }
+
+/// Resolve `import_decl` items appended by transform passes (post-frontend).
+/// Returns true when at least one new module was linked into the program AST.
+pub fn mergeOutstandingImports(
+    gpa: std.mem.Allocator,
+    parse_allocator: std.mem.Allocator,
+    resolver: *ModuleResolver,
+    program: *ast.Program,
+    entry_file_absolute: []const u8,
+) !bool {
+    var has_import_decl = false;
+    for (program.items) |item| {
+        if (item == .import_decl) {
+            has_import_decl = true;
+            break;
+        }
+    }
+    if (!has_import_decl) return false;
+
+    const WorkItem = struct {
+        import_decl: ast.ImportDecl,
+        base_file: []const u8,
+        is_synthetic: bool = false,
+    };
+
+    var work_queue = std.ArrayListAligned(WorkItem, null){
+        .items = &.{},
+        .capacity = 0,
+    };
+    defer {
+        for (work_queue.items) |work_item| {
+            if (work_item.is_synthetic) {
+                gpa.free(work_item.import_decl.path);
+                if (work_item.import_decl.local_name) |name| {
+                    gpa.free(name);
+                }
+            }
+        }
+        work_queue.deinit(gpa);
+    }
+
+    for (program.items) |item| {
+        if (item == .import_decl) {
+            try work_queue.append(gpa, .{
+                .import_decl = item.import_decl,
+                .base_file = entry_file_absolute,
+                .is_synthetic = false,
+            });
+        }
+    }
+
+    var imported_modules = std.ArrayListAligned(ImportedModule, null){
+        .items = &.{},
+        .capacity = 0,
+    };
+    defer {
+        for (imported_modules.items) |*module| {
+            module.deinit(gpa);
+        }
+        imported_modules.deinit(gpa);
+    }
+
+    var imported_paths_map = std.StringHashMap(usize).init(gpa);
+    defer {
+        var it = imported_paths_map.keyIterator();
+        while (it.next()) |key| {
+            gpa.free(key.*);
+        }
+        imported_paths_map.deinit();
+    }
+
+    const seedEmittedFiles = struct {
+        fn walk(
+            sa: std.mem.Allocator,
+            seen: *std.StringHashMap(void),
+            items: []const ast.Item,
+        ) !void {
+            for (items) |item| {
+                switch (item) {
+                    .module_decl => |module| {
+                        if (try claimPath(sa, seen, module.canonical_path)) {
+                            try walk(sa, seen, module.items);
+                        }
+                    },
+                    else => {},
+                }
+            }
+        }
+        fn claimPath(sa: std.mem.Allocator, seen: *std.StringHashMap(void), path: []const u8) !bool {
+            if (seen.contains(path)) return false;
+            try seen.put(try sa.dupe(u8, path), {});
+            return true;
+        }
+    };
+
+    var emitted_files = std.StringHashMap(void).init(gpa);
+    defer {
+        var seen_it = emitted_files.keyIterator();
+        while (seen_it.next()) |k| gpa.free(k.*);
+        emitted_files.deinit();
+    }
+    try seedEmittedFiles.walk(gpa, &emitted_files, program.items);
+
+    while (work_queue.items.len > 0) {
+        const work_item = work_queue.orderedRemove(0);
+        defer {
+            if (work_item.is_synthetic) {
+                gpa.free(work_item.import_decl.path);
+                if (work_item.import_decl.local_name) |name| {
+                    gpa.free(name);
+                }
+            }
+        }
+
+        const module = try processImport(gpa, parse_allocator, resolver, work_item.import_decl, work_item.base_file, entry_file_absolute);
+
+        const identity = try moduleIdentity(gpa, &module);
+        var identity_owned = true;
+        defer if (identity_owned) gpa.free(identity);
+
+        var slot: ?usize = null;
+        if (imported_paths_map.get(identity)) |existing_idx| {
+            const existing = &imported_modules.items[existing_idx];
+            if (module.is_directory and !existing.is_directory) {
+                existing.deinit(gpa);
+                imported_modules.items[existing_idx] = module;
+                slot = existing_idx;
+            } else {
+                var mut_module = module;
+                mut_module.deinit(gpa);
+                continue;
+            }
+        } else {
+            try imported_paths_map.put(try gpa.dupe(u8, identity), imported_modules.items.len);
+            identity_owned = false;
+        }
+
+        try queueParentImports(gpa, &work_queue, resolver, work_item.import_decl, work_item.base_file);
+        try queueIndexImport(gpa, &work_queue, resolver, work_item.import_decl, work_item.base_file, entry_file_absolute);
+
+        for (module.source_file.items) |item| {
+            if (item == .import_decl) {
+                try work_queue.append(gpa, .{
+                    .import_decl = item.import_decl,
+                    .base_file = module.canonical_path,
+                    .is_synthetic = false,
+                });
+            }
+        }
+
+        for (module.submodules) |*submod| {
+            for (submod.source_file.items) |item| {
+                if (item == .import_decl) {
+                    try work_queue.append(gpa, .{
+                        .import_decl = item.import_decl,
+                        .base_file = submod.canonical_path,
+                        .is_synthetic = false,
+                    });
+                }
+            }
+        }
+
+        if (slot == null) {
+            try imported_modules.append(gpa, module);
+        }
+    }
+
+    if (imported_modules.items.len == 0) return false;
+
+    var new_module_items = try std.ArrayList(ast.Item).initCapacity(parse_allocator, imported_modules.items.len);
+    defer new_module_items.deinit(parse_allocator);
+
+    const addModuleToAST = struct {
+        fn add(
+            alloc: std.mem.Allocator,
+            set_alloc: std.mem.Allocator,
+            seen: *std.StringHashMap(void),
+            items: *std.ArrayList(ast.Item),
+            module: *ImportedModule,
+            res: *ModuleResolver,
+        ) !void {
+            const claim = struct {
+                fn f(sa: std.mem.Allocator, s: *std.StringHashMap(void), path: []const u8) !bool {
+                    if (s.contains(path)) return false;
+                    try s.put(try sa.dupe(u8, path), {});
+                    return true;
+                }
+            }.f;
+
+            const has_source = (module.source_file.items.len > 0 or module.source_file.module_annotations.len > 0) and
+                try claim(set_alloc, seen, module.canonical_path);
+            if (has_source) {
+                const is_system = res.isSystemModule(module.canonical_path);
+                const annotations = try alloc.alloc([]const u8, module.source_file.module_annotations.len);
+                for (module.source_file.module_annotations, 0..) |ann, ann_idx| {
+                    annotations[ann_idx] = try alloc.dupe(u8, ann);
+                }
+
+                const canon_owned = try alloc.dupe(u8, module.canonical_path);
+                const module_decl = ast.ModuleDecl{
+                    .logical_name = try alloc.dupe(u8, module.logical_name),
+                    .canonical_path = canon_owned,
+                    .items = module.source_file.items,
+                    .is_system = is_system,
+                    .annotations = annotations,
+                    .location = .{ .file = canon_owned, .line = 1, .column = 0 },
+                };
+                module.source_file.items = &.{};
+                try items.append(alloc, .{ .module_decl = module_decl });
+            }
+
+            if (module.is_directory and module.submodules.len > 0) {
+                for (module.submodules) |*submod| {
+                    if (!try claim(set_alloc, seen, submod.canonical_path)) continue;
+                    const is_system = res.isSystemModule(submod.canonical_path);
+
+                    const dotted_name = if (std.mem.eql(u8, submod.logical_name, "index"))
+                        try alloc.dupe(u8, module.logical_name)
+                    else
+                        try std.fmt.allocPrint(alloc, "{s}.{s}", .{ module.logical_name, submod.logical_name });
+
+                    const annotations = try alloc.alloc([]const u8, submod.source_file.module_annotations.len);
+                    for (submod.source_file.module_annotations, 0..) |ann, ann_idx| {
+                        annotations[ann_idx] = try alloc.dupe(u8, ann);
+                    }
+
+                    const submod_canon_owned = try alloc.dupe(u8, submod.canonical_path);
+                    const module_decl = ast.ModuleDecl{
+                        .logical_name = dotted_name,
+                        .canonical_path = submod_canon_owned,
+                        .items = submod.source_file.items,
+                        .is_system = is_system,
+                        .annotations = annotations,
+                        .location = .{ .file = submod_canon_owned, .line = 1, .column = 0 },
+                    };
+                    submod.source_file.items = &.{};
+                    try items.append(alloc, .{ .module_decl = module_decl });
+                }
+            }
+        }
+    }.add;
+
+    for (imported_modules.items) |*module| {
+        try addModuleToAST(parse_allocator, gpa, &emitted_files, &new_module_items, module, resolver);
+    }
+
+    var rebuilt = try std.ArrayList(ast.Item).initCapacity(parse_allocator, program.items.len + new_module_items.items.len);
+    defer rebuilt.deinit(parse_allocator);
+
+    for (new_module_items.items) |item| {
+        try rebuilt.append(parse_allocator, item);
+    }
+    for (program.items) |item| {
+        if (item == .import_decl) continue;
+        try rebuilt.append(parse_allocator, item);
+    }
+
+    program.items = try rebuilt.toOwnedSlice(parse_allocator);
+    return true;
+}

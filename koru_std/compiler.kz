@@ -535,6 +535,49 @@ pub const CompilerContext = struct {
         .target = target,
         .optimize = optimize,
     });
+    emit_build_zig_module.addImport("log", log_module);
+
+    const compiler_requires_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/compiler_requires.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    compiler_requires_module.addImport("ast", ast_module);
+    compiler_requires_module.addImport("log", log_module);
+
+    const import_pipeline_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/import_pipeline.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    import_pipeline_module.addImport("ast", ast_module);
+    import_pipeline_module.addImport("parser", parser_module);
+    import_pipeline_module.addImport("module_resolver", module_resolver_module);
+    import_pipeline_module.addImport("log", log_module);
+    import_pipeline_module.addImport("errors", errors_module);
+    import_pipeline_module.addImport("file_types", file_types_module);
+
+    const post_transform_weld_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/post_transform_weld.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    post_transform_weld_module.addImport("ast", ast_module);
+    post_transform_weld_module.addImport("config", config_module);
+    post_transform_weld_module.addImport("module_resolver", module_resolver_module);
+    post_transform_weld_module.addImport("import_pipeline", import_pipeline_module);
+    post_transform_weld_module.addImport("compiler_requires", compiler_requires_module);
+    post_transform_weld_module.addImport("emit_build_zig", emit_build_zig_module);
+    post_transform_weld_module.addImport("log", log_module);
+    post_transform_weld_module.addImport("compiler_env", compiler_env_module);
+    const canonicalize_names_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/canonicalize_names.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    canonicalize_names_module.addImport("ast", ast_module);
+    canonicalize_names_module.addImport("log", log_module);
+    post_transform_weld_module.addImport("canonicalize_names", canonicalize_names_module);
 
     // AST serializer (for --ast-json and debugging)
     const ast_serializer_module = b.createModule(.{
@@ -598,6 +641,7 @@ pub const CompilerContext = struct {
     backend_output_module.addImport("visitor_emitter", visitor_emitter_module);
     backend_output_module.addImport("js_emitter", js_emitter_module);
     backend_output_module.addImport("emit_build_zig", emit_build_zig_module);
+    backend_output_module.addImport("post_transform_weld", post_transform_weld_module);
     backend_output_module.addImport("ast_serializer", ast_serializer_module);
     backend_output_module.addImport("runtime_registry", runtime_registry_module);
     backend_output_module.addImport("tap_transformer", tap_transformer_module);
@@ -635,6 +679,7 @@ pub const CompilerContext = struct {
     exe.root_module.addImport("expression_parser", expression_parser_module);
     exe.root_module.addImport("comptime_eval", comptime_eval_module);
     exe.root_module.addImport("emit_build_zig", emit_build_zig_module);
+    exe.root_module.addImport("post_transform_weld", post_transform_weld_module);
     exe.root_module.addImport("shape_checker", shape_checker_module);
     exe.root_module.addImport("flow_checker", flow_checker_module);
     exe.root_module.addImport("ast_transform", ast_transform_module);
@@ -2221,6 +2266,12 @@ const joinPathAlloc = struct {
 
         // DUMP POINT 4: AST after transform handlers
         backend_output.dumpAST(post_transform_ast, "4-post-transform", ctx.allocator);
+
+        const post_transform_weld = @import("post_transform_weld");
+        post_transform_weld.weldAfterTransform(@constCast(post_transform_ast), ctx.allocator) catch |err| {
+            log.err("FATAL: post-transform import weld failed ({s}).\n", .{@errorName(err)});
+            @panic("post-transform import weld failed — see error above");
+        };
 
         transform_ctx.ast = post_transform_ast;
         break :blk transform_ctx;

@@ -42,32 +42,24 @@ pub const CompilerRequiresCollector = struct {
         return self.compiler_requirements.items;
     }
 
-    /// Collect all ~compiler:requires invocations from the source file
-    pub fn collectFromSourceFile(self: *CompilerRequiresCollector, source_file: *const ast.Program) !void {
-        log.debug("[CompilerRequiresCollector] Starting collection from {} items\n", .{source_file.items.len});
+    /// Collect all ~build:requires / ~compiler:requires from a program AST.
+    pub fn collectFromProgram(self: *CompilerRequiresCollector, program: *const ast.Program) !void {
+        log.debug("[CompilerRequiresCollector] Starting collection from {} items\n", .{program.items.len});
+        try self.collectFromItems(program.items);
+    }
 
-        // Walk top-level items
-        for (source_file.items) |item| {
+    /// Legacy alias — same walk as `collectFromProgram`.
+    pub fn collectFromSourceFile(self: *CompilerRequiresCollector, source_file: *const ast.Program) !void {
+        try self.collectFromProgram(source_file);
+    }
+
+    fn collectFromItems(self: *CompilerRequiresCollector, items: []const ast.Item) !void {
+        for (items) |item| {
             switch (item) {
-                .flow => |flow| {
-                    try self.checkFlowForRequires(&flow);
-                },
+                .flow => |flow| try self.checkFlowForRequires(&flow),
                 .module_decl => |module| {
                     log.debug("[CompilerRequiresCollector] Checking module: {s} ({} items)\n", .{ module.logical_name, module.items.len });
-                    // Also check imported modules
-                    for (module.items) |mod_item| {
-                        const item_type = @tagName(mod_item);
-                        log.debug("[CompilerRequiresCollector]   Item type: {s}\n", .{item_type});
-                        switch (mod_item) {
-                            .flow => |flow_inner| {
-                                try self.checkFlowForRequires(&flow_inner);
-                            },
-                            .parse_error => |err| {
-                                log.debug("[CompilerRequiresCollector]   PARSE ERROR: {s}\n", .{err.message});
-                            },
-                            else => {},
-                        }
-                    }
+                    try self.collectFromItems(module.items);
                 },
                 else => {},
             }

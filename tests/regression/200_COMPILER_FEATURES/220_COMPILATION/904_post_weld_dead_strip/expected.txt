@@ -1,0 +1,1 @@
+PASS: post-weld dead_strip keeps init, strips tick

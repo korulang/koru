@@ -1,0 +1,9 @@
+{
+  "name": "post-weld-dead-strip",
+  "version": "0.1.0",
+  "paths": {
+    "std": "../../../../../koru_std",
+    "app": "{{ ENTRY }}",
+    "fixture": "{{ ENTRY }}/fixture"
+  }
+}
