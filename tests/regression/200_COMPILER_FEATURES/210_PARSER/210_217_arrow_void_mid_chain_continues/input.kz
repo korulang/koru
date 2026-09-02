@@ -1,0 +1,23 @@
+// The ACCEPTANCE boundary of the void mid-chain: after `|> void-sink()`, the
+// thread is dropped (a void has no payload to carry) and the chain continues
+// with explicit args — `|> value-sink(x: "z")`. The terminal value ("z") is
+// discarded silently at top level. Pins: compiles, runs, prints "sink" and
+// nothing else — the void mid-chain is a statement sequence, not a thread.
+~import std/io
+
+const std = @import("std");
+
+~pub tor stage { }
+| ok string
+| err string
+~proc stage|zig { return .{ .ok = "hi" }; }
+
+~pub tor void-sink { }
+~proc void-sink|zig { std.debug.print("sink\n", .{}); }
+
+~pub tor value-sink { x: string } -> string
+~proc value-sink|zig { return x; }
+
+~stage()
+| ok _ |> void-sink() |> value-sink(x: "z")
+| err e |> std/io:print.ln("err: {{ e:s }}")

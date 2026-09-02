@@ -1,0 +1,21 @@
+// The ACCEPTANCE boundary of the discard-into-void continuation: `| ok _ |>
+// void-sink()` is legitimate — the `_` discards the payload explicitly, the
+// void sink runs as a statement, and nothing expects a return (the arm is
+// terminal). The linear bind-or-discard discipline is satisfied by the `_`.
+// Pins: compiles, runs, prints "sink" — the discard does not leak a
+// payload-return requirement into the void call.
+~import std/io
+
+const std = @import("std");
+
+~pub tor stage { }
+| ok string
+| err string
+~proc stage|zig { return .{ .ok = "hi" }; }
+
+~pub tor void-sink { }
+~proc void-sink|zig { std.debug.print("sink\n", .{}); }
+
+~stage()
+| ok _ |> void-sink()
+| err e |> std/io:print.ln("err: {{ e:s }}")
