@@ -4,9 +4,10 @@
 // a wording that names the call rather than the rule.
 //
 // The valid consumer spelling is the continuation: `| failed f |>
-// std/io:print.ln(f)`. Sibling of 210_211 (the bare-arg spelling, which the
-// parser accepts structurally and refuses later with KORU100); this pins the
-// parse-level refusal.
+// std/io:print.ln(f)`. Sibling of 210_211 (the bare-arg spelling — since the
+// parseConstructionStep fix, both are refused at parse with the same
+// PARSE003 category; this one takes the braced path because its string
+// literal contains a brace).
 ~import std/io
 
 ~pub tor stage-a { ctx: i64 }

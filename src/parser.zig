@@ -195,7 +195,6 @@ fn findTopLevelEquals(s: []const u8) ?usize {
     return null;
 }
 
-
 /// `-> name { field: value, … }` — a NAMED record produce, the twin of the
 /// anonymous `-> { … }` beside it. Returns the brace index, or null.
 ///
@@ -757,13 +756,13 @@ pub const Parser = struct {
     };
 
     /// Report a parse error and fail with `error.ParseError`.
-    fn fail(self: *Parser, code: errors.ErrorCode, line: usize, column: usize, comptime fmt: []const u8, args: anytype) error{OutOfMemory, ParseError} {
+    fn fail(self: *Parser, code: errors.ErrorCode, line: usize, column: usize, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, ParseError } {
         self.reporter.addError(code, line, column, fmt, args) catch return error.OutOfMemory;
         return error.ParseError;
     }
 
     /// Report a parse error with a teaching hint and fail with `error.ParseError`.
-    fn failWithHint(self: *Parser, code: errors.ErrorCode, line: usize, column: usize, comptime fmt: []const u8, args: anytype, comptime hint_fmt: []const u8, hint_args: anytype) error{OutOfMemory, ParseError} {
+    fn failWithHint(self: *Parser, code: errors.ErrorCode, line: usize, column: usize, comptime fmt: []const u8, args: anytype, comptime hint_fmt: []const u8, hint_args: anytype) error{ OutOfMemory, ParseError } {
         self.reporter.addErrorWithHint(code, line, column, fmt, args, hint_fmt, hint_args) catch return error.OutOfMemory;
         return error.ParseError;
     }
@@ -2457,7 +2456,7 @@ pub const Parser = struct {
                         var name_end: usize = 0;
                         while (name_end < head.len and
                             (std.ascii.isAlphanumeric(head[name_end]) or
-                             head[name_end] == '_' or head[name_end] == '-'))
+                                head[name_end] == '_' or head[name_end] == '-'))
                         {
                             name_end += 1;
                         }
@@ -4764,7 +4763,6 @@ pub const Parser = struct {
 
     /// Check if content has an unescaped escape sequence like \n or \t
     /// Returns false for \\n (escaped backslash + n) which is valid in paths
-
     fn looksLikeZigCode(self: *Parser, content: []const u8) bool {
         _ = self;
         // Detect patterns that indicate Zig code rather than Koru event invocations
@@ -6546,81 +6544,81 @@ pub const Parser = struct {
                 try cont_list.append(self.allocator, produce_cont);
                 output_continuations = try cont_list.toOwnedSlice(self.allocator);
             } else {
-            // Mirror parsePipelineContinuationBase's Source-block pipeline step without
-            // mutual recursion (that path also calls parseImplicitSourceBlock).
-            const has_open_brace = std.mem.indexOf(u8, tail, "{") != null;
-            const has_close_brace = std.mem.indexOf(u8, tail, "}") != null;
-            if (has_open_brace and !has_close_brace) {
-                const brace_idx = std.mem.lastIndexOf(u8, tail, "{") orelse unreachable;
-                const invocation_str = lexer.trim(tail[0..brace_idx]);
-                const temp_invocation = try self.parseEventInvocation(invocation_str);
-                const path_str = try self.pathToString(temp_invocation.path);
-                defer self.allocator.free(path_str);
+                // Mirror parsePipelineContinuationBase's Source-block pipeline step without
+                // mutual recursion (that path also calls parseImplicitSourceBlock).
+                const has_open_brace = std.mem.indexOf(u8, tail, "{") != null;
+                const has_close_brace = std.mem.indexOf(u8, tail, "}") != null;
+                if (has_open_brace and !has_close_brace) {
+                    const brace_idx = std.mem.lastIndexOf(u8, tail, "{") orelse unreachable;
+                    const invocation_str = lexer.trim(tail[0..brace_idx]);
+                    const temp_invocation = try self.parseEventInvocation(invocation_str);
+                    const path_str = try self.pathToString(temp_invocation.path);
+                    defer self.allocator.free(path_str);
 
-                var has_source_param = false;
-                var unresolved = false;
-                if (self.registry.getEventType(path_str)) |event_type| {
-                    if (event_type.input_shape) |shape| {
-                        for (shape.fields) |field| {
-                            if (field.is_source) {
-                                has_source_param = true;
-                                break;
+                    var has_source_param = false;
+                    var unresolved = false;
+                    if (self.registry.getEventType(path_str)) |event_type| {
+                        if (event_type.input_shape) |shape| {
+                            for (shape.fields) |field| {
+                                if (field.is_source) {
+                                    has_source_param = true;
+                                    break;
+                                }
                             }
                         }
-                    }
-                } else {
-                    unresolved = true;
-                }
-
-                if (has_source_param or unresolved) {
-                    const tail_source = try self.parseImplicitSourceBlock(base_indent, null, true);
-                    var final_invocation: ast.Invocation = undefined;
-                    if (self.registry.getEventType(path_str)) |event_type| {
-                        final_invocation = try self.createImplicitSourceInvocation(
-                            temp_invocation,
-                            tail_source.source,
-                            tail_source.phantom_type,
-                            event_type,
-                        );
                     } else {
-                        final_invocation = try self.createImplicitSourceInvocationDefault(
-                            temp_invocation,
-                            tail_source.source,
-                            tail_source.phantom_type,
-                        );
+                        unresolved = true;
                     }
-                    // `: name` close bind, same rule as the root path.
-                    if (tail_source.bind_name) |bnn| {
-                        final_invocation.return_binding = bnn;
-                    }
-                    self.allocator.free(tail_source.source);
 
-                    const step = ast.Step{ .invocation = final_invocation };
-                    const tail_cont = ast.Continuation{
-                        .branch = try self.allocator.dupe(u8, ""),
-                        .binding = null,
-                        .condition = null,
-                        .condition_expr = null,
-                        .node = step,
-                        .indent = base_indent,
-                        .continuations = tail_source.continuations,
-                        .location = tail_location,
-                    };
-                    var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
-                    try cont_list.append(self.allocator, tail_cont);
-                    output_continuations = try cont_list.toOwnedSlice(self.allocator);
+                    if (has_source_param or unresolved) {
+                        const tail_source = try self.parseImplicitSourceBlock(base_indent, null, true);
+                        var final_invocation: ast.Invocation = undefined;
+                        if (self.registry.getEventType(path_str)) |event_type| {
+                            final_invocation = try self.createImplicitSourceInvocation(
+                                temp_invocation,
+                                tail_source.source,
+                                tail_source.phantom_type,
+                                event_type,
+                            );
+                        } else {
+                            final_invocation = try self.createImplicitSourceInvocationDefault(
+                                temp_invocation,
+                                tail_source.source,
+                                tail_source.phantom_type,
+                            );
+                        }
+                        // `: name` close bind, same rule as the root path.
+                        if (tail_source.bind_name) |bnn| {
+                            final_invocation.return_binding = bnn;
+                        }
+                        self.allocator.free(tail_source.source);
+
+                        const step = ast.Step{ .invocation = final_invocation };
+                        const tail_cont = ast.Continuation{
+                            .branch = try self.allocator.dupe(u8, ""),
+                            .binding = null,
+                            .condition = null,
+                            .condition_expr = null,
+                            .node = step,
+                            .indent = base_indent,
+                            .continuations = tail_source.continuations,
+                            .location = tail_location,
+                        };
+                        var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                        try cont_list.append(self.allocator, tail_cont);
+                        output_continuations = try cont_list.toOwnedSlice(self.allocator);
+                    } else {
+                        const tail_cont = try self.parsePipelineContinuationBase(tail, base_indent, tail_location);
+                        var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                        try cont_list.append(self.allocator, tail_cont);
+                        output_continuations = try cont_list.toOwnedSlice(self.allocator);
+                    }
                 } else {
                     const tail_cont = try self.parsePipelineContinuationBase(tail, base_indent, tail_location);
                     var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
                     try cont_list.append(self.allocator, tail_cont);
                     output_continuations = try cont_list.toOwnedSlice(self.allocator);
                 }
-            } else {
-                const tail_cont = try self.parsePipelineContinuationBase(tail, base_indent, tail_location);
-                var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
-                try cont_list.append(self.allocator, tail_cont);
-                output_continuations = try cont_list.toOwnedSlice(self.allocator);
-            }
             }
         } else if (strict) {
             output_continuations = try self.parseContinuationsWithMode(base_indent, true);
@@ -7492,74 +7490,74 @@ pub const Parser = struct {
 
         if (destructure.len == 0) {
             if (parts.peek()) |next| {
-            if (!std.mem.startsWith(u8, next, "|>") and !std.mem.startsWith(u8, next, "=>") and
-                !std.mem.startsWith(u8, next, "->") and
-                !std.mem.startsWith(u8, next, "@") and !std.mem.eql(u8, next, "when"))
-            {
-                // Check if binding has annotations: identifier[ann1|ann2|...]
-                var identifier: []const u8 = next;
+                if (!std.mem.startsWith(u8, next, "|>") and !std.mem.startsWith(u8, next, "=>") and
+                    !std.mem.startsWith(u8, next, "->") and
+                    !std.mem.startsWith(u8, next, "@") and !std.mem.eql(u8, next, "when"))
+                {
+                    // Check if binding has annotations: identifier[ann1|ann2|...]
+                    var identifier: []const u8 = next;
 
-                if (std.mem.indexOf(u8, next, "[")) |bracket_start| {
-                    // Has annotations - split into identifier and annotation parts
-                    identifier = next[0..bracket_start];
+                    if (std.mem.indexOf(u8, next, "[")) |bracket_start| {
+                        // Has annotations - split into identifier and annotation parts
+                        identifier = next[0..bracket_start];
 
-                    // Find closing bracket
-                    if (std.mem.indexOf(u8, next, "]")) |bracket_end| {
-                        if (bracket_end > bracket_start + 1) {
-                            // Parse annotations between [ and ]
-                            const ann_str = next[bracket_start + 1 .. bracket_end];
-                            var ann_list = try std.ArrayList([]const u8).initCapacity(self.allocator, 4);
-                            errdefer {
-                                for (ann_list.items) |ann| {
-                                    self.allocator.free(ann);
+                        // Find closing bracket
+                        if (std.mem.indexOf(u8, next, "]")) |bracket_end| {
+                            if (bracket_end > bracket_start + 1) {
+                                // Parse annotations between [ and ]
+                                const ann_str = next[bracket_start + 1 .. bracket_end];
+                                var ann_list = try std.ArrayList([]const u8).initCapacity(self.allocator, 4);
+                                errdefer {
+                                    for (ann_list.items) |ann| {
+                                        self.allocator.free(ann);
+                                    }
+                                    ann_list.deinit(self.allocator);
                                 }
-                                ann_list.deinit(self.allocator);
-                            }
 
-                            var ann_iter = std.mem.splitScalar(u8, ann_str, '|');
-                            while (ann_iter.next()) |ann| {
-                                const trimmed_ann = lexer.trim(ann);
-                                if (trimmed_ann.len > 0) {
-                                    try ann_list.append(self.allocator, try self.allocator.dupe(u8, trimmed_ann));
+                                var ann_iter = std.mem.splitScalar(u8, ann_str, '|');
+                                while (ann_iter.next()) |ann| {
+                                    const trimmed_ann = lexer.trim(ann);
+                                    if (trimmed_ann.len > 0) {
+                                        try ann_list.append(self.allocator, try self.allocator.dupe(u8, trimmed_ann));
+                                    }
                                 }
+                                binding_annotations = try ann_list.toOwnedSlice(self.allocator);
                             }
-                            binding_annotations = try ann_list.toOwnedSlice(self.allocator);
+                        } else {
+                            // Unclosed bracket
+                            try self.reporter.addError(
+                                .PARSE001,
+                                self.current,
+                                indent + 2,
+                                "Unclosed bracket in binding annotation '{s}'.",
+                                .{next},
+                            );
+                            return error.InvalidBinding;
                         }
-                    } else {
-                        // Unclosed bracket
+                    }
+
+                    // Validate that the identifier part is valid
+                    if (!lexer.isValidIdentifier(identifier)) {
                         try self.reporter.addError(
                             .PARSE001,
                             self.current,
                             indent + 2,
-                            "Unclosed bracket in binding annotation '{s}'.",
-                            .{next},
+                            "Invalid binding '{s}'. Bindings must be valid identifiers. Use '|>' for pipelines.",
+                            .{identifier},
                         );
                         return error.InvalidBinding;
                     }
+                    // Single-underscore-identifier validation lives in the
+                    // existing isValidIdentifier check above. Reject a user
+                    // `_blah` binding (not bare `_`): it is neither a discard nor
+                    // a real name, and it dodges the unused-binding wall.
+                    try self.rejectLeadingUnderscoreBinding(identifier, self.current, "binding");
+                    // This is a binding
+                    binding = try self.allocator.dupe(u8, identifier);
+                    _ = parts.next(); // consume it
+                    rest = parts.rest();
                 }
-
-                // Validate that the identifier part is valid
-                if (!lexer.isValidIdentifier(identifier)) {
-                    try self.reporter.addError(
-                        .PARSE001,
-                        self.current,
-                        indent + 2,
-                        "Invalid binding '{s}'. Bindings must be valid identifiers. Use '|>' for pipelines.",
-                        .{identifier},
-                    );
-                    return error.InvalidBinding;
-                }
-                // Single-underscore-identifier validation lives in the
-                // existing isValidIdentifier check above. Reject a user
-                // `_blah` binding (not bare `_`): it is neither a discard nor
-                // a real name, and it dodges the unused-binding wall.
-                try self.rejectLeadingUnderscoreBinding(identifier, self.current, "binding");
-                // This is a binding
-                binding = try self.allocator.dupe(u8, identifier);
-                _ = parts.next(); // consume it
-                rest = parts.rest();
             }
-        }
         }
 
         // Check for when clause
@@ -8010,7 +8008,7 @@ pub const Parser = struct {
             // rides on the final segment; without this strip the invocation
             // parser's arg scan silently swallowed it (return_binding kept,
             // produce dropped). Detect on a comment-stripped view.
-var produce_tail: ?[]const u8 = null;
+            var produce_tail: ?[]const u8 = null;
             {
                 const full_nc = stripTrailingLineComment(full_rest);
                 if (indexOfTopLevelArrow(full_nc)) |aidx| {
@@ -8890,6 +8888,31 @@ var produce_tail: ?[]const u8 = null;
         const first_space = std.mem.indexOfAny(u8, trimmed_content, &[_]u8{ ' ', '\t' });
         const candidate_name = if (first_space) |idx| lexer.trim(trimmed_content[0..idx]) else trimmed_content;
         const expr_part = if (first_space) |idx| lexer.trim(trimmed_content[idx..]) else "";
+        // A construction must NAME a branch. A call-shaped RHS (`=> void-sink()`,
+        // `=> print.ln(f)`) has no name — the parens used to ride along as a
+        // "payloadless constructor named 'void-sink()'" and the emitter produced
+        // garbage. Enforce the single-identifier rule here, the same rule
+        // parseBranchConstructorWithContext enforces for the braced form.
+        if (!isValidIdentifier(candidate_name)) {
+            return self.fail(
+                .PARSE003,
+                self.current + 1,
+                1,
+                "invalid branch constructor name '{s}' — must be a single identifier",
+                .{candidate_name},
+            );
+        }
+        // `=> err _` — a discard is not a value; a branch cannot be constructed
+        // from it (the emitted `_` dies in Zig, not in Koru).
+        if (std.mem.eql(u8, expr_part, "_")) {
+            return self.fail(
+                .PARSE003,
+                self.current + 1,
+                1,
+                "cannot construct a branch from a discard — '_' is not a value",
+                .{},
+            );
+        }
         return ast.Step{ .branch_constructor = .{
             .branch_name = try self.allocator.dupe(u8, candidate_name),
             .fields = &.{},
@@ -9000,6 +9023,32 @@ var produce_tail: ?[]const u8 = null;
         const sp = std.mem.indexOfAny(u8, s, &[_]u8{ ' ', '\t' });
         const branch_name = if (sp) |idx| lexer.trim(s[0..idx]) else s;
         const plain = if (sp) |idx| lexer.trim(s[idx..]) else "";
+        // The braceless `=> construct` path never validated its name — a
+        // call-shaped RHS (`=> void-sink()`, `=> print.ln(f)`) rode along as
+        // a "payloadless constructor named 'void-sink()'" and the emitter
+        // produced garbage. The braced path enforces the single-identifier
+        // rule (see parseBranchConstructorWithContext); enforce it here too,
+        // so `=>` can only ever construct a real branch.
+        if (!isValidIdentifier(branch_name)) {
+            return self.fail(
+                .PARSE003,
+                self.current + 1,
+                1,
+                "invalid branch constructor name '{s}' — must be a single identifier",
+                .{branch_name},
+            );
+        }
+        // `=> err _` — a discard is not a value; a branch cannot be
+        // constructed from it (the emitted `_` dies in Zig, not in Koru).
+        if (std.mem.eql(u8, plain, "_")) {
+            return self.fail(
+                .PARSE003,
+                self.current + 1,
+                1,
+                "cannot construct a branch from a discard — '_' is not a value",
+                .{},
+            );
+        }
         return ast.BranchConstructor{
             .branch_name = try self.allocator.dupe(u8, branch_name),
             .fields = &.{},
@@ -10040,7 +10089,7 @@ var produce_tail: ?[]const u8 = null;
                 var name_end: usize = 0;
                 while (name_end < branch_start.len and
                     (std.ascii.isAlphanumeric(branch_start[name_end]) or
-                     branch_start[name_end] == '_' or branch_start[name_end] == '-'))
+                        branch_start[name_end] == '_' or branch_start[name_end] == '-'))
                 {
                     name_end += 1;
                 }

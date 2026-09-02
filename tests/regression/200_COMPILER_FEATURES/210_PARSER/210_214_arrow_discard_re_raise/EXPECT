@@ -1,2 +1,3 @@
-BACKEND_COMPILE_ERROR
-CONTAINS used as an identifier
+FRONTEND_COMPILE_ERROR
+CONTAINS PARSE003
+CONTAINS cannot construct a branch from a discard

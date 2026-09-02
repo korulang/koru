@@ -6,11 +6,11 @@
 // std/io:print.ln(f)`. The `=>` arm's RHS must be a branch constructor
 // (210_152's `| failed f => failed f`).
 //
-// Today the refusal is accidental, not designed: the parser accepts the
-// shape structurally, the choke replicates the arm, and the replication
-// drops the payload reference — KORU100 unused binding x2. The design-
-// category refusal is parse-level (sibling 210_212: PARSE003). Pins today's
-// refusal; the EXPECT moves when the parser learns the rule.
+// Refused at parse: the braceless constructor path enforces the same
+// single-identifier rule as the braced path (parseConstructionStep), so a
+// call-shaped RHS — `std/io:print.ln(f)` — cannot ride along as a
+// "payloadless constructor named 'std/io:print.ln(f)'" (previously the
+// refusal was accidental: KORU100 from the choke replication).
 ~import std/io
 
 ~pub tor stage-a { ctx: i64 }

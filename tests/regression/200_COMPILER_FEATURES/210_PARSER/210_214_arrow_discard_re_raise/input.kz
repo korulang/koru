@@ -1,8 +1,8 @@
 // INVALID SHAPE: `=>` constructs a branch of the event, and a `_` discard is
 // not a constructor operand — `| ok _ => err _` re-raises with a discarded
-// payload. The frontend accepts it; the emitted Zig dies ("'_' used as an
-// identifier") and no Koru diagnostic is produced. Pins the boundary; flips
-// when the compiler learns the shape in Koru terms.
+// payload. Refused at parse ("cannot construct a branch from a discard");
+// previously the emitted `_` died in Zig ("'_' used as an identifier") with
+// no Koru diagnostic.
 ~import std/io
 
 const std = @import("std");
