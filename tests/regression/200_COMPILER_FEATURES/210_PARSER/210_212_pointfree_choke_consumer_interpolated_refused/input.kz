@@ -1,0 +1,31 @@
+// INVALID SHAPE by design: `=>` returns one of the EVENT's branches; a void
+// event like std/io:print.ln has no branches to return. Refused at the
+// parser — PARSE003 invalid branch constructor — the correct category, with
+// a wording that names the call rather than the rule.
+//
+// The valid consumer spelling is the continuation: `| failed f |>
+// std/io:print.ln(f)`. Sibling of 210_211 (the bare-arg spelling, which the
+// parser accepts structurally and refuses later with KORU100); this pins the
+// parse-level refusal.
+~import std/io
+
+~pub tor stage-a { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-a|zig { if (ctx < 0) return .{ .failed = "neg" }; return .{ .ctx = ctx + 1 }; }
+
+~pub tor stage-b { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-b|zig { return .{ .ctx = ctx * 2 }; }
+
+~pub tor run { ctx: i64 }
+| ctx i64
+| failed string
+~run = stage-a
+  |> stage-b
+| failed f => std/io:print.ln("{{ f:s }}")
+
+~run(ctx: 2)
+| ctx c |> std/io:print.ln("ok {{ c:d }}")
+| failed f |> std/io:print.ln("caught: {{ f:s }}")

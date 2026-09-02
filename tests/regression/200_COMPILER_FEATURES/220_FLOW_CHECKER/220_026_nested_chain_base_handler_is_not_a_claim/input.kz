@@ -1,0 +1,28 @@
+// Pins the NESTED-form propagation gap. The pyramid post states the design
+// rule — "an unhandled branch propagating to the nearest matching handler is
+// just what bind does. That's the choke" — and the point-free `=>` choke
+// implements it (210_151/152/197). In the NESTED (arrow) chain form it does
+// not: a base-level `| failed f |>` continuation — the nearest matching
+// handler, and the valid consumer spelling (`|>` threads into the call, `=>`
+// returns a branch) — is refused, and every stage's unhandled branches die
+// with KORU022.
+//
+// Neither spelling claims in the nested form: `| failed f => failed f` at the
+// base is refused the same way, even wrapped in a tor whose declared `| err`
+// gives the re-raise a target (measured 2026-09-02). The claim mechanism is
+// point-free-only today. Pins the gap; flips when nested propagation lands.
+~import std/io
+
+~pub tor stage-a { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-a|zig { if (ctx < 0) return .{ .failed = "neg" }; return .{ .ctx = ctx + 1 }; }
+
+~pub tor stage-b { ctx: i64 }
+| ctx i64
+| failed string
+~proc stage-b|zig { return .{ .ctx = ctx * 2 }; }
+
+~stage-a(ctx: 2)
+| ctx c |> stage-b(ctx: c)
+| failed f |> std/io:print.ln("{{ f:s }}")
