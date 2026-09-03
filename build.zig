@@ -180,6 +180,7 @@ pub fn build(b: *std.Build) void {
     shape_checker_module.addImport("phantom_parser", phantom_parser_module);
     shape_checker_module.addImport("branch_checker", branch_checker_module);
     shape_checker_module.addImport("log", log_module);
+    shape_checker_module.addImport("type_registry", type_registry_module);
 
     // Flow checker module
     const flow_checker_module = b.createModule(.{

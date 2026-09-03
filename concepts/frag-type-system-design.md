@@ -434,3 +434,13 @@ Rulings, each falsifiable:
 Open and next: coexisting same-name hosts (first-declaration-wins today, per
 the home map); the prove half; value-level interop — calling with a real
 File, the further rung 667_005 always named.
+
+Demand criterion (set 2026-09-04, the taste review): no rung 4 — no
+prove-half, no value interop, no new foreign surface — until a real host
+concept wants it: an stdlib module adopting an entry, or a program in pain.
+A feature whose only demand is its own test cluster gets retired, not
+extended; that ruling already took `std/types:struct`. The post-transform
+two-form scan was consolidated to one canonical collector
+(`type_registry.collectForeignEntries`, both consumers calling it) ahead of
+the wait, so the corner stays small while it waits. Falsified the day a
+real entry lands outside the 667 pins.

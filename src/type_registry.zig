@@ -735,25 +735,27 @@ pub fn moduleNamesMatch(a: []const u8, b: []const u8) bool {
     return true;
 }
 
-/// The foreign-claimed name set: every `std/foreign:struct(Name)` entry in
-/// the program, from BOTH representations the transform fixed point leaves
-/// behind — the live declaration flow (pre-erase) and the self-erased
-/// `// foreign Name: ...` marker comment (post-erase). Same two-form match
-/// the shape checker's deref scan and list's proto lookup already use; the
-/// checker runs post-transform, so the marker is the form that matters.
-/// Emission-time ground truth for the linkage gate: a bare type routes to
-/// its host home ONLY when claimed here (narrow — no existing bare-type
-/// behavior moves). Keys are owned dupes; free with the map.
-pub const ForeignNames = std.StringHashMap(void);
+/// One foreign entry's presence claims (bare field names). Owned dupes;
+/// freed with the enclosing map via deinitForeignEntries.
+pub const ForeignEntry = struct {
+    fields: [][]const u8,
+};
 
-pub fn buildForeignNames(allocator: std.mem.Allocator, items: []const ast.Item) !ForeignNames {
-    var names = ForeignNames.init(allocator);
-    errdefer names.deinit();
-    try collectForeignNames(allocator, &names, items);
-    return names;
-}
+/// The single canonical foreign-entry scan: every `std/foreign:struct(Name)`
+/// entry in the program, from BOTH representations the transform fixed point
+/// leaves behind — the live declaration flow (pre-erase, fields from the
+/// `source:` block) and the self-erased `// foreign Name: f, g` marker
+/// comment (post-erase). This is the ONE two-form match for post-transform
+/// consumers (the shape checker's deref scan and the emitter's linkage
+/// gate both call it); the pre-transform registration walks (phantom
+/// checker's collision scan, populateFromItem's identity set) keep their own
+/// because they see live flows with declaration sites, a different stage's
+/// concern. First declaration wins a bare-name collision, mirroring
+/// registerHome. Keys, field strings, and field slices are owned — release
+/// with deinitForeignEntries (which also deinits the map).
+pub const ForeignEntries = std.StringHashMap(ForeignEntry);
 
-fn collectForeignNames(allocator: std.mem.Allocator, names: *ForeignNames, items: []const ast.Item) !void {
+pub fn collectForeignEntries(allocator: std.mem.Allocator, entries: *ForeignEntries, items: []const ast.Item) !void {
     for (items) |item| {
         switch (item) {
             .flow => |flow| {
@@ -768,10 +770,36 @@ fn collectForeignNames(allocator: std.mem.Allocator, names: *ForeignNames, items
                 if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"') name = name[1 .. name.len - 1];
                 name = std.mem.trim(u8, name, " \t");
                 if (name.len == 0) continue;
-                if (names.contains(name)) continue;
+                if (entries.contains(name)) continue;
+                var src: ?[]const u8 = null;
+                for (inv.args) |a| {
+                    if (a.source_value) |sv| {
+                        src = sv.text;
+                        break;
+                    }
+                }
+                const text = src orelse continue;
+                var fields = try std.ArrayList([]const u8).initCapacity(allocator, 4);
+                errdefer {
+                    for (fields.items) |f| allocator.free(f);
+                    fields.deinit(allocator);
+                }
+                var lines = std.mem.splitScalar(u8, text, '\n');
+                while (lines.next()) |raw| {
+                    const field = std.mem.trim(u8, raw, " \t\r,");
+                    if (field.len == 0) continue;
+                    if (std.mem.indexOfScalar(u8, field, ':') != null) continue;
+                    try fields.append(allocator, try allocator.dupe(u8, field));
+                }
                 const key = try allocator.dupe(u8, name);
                 errdefer allocator.free(key);
-                try names.put(key, {});
+                const owned = try fields.toOwnedSlice(allocator);
+                errdefer {
+                    for (owned) |f| allocator.free(f);
+                    allocator.free(owned);
+                }
+                fields.deinit(allocator);
+                try entries.put(key, .{ .fields = owned });
             },
             .inline_code => |ic| {
                 const prefix = "// foreign ";
@@ -779,15 +807,45 @@ fn collectForeignNames(allocator: std.mem.Allocator, names: *ForeignNames, items
                 const colon = std.mem.indexOfScalar(u8, ic.code, ':') orelse continue;
                 const name = std.mem.trim(u8, ic.code[prefix.len..colon], " \t");
                 if (name.len == 0) continue;
-                if (names.contains(name)) continue;
+                if (entries.contains(name)) continue;
+                var fields = try std.ArrayList([]const u8).initCapacity(allocator, 4);
+                errdefer {
+                    for (fields.items) |f| allocator.free(f);
+                    fields.deinit(allocator);
+                }
+                var toks = std.mem.tokenizeAny(u8, ic.code[colon + 1 ..], "\n,");
+                while (toks.next()) |raw| {
+                    const field = std.mem.trim(u8, raw, " \t\r");
+                    if (field.len == 0) continue;
+                    if (std.mem.indexOfScalar(u8, field, ':') != null) continue;
+                    try fields.append(allocator, try allocator.dupe(u8, field));
+                }
                 const key = try allocator.dupe(u8, name);
                 errdefer allocator.free(key);
-                try names.put(key, {});
+                const owned = try fields.toOwnedSlice(allocator);
+                errdefer {
+                    for (owned) |f| allocator.free(f);
+                    allocator.free(owned);
+                }
+                fields.deinit(allocator);
+                try entries.put(key, .{ .fields = owned });
             },
-            .module_decl => |m| try collectForeignNames(allocator, names, m.items),
+            .module_decl => |m| try collectForeignEntries(allocator, entries, m.items),
             else => {},
         }
     }
+}
+
+/// Release a map filled by collectForeignEntries (keys, field strings, field
+/// slices) and deinit it. Mirrors the ownership the collector documents.
+pub fn deinitForeignEntries(allocator: std.mem.Allocator, entries: *ForeignEntries) void {
+    var it = entries.iterator();
+    while (it.next()) |entry| {
+        allocator.free(entry.key_ptr.*);
+        for (entry.value_ptr.fields) |f| allocator.free(f);
+        allocator.free(entry.value_ptr.fields);
+    }
+    entries.deinit();
 }
 
 // Tests

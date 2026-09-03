@@ -279,6 +279,7 @@ pub const CompilerContext = struct {
     shape_checker_module.addImport("phantom_parser", phantom_parser_module);
     shape_checker_module.addImport("type_inference", type_inference_module);
     shape_checker_module.addImport("branch_checker", branch_checker_module);
+    shape_checker_module.addImport("type_registry", type_registry_module);
 
     // Flow checker - validates control flow
     const flow_checker_module = b.createModule(.{

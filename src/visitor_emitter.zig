@@ -693,20 +693,19 @@ pub const VisitorEmitter = struct {
         const homes_ptr = try self.allocator.create(type_registry_module.HostTypeHomes);
         homes_ptr.* = try type_registry_module.buildHostTypeHomes(self.allocator, self.all_items);
         emitter.host_type_homes = homes_ptr;
-        // The foreign-claimed name set over the same post-transform items —
-        // the linkage gate for writeFieldType's host-home routing. Keys are
-        // owned dupes (unlike homes' AST slices), so teardown frees them.
-        const foreign_ptr = try self.allocator.create(type_registry_module.ForeignNames);
-        foreign_ptr.* = try type_registry_module.buildForeignNames(self.allocator, self.all_items);
+        // The foreign entries over the same post-transform items — the linkage
+        // gate for writeFieldType's host-home routing. Built by the canonical
+        // type_registry.collectForeignEntries scan; teardown via its deinit.
+        const foreign_ptr = try self.allocator.create(type_registry_module.ForeignEntries);
+        foreign_ptr.* = type_registry_module.ForeignEntries.init(self.allocator);
+        try type_registry_module.collectForeignEntries(self.allocator, foreign_ptr, self.all_items);
         emitter.foreign_names = foreign_ptr;
         defer {
             emitter.host_type_homes = null;
             homes_ptr.deinit();
             self.allocator.destroy(homes_ptr);
             emitter.foreign_names = null;
-            var fiter = foreign_ptr.keyIterator();
-            while (fiter.next()) |key| self.allocator.free(key.*);
-            foreign_ptr.deinit();
+            type_registry_module.deinitForeignEntries(self.allocator, foreign_ptr);
             self.allocator.destroy(foreign_ptr);
         }
 

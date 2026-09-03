@@ -103,12 +103,12 @@ pub var build_config_count: usize = 0;
 /// compiler process.
 pub var host_type_homes: ?*const type_registry_module.HostTypeHomes = null;
 
-/// The foreign-claimed name set over THIS program (type_registry.
-/// buildForeignNames) — attached beside host_type_homes before emission
-/// starts. writeFieldType consults it as the linkage gate: a bare base type
-/// routes to its host home ONLY when claimed here, so no existing bare-type
-/// lowering moves. Same file-scope channel, same one-program lifetime.
-pub var foreign_names: ?*const type_registry_module.ForeignNames = null;
+/// The foreign entries over THIS program (type_registry.collectForeignEntries)
+/// — attached beside host_type_homes before emission starts. writeFieldType
+/// consults it as the linkage gate: a bare base type routes to its host home
+/// ONLY when claimed here, so no existing bare-type lowering moves. Same
+/// file-scope channel, same one-program lifetime.
+pub var foreign_names: ?*const type_registry_module.ForeignEntries = null;
 
 /// Register a build config value (called by build:config)
 pub fn registerBuildConfig(key: []const u8, value: []const u8) bool {

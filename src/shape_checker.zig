@@ -5,16 +5,13 @@ const ast = @import("ast");
 const errors = @import("errors");
 const type_inference = @import("type_inference");
 const branch_checker = @import("branch_checker");
+const type_registry = @import("type_registry");
 
 /// The shape checker validates that:
 /// 1. Event continuations cover all branches
 /// 2. Shapes match at each pipeline step
 /// 3. Labels are applied with matching shapes
 /// 4. Proc returns match their event declaration
-
-pub const ForeignEntry = struct {
-    fields: [][]const u8,
-};
 
 pub const ShapeChecker = struct {
     allocator: std.mem.Allocator,
@@ -25,11 +22,10 @@ pub const ShapeChecker = struct {
     procs: std.StringHashMap(ProcInfo),
     labels: std.StringHashMap(LabelInfo),
     impl_flows: std.StringHashMap(ImplFlowInfo),
-    // Foreign airlock registry (rung 2): foreign entry name → presence-claimed
-    // field names. Built by scanning `std/foreign:struct(Name)` decl flows;
-    // bare-name keyed (module rung for foreign is unbuilt, same as the nominal
-    // gate). Owns keys and field-name strings.
-    foreign_entries: std.StringHashMap(ForeignEntry),
+    // Foreign airlock entries (name → presence-claimed fields), filled by the
+    // canonical type_registry.collectForeignEntries. Bare-name keyed (module
+    // rung for foreign is unbuilt, same as the nominal gate).
+    foreign_entries: type_registry.ForeignEntries,
     // Type inference engine
     type_engine: type_inference.TypeInference,
 
@@ -88,7 +84,7 @@ pub const ShapeChecker = struct {
             .procs = std.StringHashMap(ProcInfo).init(allocator),
             .labels = std.StringHashMap(LabelInfo).init(allocator),
             .impl_flows = std.StringHashMap(ImplFlowInfo).init(allocator),
-            .foreign_entries = std.StringHashMap(ForeignEntry).init(allocator),
+            .foreign_entries = type_registry.ForeignEntries.init(allocator),
             .type_engine = try type_inference.TypeInference.init(allocator, reporter),
         };
     }
@@ -122,13 +118,7 @@ pub const ShapeChecker = struct {
             self.allocator.free(entry.key_ptr.*);
         }
         self.impl_flows.deinit();
-        var foreign_iter = self.foreign_entries.iterator();
-        while (foreign_iter.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-            for (entry.value_ptr.fields) |f| self.allocator.free(f);
-            self.allocator.free(entry.value_ptr.fields);
-        }
-        self.foreign_entries.deinit();
+        type_registry.deinitForeignEntries(self.allocator, &self.foreign_entries);
         self.presence_arms.deinit(self.allocator);
         self.type_engine.deinit();
     }
@@ -2331,135 +2321,17 @@ pub const ShapeChecker = struct {
         }
     }
 
-    /// Validate a top-level subflow impl: `~event = branch { ... }` or `~event = branch value`.
-    ///
-    /// The branch declaration determines the valid constructor shape:
-    /// - Identity branch (`| X Type`): must be constructed with a bare value (`X v` or `X { v }`).
-    ///   Reject struct-init syntax (`X { field: v }`) — it targets a field that doesn't exist.
-    /// - Multi-field struct (`| X { a: A, b: B }`): must be constructed with matching fields.
-    ///   Reject bare-value construction.
-    /// - Void branch (`| X`): must be constructed with no payload.
-    ///
-    /// Note: single-field struct branches are forbidden at declaration time (parser.zig),
-    /// so they do not appear here.
-    /// Build the foreign airlock registry from `std/foreign:struct(Name)` decl
-    /// flows. Mirrors phantom_semantic_checker.scanDeclaredTypes' foreign door
-    /// and type_registry's scan, plus the field presence-claims the deref check
-    /// needs. Bare-name keyed; second registrant overwrites (the duplicate wall
-    /// lives in the phantom checker — this table only answers field questions).
+    /// Rebuild the foreign airlock entries via the canonical
+    /// type_registry.collectForeignEntries scan (the one two-form match).
     fn buildForeignEntries(self: *ShapeChecker, items: []const ast.Item) !void {
-        var it = self.foreign_entries.iterator();
-        while (it.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-            for (entry.value_ptr.fields) |f| self.allocator.free(f);
-            self.allocator.free(entry.value_ptr.fields);
-        }
-        self.foreign_entries.clearRetainingCapacity();
-        try self.scanForeignItems(items);
-    }
-
-    fn scanForeignItems(self: *ShapeChecker, items: []const ast.Item) !void {
-        for (items) |item| {
-            switch (item) {
-                .flow => |flow| try self.scanForeignFlow(&flow),
-                .inline_code => |ic| try self.scanForeignMarker(ic.code),
-                .module_decl => |module| try self.scanForeignItems(module.items),
-                else => {},
-            }
-        }
-    }
-
-    /// The self-erased form the `std/foreign:struct` transform leaves behind
-    /// (`// foreign Name: f, g`). The checker runs after transforms, so this
-    /// is the form it usually meets — same fixed point as list's proto marker
-    /// fallback. A live decl flow (pre-erase) is handled by scanForeignFlow.
-    fn scanForeignMarker(self: *ShapeChecker, code: []const u8) !void {
-        const prefix = "// foreign ";
-        if (!std.mem.startsWith(u8, code, prefix)) return;
-        const colon = std.mem.indexOfScalar(u8, code, ':') orelse return;
-        const name = std.mem.trim(u8, code[prefix.len..colon], " \t");
-        if (name.len == 0) return;
-        if (self.foreign_entries.contains(name)) return;
-        const text = code[colon + 1 ..];
-        var count: usize = 0;
-        var tok1 = std.mem.tokenizeAny(u8, text, "\n,");
-        while (tok1.next()) |raw| {
-            const field = std.mem.trim(u8, raw, " \t\r");
-            if (field.len == 0) continue;
-            if (std.mem.indexOfScalar(u8, field, ':') != null) continue;
-            count += 1;
-        }
-        const fields = try self.allocator.alloc([]const u8, count);
-        errdefer self.allocator.free(fields);
-        var w: usize = 0;
-        var tok2 = std.mem.tokenizeAny(u8, text, "\n,");
-        while (tok2.next()) |raw| {
-            const field = std.mem.trim(u8, raw, " \t\r");
-            if (field.len == 0) continue;
-            if (std.mem.indexOfScalar(u8, field, ':') != null) continue;
-            fields[w] = try self.allocator.dupe(u8, field);
-            w += 1;
-        }
-        const key = try self.allocator.dupe(u8, name);
-        errdefer self.allocator.free(key);
-        if (try self.foreign_entries.fetchPut(key, .{ .fields = fields[0..w] })) |old| {
-            self.allocator.free(old.key);
-            for (old.value.fields) |f| self.allocator.free(f);
-            self.allocator.free(old.value.fields);
-        }
-    }
-
-    fn scanForeignFlow(self: *ShapeChecker, flow: *const ast.Flow) !void {
-        const inv = flow.inv();
-        const mq = inv.path.module_qualifier orelse return;
-        const is_foreign_door = std.mem.eql(u8, mq, "std.foreign") or std.mem.eql(u8, mq, "std/foreign");
-        if (!is_foreign_door) return;
-        if (inv.path.segments.len == 0) return;
-        if (!std.mem.eql(u8, inv.path.segments[inv.path.segments.len - 1], "struct")) return;
-        if (inv.args.len == 0) return;
-        var name = inv.args[0].value;
-        if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"') name = name[1 .. name.len - 1];
-        name = std.mem.trim(u8, name, " \t");
-        if (name.len == 0) return;
-        var src: ?[]const u8 = null;
-        for (inv.args) |a| {
-            if (a.source_value) |sv| {
-                src = sv.text;
-                break;
-            }
-        }
-        const text = src orelse return;
-        var count: usize = 0;
-        var lines1 = std.mem.splitScalar(u8, text, '\n');
-        while (lines1.next()) |raw| {
-            const line = std.mem.trim(u8, raw, " \t\r,");
-            if (line.len == 0) continue;
-            if (std.mem.indexOfScalar(u8, line, ':') != null) continue;
-            count += 1;
-        }
-        const fields = try self.allocator.alloc([]const u8, count);
-        errdefer self.allocator.free(fields);
-        var w: usize = 0;
-        var lines2 = std.mem.splitScalar(u8, text, '\n');
-        while (lines2.next()) |raw| {
-            const line = std.mem.trim(u8, raw, " \t\r,");
-            if (line.len == 0) continue;
-            if (std.mem.indexOfScalar(u8, line, ':') != null) continue;
-            fields[w] = try self.allocator.dupe(u8, line);
-            w += 1;
-        }
-        const key = try self.allocator.dupe(u8, name);
-        errdefer self.allocator.free(key);
-        if (try self.foreign_entries.fetchPut(key, .{ .fields = fields[0..w] })) |old| {
-            self.allocator.free(old.key);
-            for (old.value.fields) |f| self.allocator.free(f);
-            self.allocator.free(old.value.fields);
-        }
+        type_registry.deinitForeignEntries(self.allocator, &self.foreign_entries);
+        self.foreign_entries = type_registry.ForeignEntries.init(self.allocator);
+        try type_registry.collectForeignEntries(self.allocator, &self.foreign_entries, items);
     }
 
     /// Refuse `binding.field` when the binding's type is a foreign entry that
     /// does not claim the field. Present fields wave through silently — host
-    /// linkage (what `*File` lowers to) is the later rung, not this check.
+    /// linkage routes them at emission, and the backend owns substance.
     fn checkForeignDeref(self: *ShapeChecker, ii: *const ast.ImmediateImpl, decl: *const ast.EventDecl, plain: []const u8) !void {
         const text = std.mem.trim(u8, plain, " \t");
         const dot = std.mem.indexOfScalar(u8, text, '.') orelse return;
@@ -2516,6 +2388,17 @@ pub const ShapeChecker = struct {
         );
     }
 
+    /// Validate a top-level subflow impl: `~event = branch { ... }` or `~event = branch value`.
+    ///
+    /// The branch declaration determines the valid constructor shape:
+    /// - Identity branch (`| X Type`): must be constructed with a bare value (`X v` or `X { v }`).
+    ///   Reject struct-init syntax (`X { field: v }`) — it targets a field that doesn't exist.
+    /// - Multi-field struct (`| X { a: A, b: B }`): must be constructed with matching fields.
+    ///   Reject bare-value construction.
+    /// - Void branch (`| X`): must be constructed with no payload.
+    ///
+    /// Note: single-field struct branches are forbidden at declaration time (parser.zig),
+    /// so they do not appear here.
     fn validateImmediateImplShape(
         self: *ShapeChecker,
         ii: *const ast.ImmediateImpl,
