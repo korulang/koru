@@ -5,8 +5,8 @@ import std/io
 import std/foreign
 
 std/foreign:struct(File) {
-    path,
-    handle,
+    path
+    handle
 }
 
 std/io:print.ln("registered")

@@ -10,6 +10,6 @@ const File = struct {
 };
 
 ~std/foreign:struct(File) {
-    path,
-    handle,
+    path
+    handle
 }

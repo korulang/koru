@@ -4,6 +4,6 @@
 import std/foreign
 
 std/foreign:struct(File) {
-    path,
-    handle,
+    path
+    handle
 }

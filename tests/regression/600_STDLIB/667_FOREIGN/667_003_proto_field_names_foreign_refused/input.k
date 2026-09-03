@@ -5,7 +5,7 @@ import std/proto
 import std/foreign
 
 std/foreign:struct(File) {
-    path,
+    path
 }
 
 std/proto(Doc) {
