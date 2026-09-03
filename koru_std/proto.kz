@@ -65,10 +65,14 @@ const std = @import("std");
         return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto: the entry name '{s}' is not usable — a proto name must be an identifier (a-z, A-Z, 0-9, '_', '-'; no leading digit)", .{name}) };
     }
     // Field grammar: one `name: type` per line (comma optional, trailing commas
-    // fine). A field may name a scalar material or a terminal declared in the
-    // program. Terminal declarations are looked up in live declaration flows and
-    // in the erased `// proto-terminal Name: kind` markers, so the declaration
-    // does not depend on transform visitation order. The marker keeps the name
+    // fine). A field may name a scalar material, a terminal of its own home, or
+    // a qualified terminal (`app/alpha:Health`) naming another home by address.
+    // References canonicalize like everything else: a bare name answers to its
+    // own module, a qualified name to the named home — never a program-wide
+    // search, so imports grant spellability without creating ambiguity.
+    // Terminal declarations are looked up in live declaration flows and in the
+    // erased `// proto-terminal Name: kind` markers, so the declaration does
+    // not depend on transform visitation order. The marker keeps the name
     // intact: the consumer must still see `Health`, not only its host scalar.
     const TerminalRef = struct {
         fn isTerminalVerb(verb: []const u8) bool {
@@ -117,19 +121,19 @@ const std = @import("std");
             return false;
         }
 
-        fn scanItems(items: []const ast.Item, want: []const u8) bool {
+        fn scanItems(items: []const ast.Item, scope_home: []const u8, want: []const u8, want_home: []const u8) bool {
             for (items) |entry| {
                 switch (entry) {
                     .flow => |candidate| {
                         if (candidate.body.node) |*node| {
-                            if (node.* == .invocation and liveDeclarationIsTerminal(&node.invocation, want)) return true;
+                            if (node.* == .invocation and liveDeclarationIsTerminal(&node.invocation, want) and std.mem.eql(u8, scope_home, want_home)) return true;
                         }
                     },
                     .inline_code => |inline_code| {
-                        if (markerDeclaresTerminal(inline_code.code, want)) return true;
+                        if (markerDeclaresTerminal(inline_code.code, want) and std.mem.eql(u8, scope_home, want_home)) return true;
                     },
                     .module_decl => |module| {
-                        if (scanItems(module.items, want)) return true;
+                        if (scanItems(module.items, module.logical_name, want, want_home)) return true;
                     },
                     else => {},
                 }
@@ -137,8 +141,46 @@ const std = @import("std");
             return false;
         }
 
-        fn isDeclared(prog: *const ast.Program, want: []const u8) bool {
-            return scanItems(prog.items, want);
+        /// The scope owning a declaration flow: the enclosing module's logical
+        /// name, or the entry module for top-level flows. Falls back to the
+        /// entry scope — a miss then refuses loudly, never resolves elsewhere.
+        fn scopeOfFlow(prog: *const ast.Program, target: *const ast.Flow) []const u8 {
+            const Finder = struct {
+                fn find(items: []const ast.Item, needle: *const ast.Flow, scope: []const u8) ?[]const u8 {
+                    for (items) |*entry| {
+                        switch (entry.*) {
+                            .flow => |*f| {
+                                if (f == needle) return scope;
+                            },
+                            .module_decl => |*m| {
+                                if (find(m.items, needle, m.logical_name)) |s| return s;
+                            },
+                            else => {},
+                        }
+                    }
+                    return null;
+                }
+            };
+            return Finder.find(prog.items, target, prog.main_module_name) orelse prog.main_module_name;
+        }
+
+        fn isDeclared(prog: *const ast.Program, alloc: std.mem.Allocator, ftype: []const u8, scope_home: []const u8) bool {
+            const trimmed = std.mem.trim(u8, ftype, " \t");
+            var want_home: []const u8 = scope_home;
+            var want: []const u8 = bareName(ftype);
+            if (std.mem.lastIndexOfScalar(u8, trimmed, ':')) |ci| {
+                const qual = std.mem.trim(u8, trimmed[0..ci], " \t");
+                const nm = std.mem.trim(u8, trimmed[ci + 1 ..], " \t");
+                if (qual.len > 0 and nm.len > 0) {
+                    const dotted = alloc.dupe(u8, qual) catch unreachable;
+                    for (dotted) |*c| {
+                        if (c.* == '/') c.* = '.';
+                    }
+                    want_home = dotted;
+                    want = nm;
+                }
+            }
+            return scanItems(prog.items, prog.main_module_name, want, want_home);
         }
     };
 
@@ -163,8 +205,8 @@ const std = @import("std");
                 break;
             }
         }
-        if (!known and !TerminalRef.isDeclared(program, ftype)) {
-            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): field '{s}' names unknown terminal '{s}' — a field must use a scalar material or a declared proto terminal", .{ name, fname, ftype }) };
+        if (!known and !TerminalRef.isDeclared(program, allocator, ftype, TerminalRef.scopeOfFlow(program, flow))) {
+            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): field '{s}' names unknown terminal '{s}' — a field must use a scalar material, a terminal of its own home, or a qualified terminal naming another home", .{ name, fname, ftype }) };
         }
         field_lines += 1;
     }

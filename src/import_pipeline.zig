@@ -611,7 +611,21 @@ pub fn mergeEntryCompanions(
     };
 }
 fn rewriteDefaultEventCalls(allocator: std.mem.Allocator, items: []const ast.Item) void {
+    rewriteDefaultEventScope(allocator, items, items);
+}
+
+/// Rewrite bare `std/M(args)` module calls to `std.M:default(args)` in one
+/// scope. Each scope resolves the module path against its OWN imports — the
+/// entry's imports never leak into a library. Imported modules arrive wrapped
+/// as `module_decl` with their import_decls inside, so descent re-scopes at
+/// every boundary.
+fn rewriteDefaultEventScope(allocator: std.mem.Allocator, scope_items: []const ast.Item, items: []const ast.Item) void {
     for (items) |*item_const| {
+        if (item_const.* == .module_decl) {
+            const mod = @constCast(&item_const.module_decl);
+            rewriteDefaultEventScope(allocator, mod.items, mod.items);
+            continue;
+        }
         if (item_const.* != .flow) continue;
         const item = @constCast(item_const);
         const node_ptr = if (item.flow.body.node) |*n| n else continue;
@@ -621,7 +635,7 @@ fn rewriteDefaultEventCalls(allocator: std.mem.Allocator, items: []const ast.Ite
         const seg = path.segments[0];
         if (std.mem.indexOfScalar(u8, seg, '/') == null) continue;
         var local_name: ?[]const u8 = null;
-        for (items) |*it2| {
+        for (scope_items) |*it2| {
             if (it2.* == .import_decl and std.mem.eql(u8, it2.import_decl.path, seg)) {
                 local_name = it2.import_decl.local_name;
                 break;
@@ -632,6 +646,18 @@ fn rewriteDefaultEventCalls(allocator: std.mem.Allocator, items: []const ast.Ite
         const new_segs = allocator.alloc([]const u8, 1) catch continue;
         new_segs[0] = "default";
         path.segments = new_segs;
+    }
+}
+
+/// Rewrite default-door calls inside IMPORTED modules after the merge. The
+/// entry-only pass above runs before imported items join the tree; this pass
+/// covers each `module_decl` subscope. Entry flows are already rewritten
+/// (the mq guard makes a second pass a no-op), so only subscopes are walked.
+fn rewriteImportedDefaultEventCalls(allocator: std.mem.Allocator, items: []const ast.Item) void {
+    for (items) |*item_const| {
+        if (item_const.* != .module_decl) continue;
+        const mod = @constCast(&item_const.module_decl);
+        rewriteDefaultEventScope(allocator, mod.items, mod.items);
     }
 }
 
@@ -870,6 +896,9 @@ pub fn combineImports(
     }
 
     source_file.items = try combined_items.toOwnedSlice(parse_allocator);
+    // Default-door calls inside imported modules rewrite against their own
+    // imports — the pre-merge pass only ever saw the entry file.
+    rewriteImportedDefaultEventCalls(parse_allocator, source_file.items);
 
     var path_list = try std.ArrayList([]const u8).initCapacity(gpa, imported_paths_map.count());
     var path_iter = imported_paths_map.keyIterator();

@@ -1,0 +1,1 @@
+hurt enemy 30

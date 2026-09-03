@@ -116,15 +116,20 @@ pub const PhantomSemanticChecker = struct {
         var iter = self.declared_types.keyIterator();
         while (iter.next()) |key| self.allocator.free(key.*);
         self.declared_types.clearRetainingCapacity();
-        // One registration site per declared identity, tracked so a SECOND
-        // registrant of the same name is a loud two-registrant collision
-        // (proto rung, 2026-08-23) instead of a silent merge.
+        // One registration site per declared identity, keyed by (home, name):
+        // two homes may mint one bare name as two distinct concepts, and the
+        // loud two-registrant collision fires only on a second registrant in
+        // the SAME home (proto rung, 2026-08-23; module rung, 2026-09-04).
         var sites = std.StringHashMap(DeclaredTypeSite).init(self.allocator);
-        defer sites.deinit();
-        try self.scanDeclaredTypes(declared_types_ast.items, &sites);
+        defer {
+            var site_iter = sites.keyIterator();
+            while (site_iter.next()) |key| self.allocator.free(key.*);
+            sites.deinit();
+        }
+        try self.scanDeclaredTypes(declared_types_ast.items, declared_types_ast.main_module_name, &sites);
     }
 
-    fn scanDeclaredTypes(self: *PhantomSemanticChecker, items: []const ast.Item, sites: *std.StringHashMap(DeclaredTypeSite)) !void {
+    fn scanDeclaredTypes(self: *PhantomSemanticChecker, items: []const ast.Item, home: []const u8, sites: *std.StringHashMap(DeclaredTypeSite)) !void {
         for (items) |item| {
             switch (item) {
                 .flow => |flow| {
@@ -180,7 +185,7 @@ pub const PhantomSemanticChecker = struct {
                                     .is_proto = is_proto,
                                     .is_terminal = is_terminal,
                                 };
-                                try self.registerDeclaredIdentity(name, site, sites);
+                                try self.registerDeclaredIdentity(name, home, site, sites);
                                 if (is_proto) {
                                     // The container identity a proto derives.
                                     const container = try std.fmt.allocPrint(self.allocator, "List_{s}", .{name});
@@ -189,38 +194,45 @@ pub const PhantomSemanticChecker = struct {
                                         .is_proto = true,
                                         .is_terminal = false,
                                     };
-                                    try self.registerDeclaredIdentity(container, container_site, sites);
+                                    try self.registerDeclaredIdentity(container, home, container_site, sites);
                                 }
                             }
                         }
                     }
                 },
-                .module_decl => |module| try self.scanDeclaredTypes(module.items, sites),
+                .module_decl => |module| try self.scanDeclaredTypes(module.items, module.logical_name, sites),
                 else => {},
             }
         }
     }
 
-    /// Register one declared identity, refusing a second registrant loudly —
-    /// two declaration sites claiming the same entry are a collision (the
-    /// hindsight of the two-walls doctrine: idempotent registration made the
-    /// SECOND declaration a silent no-op; the proto rung makes it a KORU error
-    /// citing BOTH registrants, per the 2026-08-23 rulings).
+    /// Register one declared identity, refusing a second registrant in the
+    /// SAME home loudly — two declaration sites in one module claiming the
+    /// same entry are a collision (the hindsight of the two-walls doctrine:
+    /// idempotent registration made the SECOND declaration a silent no-op;
+    /// the proto rung makes it a KORU error citing BOTH registrants, per the
+    /// 2026-08-23 rulings). A second home minting the same bare name is a
+    /// distinct concept, not a collision (module rung).
     fn registerDeclaredIdentity(
         self: *PhantomSemanticChecker,
         name: []const u8,
+        home: []const u8,
         site: DeclaredTypeSite,
         sites: *std.StringHashMap(DeclaredTypeSite),
     ) !void {
-        if (self.declared_types.contains(name)) {
-            // A name already registered — the collision wall fires when at
-            // least one of the two registrants is a compound PROTO entry or a
-            // `std/proto` terminal (both ruled identity front doors); the
-            // legacy nominal wrappers stay idempotent.
-            const prior = sites.get(name);
-            const collides = site.is_proto or site.is_terminal or (prior != null and (prior.?.is_proto or prior.?.is_terminal));
-            if (collides and prior != null) {
-                const prior_loc = prior.?.location;
+        // Identity is (home, name): the composite key carries the home the
+        // bare `declared_types` membership set deliberately drops (the
+        // nominal gate answers "is this name minted anywhere" and stays bare).
+        const composite = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ home, name });
+        errdefer self.allocator.free(composite);
+        if (sites.get(composite)) |prior| {
+            // This home already registered the name — the collision wall
+            // fires when at least one of the two registrants is a compound
+            // PROTO entry or a `std/proto` terminal (both ruled identity
+            // front doors); the legacy nominal wrappers stay idempotent.
+            const collides = site.is_proto or site.is_terminal or prior.is_proto or prior.is_terminal;
+            if (collides) {
+                const prior_loc = prior.location;
                 log.debug("[PHANTOM] ❌ DUPLICATE PROTO DECLARATION '{s}'\n", .{name});
                 try self.reporter.addError(
                     .KORU030,
@@ -233,10 +245,12 @@ pub const PhantomSemanticChecker = struct {
             }
             return;
         }
-        const key = try self.allocator.dupe(u8, name);
-        errdefer self.allocator.free(key);
-        try self.declared_types.put(key, {});
-        try sites.put(key, site);
+        try sites.put(composite, site);
+        if (!self.declared_types.contains(name)) {
+            const bare = try self.allocator.dupe(u8, name);
+            errdefer self.allocator.free(bare);
+            try self.declared_types.put(bare, {});
+        }
     }
 
     /// Check phantom types in the entire AST

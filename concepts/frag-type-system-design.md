@@ -329,3 +329,34 @@ the layout algebra itself (shared columns by terminal).
 Falsification conditions carry forward; the "merge only by name" law adds
 one: two anonymous same-shaped fields silently sharing a column would
 dissolve it.
+
+## The module rung landed (2026-09-04): identity is (home, name)
+
+The asymmetry above is solved at registration and reference, not at layout.
+Rulings, each falsifiable:
+
+- **Registration keys the home.** The checker's sites map went composite, so
+  the two-registrant wall fires same-home only and two homes minting one bare
+  name coexist as distinct concepts. The nominal gate still answers the bare
+  question (is this name minted anywhere) and is unchanged.
+- **References canonicalize; they never search.** A bare field answers to its
+  own scope, a qualified field to the named home — the corpus-wide rule for
+  every other reference, extended to terminals. Imports grant spellability,
+  never candidacy: an unimported declarer cannot break or confuse your scope.
+  The "ambiguous bare ref" therefore does not exist as a case; the strict
+  alternative was considered and refused as spooky action at a distance, and
+  the home-first alternative as comfortable duplication.
+- **The default door rewrites per scope.** Imported modules' bare module calls
+  resolve against their own imports after the merge; the entry-only pass was a
+  gap, not a boundary.
+- **Pins**: 665_010 (coexistence), 665_011 (door in imports), 665_012
+  (qualified ref), 665_013 (unknown qualified refused), 665_014 (bare ref is
+  home-scoped: unknown, never guessed); 008 respelled qualified.
+
+Open and next, unchanged in shape: qualified consumption in deriving consumers
+(bare element lookup still takes the first program-wide match), the layout
+algebra itself, kind synthesized on usage. The store half of the payoff is
+pinned red (690_272, entry-resolution missing) with its query shape pinned
+green beside it (690_273, hand-tagged). Falsification conditions carry
+forward; the merge-only-by-name law is now enforced at three sites and would
+dissolve the same way at any of them.
