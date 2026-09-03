@@ -42,6 +42,7 @@
 !**/SHOULD_*
 !**/PARSER_TEST
 !**/LANGUAGES
+!**/JS_REFUSES
 !**/ARGS
 !**/STDIN
 !**/input.txt

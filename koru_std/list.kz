@@ -20,12 +20,14 @@
 //   <list!>  - new issues the obligation: this list must be freed (or drained).
 //   <list>   - borrowed: read/mutate in place (push, len), obligation untouched.
 //   <!list>  - consumed: free discharges the obligation.
-//
 // Sliced scope (reported honestly): synthesized containers land in the CALLER's
 // module (the module of the flow invoking `std/list:new`) — a library declaring
-// a proto from which another module derives is beyond this rung. And ops must
-// resolve the container from the enclosing flow — a handle passed BETWEEN flows
-// (a parameter) is a loud "cannot resolve" refusal, never silent misrouting.
+// a proto from which another module derives is beyond this rung. Ops route by
+// HANDLE, not by flow: the tor resolves the container from the `new` site that
+// bound it in the same flow, or from the enclosing tor's parameter type
+// (`*List_<Name>`) when the handle crosses flows. A handle the program never
+// built falls back to the `-i64` trunk and the shape check judges it there —
+// loud, never silent misrouting.
 
 const std = @import("std");
 const ast_find = @import("ast");
@@ -199,9 +201,21 @@ fn protoNameDbg(prog: *const astz.Program, elem: []const u8) bool {
 // container's constructor mints alongside it (see the synthesis section).
 // The unified overload-by-container dispatch is the post-milestone gap
 // (660_026 red pin), not this rung's surface.
-~pub tor push { xs: *List_i64<list>, v: i64 }
+~[comptime|transform]pub tor push {
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+} -> SiteResult
 
 ~proc push|zig {
+    if (item.* != .flow) @panic("std/list:push transform: containing item is not a flow");
+    return routeOpCall(allocator, program, &item.flow, "push", invocation);
+}
+
+~pub tor push-i64 { xs: *List_i64<list>, v: i64 }
+
+~proc push-i64|zig {
     xs.items.append(xs.allocator, v) catch {
         @panic("std/list:push — out of memory");
     };
@@ -213,19 +227,43 @@ fn protoNameDbg(prog: *const astz.Program, elem: []const u8) bool {
 
 // Current length as a scalar. (The `xs.len` expression form rides a separate
 // bridge; this event is the plain call form.)
-~pub tor len { xs: *List_i64<list> } -> usize
+~[comptime|transform]pub tor len {
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+} -> SiteResult
 
 ~proc len|zig {
+    if (item.* != .flow) @panic("std/list:len transform: containing item is not a flow");
+    return routeOpCall(allocator, program, &item.flow, "len", invocation);
+}
+
+~pub tor len-i64 { xs: *List_i64<list> } -> usize
+
+~proc len-i64|zig {
     return xs.items.items.len;
 }
 
 // Random access by index. <list> borrow — read, list untouched. `out-of-bounds`
 // when i is past the end.
-~pub tor get { xs: *List_i64<list>, i: usize }
+~[comptime|transform]pub tor get {
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~proc get|zig {
+    if (item.* != .flow) @panic("std/list:get transform: containing item is not a flow");
+    return routeOpCall(allocator, program, &item.flow, "get", invocation);
+}
+
+~pub tor get-i64 { xs: *List_i64<list>, i: usize }
 | item i64
 | out-of-bounds
 
-~proc get|zig {
+~proc get-i64|zig {
     if (i < xs.items.items.len) {
         return .{ .item = xs.items.items[i] };
     }
@@ -235,31 +273,52 @@ fn protoNameDbg(prog: *const astz.Program, elem: []const u8) bool {
 // Remove and return the last element. <list> borrow: the list stays alive (the
 // binding keeps <list!>), so it can be popped again or freed. `empty` when there
 // is nothing to pop. For scalar elements the popped value carries no obligation.
-~pub tor pop { xs: *List_i64<list> }
+~[comptime|transform]pub tor pop {
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~proc pop|zig {
+    if (item.* != .flow) @panic("std/list:pop transform: containing item is not a flow");
+    return routeOpCall(allocator, program, &item.flow, "pop", invocation);
+}
+
+~pub tor pop-i64 { xs: *List_i64<list> }
 | item i64
 | empty
 
-~proc pop|zig {
+~proc pop-i64|zig {
     if (xs.items.pop()) |v| {
         return .{ .item = v };
     }
     return .empty;
 }
 
-// ============================================
-// Teardown (consume — discharges <!list>)
-// ============================================
-
-~pub tor free { xs: *List_i64<!list> }
+~[comptime|transform]pub tor free {
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+} -> SiteResult
 
 ~proc free|zig {
+    if (item.* != .flow) @panic("std/list:free transform: containing item is not a flow");
+    return routeOpCall(allocator, program, &item.flow, "free", invocation);
+}
+
+~pub tor free-i64 { xs: *List_i64<!list> }
+
+~proc free-i64|zig {
     xs.deinit();
 }
 
-// Concrete i64 constructor + ops: the suffixed events the `new(i64)` and
-// proto-`new` routes land on are only the CONSTRUCTOR (`new-i64`); the i64
-// trunk's four ops keep their unsuffixed spellings above. (A proto container's
-// ops are all synthesized under the container's own suffix — `push-Engine`,
+// Concrete i64 constructor + trunk ops: `new(i64)` routes to `new-i64`, and
+// every op tor is a [transform] that routes by handle — i64 handles to the
+// `-i64` trunk event, proto handles to the synthesized `op-<Name>`. The
+// unsuffixed op spellings never lower directly. (A proto container's ops are
+// all synthesized under the container's own suffix — `push-Engine`,
 // `pop-Engine`, … — so two protos' containers never collide on one event name.)
 
 // ============================================
@@ -688,6 +747,346 @@ fn rewriteProtoOps(
     collectBinds(conts, &bound);
     return rewriteConts(alloc, caller_module, conts, elem, &bound);
 }
+/// True when a continuation subtree binds `name` — a branch binding
+/// (`| list xs`) or a `: name` return binding. The same-flow half of op
+/// routing keys on this: the `new(<elem>)` site whose subtree carries the
+/// handle owns the element for that handle.
+fn subtreeBinds(cont: *const astz.Continuation, name: []const u8) bool {
+    if (cont.binding) |b| {
+        if (std.mem.eql(u8, std.mem.trim(u8, b, " \t"), name)) return true;
+    }
+    if (cont.node) |*n| {
+        if (n.* == .invocation) {
+            if (n.invocation.return_binding) |rb| {
+                if (std.mem.eql(u8, std.mem.trim(u8, rb, " \t"), name)) return true;
+            }
+        }
+    }
+    for (cont.continuations) |*cc| {
+        if (subtreeBinds(cc, name)) return true;
+    }
+    return false;
+}
+
+/// The element for a handle bound in the SAME flow: the `new(<elem>)` /
+/// `new-<elem>` site whose subtree binds it. Returns the element expression
+/// (bare or qualified) or null when no site in this flow owns the handle.
+fn flowNewElemForHandle(conts: []const astz.Continuation, handle: []const u8) ?[]const u8 {
+    for (conts) |*c| {
+        if (c.node) |*n| {
+            if (n.* == .invocation) {
+                const inv = &n.invocation;
+                if (inv.path.segments.len == 1 and inv.args.len > 0) {
+                    const seg = inv.path.segments[0];
+                    var elem: ?[]const u8 = null;
+                    if (std.mem.eql(u8, seg, "new")) {
+                        elem = std.mem.trim(u8, inv.args[0].value, " \t");
+                    } else if (std.mem.startsWith(u8, seg, "new-")) {
+                        elem = seg["new-".len..];
+                    }
+                    if (elem) |e| {
+                        if (subtreeBinds(c, handle)) return e;
+                    }
+                }
+            }
+        }
+        if (flowNewElemForHandle(c.continuations, handle)) |e| return e;
+    }
+    return null;
+}
+
+/// True when a continuation's own triple is the site's.
+fn locEq(loc: anytype, file: []const u8, line: usize, column: usize) bool {
+    return std.mem.eql(u8, loc.file, file) and loc.line == line and loc.column == column;
+}
+
+/// True when a continuation tree holds the site triple — the root counts:
+/// a nested view's body.node IS the firing site, and a creating flow's root
+/// IS the `new` site its branch ops resolve against.
+fn subtreeHasLocation(cont: *const astz.Continuation, file: []const u8, line: usize, column: usize) bool {
+    if (locEq(cont.location, file, line, column)) return true;
+    for (cont.continuations) |*c| {
+        if (subtreeHasLocation(c, file, line, column)) return true;
+    }
+    return false;
+}
+
+/// The REAL flow containing this view's site, by source location. A nested
+/// site reaches its transform through a synthetic view that sees only the
+/// holding subtree: ancestors (the same-flow `new` site) and `impl_of` are
+/// cut off. The location triple is unique program-wide, so the walk
+/// re-anchors to the full tree. Preference order: a true container (whose own
+/// root triple differs — the synthetic copy's root triple always equals the
+/// site's, so the copy can never win this pass), then an `impl_of`-bearing
+/// match, then the handed flow itself.
+fn anchorFlow(program: *const astz.Program, flow: *const astz.Flow) *const astz.Flow {
+    const loc = flow.body.location;
+    if (anchorScan(program.items, loc.file, loc.line, loc.column, false)) |found| return found;
+    if (anchorScan(program.items, loc.file, loc.line, loc.column, true)) |found| return found;
+    return flow;
+}
+
+/// want_impl: false takes only true containers (root triple differs);
+/// true takes only `impl_of`-bearers.
+fn anchorScan(items: []const astz.Item, file: []const u8, line: usize, column: usize, want_impl: bool) ?*const astz.Flow {
+    for (items) |*pi| {
+        switch (pi.*) {
+            .flow => |*f| {
+                const root_differs = !locEq(f.body.location, file, line, column);
+                const impl_ok = if (f.impl_of) |io| io.segments.len > 0 else false;
+                const take = if (want_impl) impl_ok else root_differs;
+                if (take and subtreeHasLocation(&f.body, file, line, column)) return f;
+            },
+            .module_decl => |*m| {
+                if (anchorScan(m.items, file, line, column, want_impl)) |found| return found;
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Same-flow element, root-inclusive: the creating flow's root IS the `new`
+/// invocation, so a children-only scan misses exactly the site that matters.
+fn flowElemForHandle(flow: *const astz.Flow, handle: []const u8) ?[]const u8 {
+    if (flow.body.node) |*n| {
+        if (n.* == .invocation) {
+            const inv = &n.invocation;
+            if (inv.path.segments.len == 1 and inv.args.len > 0) {
+                const seg = inv.path.segments[0];
+                var elem: ?[]const u8 = null;
+                if (std.mem.eql(u8, seg, "new")) {
+                    elem = std.mem.trim(u8, inv.args[0].value, " \t");
+                } else if (std.mem.startsWith(u8, seg, "new-")) {
+                    elem = seg["new-".len..];
+                }
+                if (elem) |e| {
+                    for (flow.body.continuations) |*c| {
+                        if (subtreeBinds(c, handle)) return e;
+                    }
+                }
+            }
+        }
+    }
+    return flowNewElemForHandle(flow.body.continuations, handle);
+}
+/// The element for a handle arriving as a tor PARAMETER: the enclosing tor's
+/// input field type names the container (`*List_<Name>`), and the name IS the
+/// element. `tor_name` comes from the anchor flow's `impl_of`, recovered by
+/// location when the site arrived through a synthetic view.
+fn torParamHandleElem(program: *const astz.Program, tor_name: ?[]const u8, handle: []const u8) ?[]const u8 {
+    const want = tor_name orelse return null;
+    for (program.items) |*pi| {
+        const decl = switch (pi.*) {
+            .event_decl => |*d| d,
+            else => continue,
+        };
+        if (decl.path.segments.len == 0) continue;
+        if (!std.mem.eql(u8, decl.path.segments[decl.path.segments.len - 1], want)) continue;
+        for (decl.input.fields) |field| {
+            if (!std.mem.eql(u8, field.name, handle)) continue;
+            const prefix = "*List_";
+            if (!std.mem.startsWith(u8, field.type, prefix)) return null;
+            const rest = field.type[prefix.len..];
+            const name = if (std.mem.lastIndexOfScalar(u8, rest, ':')) |ci| rest[ci + 1 ..] else rest;
+            if (name.len == 0) return null;
+            return name;
+        }
+        return null;
+    }
+    return null;
+}
+
+/// Bare element name (`Engine` from `Engine` or `app/car:Engine`), the key
+/// synthesis and sibling sites are counted under.
+fn elemBare(elem: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, elem, " \t");
+    if (std.mem.lastIndexOfScalar(u8, trimmed, ':')) |ci| return trimmed[ci + 1 ..];
+    return trimmed;
+}
+
+/// True when some flow in the program carries a `new(<elem>)` / `new-<elem>`
+/// site: the container WILL be synthesized (or already was), so routing an
+/// op to it cannot dangle — regardless of whether that site's own transform
+/// has fired yet. Order-proof where `hasRewrittenNew` alone is not: a tor
+/// parameter site textually before the `new` site.
+fn programHasNewSite(program: *const astz.Program, elem: []const u8) bool {
+    const want = elemBare(elem);
+    for (program.items) |*pi| {
+        switch (pi.*) {
+            .flow => |*f| {
+                if (flowHoldsNewSite(f, want)) return true;
+            },
+            .module_decl => |*m| {
+                for (m.items) |*mi| {
+                    if (mi.* == .flow) {
+                        if (flowHoldsNewSite(&mi.flow, want)) return true;
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
+fn programHasNewSiteInConts(conts: []const astz.Continuation, needle: []const u8) bool {
+    for (conts) |*c| {
+        if (c.node) |*n| {
+            if (n.* == .invocation) {
+                const inv = &n.invocation;
+                if (inv.path.segments.len == 1) {
+                    const seg = inv.path.segments[0];
+                    if (std.mem.eql(u8, seg, "new") and inv.args.len > 0) {
+                        const arg_elem = std.mem.trim(u8, inv.args[0].value, " \t");
+                        if (std.mem.eql(u8, elemBare(arg_elem), needle)) return true;
+                    } else if (std.mem.startsWith(u8, seg, "new-")) {
+                        if (std.mem.eql(u8, seg["new-".len..], needle)) return true;
+                    }
+                }
+            }
+        }
+        if (programHasNewSiteInConts(c.continuations, needle)) return true;
+    }
+    return false;
+}
+
+/// A flow carries a `new(<elem>)` site at its root or in its tree. The
+/// creating flow's root IS the `new` invocation — children-only scans miss
+/// exactly the program's own construction site.
+fn flowHoldsNewSite(flow: *const astz.Flow, want: []const u8) bool {
+    if (flow.body.node) |*n| {
+        if (n.* == .invocation) {
+            const inv = &n.invocation;
+            if (inv.path.segments.len == 1) {
+                const seg = inv.path.segments[0];
+                if (std.mem.eql(u8, seg, "new") and inv.args.len > 0) {
+                    if (std.mem.eql(u8, elemBare(std.mem.trim(u8, inv.args[0].value, " \t")), want)) return true;
+                } else if (std.mem.startsWith(u8, seg, "new-")) {
+                    if (std.mem.eql(u8, seg["new-".len..], want)) return true;
+                }
+            }
+        }
+    }
+    return programHasNewSiteInConts(flow.body.continuations, want);
+}
+
+/// Whole-tree rewrite of one handle's bare op sites to a suffixed target.
+/// `rewriteConts` covers the proto case (caller-module qualifier); this
+/// covers the legacy fallback (original qualifier preserved) with the same
+/// single-handle scoping, so one firing never reroutes a sibling container.
+fn rewriteOpHandle(
+    alloc: std.mem.Allocator,
+    conts: []const astz.Continuation,
+    op: []const u8,
+    handle: []const u8,
+    target_seg: []const u8,
+    target_qual: ?[]const u8,
+) []const astz.Continuation {
+    var out = std.ArrayList(astz.Continuation).initCapacity(alloc, conts.len) catch unreachable;
+    for (conts) |c| {
+        var nc = c;
+        if (nc.node) |*n| {
+            if (n.* == .invocation) {
+                const inv = &n.invocation;
+                if (inv.path.segments.len == 1 and inv.args.len > 0 and
+                    std.mem.eql(u8, inv.path.segments[0], op))
+                {
+                    const target = std.mem.trim(u8, inv.args[0].value, " \t");
+                    if (std.mem.eql(u8, target, handle)) {
+                        var ni = inv.*;
+                        const segs = alloc.alloc([]const u8, 1) catch unreachable;
+                        segs[0] = alloc.dupe(u8, target_seg) catch unreachable;
+                        ni.path = astz.DottedPath{
+                            .module_qualifier = if (target_qual) |q| alloc.dupe(u8, q) catch unreachable else null,
+                            .segments = segs,
+                        };
+                        nc.node = .{ .invocation = ni };
+                    }
+                }
+            }
+        }
+        nc.continuations = rewriteOpHandle(alloc, c.continuations, op, handle, target_seg, target_qual);
+        out.append(alloc, nc) catch unreachable;
+    }
+    return out.toOwnedSlice(alloc) catch unreachable;
+}
+
+/// Shared body for the five op transforms. TOTAL: every `std/list:<op>` site
+/// is rewritten — proto handles to `op-<Name>` in the caller's module,
+/// everything else to the legacy `op-i64` trunk with the original qualifier.
+/// Never a passthrough (a transform tor has no runtime lowering to fall back
+/// to), never a dangle (proto routes require a program `new` site or an
+/// already-synthesized container). Suffixed names never re-fire the tor, so
+/// the walker converges.
+fn routeOpCall(
+    allocator: std.mem.Allocator,
+    program: *const astz.Program,
+    flow: *const astz.Flow,
+    op: []const u8,
+    inv: *const astz.Invocation,
+) astz.SiteResult {
+    const handle = if (inv.args.len > 0) std.mem.trim(u8, inv.args[0].value, " \t") else "";
+    // Re-anchor: a nested site arrives through a synthetic view holding only
+    // the site subtree — ancestors and `impl_of` are cut off. The location
+    // triple re-anchors to the real containing flow with the full tree.
+    const anchor = anchorFlow(program, flow);
+    var tor_name: ?[]const u8 = null;
+    if (anchor.impl_of) |io| {
+        if (io.segments.len > 0) tor_name = io.segments[io.segments.len - 1];
+    }
+    var elem: ?[]const u8 = null;
+    if (handle.len > 0) {
+        if (flowElemForHandle(anchor, handle)) |e| elem = e;
+        if (elem == null) {
+            if (torParamHandleElem(program, tor_name, handle)) |e| elem = e;
+        }
+    }
+    var proto_route = false;
+    if (elem) |e| {
+        proto_route = programHasProto(program, e) and
+            (programHasNewSite(program, e) or hasRewrittenNew(program, e));
+    }
+    var target_seg: []const u8 = undefined;
+    var target_qual: ?[]const u8 = undefined;
+    if (proto_route) {
+        target_seg = std.fmt.allocPrint(allocator, "{s}-{s}", .{ op, elemBare(elem.?) }) catch unreachable;
+        target_qual = allocator.dupe(u8, flow.module) catch unreachable;
+    } else {
+        target_seg = std.fmt.allocPrint(allocator, "{s}-i64", .{op}) catch unreachable;
+        target_qual = if (inv.path.module_qualifier) |q| allocator.dupe(u8, q) catch unreachable else null;
+    }
+    const new_conts = rewriteOpHandle(allocator, flow.body.continuations, op, handle, target_seg, target_qual);
+    var new_flow = flow.*;
+    new_flow.body.continuations = new_conts;
+    // The site itself: a nested view's body.node IS the firing invocation,
+    // and the children walk above never touches it. Leave it and the
+    // circuit-breaker fires (1 before, 1 after) on an otherwise perfect
+    // rewrite.
+    if (handle.len > 0) {
+        if (new_flow.body.node) |*n| {
+            if (n.* == .invocation) {
+                const root_inv = &n.invocation;
+                if (root_inv.path.segments.len == 1 and
+                    std.mem.eql(u8, root_inv.path.segments[0], op) and
+                    root_inv.args.len > 0 and
+                    std.mem.eql(u8, std.mem.trim(u8, root_inv.args[0].value, " \t"), handle))
+                {
+                    var ni = root_inv.*;
+                    const segs = allocator.alloc([]const u8, 1) catch unreachable;
+                    segs[0] = allocator.dupe(u8, target_seg) catch unreachable;
+                    ni.path = astz.DottedPath{
+                        .module_qualifier = if (target_qual) |q| allocator.dupe(u8, q) catch unreachable else null,
+                        .segments = segs,
+                    };
+                    new_flow.body.node = .{ .invocation = ni };
+                }
+            }
+        }
+    }
+    return .{ .replacement = astz.Item{ .flow = new_flow } };
+}
+
 
 /// Synthesize the container units for a proto element into the caller's module:
 /// element + handle structs (inline_code), then the six op events and their

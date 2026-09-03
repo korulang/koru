@@ -45,7 +45,7 @@
 // Mutation (borrow)
 // ============================================
 
-~proc push|js {
+~proc push-i64|js {
     xs.push(v);
 }
 
@@ -53,11 +53,11 @@
 // Read (borrow)
 // ============================================
 
-~proc len|js {
+~proc len-i64|js {
     return xs.length;
 }
 
-~proc get|js {
+~proc get-i64|js {
     if (i < xs.length) {
         return { tag: "item", item: xs[i] };
     }
@@ -67,7 +67,7 @@
 // `Array.prototype.pop` returns `undefined` on empty, which is also a legal
 // element value in JS but never a legal i64 — so the length is what decides
 // the arm, mirroring the Zig facet keying off `ArrayList.pop`'s optional.
-~proc pop|js {
+~proc pop-i64|js {
     if (xs.length === 0) {
         return { tag: "empty" };
     }
@@ -78,7 +78,7 @@
 // Teardown (consume)
 // ============================================
 
-~proc free|js {
+~proc free-i64|js {
     // GC is the implementation. `List_i64.deinit` releases the ArrayList's
     // buffer and destroys the handle; neither exists here, so the honest body
     // is empty — this is a port, not a stub.
