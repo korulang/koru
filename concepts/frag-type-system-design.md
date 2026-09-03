@@ -301,9 +301,31 @@ landing made it real. The row rule, the thing every earlier rung circled:
 - **Three pre-existing 660 reds untouched** (002, 013, 026) — board reds
   predating this session.
 
-Open and next (un-ruled): the terminal half — `std/proto:float(Health)` as
-the named-primitive home (the "same column, different rows" payoff); the
-layout algebra itself; transitivity module-qualification of proto fields.
+Ruled and landed the same day (terminal half): `std/proto:string|int|float|bool(Name)`
+are the named-primitive home — same host lowerings as the legacy wrappers
+(`float` → `f64`, kept deliberately), each writing a `// proto-terminal Name:
+kind` identity marker ahead of its alias so compounds resolve references
+regardless of transform visitation order. The default tor accepts a scalar
+material or a declared terminal and refuses unregistered words loudly
+(KORU173, `names unknown terminal`). Terminal names collide loudly
+(`DeclaredTypeSite.is_terminal`, no `List_` container derived) while legacy
+`std/types` wrappers stay idempotent — the same act at field count zero,
+finally under the proto roof. Keyword deliberately absent on the new verbs:
+terminal identity is module-spaced, never a bare global.
+**Pins**: 665_001–665_009 (`665_PROTO`).
+
+Stated, not solved (module-awareness asymmetry): imports merge and every
+layer walks the merge, but registration keys bare names globally — two
+modules minting `Health` collide rather than coexist, and the checker
+confesses the mirror blind spot (cross-module same-name types compare
+equal; the type→declaring-module map does not exist yet). "Identity is
+`{path, name}`" is the intent; "identity is `{name}`, one registry" is the
+machine. The qualification half exists at consumption (`app/car:Engine`
+filters by declaring module); the namespace half is unbuilt.
+
+Open and next (un-ruled): what an identity actually is — the
+type→declaring-module map, i.e. whether two homes may mint one name;
+the layout algebra itself (shared columns by terminal).
 Falsification conditions carry forward; the "merge only by name" law adds
 one: two anonymous same-shaped fields silently sharing a column would
 dissolve it.

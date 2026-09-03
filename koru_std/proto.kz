@@ -31,6 +31,7 @@ const std = @import("std");
     expr: Expression,
     source: Source,
     item: *const Item,
+    program: *const Program,
     allocator: std.mem.Allocator,
     reporter: *std/compiler:ErrorReporter
 } -> SiteResult
@@ -63,11 +64,84 @@ const std = @import("std");
     if (!name_ok or name.len == 0) {
         return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto: the entry name '{s}' is not usable — a proto name must be an identifier (a-z, A-Z, 0-9, '_', '-'; no leading digit)", .{name}) };
     }
-
     // Field grammar: one `name: type` per line (comma optional, trailing commas
-    // fine). Scalars only this rung — the derived container emits Zig struct
-    // fields from these types, so a type the stdlib cannot carry is a
-    // declaration fault, caught HERE not in the consumer.
+    // fine). A field may name a scalar material or a terminal declared in the
+    // program. Terminal declarations are looked up in live declaration flows and
+    // in the erased `// proto-terminal Name: kind` markers, so the declaration
+    // does not depend on transform visitation order. The marker keeps the name
+    // intact: the consumer must still see `Health`, not only its host scalar.
+    const TerminalRef = struct {
+        fn isTerminalVerb(verb: []const u8) bool {
+            return std.mem.eql(u8, verb, "string") or
+                std.mem.eql(u8, verb, "int") or
+                std.mem.eql(u8, verb, "float") or
+                std.mem.eql(u8, verb, "bool");
+        }
+
+        fn bareName(value: []const u8) []const u8 {
+            var text = std.mem.trim(u8, value, " \t");
+            if (text.len >= 2 and text[0] == '"' and text[text.len - 1] == '"') {
+                text = text[1 .. text.len - 1];
+            }
+            return std.mem.trim(u8, text, " \t");
+        }
+
+        fn liveDeclarationIsTerminal(inv: *const ast.Invocation, want: []const u8) bool {
+            if (inv.path.segments.len != 1) return false;
+            if (!isTerminalVerb(inv.path.segments[0])) return false;
+            if (inv.path.module_qualifier) |mq| {
+                const known_home = std.mem.eql(u8, mq, "std.types") or
+                    std.mem.eql(u8, mq, "std/types") or
+                    std.mem.eql(u8, mq, "std.proto") or
+                    std.mem.eql(u8, mq, "std/proto");
+                if (!known_home) return false;
+            }
+            if (inv.args.len == 0) return false;
+            return std.mem.eql(u8, bareName(inv.args[0].value), want);
+        }
+
+        fn markerDeclaresTerminalLine(line: []const u8, want: []const u8) bool {
+            const marker = std.mem.trimLeft(u8, line, " \t");
+            const prefix = "// proto-terminal ";
+            if (!std.mem.startsWith(u8, marker, prefix)) return false;
+            const colon = std.mem.indexOfScalar(u8, marker[prefix.len..], ':') orelse return false;
+            const declared = std.mem.trim(u8, marker[prefix.len .. prefix.len + colon], " \t");
+            return std.mem.eql(u8, declared, want);
+        }
+
+        fn markerDeclaresTerminal(code: []const u8, want: []const u8) bool {
+            var lines = std.mem.splitScalar(u8, code, '\n');
+            while (lines.next()) |line| {
+                if (markerDeclaresTerminalLine(line, want)) return true;
+            }
+            return false;
+        }
+
+        fn scanItems(items: []const ast.Item, want: []const u8) bool {
+            for (items) |entry| {
+                switch (entry) {
+                    .flow => |candidate| {
+                        if (candidate.body.node) |*node| {
+                            if (node.* == .invocation and liveDeclarationIsTerminal(&node.invocation, want)) return true;
+                        }
+                    },
+                    .inline_code => |inline_code| {
+                        if (markerDeclaresTerminal(inline_code.code, want)) return true;
+                    },
+                    .module_decl => |module| {
+                        if (scanItems(module.items, want)) return true;
+                    },
+                    else => {},
+                }
+            }
+            return false;
+        }
+
+        fn isDeclared(prog: *const ast.Program, want: []const u8) bool {
+            return scanItems(prog.items, want);
+        }
+    };
+
     var field_lines: usize = 0;
     var lines1 = std.mem.splitScalar(u8, source.text, '\n');
     while (lines1.next()) |line_raw| {
@@ -89,8 +163,8 @@ const std = @import("std");
                 break;
             }
         }
-        if (!known) {
-            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): field '{s}' uses unsupported type '{s}' — scalar fields only this rung (i8/i16/i32/i64/u8/u16/u32/u64/f32/f64/bool/string)", .{ name, fname, ftype }) };
+        if (!known and !TerminalRef.isDeclared(program, ftype)) {
+            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): field '{s}' names unknown terminal '{s}' — a field must use a scalar material or a declared proto terminal", .{ name, fname, ftype }) };
         }
         field_lines += 1;
     }
@@ -121,6 +195,210 @@ const std = @import("std");
         allocator,
         "// proto {s}: {s}",
         .{ name, flat },
+    ) catch unreachable;
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    return .{ .replacement = inline_code_item };
+}
+// Declare a nominal float type through the proto door. The emitted alias is
+// the same host lowering old `std/types:float` uses (`f64`); the marker ahead
+// of it records the identity so compounds and consumers can resolve `Health`
+// without repeating the declaration. Keyword is deliberately absent: terminal
+// identity is module-spaced (`std/proto:float`), not a bare global.
+~[comptime|transform]pub tor float {
+    expr: Expression,
+    item: *const Item,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~proc float|zig {
+    const ast = @import("ast");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{};
+
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+
+    var is_pub = false;
+    for (flow.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "pub")) {
+            is_pub = true;
+            break;
+        }
+    }
+
+    const pub_prefix = if (is_pub) "pub " else "";
+
+    // Identity marker plus host lowering: `const Temperature = f64;`.
+    const code = std.fmt.allocPrint(
+        allocator,
+        "// proto-terminal {s}: f64\n{s}const {s} = f64;",
+        .{ type_name, pub_prefix, type_name },
+    ) catch unreachable;
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    return .{ .replacement = inline_code_item };
+}
+
+// Declare a nominal string type through the proto door. The emitted alias is
+// the same host lowering old `std/types:string` uses (`[]const u8`); the marker
+// ahead of it records the identity. Keyword is deliberately absent: terminal
+// identity is module-spaced (`std/proto:string`), not a bare global.
+~[comptime|transform]pub tor string {
+    expr: Expression,
+    item: *const Item,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~proc string|zig {
+    const ast = @import("ast");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{};
+
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+
+    var is_pub = false;
+    for (flow.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "pub")) {
+            is_pub = true;
+            break;
+        }
+    }
+
+    const pub_prefix = if (is_pub) "pub " else "";
+
+    // Identity marker plus host lowering: `const EmailAddress = []const u8;`.
+    const code = std.fmt.allocPrint(
+        allocator,
+        "// proto-terminal {s}: []const u8\n{s}const {s} = []const u8;",
+        .{ type_name, pub_prefix, type_name },
+    ) catch unreachable;
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    return .{ .replacement = inline_code_item };
+}
+
+// Declare a nominal integer type through the proto door. The emitted alias is
+// the same host lowering old `std/types:int` uses (`i64`); the marker ahead of
+// it records the identity. Keyword is deliberately absent: terminal identity
+// is module-spaced (`std/proto:int`), not a bare global.
+~[comptime|transform]pub tor int {
+    expr: Expression,
+    item: *const Item,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~proc int|zig {
+    const ast = @import("ast");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{};
+
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+
+    var is_pub = false;
+    for (flow.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "pub")) {
+            is_pub = true;
+            break;
+        }
+    }
+
+    const pub_prefix = if (is_pub) "pub " else "";
+
+    // Identity marker plus host lowering: `const UserId = i64;`.
+    const code = std.fmt.allocPrint(
+        allocator,
+        "// proto-terminal {s}: i64\n{s}const {s} = i64;",
+        .{ type_name, pub_prefix, type_name },
+    ) catch unreachable;
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    return .{ .replacement = inline_code_item };
+}
+
+// Declare a nominal boolean type through the proto door. The emitted alias is
+// the same host lowering old `std/types:bool` uses (`bool`); the marker ahead
+// of it records the identity. Keyword is deliberately absent: terminal identity
+// is module-spaced (`std/proto:bool`), not a bare global.
+~[comptime|transform]pub tor bool {
+    expr: Expression,
+    item: *const Item,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~proc bool|zig {
+    const ast = @import("ast");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{};
+
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+
+    var is_pub = false;
+    for (flow.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "pub")) {
+            is_pub = true;
+            break;
+        }
+    }
+
+    const pub_prefix = if (is_pub) "pub " else "";
+
+    // Identity marker plus host lowering: `const IsActive = bool;`.
+    const code = std.fmt.allocPrint(
+        allocator,
+        "// proto-terminal {s}: bool\n{s}const {s} = bool;",
+        .{ type_name, pub_prefix, type_name },
     ) catch unreachable;
 
     const inline_code_item = ast.Item{

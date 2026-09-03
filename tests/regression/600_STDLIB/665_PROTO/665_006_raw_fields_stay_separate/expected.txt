@@ -1,0 +1,2 @@
+player 1.5
+enemy 2.5

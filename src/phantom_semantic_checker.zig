@@ -63,12 +63,14 @@ pub const PhantomSemanticChecker = struct {
     };
 
     /// A declared-type identity's registration site: where the declaring flow
-    /// sits and whether the registrant is a PROTO (the collision wall's honor
-    /// question — two proto declarations of one name are a loud error; the
-    /// legacy nominal wrappers stay idempotent).
+    /// sits, whether the registrant is a compound PROTO entry, and whether it
+    /// is a terminal declared through `std/proto`. The collision wall's honor
+    /// question asks both of the latter — two proto declarations of one name
+    /// are a loud error; the legacy nominal wrappers stay idempotent.
     const DeclaredTypeSite = struct {
         location: errors.SourceLocation,
         is_proto: bool,
+        is_terminal: bool,
     };
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !PhantomSemanticChecker {
@@ -160,6 +162,14 @@ pub const PhantomSemanticChecker = struct {
                         // matter how much the shapes agree).
                         const is_proto = std.mem.eql(u8, last_seg, "proto") or
                             (proto_door and std.mem.eql(u8, last_seg, "default"));
+                        // A terminal declared through `std/proto` is also an
+                        // identity, so its name collides loudly. It does not
+                        // derive a container: terminals terminate, they are not
+                        // compounds.
+                        const is_terminal = proto_door and (std.mem.eql(u8, last_seg, "string") or
+                            std.mem.eql(u8, last_seg, "int") or
+                            std.mem.eql(u8, last_seg, "float") or
+                            std.mem.eql(u8, last_seg, "bool"));
                         if ((is_decl_tor or is_proto) and inv.args.len > 0) {
                             var name = inv.args[0].value;
                             if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"')
@@ -168,6 +178,7 @@ pub const PhantomSemanticChecker = struct {
                                 const site = DeclaredTypeSite{
                                     .location = flow.location,
                                     .is_proto = is_proto,
+                                    .is_terminal = is_terminal,
                                 };
                                 try self.registerDeclaredIdentity(name, site, sites);
                                 if (is_proto) {
@@ -176,6 +187,7 @@ pub const PhantomSemanticChecker = struct {
                                     const container_site = DeclaredTypeSite{
                                         .location = flow.location,
                                         .is_proto = true,
+                                        .is_terminal = false,
                                     };
                                     try self.registerDeclaredIdentity(container, container_site, sites);
                                 }
@@ -201,11 +213,12 @@ pub const PhantomSemanticChecker = struct {
         sites: *std.StringHashMap(DeclaredTypeSite),
     ) !void {
         if (self.declared_types.contains(name)) {
-            // A name already registered — the collision wall fires only when at
-            // least one of the two registrants is a PROTO (the ruled front
-            // door); the legacy nominal wrappers stay idempotent.
+            // A name already registered — the collision wall fires when at
+            // least one of the two registrants is a compound PROTO entry or a
+            // `std/proto` terminal (both ruled identity front doors); the
+            // legacy nominal wrappers stay idempotent.
             const prior = sites.get(name);
-            const collides = site.is_proto or (prior != null and prior.?.is_proto);
+            const collides = site.is_proto or site.is_terminal or (prior != null and (prior.?.is_proto or prior.?.is_terminal));
             if (collides and prior != null) {
                 const prior_loc = prior.?.location;
                 log.debug("[PHANTOM] ❌ DUPLICATE PROTO DECLARATION '{s}'\n", .{name});
