@@ -92,7 +92,10 @@ const std = @import("std");
     // Layout-silent self-erase: a ONE-LINE comment carries the registry's
     // content for anyone reading the emitted module. The entry promises no
     // derivation, so unlike a proto nothing downstream synthesizes from it —
-    // the marker is the whole emission.
+    // the marker is the whole emission. (A claim-and-prove probe beside the
+    // marker was tried and cut: Zig analyzes lazily, so the probe only runs
+    // when the host type links — untestable until real Files flow. It returns
+    // with value-level interop, carrying firing pins.)
     const flat = blk: {
         var buf = std.ArrayList(u8).initCapacity(allocator, source.text.len + 1) catch unreachable;
         var it = std.mem.splitScalar(u8, source.text, '\n');

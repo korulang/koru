@@ -735,6 +735,61 @@ pub fn moduleNamesMatch(a: []const u8, b: []const u8) bool {
     return true;
 }
 
+/// The foreign-claimed name set: every `std/foreign:struct(Name)` entry in
+/// the program, from BOTH representations the transform fixed point leaves
+/// behind — the live declaration flow (pre-erase) and the self-erased
+/// `// foreign Name: ...` marker comment (post-erase). Same two-form match
+/// the shape checker's deref scan and list's proto lookup already use; the
+/// checker runs post-transform, so the marker is the form that matters.
+/// Emission-time ground truth for the linkage gate: a bare type routes to
+/// its host home ONLY when claimed here (narrow — no existing bare-type
+/// behavior moves). Keys are owned dupes; free with the map.
+pub const ForeignNames = std.StringHashMap(void);
+
+pub fn buildForeignNames(allocator: std.mem.Allocator, items: []const ast.Item) !ForeignNames {
+    var names = ForeignNames.init(allocator);
+    errdefer names.deinit();
+    try collectForeignNames(allocator, &names, items);
+    return names;
+}
+
+fn collectForeignNames(allocator: std.mem.Allocator, names: *ForeignNames, items: []const ast.Item) !void {
+    for (items) |item| {
+        switch (item) {
+            .flow => |flow| {
+                const inv = flow.inv();
+                const mq = inv.path.module_qualifier orelse continue;
+                const is_foreign_door = std.mem.eql(u8, mq, "std.foreign") or std.mem.eql(u8, mq, "std/foreign");
+                if (!is_foreign_door) continue;
+                if (inv.path.segments.len == 0) continue;
+                if (!std.mem.eql(u8, inv.path.segments[inv.path.segments.len - 1], "struct")) continue;
+                if (inv.args.len == 0) continue;
+                var name = inv.args[0].value;
+                if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"') name = name[1 .. name.len - 1];
+                name = std.mem.trim(u8, name, " \t");
+                if (name.len == 0) continue;
+                if (names.contains(name)) continue;
+                const key = try allocator.dupe(u8, name);
+                errdefer allocator.free(key);
+                try names.put(key, {});
+            },
+            .inline_code => |ic| {
+                const prefix = "// foreign ";
+                if (!std.mem.startsWith(u8, ic.code, prefix)) continue;
+                const colon = std.mem.indexOfScalar(u8, ic.code, ':') orelse continue;
+                const name = std.mem.trim(u8, ic.code[prefix.len..colon], " \t");
+                if (name.len == 0) continue;
+                if (names.contains(name)) continue;
+                const key = try allocator.dupe(u8, name);
+                errdefer allocator.free(key);
+                try names.put(key, {});
+            },
+            .module_decl => |m| try collectForeignNames(allocator, names, m.items),
+            else => {},
+        }
+    }
+}
+
 // Tests
 test "register and lookup event" {
     const allocator = std.testing.allocator;

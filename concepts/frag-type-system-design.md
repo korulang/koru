@@ -372,8 +372,8 @@ by spelling; inspection-only forever, any further verb reopens the ruling.
 Double book-keeping is inherent to airlocks and is answered by claim-and-
 prove (build-time reflection probes), never by a Koru-side host grammar —
 parsing the host language stays refused no matter how much hand-mirroring
-hurts, until a real program in pain says otherwise. Pins 667_001–005; host
-linkage (667_005) is red by design, the rung beyond.
+hurts, until a real program in pain says otherwise. Pins 667_001–006 green;
+the prove half and value-level interop are the rungs beyond.
 
 ## The deref check landed (2026-09-04): presence claimed, presence checked
 
@@ -404,3 +404,33 @@ Resolution today is bare program-wide; the home-scoped module rung from the
 proto precedent (665_010–014: bare refs home-scoped, imports granting
 spellability) is unbuilt for foreign. It reopens the day two libraries mint
 one bare name and a deref must pick its home.
+
+## The linkage landed (2026-09-04): references canonicalize to the host home
+
+Rung 3 answers "where its declaration comes from": a bare foreign-claimed
+type that some module's host code declares routes to that home at emission
+(`*File` → `*koru_app.koru_lib.File`) — references canonicalize, never
+search, the module-rung rule. The host name IS the type: nothing is
+generated, so no substance is invented. Pin 667_005 green — claim and host
+companion together in lib.kz (the shape a future std module owns its host
+concepts in), the consumer derefing through the import, the program running.
+Rulings, each falsifiable:
+
+- **The gate is double: claimed AND declared.** Either condition missing
+  falls through to verbatim — unknown stays unknown, the backend owns it.
+  The rung stays supplemental: it can only turn a backend
+  undeclared-identifier into an earlier routed reference, never refuse a
+  working program. A top-level ("") home resolves bare and falls through
+  too.
+- **The probe was cut, not landed.** A claim-and-prove comptime probe beside
+  the marker is the law's letter, but Zig analyzes lazily: the probe runs
+  only when something links the host type, and nothing can link one until
+  real Files flow — so it could neither pass nor fail a pin, and an
+  unrunnable guard that can refuse builds is a loaded gun. It returns with
+  value-level interop, carrying firing pins. (One loaded round found on the
+  way out: a bare reference resolves lexically past `@hasDecl` — the future
+  probe must bind through `@field`.)
+
+Open and next: coexisting same-name hosts (first-declaration-wins today, per
+the home map); the prove half; value-level interop — calling with a real
+File, the further rung 667_005 always named.

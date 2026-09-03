@@ -103,6 +103,13 @@ pub var build_config_count: usize = 0;
 /// compiler process.
 pub var host_type_homes: ?*const type_registry_module.HostTypeHomes = null;
 
+/// The foreign-claimed name set over THIS program (type_registry.
+/// buildForeignNames) — attached beside host_type_homes before emission
+/// starts. writeFieldType consults it as the linkage gate: a bare base type
+/// routes to its host home ONLY when claimed here, so no existing bare-type
+/// lowering moves. Same file-scope channel, same one-program lifetime.
+pub var foreign_names: ?*const type_registry_module.ForeignNames = null;
+
 /// Register a build config value (called by build:config)
 pub fn registerBuildConfig(key: []const u8, value: []const u8) bool {
     if (build_config_count >= build_configs.len) {
@@ -1034,6 +1041,50 @@ pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name:
         // Regular type - apply prefixes for known AST/Std types to avoid shadowing
         // We use string replacement to handle pointers (*const Program) and slices ([]Item)
         const type_name = field.type;
+
+        // FOREIGN LINKAGE (rung 3): a bare base type that is BOTH
+        // foreign-claimed (this program holds a std/foreign entry for it)
+        // AND host-declared (some module's host code declares it) routes to
+        // the declaring home — `*File` → `*koru_app.koru_lib.File`. Either
+        // condition missing falls through to the verbatim behavior below:
+        // unknown stays unknown, the backend owns it (supplemental, never
+        // forced). A top-level ("") home resolves bare, so it falls through
+        // too. Between modules, host_type_homes' first-declaration-wins
+        // rule picks; coexisting same-name hosts stay an open question.
+        if (foreign_names) |fnames| {
+            var i: usize = 0;
+            const prefixes = [_][]const u8{ "[]const ", "?*const ", "*const ", "[]", "?*", "?", "*" };
+            strip: while (true) {
+                for (prefixes) |prefix| {
+                    if (std.mem.startsWith(u8, type_name[i..], prefix)) {
+                        i += prefix.len;
+                        continue :strip;
+                    }
+                }
+                break;
+            }
+            const base = type_name[i..];
+            var base_ok = base.len > 0;
+            for (base) |c| {
+                if (!std.ascii.isAlphanumeric(c) and c != '_' and c != '-') {
+                    base_ok = false;
+                    break;
+                }
+            }
+            if (base_ok and fnames.contains(base)) {
+                if (host_type_homes) |homes| {
+                    if (homes.get(base)) |home| {
+                        if (home.len > 0) {
+                            try emitter.write(type_name[0..i]);
+                            try writeModulePath(emitter, home, main_module_name);
+                            try emitter.write(".");
+                            try emitter.write(base);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
 
         // Allocator -> __koru_std.mem.Allocator
         const needle_alloc = "Allocator";

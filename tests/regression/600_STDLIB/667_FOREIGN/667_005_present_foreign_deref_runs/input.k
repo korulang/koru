@@ -1,18 +1,12 @@
-// PINNED GAP (currently RED) — the full journey of a present-field deref.
-// `f.path` is registered, so the Koru layer will wave it through even after
-// the deref check lands (667_004); what fails TODAY is one stage later — the
-// emitted Zig names a `File` type nothing declares, because host linkage
-// (what a `*File` lowers to, and where its declaration comes from) is
-// unbuilt. Greens when the projection compiles end-to-end; execution with a
-// real File is a further rung still. The print proves the program RAN, not
-// just compiled, on that day.
+// The full journey of a present-field deref, across an import: the entry
+// and its host proof live in app/lib; the consumer derefs through the
+// import. `f.path` is registered, so the Koru layer waves it through (rung
+// 2); host linkage routes `*File` to the declaring home, the erasure-site
+// probe proves the claim, and the projection compiles end-to-end. Execution
+// with a real File is a further rung still — get-path is never called. The
+// print proves the program RAN, not just compiled, on that day.
+import app/lib
 import std/io
-import std/foreign
-
-std/foreign:struct(File) {
-    path,
-    handle,
-}
 
 pub tor get-path { f: *File } -> string
 
