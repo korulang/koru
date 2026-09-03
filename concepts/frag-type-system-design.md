@@ -391,8 +391,16 @@ flow as the pre-erase twin. Same fixed point the list consumer already
 rides; a checker that only reads declarations goes blind exactly when the
 pipeline has done its work.
 - **The deref shape is the produce shape.** `f.bogus` arrives as a
-bare-return `plain_value`, not a field-access node — the identity-branch
-form, one bare value. The check therefore lives on the immediate-impl
-produce path, keyed off the event's input binding type, and general
-expression-position projection checking stays unbuilt until a pin demands
-it.
+  bare-return `plain_value`, not a field-access node — the identity-branch
+  form, one bare value. The check therefore lives on the immediate-impl
+  produce path, keyed off the event's input binding type, and general
+  expression-position projection checking stays unbuilt until a pin demands
+  it.
+
+Open and next: entries travel across imports (667_006 green — the entry
+lives in the imported lib, the deref in the consumer), which is what lets a
+future std module own its host concepts the way std/io would own `File`.
+Resolution today is bare program-wide; the home-scoped module rung from the
+proto precedent (665_010–014: bare refs home-scoped, imports granting
+spellability) is unbuilt for foreign. It reopens the day two libraries mint
+one bare name and a deref must pick its home.
