@@ -234,3 +234,76 @@ fourth dissolution of the day, and the cleanest:
 Falsification conditions carry forward unchanged, plus one: a program that
 cannot agree on a composite across sites without a named entry confirms proto;
 a program satisfied by inline shapes everywhere dissolves it again.
+
+---
+
+## The law sharpened: affinity, not coupling; sameness by NAME only (2026-09-03 walk)
+
+A walk co-derived (with Lars) what proto is past the negative — and the
+landing made it real. The row rule, the thing every earlier rung circled:
+
+- **A proto names an AFFINITY, never a coupling.** `struct` fused identity
+  with physical arrangement at declaration; proto keeps the name AND nothing
+  else. There is never an `Engine` value; a consumed proto self-erases to the
+  `// proto Name: fields` marker. Consumers (std/list, std/store, std/kernel)
+  derive their own physics from the same entry — SoA store row, AoS list
+  element, same contract, different arrangement.
+- **"Same thing" is by NAME ONLY — the disambiguation.** `health: Health` in
+  Player and Enemy is the SAME concept (same column, dedup default); raw
+  `health: f32`, or `health: Vitality` even terminating in f32, is a
+  SEPARATE concept, refused loudly when combined. The layout system may merge
+  only what a shared name proves identical — never two anonymous fields that
+  merely look alike. That is "no unearned claim" applied to memory itself.
+- **The ECS contrast that framed it**: a component is a named field set with
+  a relation to an entity — composition is membership, never embedding. Proto
+  is that, one step more abstract: no entity, no payload, only the tendency.
+  "Components" felt too struct-y because ECS components are still values
+  attached to entities; proto has no body by construction.
+- **A type is a path that terminates in something not compound.** Every proto
+  resolves to scalars by construction; the compound field surface (scalars
+  only this rung) is the terminal rule's day-one shadow. The tree already
+  carried it as a field-level wall.
+- **Inheritance done right = compose the same CONCEPTS in DATA, never in
+  behavior.** Behavior is what consumers derive (never inherit); identity is
+  what composes. Data-composition is the sound half of inheritance,
+  unbundled.
+- **Doubling is waste, not truth.** The layout algebra's cost rule: never
+  charge the same scalar twice when one name could have served. The proto
+  system is a guiding system against the double — the "same f32, not two
+  f32-fields" payoff when two stores share a proto.
+- **The module splits**: `std/proto` is the compound front door; the nominal
+  primitives (`std/types:string(Email)`) are the SAME act at field count
+  zero — a name, not a wrapper tax. The old frame (distinct named wrappers)
+  upgrades to identity-at-comptime.
+
+## The default door landed (2026-09-03): std/proto(Engine) { … }
+
+- `std/proto(Name) { fields }` invokes the module's `default` tor through the
+  default-event rule (`std/M(args)` ≡ `std/M:default(args)`, import_pipeline
+  rewriteDefaultEventCalls — a proven pattern, constructor.kz). The module
+  name IS the verb; `default` is reachable only through the path.
+- **`koru_std/proto.kz`** (new): the `default` transform tor — the proto
+  body verbatim from std/types, one message prefix changed. Self-erases to
+  the IDENTICAL `// proto Name: fields` marker.
+- **Three-site widening** so the new door registers like the old:
+  `phantom_semantic_checker.zig` + `type_registry.zig` scanDeclaredTypes /
+  populateFromItem (accept `std.proto`/`std/proto` mq, `default` verb as
+  proto when on the proto door), and `list.kz` findProtoDecl. After the
+  rewrite mq is the canonical dotted `std.proto` (import local_name rule),
+  so the widening is the same two-form match the old door already uses.
+- **Pins**: 660_030 (run slice through the new door) and 660_031 (duplicate
+  refusal through the new door). The harness gate lesson: a negative test
+  needs a `MUST_ERROR` FILE, not just the `MUST_ERROR` line in EXPECT.
+- **Fixed-point insight**: the consumer path (programHasProto + field source)
+  falls back to the ERASED MARKER, which both doors write identically — so
+  the new door composes with std/list for free, and the registration scans
+  were the only real seam.
+- **Three pre-existing 660 reds untouched** (002, 013, 026) — board reds
+  predating this session.
+
+Open and next (un-ruled): the terminal half — `std/proto:float(Health)` as
+the named-primitive home (the "same column, different rows" payoff); the
+layout algebra itself; transitivity module-qualification of proto fields.
+Falsification conditions carry forward; the "merge only by name" law adds
+one: two anonymous same-shaped fields silently sharing a column would
+dissolve it.

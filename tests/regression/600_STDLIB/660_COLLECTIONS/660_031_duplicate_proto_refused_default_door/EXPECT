@@ -1,0 +1,3 @@
+MUST_ERROR
+CONTAINS duplicate proto declaration
+CONTAINS collides with the prior registration

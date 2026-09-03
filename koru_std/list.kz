@@ -353,9 +353,19 @@ fn findProtoDecl(prog: *const astz.Program, elem: []const u8) ?*const astz.Flow 
         fn invokesProto(f: *const astz.Flow, name: []const u8, mod: ?[]const u8) bool {
             const inv = f.inv();
             if (inv.path.segments.len != 1) return false;
-            if (!std.mem.eql(u8, inv.path.segments[0], "proto")) return false;
+            const verb = inv.path.segments[0];
             const mq = inv.path.module_qualifier orelse return false;
-            if (!(std.mem.eql(u8, mq, "std.types") or std.mem.eql(u8, mq, "std/types"))) return false;
+            // Two doors to the same registry entry: the original
+            // `std/types:proto(Name)` verb form, and the default-door form
+            // `std/proto(Name)` ≡ `std/proto:default(Name)` that the
+            // default-event rule rewrites a bare module call into
+            // (import_pipeline.zig rewriteDefaultEventCalls; the post-rewrite
+            // mq is the canonical dotted path "std.proto").
+            const types_door = std.mem.eql(u8, verb, "proto") and
+                (std.mem.eql(u8, mq, "std.types") or std.mem.eql(u8, mq, "std/types"));
+            const default_door = std.mem.eql(u8, verb, "default") and
+                (std.mem.eql(u8, mq, "std.proto") or std.mem.eql(u8, mq, "std/proto"));
+            if (!(types_door or default_door)) return false;
             if (inv.args.len == 0) return false;
             var nm = inv.args[0].value;
             if (nm.len >= 2 and nm[0] == '"' and nm[nm.len - 1] == '"') nm = nm[1 .. nm.len - 1];

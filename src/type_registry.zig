@@ -358,7 +358,17 @@ pub const TypeRegistry = struct {
                     std.mem.eql(u8, mqv, "std.types") or std.mem.eql(u8, mqv, "std/types")
                 else
                     true;
-                if (types_tor and inv.path.segments.len > 0) {
+                // Proto default-door rung (2026-09-03): `std/proto(Name)` is
+                // the compound front door — the default-event rule rewrites a
+                // bare module call into `std/proto:default(Name)` at import
+                // time, so the declaration lands here with the canonical
+                // dotted mq "std.proto" and the verb "default". Same entry,
+                // second spelling; both register.
+                const proto_door = if (mq) |mqv|
+                    std.mem.eql(u8, mqv, "std.proto") or std.mem.eql(u8, mqv, "std/proto")
+                else
+                    false;
+                if ((types_tor or proto_door) and inv.path.segments.len > 0) {
                     const last_seg = inv.path.segments[inv.path.segments.len - 1];
                     const is_decl_tor = std.mem.eql(u8, last_seg, "struct") or
                         std.mem.eql(u8, last_seg, "string") or
@@ -373,7 +383,8 @@ pub const TypeRegistry = struct {
                     // registry side — the LOUD collision is the checker's scan
                     // (it can cite both registrants); this scan only feeds the
                     // identity test.
-                    const is_proto = std.mem.eql(u8, last_seg, "proto");
+                    const is_proto = std.mem.eql(u8, last_seg, "proto") or
+                        (proto_door and std.mem.eql(u8, last_seg, "default"));
                     if ((is_decl_tor or is_proto) and inv.args.len > 0) {
                         var name = inv.args[0].value;
                         if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"')

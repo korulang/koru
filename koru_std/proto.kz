@@ -1,0 +1,135 @@
+// Koru Standard Library: Proto — compound identity declarations
+// =============================================================
+//
+// The compound front door for proto entries. `std/proto(Name) { fields }`
+// invokes this module's `default` event through the default-event rule
+// (`std/M(args)` ≡ `std/M:default(args)`; see import_pipeline.zig
+// rewriteDefaultEventCalls). The module name IS the verb — `default` is
+// reachable only through the path, never bare.
+//
+// SURFACE:
+//   std/proto(Player) { health: Health, hp: f32 }
+//     declares a COMPILE-TIME registry entry — layout-silent, with no
+//     emission of its own. The first consumer derives what it needs
+//     (std/list:new synthesizes the element struct plus its `List_<Name>`
+//     container from these fields). The terminal half of the system — named
+//     primitives (`std/proto:float(Health)`) — is the same act at field
+//     count zero and lands here as the system grows.
+//
+// RULED 2026-08-23 → 09-03 (frag-type-system-design, proto rung; co-derived
+// on the 09-03 walk): a proto names an AFFINITY, never a coupling — the
+// entry is the identity, "same thing" is by NAME ONLY, and the layout system
+// may merge only what a shared name proves identical (never two anonymous
+// fields that merely look alike). Two registrants of the same name are a
+// loud collision; values over two different protos must not interchange
+// (both refused at the KORU layer by the nominal-distinctness gate;
+// see scanDeclaredTypes + the container registration it derives).
+
+const std = @import("std");
+
+~[comptime|transform]pub tor default {
+    expr: Expression,
+    source: Source,
+    item: *const Item,
+    allocator: std.mem.Allocator,
+    reporter: *std/compiler:ErrorReporter
+} -> SiteResult
+
+~proc default|zig {
+    const ast = @import("ast");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{};
+
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+    const name = std.mem.trim(u8, type_name, " \t");
+
+    // The entry name must be an identifier the derived container can be shown
+    // with; refuse anything else loudly (never crash).
+    var name_ok = name.len > 0;
+    for (name, 0..) |c, i| {
+        const legal = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+            (c == '_') or (i > 0 and c >= '0' and c <= '9') or (c == '-');
+        if (!legal) {
+            name_ok = false;
+            break;
+        }
+    }
+    if (!name_ok or name.len == 0) {
+        return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto: the entry name '{s}' is not usable — a proto name must be an identifier (a-z, A-Z, 0-9, '_', '-'; no leading digit)", .{name}) };
+    }
+
+    // Field grammar: one `name: type` per line (comma optional, trailing commas
+    // fine). Scalars only this rung — the derived container emits Zig struct
+    // fields from these types, so a type the stdlib cannot carry is a
+    // declaration fault, caught HERE not in the consumer.
+    var field_lines: usize = 0;
+    var lines1 = std.mem.splitScalar(u8, source.text, '\n');
+    while (lines1.next()) |line_raw| {
+        const line = std.mem.trim(u8, line_raw, " \t\r,");
+        if (line.len == 0) continue;
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse {
+            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): field line '{s}' has no ':' — each field must be `name: type`", .{ name, line }) };
+        };
+        const fname = std.mem.trim(u8, line[0..colon], " \t");
+        const ftype = std.mem.trim(u8, line[colon + 1 ..], " \t,");
+        if (fname.len == 0 or ftype.len == 0) {
+            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): field line '{s}' is missing a name or a type", .{ name, line }) };
+        }
+        const scalars = [_][]const u8{ "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string" };
+        var known = false;
+        for (scalars) |s| {
+            if (std.mem.eql(u8, ftype, s)) {
+                known = true;
+                break;
+            }
+        }
+        if (!known) {
+            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): field '{s}' uses unsupported type '{s}' — scalar fields only this rung (i8/i16/i32/i64/u8/u16/u32/u64/f32/f64/bool/string)", .{ name, fname, ftype }) };
+        }
+        field_lines += 1;
+    }
+    if (field_lines == 0) {
+        return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): an entry with no fields derives nothing — declare at least one `name: type` field", .{name}) };
+    }
+
+    // Layout-silent self-erase: a ONE-LINE comment carries the registry's
+    // content for anyone reading the emitted module; nothing else is emitted
+    // for the entry itself (the consumer's derived struct is what the program
+    // runs on). The collapse is load-bearing: a multi-line body left its
+    // second and later lines as RAW TEXT in the emitted Zig module (they are
+    // not comments — only the first line carries `//`), and the backend died
+    // on `serial: string` as a bare statement. Fields join with ", " — the
+    // same separator std/list's marker parser splits on.
+    const flat = blk: {
+        var buf = std.ArrayList(u8).initCapacity(allocator, source.text.len + 1) catch unreachable;
+        var it = std.mem.splitScalar(u8, source.text, '\n');
+        while (it.next()) |raw| {
+            const seg = std.mem.trim(u8, raw, " \t\r,");
+            if (seg.len == 0) continue;
+            if (buf.items.len > 0) buf.appendSlice(allocator, ", ") catch unreachable;
+            buf.appendSlice(allocator, seg) catch unreachable;
+        }
+        break :blk buf.toOwnedSlice(allocator) catch unreachable;
+    };
+    const code = std.fmt.allocPrint(
+        allocator,
+        "// proto {s}: {s}",
+        .{ name, flat },
+    ) catch unreachable;
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    return .{ .replacement = inline_code_item };
+}
