@@ -6,7 +6,10 @@ description: Koru regression test harness workflow. Use when checking test statu
 # Regression Test Harness
 
 The regression suite is the hub for all Koru compiler progress. 1511 tests, 1442
-in scope; ~11 minutes for a full `--parallel 8` board (measured 2026-08-01).
+in scope; ~30 minutes for a full `--parallel 8` board (measured 2026-09-02 —
+the backend-binary cache is salt-guarded by the newest compiler-source mtime,
+so any `src/`/`koru_std/` edit makes the next board run cold; the 2026-08-01
+"~11 minutes" figure was warm-cache and is stale).
 
 ## Our Workflow
 
@@ -20,7 +23,7 @@ suite:
 
 Filtered runs write no snapshot, so they cannot clobber `latest.json`. Running
 the full board repeatedly while iterating is the mistake to avoid — it costs
-~11 minutes a turn and buys nothing a filtered run doesn't.
+~30 minutes a turn and buys nothing a filtered run doesn't.
 
 **A filter that matches nothing is dropped in silence.** `./run_regression.sh
 <real_name> <typo>` runs one test and prints `ALL TESTS PASSED`, exit 0. Zero

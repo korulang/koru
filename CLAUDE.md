@@ -43,7 +43,9 @@ push, what to publish — is ordinary work.
 
 ## The suite is expensive
 
-~11 minutes for a full `--no-cache` board. While iterating, run the affected
+~30 minutes for a full board (measured 2026-09-02; the backend-binary cache
+is salt-guarded by the newest compiler-source mtime, so a board after any
+`src/`/`koru_std/` edit runs cold). While iterating, run the affected
 tests plus controls:
 
     ./run_regression.sh <full_test_name> <full_test_name> ...
