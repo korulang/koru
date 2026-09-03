@@ -1,0 +1,2 @@
+player 98.6
+enemy 72.5

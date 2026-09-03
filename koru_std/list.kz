@@ -547,8 +547,16 @@ fn protoFieldsOf(alloc: std.mem.Allocator, decl: *const astz.Flow) ProtoFields {
 
 /// The fields of a proto entry, from whichever representation the walker's
 /// fixed point has left: the declaration flow (pre-self-erase) or the erased
-/// `// proto Name: fields` comment. `elem` may be module-qualified.
+/// `// proto Name: fields` comment. `elem` may be module-qualified. The flat
+/// pairs expand nested compounds to dotted-leaf pairs on the way out.
 fn protoFieldsOfProgram(alloc: std.mem.Allocator, prog: *const astz.Program, elem: []const u8) ProtoFields {
+    const flat = protoFieldsOfProgramFlat(alloc, prog, elem);
+    return expandNestedFields(alloc, prog, flat.names, flat.types);
+}
+
+/// Unexpanded fetch behind protoFieldsOfProgram: the entry's own pairs,
+/// nested compounds left as named for the expansion walk.
+fn protoFieldsOfProgramFlat(alloc: std.mem.Allocator, prog: *const astz.Program, elem: []const u8) ProtoFields {
     if (findProtoDecl(prog, elem)) |decl| {
         return protoFieldsOf(alloc, decl);
     }
@@ -614,6 +622,56 @@ fn protoFieldsOfProgram(alloc: std.mem.Allocator, prog: *const astz.Program, ele
         w += 1;
     }
     return .{ .names = names[0..w], .types = types[0..w] };
+}
+
+/// Nested-compound expansion: flatten compound-typed fields to dotted-leaf
+/// pairs (`pos: Position` with `x`,`y` becomes `pos.x`, `pos.y`), recursing
+/// to any depth. Terminals and scalars are leaves and pass through untouched;
+/// an ftype resolving to no compound is a leaf by definition — unknown names
+/// are the declaration gate's refusal, never this walk's. A name already on
+/// the expansion stack passes through unexpanded: unreachable while the gate
+/// refuses cycles, kept purely so a walk over unvalidated declarations can
+/// never hang (the gate's voice, which always runs, wins regardless).
+/// Identity rides the paths for free: terminal leaves keep their global
+/// names, raw leaves stay distinct per expansion path.
+fn expandNestedFields(alloc: std.mem.Allocator, prog: *const astz.Program, names: []const []const u8, types: []const []const u8) ProtoFields {
+    var out_names = std.ArrayList([]const u8).initCapacity(alloc, names.len) catch unreachable;
+    var out_types = std.ArrayList([]const u8).initCapacity(alloc, types.len) catch unreachable;
+    var stack = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
+    for (names, types) |fname, ftype| {
+        expandPair(alloc, prog, "", fname, ftype, &stack, &out_names, &out_types);
+    }
+    return .{ .names = out_names.toOwnedSlice(alloc) catch unreachable, .types = out_types.toOwnedSlice(alloc) catch unreachable };
+}
+
+fn expandPair(alloc: std.mem.Allocator, prog: *const astz.Program, prefix: []const u8, fname: []const u8, ftype: []const u8, stack: *std.ArrayList([]const u8), out_names: *std.ArrayList([]const u8), out_types: *std.ArrayList([]const u8)) void {
+    const full = if (prefix.len == 0)
+        alloc.dupe(u8, fname) catch unreachable
+    else
+        std.fmt.allocPrint(alloc, "{s}{s}", .{ prefix, fname }) catch unreachable;
+    const bare = if (std.mem.lastIndexOfScalar(u8, ftype, ':')) |ci|
+        std.mem.trim(u8, ftype[ci + 1 ..], " \t")
+    else
+        std.mem.trim(u8, ftype, " \t");
+    for (stack.items) |s| {
+        if (std.mem.eql(u8, s, bare)) {
+            out_names.append(alloc, full) catch unreachable;
+            out_types.append(alloc, ftype) catch unreachable;
+            return;
+        }
+    }
+    const sub = protoFieldsOfProgramFlat(alloc, prog, ftype);
+    if (sub.names.len == 0) {
+        out_names.append(alloc, full) catch unreachable;
+        out_types.append(alloc, ftype) catch unreachable;
+        return;
+    }
+    stack.append(alloc, bare) catch unreachable;
+    const inner = std.fmt.allocPrint(alloc, "{s}.", .{full}) catch unreachable;
+    for (sub.names, sub.types) |sn, st| {
+        expandPair(alloc, prog, inner, sn, st, stack, out_names, out_types);
+    }
+    _ = stack.pop();
 }
 
 /// The element a container handle was bound from, found in the enclosing flow:

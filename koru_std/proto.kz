@@ -65,8 +65,10 @@ const std = @import("std");
         return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto: the entry name '{s}' is not usable — a proto name must be an identifier (a-z, A-Z, 0-9, '_', '-'; no leading digit)", .{name}) };
     }
     // Field grammar: one `name: type` per line (comma optional, trailing commas
-    // fine). A field may name a scalar material, a terminal of its own home, or
-    // a qualified terminal (`app/alpha:Health`) naming another home by address.
+    // fine). A field may name a scalar material, a terminal of its own home, a
+    // qualified name (`app/alpha:Health`) from another home by address, or a
+    // compound of its own home (`pos: Position`) — nesting expands to scalar
+    // leaves, each keeping its identity; the compound graph must be acyclic.
     // References canonicalize like everything else: a bare name answers to its
     // own module, a qualified name to the named home — never a program-wide
     // search, so imports grant spellability without creating ambiguity.
@@ -80,6 +82,23 @@ const std = @import("std");
                 std.mem.eql(u8, verb, "int") or
                 std.mem.eql(u8, verb, "float") or
                 std.mem.eql(u8, verb, "bool");
+        }
+
+        fn isCompoundDoor(inv: *const ast.Invocation) bool {
+            if (inv.path.segments.len != 1) return false;
+            const verb = inv.path.segments[0];
+            const mq = inv.path.module_qualifier orelse return false;
+            const types_door = std.mem.eql(u8, verb, "proto") and
+                (std.mem.eql(u8, mq, "std.types") or std.mem.eql(u8, mq, "std/types"));
+            const default_door = std.mem.eql(u8, verb, "default") and
+                (std.mem.eql(u8, mq, "std.proto") or std.mem.eql(u8, mq, "std/proto"));
+            return types_door or default_door;
+        }
+
+        fn liveDeclarationIsCompound(inv: *const ast.Invocation, want: []const u8) bool {
+            if (!isCompoundDoor(inv)) return false;
+            if (inv.args.len == 0) return false;
+            return std.mem.eql(u8, bareName(inv.args[0].value), want);
         }
 
         fn bareName(value: []const u8) []const u8 {
@@ -121,19 +140,42 @@ const std = @import("std");
             return false;
         }
 
-        fn scanItems(items: []const ast.Item, scope_home: []const u8, want: []const u8, want_home: []const u8) bool {
+        fn markerDeclaresCompoundLine(line: []const u8, want: []const u8) bool {
+            const marker = std.mem.trimLeft(u8, line, " \t");
+            const prefix = "// proto ";
+            if (!std.mem.startsWith(u8, marker, prefix)) return false;
+            const colon = std.mem.indexOfScalar(u8, marker[prefix.len..], ':') orelse return false;
+            const declared = std.mem.trim(u8, marker[prefix.len .. prefix.len + colon], " \t");
+            return std.mem.eql(u8, declared, want);
+        }
+
+        fn markerDeclaresCompound(code: []const u8, want: []const u8) bool {
+            var lines = std.mem.splitScalar(u8, code, '\n');
+            while (lines.next()) |line| {
+                if (markerDeclaresCompoundLine(line, want)) return true;
+            }
+            return false;
+        }
+
+        fn scanItems(items: []const ast.Item, scope_home: []const u8, want: []const u8, want_home: []const u8, compounds: bool) bool {
             for (items) |entry| {
                 switch (entry) {
                     .flow => |candidate| {
                         if (candidate.body.node) |*node| {
-                            if (node.* == .invocation and liveDeclarationIsTerminal(&node.invocation, want) and std.mem.eql(u8, scope_home, want_home)) return true;
+                            if (node.* == .invocation and std.mem.eql(u8, scope_home, want_home)) {
+                                if (liveDeclarationIsTerminal(&node.invocation, want)) return true;
+                                if (compounds and liveDeclarationIsCompound(&node.invocation, want)) return true;
+                            }
                         }
                     },
                     .inline_code => |inline_code| {
-                        if (markerDeclaresTerminal(inline_code.code, want) and std.mem.eql(u8, scope_home, want_home)) return true;
+                        if (std.mem.eql(u8, scope_home, want_home)) {
+                            if (markerDeclaresTerminal(inline_code.code, want)) return true;
+                            if (compounds and markerDeclaresCompound(inline_code.code, want)) return true;
+                        }
                     },
                     .module_decl => |module| {
-                        if (scanItems(module.items, module.logical_name, want, want_home)) return true;
+                        if (scanItems(module.items, module.logical_name, want, want_home, compounds)) return true;
                     },
                     else => {},
                 }
@@ -164,7 +206,9 @@ const std = @import("std");
             return Finder.find(prog.items, target, prog.main_module_name) orelse prog.main_module_name;
         }
 
-        fn isDeclared(prog: *const ast.Program, alloc: std.mem.Allocator, ftype: []const u8, scope_home: []const u8) bool {
+        const WantRef = struct { home: []const u8, name: []const u8 };
+
+        fn splitWant(alloc: std.mem.Allocator, ftype: []const u8, scope_home: []const u8) WantRef {
             const trimmed = std.mem.trim(u8, ftype, " \t");
             var want_home: []const u8 = scope_home;
             var want: []const u8 = bareName(ftype);
@@ -180,11 +224,138 @@ const std = @import("std");
                     want = nm;
                 }
             }
-            return scanItems(prog.items, prog.main_module_name, want, want_home);
+            return .{ .home = want_home, .name = want };
+        }
+
+        fn isDeclared(prog: *const ast.Program, alloc: std.mem.Allocator, ftype: []const u8, scope_home: []const u8) bool {
+            const w = splitWant(alloc, ftype, scope_home);
+            return scanItems(prog.items, prog.main_module_name, w.name, w.home, false);
+        }
+
+        fn isDeclaredCompound(prog: *const ast.Program, alloc: std.mem.Allocator, ftype: []const u8, scope_home: []const u8) bool {
+            const w = splitWant(alloc, ftype, scope_home);
+            return scanItems(prog.items, prog.main_module_name, w.name, w.home, true);
+        }
+        const CompoundNode = struct { home: []const u8, name: []const u8, ftypes: [][]const u8 };
+        const CompoundRef = struct { home: []const u8, name: []const u8 };
+
+        fn isScalarWord(ftype: []const u8) bool {
+            const scalars = [_][]const u8{ "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string" };
+            const t = std.mem.trim(u8, ftype, " \t");
+            for (scalars) |s| {
+                if (std.mem.eql(u8, t, s)) return true;
+            }
+            return false;
+        }
+        /// Field types of one field-block text, split on newlines AND commas
+        /// (the erased marker is one comma-joined line). Slices into the
+        /// given text — no ownership, transform lifetime.
+        fn parseFieldTypes(alloc: std.mem.Allocator, text: []const u8, out: *std.ArrayList([]const u8)) void {
+            var toks = std.mem.tokenizeAny(u8, text, "\n,");
+            while (toks.next()) |raw| {
+                const line = std.mem.trim(u8, raw, " \t\r,");
+                if (line.len == 0) continue;
+                const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+                const ftype = std.mem.trim(u8, line[colon + 1 ..], " \t,");
+                if (ftype.len == 0) continue;
+                out.append(alloc, ftype) catch unreachable;
+            }
+        }
+
+        const GraphWalk = struct {
+            fn walk(alloc: std.mem.Allocator, items: []const ast.Item, home: []const u8, nodes: *std.ArrayList(CompoundNode)) void {
+                for (items) |entry| {
+                    switch (entry) {
+                        .flow => |candidate| {
+                            if (candidate.body.node) |*node| {
+                                if (node.* == .invocation and isCompoundDoor(&node.invocation)) {
+                                    if (node.invocation.args.len == 0) continue;
+                                    const nm = bareName(node.invocation.args[0].value);
+                                    if (nm.len == 0) continue;
+                                    var src: ?[]const u8 = null;
+                                    for (node.invocation.args) |a| {
+                                        if (a.source_value) |sv| {
+                                            src = sv.text;
+                                            break;
+                                        }
+                                    }
+                                    var ftypes = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
+                                    parseFieldTypes(alloc, src orelse "", &ftypes);
+                                    nodes.append(alloc, .{ .home = home, .name = nm, .ftypes = ftypes.toOwnedSlice(alloc) catch unreachable }) catch unreachable;
+                                }
+                            }
+                        },
+                        .inline_code => |ic| {
+                            var lines = std.mem.splitScalar(u8, ic.code, '\n');
+                            while (lines.next()) |raw| {
+                                const line = std.mem.trimLeft(u8, raw, " \t");
+                                const prefix = "// proto ";
+                                if (!std.mem.startsWith(u8, line, prefix)) continue;
+                                const colon = std.mem.indexOfScalar(u8, line[prefix.len..], ':') orelse continue;
+                                const nm = std.mem.trim(u8, line[prefix.len .. prefix.len + colon], " \t");
+                                if (nm.len == 0) continue;
+                                var ftypes = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
+                                parseFieldTypes(alloc, line[prefix.len + colon + 1 ..], &ftypes);
+                                nodes.append(alloc, .{ .home = home, .name = nm, .ftypes = ftypes.toOwnedSlice(alloc) catch unreachable }) catch unreachable;
+                            }
+                        },
+                        .module_decl => |module| {
+                            walk(alloc, module.items, module.logical_name, nodes);
+                        },
+                        else => {},
+                    }
+                }
+            }
+        };
+
+        fn dfsVisit(alloc: std.mem.Allocator, prog: *const ast.Program, nodes: []const CompoundNode, stack: *std.ArrayList(CompoundRef), home: []const u8, node_name: []const u8) ?[]const u8 {
+            var node: ?CompoundNode = null;
+            for (nodes) |n| {
+                if (std.mem.eql(u8, n.home, home) and std.mem.eql(u8, n.name, node_name)) {
+                    node = n;
+                    break;
+                }
+            }
+            const nd = node orelse return null;
+            for (nd.ftypes) |ftype| {
+                if (isScalarWord(ftype)) continue;
+                if (isDeclared(prog, alloc, ftype, home)) continue;
+                const w = splitWant(alloc, ftype, home);
+                for (stack.items, 0..) |s, si| {
+                    if (std.mem.eql(u8, s.home, w.home) and std.mem.eql(u8, s.name, w.name)) {
+                        var chain = std.ArrayList(u8).initCapacity(alloc, 32) catch unreachable;
+                        for (stack.items[si..]) |c| {
+                            if (chain.items.len > 0) chain.appendSlice(alloc, " -> ") catch unreachable;
+                            chain.appendSlice(alloc, c.name) catch unreachable;
+                        }
+                        chain.appendSlice(alloc, " -> ") catch unreachable;
+                        chain.appendSlice(alloc, w.name) catch unreachable;
+                        return chain.toOwnedSlice(alloc) catch unreachable;
+                    }
+                }
+                stack.append(alloc, .{ .home = w.home, .name = w.name }) catch unreachable;
+                if (dfsVisit(alloc, prog, nodes, stack, w.home, w.name)) |found| return found;
+                _ = stack.pop();
+            }
+            return null;
+        }
+
+        /// The compound graph reachable from (root_home, root_name): every
+        /// compound-typed edge walked, terminals and scalars skipped. Returns
+        /// the cycle chain ("A -> B -> A") when the root reaches itself, null
+        /// otherwise. Unresolvable hops are skipped — the owning entry's own
+        /// gate refuses those, never this walk.
+        fn findCycle(alloc: std.mem.Allocator, prog: *const ast.Program, root_name: []const u8, root_home: []const u8) ?[]const u8 {
+            var nodes = std.ArrayList(CompoundNode).initCapacity(alloc, 8) catch unreachable;
+            GraphWalk.walk(alloc, prog.items, prog.main_module_name, &nodes);
+            var stack = std.ArrayList(CompoundRef).initCapacity(alloc, 8) catch unreachable;
+            stack.append(alloc, .{ .home = root_home, .name = root_name }) catch unreachable;
+            return dfsVisit(alloc, prog, nodes.items, &stack, root_home, root_name);
         }
     };
 
     var field_lines: usize = 0;
+    var has_compound = false;
     var lines1 = std.mem.splitScalar(u8, source.text, '\n');
     while (lines1.next()) |line_raw| {
         const line = std.mem.trim(u8, line_raw, " \t\r,");
@@ -197,21 +368,28 @@ const std = @import("std");
         if (fname.len == 0 or ftype.len == 0) {
             return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): field line '{s}' is missing a name or a type", .{ name, line }) };
         }
-        const scalars = [_][]const u8{ "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string" };
-        var known = false;
-        for (scalars) |s| {
-            if (std.mem.eql(u8, ftype, s)) {
-                known = true;
-                break;
-            }
-        }
+        const known = TerminalRef.isScalarWord(ftype);
         if (!known and !TerminalRef.isDeclared(program, allocator, ftype, TerminalRef.scopeOfFlow(program, flow))) {
-            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): field '{s}' names unknown terminal '{s}' — a field must use a scalar material, a terminal of its own home, or a qualified terminal naming another home", .{ name, fname, ftype }) };
+            if (!TerminalRef.isDeclaredCompound(program, allocator, ftype, TerminalRef.scopeOfFlow(program, flow))) {
+                return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): field '{s}' names unknown terminal '{s}' — a field must use a scalar material, a terminal or compound of its own home, or a qualified name from another home", .{ name, fname, ftype }) };
+            }
+            has_compound = true;
         }
         field_lines += 1;
     }
     if (field_lines == 0) {
         return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): an entry with no fields derives nothing — declare at least one `name: type` field", .{name}) };
+    }
+
+    // DAG law: compounds must not reach themselves. Walked only when some
+    // field names a compound — flat entries pay nothing, and every entry's
+    // own gate guarantees its outgoing edges resolve, so an unresolvable hop
+    // here is another entry's refusal, never this one's to make.
+    if (has_compound) {
+        if (TerminalRef.findCycle(allocator, program, name, TerminalRef.scopeOfFlow(program, flow))) |chain| {
+            defer allocator.free(chain);
+            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/proto({s}): compound cycle detected: {s} — a compound graph must be acyclic; expansion would never terminate", .{ name, chain }) };
+        }
     }
 
     // Layout-silent self-erase: a ONE-LINE comment carries the registry's

@@ -444,3 +444,35 @@ two-form scan was consolidated to one canonical collector
 (`type_registry.collectForeignEntries`, both consumers calling it) ahead of
 the wait, so the corner stays small while it waits. Falsified the day a
 real entry lands outside the 667 pins.
+
+## The nesting landed (2026-09-04): compounds compose by expansion
+
+The bad look is gone: a compound field may name another compound, so
+`pos: Position` declares instead of refusing. Nesting means transparent
+expansion — a graph-walk instantiating scalars, never dereferencing: the
+compound dissolves, only leaves materialize, and there is no `pos` value
+anywhere. Two node kinds, two merge rules: terminals merge globally by name
+(a `Health` leaf is one column wherever reached), compounds expand locally
+by path (two `Position` fields stamp two `x`es, never one aliased cell).
+Raw leaves merge iff their full chain matches — the shared compound name in
+the chain is what distinguishes foldable `pos.x ≡ pos.x` from never-foldable
+bare `health ≡ health`. Records stay atomic within one extent by
+construction; folding is across extents, and same chain with different
+substance refuses loud. Pins 668_001–004.
+Rulings, each falsifiable:
+
+- **The gate opens, the unknown still refuses.** Compounds join scalars and
+  terminals as legal field types under the same home rules; genuinely unknown
+  words keep the exact existing refusal (665_005/014 untouched). The DAG law
+  lives with the declaration: cycles refused with the chain named, walked
+  only when some field is compound-typed, flat entries paying nothing.
+- **Expansion sits at the single choke point.** `protoFieldsOfProgram`
+  flattens to dotted-leaf pairs; list — the only field consumer — flows
+  first-leafs exactly as before, so synthesis is untouched and a nested
+  first field feeds it the first leaf. A name already expanding passes
+  through unexpanded: unreachable while the gate refuses cycles, kept so a
+  walk over unvalidated declarations can never hang.
+- **Out, explicitly:** store column folding (690_272 stays red — the store
+  does not read chains yet), value-level records (no construction surface),
+  raw-separation pins (beyond the first leaf nothing flows, so nothing could
+  clobber — recorded, not theater).
