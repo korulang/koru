@@ -1,10 +1,8 @@
-// PINNED GAP (currently RED) — the deref check does not exist yet. `f.bogus`
-// names no registered field, but Koru waves the projection through and the
-// backend fails with Zig's `undeclared identifier 'File'` — the same error
-// the PRESENT field (667_005) dies with. Koru cannot tell them apart.
-// Greens the day the projection is refused at the Koru layer with an error
-// naming the field and the entry; the CONTAINS below already discriminates
-// that day (Zig's error never names `bogus`).
+// The Koru-layer deref check (rung 2): `f.bogus` names no registered field,
+// so the projection is refused here, in Koru's voice, naming the field and
+// the entry — it never reaches the backend. The CONTAINS below discriminates
+// that layer (Zig's undeclared-identifier error never names `bogus`). Present
+// fields wave through (667_005); host linkage is the later rung.
 import std/io
 import std/foreign
 

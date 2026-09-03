@@ -12,16 +12,24 @@ const branch_checker = @import("branch_checker");
 /// 3. Labels are applied with matching shapes
 /// 4. Proc returns match their event declaration
 
+pub const ForeignEntry = struct {
+    fields: [][]const u8,
+};
+
 pub const ShapeChecker = struct {
     allocator: std.mem.Allocator,
     reporter: *errors.ErrorReporter,
-    
+
     // Symbol table for tracking events, procs, labels, subflows
     events: std.StringHashMap(EventInfo),
     procs: std.StringHashMap(ProcInfo),
     labels: std.StringHashMap(LabelInfo),
     impl_flows: std.StringHashMap(ImplFlowInfo),
-    
+    // Foreign airlock registry (rung 2): foreign entry name → presence-claimed
+    // field names. Built by scanning `std/foreign:struct(Name)` decl flows;
+    // bare-name keyed (module rung for foreign is unbuilt, same as the nominal
+    // gate). Owns keys and field-name strings.
+    foreign_entries: std.StringHashMap(ForeignEntry),
     // Type inference engine
     type_engine: type_inference.TypeInference,
 
@@ -80,6 +88,7 @@ pub const ShapeChecker = struct {
             .procs = std.StringHashMap(ProcInfo).init(allocator),
             .labels = std.StringHashMap(LabelInfo).init(allocator),
             .impl_flows = std.StringHashMap(ImplFlowInfo).init(allocator),
+            .foreign_entries = std.StringHashMap(ForeignEntry).init(allocator),
             .type_engine = try type_inference.TypeInference.init(allocator, reporter),
         };
     }
@@ -113,6 +122,13 @@ pub const ShapeChecker = struct {
             self.allocator.free(entry.key_ptr.*);
         }
         self.impl_flows.deinit();
+        var foreign_iter = self.foreign_entries.iterator();
+        while (foreign_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            for (entry.value_ptr.fields) |f| self.allocator.free(f);
+            self.allocator.free(entry.value_ptr.fields);
+        }
+        self.foreign_entries.deinit();
         self.presence_arms.deinit(self.allocator);
         self.type_engine.deinit();
     }
@@ -244,13 +260,13 @@ pub const ShapeChecker = struct {
     /// Check an entire source file for shape consistency
     pub fn checkSourceFile(self: *ShapeChecker, source_file: *const ast.Program) !void {
         self.main_module_name = source_file.main_module_name;
+        try self.buildForeignEntries(source_file.items);
         for (source_file.items) |*item| {
             if (itemIsLoweredTestModule(item)) {
                 self.program_has_test_blocks = true;
                 break;
             }
         }
-        // First pass: collect all events, procs, labels, subflows
         for (source_file.items) |*item| {  // Changed to pointer iteration!
             switch (item.*) {
                 .event_decl => |*event| {
@@ -2326,6 +2342,180 @@ pub const ShapeChecker = struct {
     ///
     /// Note: single-field struct branches are forbidden at declaration time (parser.zig),
     /// so they do not appear here.
+    /// Build the foreign airlock registry from `std/foreign:struct(Name)` decl
+    /// flows. Mirrors phantom_semantic_checker.scanDeclaredTypes' foreign door
+    /// and type_registry's scan, plus the field presence-claims the deref check
+    /// needs. Bare-name keyed; second registrant overwrites (the duplicate wall
+    /// lives in the phantom checker — this table only answers field questions).
+    fn buildForeignEntries(self: *ShapeChecker, items: []const ast.Item) !void {
+        var it = self.foreign_entries.iterator();
+        while (it.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            for (entry.value_ptr.fields) |f| self.allocator.free(f);
+            self.allocator.free(entry.value_ptr.fields);
+        }
+        self.foreign_entries.clearRetainingCapacity();
+        try self.scanForeignItems(items);
+    }
+
+    fn scanForeignItems(self: *ShapeChecker, items: []const ast.Item) !void {
+        for (items) |item| {
+            switch (item) {
+                .flow => |flow| try self.scanForeignFlow(&flow),
+                .inline_code => |ic| try self.scanForeignMarker(ic.code),
+                .module_decl => |module| try self.scanForeignItems(module.items),
+                else => {},
+            }
+        }
+    }
+
+    /// The self-erased form the `std/foreign:struct` transform leaves behind
+    /// (`// foreign Name: f, g`). The checker runs after transforms, so this
+    /// is the form it usually meets — same fixed point as list's proto marker
+    /// fallback. A live decl flow (pre-erase) is handled by scanForeignFlow.
+    fn scanForeignMarker(self: *ShapeChecker, code: []const u8) !void {
+        const prefix = "// foreign ";
+        if (!std.mem.startsWith(u8, code, prefix)) return;
+        const colon = std.mem.indexOfScalar(u8, code, ':') orelse return;
+        const name = std.mem.trim(u8, code[prefix.len..colon], " \t");
+        if (name.len == 0) return;
+        if (self.foreign_entries.contains(name)) return;
+        const text = code[colon + 1 ..];
+        var count: usize = 0;
+        var tok1 = std.mem.tokenizeAny(u8, text, "\n,");
+        while (tok1.next()) |raw| {
+            const field = std.mem.trim(u8, raw, " \t\r");
+            if (field.len == 0) continue;
+            if (std.mem.indexOfScalar(u8, field, ':') != null) continue;
+            count += 1;
+        }
+        const fields = try self.allocator.alloc([]const u8, count);
+        errdefer self.allocator.free(fields);
+        var w: usize = 0;
+        var tok2 = std.mem.tokenizeAny(u8, text, "\n,");
+        while (tok2.next()) |raw| {
+            const field = std.mem.trim(u8, raw, " \t\r");
+            if (field.len == 0) continue;
+            if (std.mem.indexOfScalar(u8, field, ':') != null) continue;
+            fields[w] = try self.allocator.dupe(u8, field);
+            w += 1;
+        }
+        const key = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(key);
+        if (try self.foreign_entries.fetchPut(key, .{ .fields = fields[0..w] })) |old| {
+            self.allocator.free(old.key);
+            for (old.value.fields) |f| self.allocator.free(f);
+            self.allocator.free(old.value.fields);
+        }
+    }
+
+    fn scanForeignFlow(self: *ShapeChecker, flow: *const ast.Flow) !void {
+        const inv = flow.inv();
+        const mq = inv.path.module_qualifier orelse return;
+        const is_foreign_door = std.mem.eql(u8, mq, "std.foreign") or std.mem.eql(u8, mq, "std/foreign");
+        if (!is_foreign_door) return;
+        if (inv.path.segments.len == 0) return;
+        if (!std.mem.eql(u8, inv.path.segments[inv.path.segments.len - 1], "struct")) return;
+        if (inv.args.len == 0) return;
+        var name = inv.args[0].value;
+        if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"') name = name[1 .. name.len - 1];
+        name = std.mem.trim(u8, name, " \t");
+        if (name.len == 0) return;
+        var src: ?[]const u8 = null;
+        for (inv.args) |a| {
+            if (a.source_value) |sv| {
+                src = sv.text;
+                break;
+            }
+        }
+        const text = src orelse return;
+        var count: usize = 0;
+        var lines1 = std.mem.splitScalar(u8, text, '\n');
+        while (lines1.next()) |raw| {
+            const line = std.mem.trim(u8, raw, " \t\r,");
+            if (line.len == 0) continue;
+            if (std.mem.indexOfScalar(u8, line, ':') != null) continue;
+            count += 1;
+        }
+        const fields = try self.allocator.alloc([]const u8, count);
+        errdefer self.allocator.free(fields);
+        var w: usize = 0;
+        var lines2 = std.mem.splitScalar(u8, text, '\n');
+        while (lines2.next()) |raw| {
+            const line = std.mem.trim(u8, raw, " \t\r,");
+            if (line.len == 0) continue;
+            if (std.mem.indexOfScalar(u8, line, ':') != null) continue;
+            fields[w] = try self.allocator.dupe(u8, line);
+            w += 1;
+        }
+        const key = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(key);
+        if (try self.foreign_entries.fetchPut(key, .{ .fields = fields[0..w] })) |old| {
+            self.allocator.free(old.key);
+            for (old.value.fields) |f| self.allocator.free(f);
+            self.allocator.free(old.value.fields);
+        }
+    }
+
+    /// Refuse `binding.field` when the binding's type is a foreign entry that
+    /// does not claim the field. Present fields wave through silently — host
+    /// linkage (what `*File` lowers to) is the later rung, not this check.
+    fn checkForeignDeref(self: *ShapeChecker, ii: *const ast.ImmediateImpl, decl: *const ast.EventDecl, plain: []const u8) !void {
+        const text = std.mem.trim(u8, plain, " \t");
+        const dot = std.mem.indexOfScalar(u8, text, '.') orelse return;
+        if (dot == 0 or dot + 1 >= text.len) return;
+        const base = std.mem.trim(u8, text[0..dot], " \t");
+        if (base.len == 0) return;
+        for (base) |c| {
+            const ok = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_' or (c >= '0' and c <= '9');
+            if (!ok) return;
+        }
+        var rest = std.mem.trim(u8, text[dot + 1 ..], " \t");
+        if (rest.len == 0) return;
+        if (rest[0] == '.' or rest[rest.len - 1] == '.') return;
+        const end = std.mem.indexOfAny(u8, rest, ". \t+-*/%()[]{},:;\"'") orelse rest.len;
+        const field = std.mem.trim(u8, rest[0..end], " \t");
+        if (field.len == 0) return;
+        var binding_type: ?[]const u8 = null;
+        for (decl.input.fields) |f| {
+            if (std.mem.eql(u8, f.name, base)) {
+                binding_type = f.type;
+                break;
+            }
+        }
+        const btype = binding_type orelse return;
+        var t = std.mem.trim(u8, btype, " \t");
+        while (t.len > 0 and (t[0] == '*' or t[0] == '?' or t[0] == '!')) t = std.mem.trim(u8, t[1..], " \t");
+        if (t.len >= 2 and t[0] == '"' and t[t.len - 1] == '"') t = t[1 .. t.len - 1];
+        var cut: usize = t.len;
+        for (t, 0..) |c, i| {
+            if (c == '<' or c == '[' or c == ' ' or c == '!' or c == '?' or c == '*') {
+                cut = i;
+                break;
+            }
+        }
+        t = t[0..cut];
+        if (std.mem.lastIndexOfScalar(u8, t, ':')) |ci| t = t[ci + 1 ..];
+        t = std.mem.trim(u8, t, " \t");
+        if (t.len == 0) return;
+        const entry = self.foreign_entries.get(t) orelse return;
+        for (entry.fields) |f| {
+            if (std.mem.eql(u8, f, field)) return;
+        }
+        var list = try std.ArrayList(u8).initCapacity(self.allocator, 64);
+        defer list.deinit(self.allocator);
+        for (entry.fields, 0..) |f, i| {
+            if (i > 0) try list.appendSlice(self.allocator, ", ");
+            try list.appendSlice(self.allocator, f);
+        }
+        try self.reporter.addErrorAtLocation(
+            .KORU030,
+            ii.location,
+            "foreign entry '{s}' has no field '{s}' (fields: {s}) — a foreign deref names a registered presence claim; the host owns substance",
+            .{ t, field, list.items },
+        );
+    }
+
     fn validateImmediateImplShape(
         self: *ShapeChecker,
         ii: *const ast.ImmediateImpl,
@@ -2337,6 +2527,16 @@ pub const ShapeChecker = struct {
             // Event not found in symbol table — another pass reports this.
             return;
         };
+
+        // Foreign rung 2: a bare-return produce of `binding.field` against a
+        // foreign-typed binding is a presence-claim check at the Koru layer.
+        // Present fields wave through (host linkage is the later rung);
+        // unregistered fields are refused here, naming field and entry.
+        if (ii.value.is_bare_return) {
+            if (ii.value.plain_value) |pv| {
+                try self.checkForeignDeref(ii, event_info.decl, pv);
+            }
+        }
 
         const constructor = &ii.value;
 

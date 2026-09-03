@@ -372,6 +372,27 @@ by spelling; inspection-only forever, any further verb reopens the ruling.
 Double book-keeping is inherent to airlocks and is answered by claim-and-
 prove (build-time reflection probes), never by a Koru-side host grammar —
 parsing the host language stays refused no matter how much hand-mirroring
-hurts, until a real program in pain says otherwise. Pins 667_001–005; the
-deref check itself (667_004) and host linkage (667_005) are red by design,
-rung 2 and beyond.
+hurts, until a real program in pain says otherwise. Pins 667_001–005; host
+linkage (667_005) is red by design, the rung beyond.
+
+## The deref check landed (2026-09-04): presence claimed, presence checked
+
+Rung 2 keeps the airlock's promise at the Koru layer: a bare-return produce
+of `binding.field` against a foreign-typed binding is refused (KORU030,
+naming field and entry) unless the field is a registered presence claim —
+pin 667_004 green. Present fields wave through untouched; what `*File`
+lowers to is host linkage's question, not this check's. Two placement
+rulings, each falsifiable:
+
+- **The check reads the erased marker, not the declaration.** The shape
+checker runs post-transform, past the struct tor's self-erase — so the
+field list comes from the `// foreign Name: fields` comment, with the live
+flow as the pre-erase twin. Same fixed point the list consumer already
+rides; a checker that only reads declarations goes blind exactly when the
+pipeline has done its work.
+- **The deref shape is the produce shape.** `f.bogus` arrives as a
+bare-return `plain_value`, not a field-access node — the identity-branch
+form, one bare value. The check therefore lives on the immediate-impl
+produce path, keyed off the event's input binding type, and general
+expression-position projection checking stays unbuilt until a pin demands
+it.
