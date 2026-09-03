@@ -360,3 +360,18 @@ pinned red (690_272, entry-resolution missing) with its query shape pinned
 green beside it (690_273, hand-tagged). Falsification conditions carry
 forward; the merge-only-by-name law is now enforced at three sites and would
 dissolve the same way at any of them.
+
+## The foreign door (2026-09-04): `std/foreign`, the airlock
+
+Host-owned identities register without deriving. `std/foreign:struct(File)`
+mints a name plus bare field names — presence claims, never types: Koru
+checks what it owns (does `File` have `path`), the host checks what it owns
+(spellings, layout). Same registry, same `(home, name)` collisions, no
+container, no proto-field embedding in either direction. Deliberately ugly
+by spelling; inspection-only forever, any further verb reopens the ruling.
+Double book-keeping is inherent to airlocks and is answered by claim-and-
+prove (build-time reflection probes), never by a Koru-side host grammar —
+parsing the host language stays refused no matter how much hand-mirroring
+hurts, until a real program in pain says otherwise. Pins 667_001–005; the
+deref check itself (667_004) and host linkage (667_005) are red by design,
+rung 2 and beyond.

@@ -1,0 +1,122 @@
+// Koru Standard Library: Foreign — host-owned identity registration
+// =================================================================
+//
+// The airlock, not a room. `std/foreign:struct(File) { path, handle }`
+// registers a concept Koru does not own: the bytes live in the host (Zig,
+// JavaScript), Koru mints only the name. Fields are bare names — presence
+// claims, never types. Koru checks what it owns (does `File` have `path`);
+// the host checks what it owns (is `path` a valid spelling there). Deep
+// typing a field (`path: []const u8`) is refused loudly: that road ends in
+// a Koru-side Zig grammar, version drift, and the subset-parser tarpit.
+//
+// What this buys is Koru-layer diagnostics for host concepts: a deref of an
+// unregistered field fails here, in Koru's voice, instead of leaking to the
+// backend compiler. What it never buys: derivation. A foreign entry grows
+// no container, feeds no proto field, merges with nothing — the host owns
+// the arrangement and Koru may not project from it.
+//
+// Deliberately ugly. Every `std/foreign` line is searchable host debt; a
+// clean word would normalize the door. RULED 2026-09-04 (frag-type-system-design,
+// module rung): inspection-only, forever — any verb beyond name, list fields,
+// map facets reopens the ruling loudly.
+
+const std = @import("std");
+
+~[comptime|transform]pub tor struct {
+    expr: Expression,
+    source: Source,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator,
+    reporter: *std/compiler:ErrorReporter
+} -> SiteResult
+
+~proc struct|zig {
+    const ast = @import("ast");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{};
+
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+    const name = std.mem.trim(u8, type_name, " \t");
+
+    // The entry name must be an identifier the registry can be shown with;
+    // refuse anything else loudly (never crash).
+    var name_ok = name.len > 0;
+    for (name, 0..) |c, i| {
+        const legal = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+            (c == '_') or (i > 0 and c >= '0' and c <= '9') or (c == '-');
+        if (!legal) {
+            name_ok = false;
+            break;
+        }
+    }
+    if (!name_ok or name.len == 0) {
+        return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/foreign:struct — the entry name '{s}' is not usable — a foreign name must be an identifier (a-z, A-Z, 0-9, '_', '-'; no leading digit)", .{name}) };
+    }
+    // Field grammar: bare names, one per line (comma optional, trailing
+    // commas fine). A field carrying a type (`path: []const u8`) is refused:
+    // deep-typing host fields in Koru is the subset-parser tarpit, and the
+    // airlock registers presence, never substance.
+    var field_lines: usize = 0;
+    var lines1 = std.mem.splitScalar(u8, source.text, '\n');
+    while (lines1.next()) |line_raw| {
+        const line = std.mem.trim(u8, line_raw, " \t\r,");
+        if (line.len == 0) continue;
+        if (std.mem.indexOfScalar(u8, line, ':') != null) {
+            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/foreign:struct({s}): field line '{s}' carries a type — foreign fields are bare names (presence claims); the host owns substance", .{ name, line }) };
+        }
+        var field_ok = line.len > 0;
+        for (line, 0..) |c, i| {
+            const legal = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+                (c == '_') or (i > 0 and c >= '0' and c <= '9') or (c == '-');
+            if (!legal) {
+                field_ok = false;
+                break;
+            }
+        }
+        if (!field_ok) {
+            return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/foreign:struct({s}): field '{s}' is not usable — a foreign field must be an identifier", .{ name, line }) };
+        }
+        field_lines += 1;
+    }
+    if (field_lines == 0) {
+        return .{ .replacement = ast.refusal(allocator, reporter, .KORU173, flow.location, flow.module, "std/foreign:struct({s}): an entry with no fields registers nothing — declare at least one field name", .{name}) };
+    }
+
+    // Layout-silent self-erase: a ONE-LINE comment carries the registry's
+    // content for anyone reading the emitted module. The entry promises no
+    // derivation, so unlike a proto nothing downstream synthesizes from it —
+    // the marker is the whole emission.
+    const flat = blk: {
+        var buf = std.ArrayList(u8).initCapacity(allocator, source.text.len + 1) catch unreachable;
+        var it = std.mem.splitScalar(u8, source.text, '\n');
+        while (it.next()) |raw| {
+            const seg = std.mem.trim(u8, raw, " \t\r,");
+            if (seg.len == 0) continue;
+            if (buf.items.len > 0) buf.appendSlice(allocator, ", ") catch unreachable;
+            buf.appendSlice(allocator, seg) catch unreachable;
+        }
+        break :blk buf.toOwnedSlice(allocator) catch unreachable;
+    };
+    const code = std.fmt.allocPrint(
+        allocator,
+        "// foreign {s}: {s}",
+        .{ name, flat },
+    ) catch unreachable;
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    return .{ .replacement = inline_code_item };
+}

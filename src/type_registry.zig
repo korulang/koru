@@ -368,7 +368,13 @@ pub const TypeRegistry = struct {
                     std.mem.eql(u8, mqv, "std.proto") or std.mem.eql(u8, mqv, "std/proto")
                 else
                     false;
-                if ((types_tor or proto_door) and inv.path.segments.len > 0) {
+                // Foreign rung: `std/foreign:struct(Name)` mints a host-owned
+                // identity — registered bare (no container: nothing derives).
+                const foreign_door = if (mq) |mqv|
+                    std.mem.eql(u8, mqv, "std.foreign") or std.mem.eql(u8, mqv, "std/foreign")
+                else
+                    false;
+                if ((types_tor or proto_door or foreign_door) and inv.path.segments.len > 0) {
                     const last_seg = inv.path.segments[inv.path.segments.len - 1];
                     const is_decl_tor = std.mem.eql(u8, last_seg, "struct") or
                         std.mem.eql(u8, last_seg, "string") or
@@ -385,7 +391,8 @@ pub const TypeRegistry = struct {
                     // identity test.
                     const is_proto = std.mem.eql(u8, last_seg, "proto") or
                         (proto_door and std.mem.eql(u8, last_seg, "default"));
-                    if ((is_decl_tor or is_proto) and inv.args.len > 0) {
+                    const is_foreign = foreign_door and std.mem.eql(u8, last_seg, "struct");
+                    if ((is_decl_tor or is_proto or is_foreign) and inv.args.len > 0) {
                         var name = inv.args[0].value;
                         if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"')
                             name = name[1 .. name.len - 1];

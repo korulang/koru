@@ -71,6 +71,7 @@ pub const PhantomSemanticChecker = struct {
         location: errors.SourceLocation,
         is_proto: bool,
         is_terminal: bool,
+        is_foreign: bool,
     };
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !PhantomSemanticChecker {
@@ -150,7 +151,14 @@ pub const PhantomSemanticChecker = struct {
                         std.mem.eql(u8, mqv, "std.proto") or std.mem.eql(u8, mqv, "std/proto")
                     else
                         false;
-                    if ((types_tor or proto_door) and inv.path.segments.len > 0) {
+                    // Foreign rung: `std/foreign:struct(Name)` registers a
+                    // host-owned identity — same registry, same collision law,
+                    // no derived container.
+                    const foreign_door = if (mq) |mqv|
+                        std.mem.eql(u8, mqv, "std.foreign") or std.mem.eql(u8, mqv, "std/foreign")
+                    else
+                        false;
+                    if ((types_tor or proto_door or foreign_door) and inv.path.segments.len > 0) {
                         const last_seg = inv.path.segments[inv.path.segments.len - 1];
                         const is_decl_tor = std.mem.eql(u8, last_seg, "struct") or
                             std.mem.eql(u8, last_seg, "string") or
@@ -175,7 +183,10 @@ pub const PhantomSemanticChecker = struct {
                             std.mem.eql(u8, last_seg, "int") or
                             std.mem.eql(u8, last_seg, "float") or
                             std.mem.eql(u8, last_seg, "bool"));
-                        if ((is_decl_tor or is_proto) and inv.args.len > 0) {
+                        // A foreign entry is an identity from the host side of
+                        // the airlock: collides loudly, derives nothing.
+                        const is_foreign = foreign_door and std.mem.eql(u8, last_seg, "struct");
+                        if ((is_decl_tor or is_proto or is_foreign) and inv.args.len > 0) {
                             var name = inv.args[0].value;
                             if (name.len >= 2 and name[0] == '"' and name[name.len - 1] == '"')
                                 name = name[1 .. name.len - 1];
@@ -184,6 +195,7 @@ pub const PhantomSemanticChecker = struct {
                                     .location = flow.location,
                                     .is_proto = is_proto,
                                     .is_terminal = is_terminal,
+                                    .is_foreign = is_foreign,
                                 };
                                 try self.registerDeclaredIdentity(name, home, site, sites);
                                 if (is_proto) {
@@ -193,6 +205,7 @@ pub const PhantomSemanticChecker = struct {
                                         .location = flow.location,
                                         .is_proto = true,
                                         .is_terminal = false,
+                                        .is_foreign = false,
                                     };
                                     try self.registerDeclaredIdentity(container, home, container_site, sites);
                                 }
@@ -230,17 +243,27 @@ pub const PhantomSemanticChecker = struct {
             // fires when at least one of the two registrants is a compound
             // PROTO entry or a `std/proto` terminal (both ruled identity
             // front doors); the legacy nominal wrappers stay idempotent.
-            const collides = site.is_proto or site.is_terminal or prior.is_proto or prior.is_terminal;
+            const collides = site.is_proto or site.is_terminal or site.is_foreign or prior.is_proto or prior.is_terminal or prior.is_foreign;
             if (collides) {
                 const prior_loc = prior.location;
                 log.debug("[PHANTOM] ❌ DUPLICATE PROTO DECLARATION '{s}'\n", .{name});
-                try self.reporter.addError(
-                    .KORU030,
-                    site.location.line,
-                    site.location.column,
-                    "duplicate proto declaration '{s}' — a proto entry is registered once; the declaration at {s}:{d} collides with the prior registration at {s}:{d}",
-                    .{ name, site.location.file, site.location.line, prior_loc.file, prior_loc.line },
-                );
+                if (site.is_foreign or prior.is_foreign) {
+                    try self.reporter.addError(
+                        .KORU030,
+                        site.location.line,
+                        site.location.column,
+                        "duplicate foreign entry '{s}' — a foreign entry is registered once; the declaration at {s}:{d} collides with the prior registration at {s}:{d}",
+                        .{ name, site.location.file, site.location.line, prior_loc.file, prior_loc.line },
+                    );
+                } else {
+                    try self.reporter.addError(
+                        .KORU030,
+                        site.location.line,
+                        site.location.column,
+                        "duplicate proto declaration '{s}' — a proto entry is registered once; the declaration at {s}:{d} collides with the prior registration at {s}:{d}",
+                        .{ name, site.location.file, site.location.line, prior_loc.file, prior_loc.line },
+                    );
+                }
                 return error.ValidationFailed;
             }
             return;
