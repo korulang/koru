@@ -476,3 +476,41 @@ Rulings, each falsifiable:
   does not read chains yet), value-level records (no construction surface),
   raw-separation pins (beyond the first leaf nothing flows, so nothing could
   clobber — recorded, not theater).
+
+## The union landed (2026-09-04): members expand, kinds tag on demand
+
+A store seed may name compound protos as members (`player: Player` — sketch 1,
+plain `name: Type`, no new glyphs even in the opaque block). Members expand to
+their leaves; identical leaves fold by (home, name) identity, so the store
+derives its columns from its members instead of re-declaring them. Pins
+690_272 (terminal in field position) and 690_274 (two members, one column).
+Rulings, each falsifiable:
+
+- **Divergence refuses.** Same bare name with different identity collides
+  loudly (one name, one identity); a member with non-shared leaves refuses —
+  presence-bit columns are the named later rung, owned by the planner's guard
+  discipline, not by this slice. A wall that may be refusing its own
+  motivation (real Players diverge) — held by the demand criterion: it stands
+  until a program in pain says otherwise.
+- **The tag is write-demand (lazy by construction).** The hidden `kind` i64
+  (seed order, 1-based) exists iff an insert names `kind:` — nothing asks,
+  K1 plain behavior, no ceremony. Capability is data (O13), and data nobody
+  queries is waste. Inserts write it (`insert(arena, kind: player)` — head
+  arg, the `capacity:` precedent); queries read `e.kind` like any column, so
+  no guard syntax was needed. Pins 690_275 (round trip), 690_276/277 (the two
+  refusals). Hand-written `kind` columns (690_273) coexist by rule: demand
+  needs the vocabulary, so a hand tag without members is never mistaken for
+  asking — measured, five reds that proved it.
+- **Kinds are field names, not proto names.** The tag lives in the store, so
+  the store's namespace is the vocabulary — and field names can distinguish
+  tag-only kinds over one proto, which proto names cannot express.
+- **Two-form scans both sides.** Demand is visible in live `insert` flows and
+  generated `__store_insert*` calls (heads and continuations — conditional
+  insertion still asks); vocabulary in the live seed and the `// store-kinds`
+  marker. The member enumeration exists twice (proc-side and module scope) —
+  land-then-consolidate per the foreign precedent, not a design.
+
+Out, explicitly: `is` sugar (guards spell `e.kind == N` with documented
+ordinals — magic numbers acknowledged, sugar unpriced), divergent members,
+ordinal stability across compilations (named, not solved), singleton tags
+(refused — kinds need rows).

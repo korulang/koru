@@ -1,8 +1,10 @@
-// PINNED GAP (currently RED) — one Health extent shared across kinds. Player
-// and Enemy rows name the same (home, Health) terminal, so the store must
-// hold ONE f64 column both write through: same column, different rows. Today
-// the store has no entry-resolution step — `KORU161: field 'health' is Health
-// — columns are scalars...`: the terminal is refused in field position.
+// Slice A (2026-09-04): one Health extent shared across kinds. Player
+// and Enemy rows name the same (home, Health) terminal, so the store holds
+// ONE column both write through: same column, different rows. The store
+// resolves the bare in-scope terminal and emits the alias verbatim (the
+// `const Health = f64` alias lowers it). `30.0` prints as `30` — the `:f`
+// formatter's honest float spelling (690_021's `23 C` precedent), not a
+// second concept smuggled in by spelling.
 import std/io
 import std/proto
 import std/store

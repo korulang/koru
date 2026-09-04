@@ -439,6 +439,218 @@ fn flatItems(alloc: std.mem.Allocator, items: []const ast_find.Item) []const *co
     return out.items;
 }
 
+/// Union-member machinery (shared by `new` and `insert` — one definition, no
+/// per-proc copies; the foreign collector precedent). A member is a seed field
+/// naming a compound proto; ordinals are seed order, 1-based.
+fn kindBareName(value: []const u8) []const u8 {
+    var text = std.mem.trim(u8, value, " \t");
+    if (text.len >= 2 and text[0] == '"' and text[text.len - 1] == '"') {
+        text = text[1 .. text.len - 1];
+    }
+    return std.mem.trim(u8, text, " \t");
+}
+
+fn kindIsCompoundDoor(inv: *const ast_find.Invocation) bool {
+    if (inv.path.segments.len != 1) return false;
+    const verb = inv.path.segments[0];
+    const mq = inv.path.module_qualifier orelse return false;
+    const types_door = std.mem.eql(u8, verb, "proto") and
+        (std.mem.eql(u8, mq, "std.types") or std.mem.eql(u8, mq, "std/types"));
+    const default_door = std.mem.eql(u8, verb, "default") and
+        (std.mem.eql(u8, mq, "std.proto") or std.mem.eql(u8, mq, "std/proto"));
+    return types_door or default_door;
+}
+
+fn kindScopeOfFlow(prog: *const ast_find.Program, target: *const ast_find.Flow) []const u8 {
+    const Finder = struct {
+        fn find(items: []const ast_find.Item, needle: *const ast_find.Flow, scope: []const u8) ?[]const u8 {
+            for (items) |*entry| {
+                switch (entry.*) {
+                    .flow => |*f| {
+                        if (f == needle) return scope;
+                    },
+                    .module_decl => |*m| {
+                        if (find(m.items, needle, m.logical_name)) |s| return s;
+                    },
+                    else => {},
+                }
+            }
+            return null;
+        }
+    };
+    return Finder.find(prog.items, target, prog.main_module_name) orelse prog.main_module_name;
+}
+
+/// Is `ftype` a declared compound in `scope_home` (live decl flow pre-erase
+/// or erased `// proto Name:` marker post-erase)? Bare names only — qualified
+/// members are a later rung.
+fn kindIsCompound(prog: *const ast_find.Program, ftype: []const u8, scope_home: []const u8) bool {
+    if (std.mem.indexOfScalar(u8, ftype, ':') != null) return false;
+    const want = kindBareName(ftype);
+    if (want.len == 0) return false;
+    return kindScanProg(prog.items, prog.main_module_name, want, scope_home);
+}
+
+fn kindScanProg(items: []const ast_find.Item, scope: []const u8, want: []const u8, want_home: []const u8) bool {
+    for (items) |entry| {
+        switch (entry) {
+            .flow => |candidate| {
+                if (!std.mem.eql(u8, scope, want_home)) continue;
+                if (candidate.body.node) |*node| {
+                    if (node.* == .invocation and kindIsCompoundDoor(&node.invocation)) {
+                        const inv = &node.invocation;
+                        if (inv.args.len == 0) continue;
+                        if (std.mem.eql(u8, kindBareName(inv.args[0].value), want)) return true;
+                    }
+                }
+            },
+            .inline_code => |inline_code| {
+                if (!std.mem.eql(u8, scope, want_home)) continue;
+                var lines = std.mem.splitScalar(u8, inline_code.code, '\n');
+                while (lines.next()) |raw| {
+                    const line = std.mem.trimLeft(u8, raw, " \t");
+                    const prefix = "// proto ";
+                    if (!std.mem.startsWith(u8, line, prefix)) continue;
+                    const colon = std.mem.indexOfScalar(u8, line[prefix.len..], ':') orelse continue;
+                    const nm = std.mem.trim(u8, line[prefix.len .. prefix.len + colon], " \t");
+                    if (std.mem.eql(u8, nm, want)) return true;
+                }
+            },
+            .module_decl => |module| {
+                if (kindScanProg(module.items, module.logical_name, want, want_home)) return true;
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
+/// The member vocabulary of `store`, in seed order: the `// store-kinds`
+/// marker (post-erase twin) preferred, else the live `new` seed's
+/// compound-typed fields. Null when the store declares no members.
+fn storeKindMembers(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const []const u8 {
+    const struct_literal = @import("struct_literal");
+    for (flatItems(alloc, prog.items)) |pi| {
+        if (pi.* != .inline_code) continue;
+        const code = pi.inline_code.code;
+        const prefix = "// store-kinds ";
+        if (!std.mem.startsWith(u8, code, prefix)) continue;
+        const colon = std.mem.indexOfScalar(u8, code, ':') orelse continue;
+        const nm = std.mem.trim(u8, code[prefix.len..colon], " \t");
+        if (!std.mem.eql(u8, nm, store)) continue;
+        var out = std.ArrayList([]const u8){};
+        var toks = std.mem.splitScalar(u8, code[colon + 1 ..], ',');
+        while (toks.next()) |raw| {
+            const m = std.mem.trim(u8, raw, " \t");
+            if (m.len == 0) continue;
+            out.append(alloc, m) catch return null;
+        }
+        return out.items;
+    }
+    for (flatItems(alloc, prog.items)) |pi| {
+        if (pi.* != .flow) continue;
+        const f = &pi.flow;
+        const inv = f.inv();
+        if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
+        const mq = inv.path.module_qualifier orelse continue;
+        if (!std.mem.eql(u8, mq, "std.store")) continue;
+        var hit = false;
+        var seed: ?[]const u8 = null;
+        for (inv.args) |a| {
+            if (std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, kindBareName(a.value), store)) hit = true;
+            if (std.mem.eql(u8, a.name, "source")) seed = a.value;
+        }
+        if (!hit or seed == null) continue;
+        const scope = kindScopeOfFlow(prog, f);
+        const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed.?}) catch return null;
+        const cf = struct_literal.parseFields(alloc, braced) catch continue;
+        var out = std.ArrayList([]const u8){};
+        for (cf) |c| {
+            const peeled = struct_literal.peelBaseType(c.value);
+            const has_default = peeled.type.len != 0;
+            const ftype = if (has_default) peeled.type else std.mem.trim(u8, c.value, " ");
+            if (!kindIsCompound(prog, ftype, scope)) continue;
+            var seen = false;
+            for (out.items) |o| {
+                if (std.mem.eql(u8, o, c.name)) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) out.append(alloc, c.name) catch return null;
+        }
+        if (out.items.len == 0) return null;
+        return out.items;
+    }
+    return null;
+}
+
+/// Write-demand for the kind tag: does any insert name `kind:` for `store`?
+/// Both spellings — live `insert(s, kind: m)` flows and generated
+/// `__store_insert/inserth/insertf_<s>` calls carrying kind — at flow heads
+/// and inside continuations (nested inserts count: conditional insertion of a
+/// kind is still asking).
+fn storeKindDemanded(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) bool {
+    // A hand-written user column named kind (690_273's manual tag) is NOT
+    // demand: its values ride generated calls as `kind:` args,
+    // indistinguishable by name alone. Demand needs the vocabulary too.
+    const members = storeKindMembers(alloc, prog, store) orelse return false;
+    if (members.len == 0) return false;
+    const i_name = std.fmt.allocPrint(alloc, "__store_insert_{s}", .{store}) catch return false;
+    const h_name = std.fmt.allocPrint(alloc, "__store_inserth_{s}", .{store}) catch return false;
+    const f_name = std.fmt.allocPrint(alloc, "__store_insertf_{s}", .{store}) catch return false;
+    const Ask = struct {
+        fn argsAskKind(args: []const ast_find.Arg, want_store: bool, inv: *const ast_find.Invocation, want: []const u8) bool {
+            var hit_store = !want_store;
+            var hit_kind = false;
+            for (args) |a| {
+                if (want_store and std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, kindBareName(a.value), want)) hit_store = true;
+                if (std.mem.eql(u8, a.name, "kind")) hit_kind = true;
+            }
+            _ = inv;
+            return hit_store and hit_kind;
+        }
+        fn walkCont(cont: *const ast_find.Continuation, want: []const u8, gi: []const u8, gh: []const u8, gf: []const u8) bool {
+            if (cont.node) |n| {
+                switch (n) {
+                    .invocation => |inv| {
+                        if (inv.path.segments.len == 1) {
+                            const seg = inv.path.segments[0];
+                            if (std.mem.eql(u8, seg, "insert")) {
+                                const mq = inv.path.module_qualifier orelse "";
+                                if (std.mem.eql(u8, mq, "std.store") and argsAskKind(inv.args, true, &inv, want)) return true;
+                            } else if (std.mem.eql(u8, seg, gi) or std.mem.eql(u8, seg, gh) or std.mem.eql(u8, seg, gf)) {
+                                if (argsAskKind(inv.args, false, &inv, want)) return true;
+                            }
+                        }
+                    },
+                    else => {},
+                }
+            }
+            for (cont.continuations) |*c| {
+                if (walkCont(c, want, gi, gh, gf)) return true;
+            }
+            return false;
+        }
+    };
+    for (flatItems(alloc, prog.items)) |pi| {
+        if (pi.* != .flow) continue;
+        const f = &pi.flow;
+        const inv = f.inv();
+        if (inv.path.segments.len == 1) {
+            const seg = inv.path.segments[0];
+            if (std.mem.eql(u8, seg, "insert")) {
+                const mq = inv.path.module_qualifier orelse "";
+                if (std.mem.eql(u8, mq, "std.store") and Ask.argsAskKind(inv.args, true, inv, store)) return true;
+            } else if (std.mem.eql(u8, seg, i_name) or std.mem.eql(u8, seg, h_name) or std.mem.eql(u8, seg, f_name)) {
+                if (Ask.argsAskKind(inv.args, false, inv, store)) return true;
+            }
+        }
+        if (Ask.walkCont(&f.body, store, i_name, h_name, f_name)) return true;
+    }
+    return false;
+}
+
 fn collectFlat(alloc: std.mem.Allocator, items: []const ast_find.Item, out: *std.ArrayList(*const ast_find.Item)) void {
     for (items) |*it| {
         out.append(alloc, it) catch return;
@@ -636,8 +848,17 @@ fn storeInsertOrder(alloc: std.mem.Allocator, prog: *const ast_find.Program, sto
             const flds = ed.input.fields;
             if (flds.len == 0) return null;
             // The trailing field is the synthetic __site_line arg.
-            const names = alloc.alloc([]const u8, flds.len - 1) catch unreachable;
-            for (flds[0 .. flds.len - 1], 0..) |f2, i| names[i] = f2.name;
+            var end: usize = flds.len - 1;
+            // A synthesized kind tag (second-to-last) is NOT insert-surface:
+            // it travels via the `kind:` head arg, never the row block. A
+            // hand-written user column named kind (no members) stays.
+            if (end > 0 and std.mem.eql(u8, flds[end - 1].name, "kind")) {
+                if (storeKindMembers(alloc, prog, store)) |mm| {
+                    if (mm.len > 0) end -= 1;
+                }
+            }
+            const names = alloc.alloc([]const u8, end) catch unreachable;
+            for (flds[0..end], 0..) |f2, i| names[i] = f2.name;
             return names;
         }
     }
@@ -1150,7 +1371,7 @@ fn storeLowerText(
     // serve as one. `{ i64 }` puns to a column called `i64` under the ordinary
     // pun law, which is precisely the reading a one-column store must not take.
     const identity_shaped = struct_literal.isIdentityBlock(expr_braced);
-    const cell_fields: []const struct_literal.StructField = if (identity_shaped) blk: {
+    var cell_fields: []const struct_literal.StructField = if (identity_shaped) blk: {
         const one = allocator.alloc(struct_literal.StructField, 1) catch unreachable;
         one[0] = .{ .name = ast.STORE_IDENTITY_COLUMN, .value = std.mem.trim(u8, seed_text.?, " \t\n\r") };
         break :blk one;
@@ -1158,6 +1379,247 @@ fn storeLowerText(
     if (cell_fields.len == 0) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): seed block has no fields", .{store_name}) } };
     }
+
+    // Slice A home rules for terminals (690_272): a bare terminal name in
+    // field position resolves against its own scope. The column emits the
+    // alias verbatim (list's 665_002 precedent). Qualified names carry their
+    // own home and need address resolution — a later rung.
+    const TermRef = struct {
+        fn isTerminalVerb(verb: []const u8) bool {
+            return std.mem.eql(u8, verb, "string") or
+                std.mem.eql(u8, verb, "int") or
+                std.mem.eql(u8, verb, "float") or
+                std.mem.eql(u8, verb, "bool");
+        }
+        fn bareName(value: []const u8) []const u8 {
+            var text = std.mem.trim(u8, value, " \t");
+            if (text.len >= 2 and text[0] == '"' and text[text.len - 1] == '"') {
+                text = text[1 .. text.len - 1];
+            }
+            return std.mem.trim(u8, text, " \t");
+        }
+        fn liveDeclIsTerminal(inv: *const ast.Invocation, want: []const u8) bool {
+            if (inv.path.segments.len != 1) return false;
+            if (!isTerminalVerb(inv.path.segments[0])) return false;
+            if (inv.path.module_qualifier) |mq| {
+                const known_home = std.mem.eql(u8, mq, "std.types") or
+                    std.mem.eql(u8, mq, "std/types") or
+                    std.mem.eql(u8, mq, "std.proto") or
+                    std.mem.eql(u8, mq, "std/proto");
+                if (!known_home) return false;
+            }
+            if (inv.args.len == 0) return false;
+            return std.mem.eql(u8, bareName(inv.args[0].value), want);
+        }
+        fn markerDeclares(line: []const u8, want: []const u8) bool {
+            const marker = std.mem.trimLeft(u8, line, " \t");
+            const prefix = "// proto-terminal ";
+            if (!std.mem.startsWith(u8, marker, prefix)) return false;
+            const colon = std.mem.indexOfScalar(u8, marker[prefix.len..], ':') orelse return false;
+            const declared = std.mem.trim(u8, marker[prefix.len .. prefix.len + colon], " \t");
+            return std.mem.eql(u8, declared, want);
+        }
+        fn scanItems(items: []const ast.Item, scope_home: []const u8, want: []const u8, want_home: []const u8) bool {
+            for (items) |entry| {
+                switch (entry) {
+                    .flow => |candidate| {
+                        if (candidate.body.node) |*node| {
+                            if (node.* == .invocation and std.mem.eql(u8, scope_home, want_home)) {
+                                if (liveDeclIsTerminal(&node.invocation, want)) return true;
+                            }
+                        }
+                    },
+                    .inline_code => |inline_code| {
+                        if (!std.mem.eql(u8, scope_home, want_home)) continue;
+                        var lines = std.mem.splitScalar(u8, inline_code.code, '\n');
+                        while (lines.next()) |ln| {
+                            if (markerDeclares(ln, want)) return true;
+                        }
+                    },
+                    .module_decl => |module| {
+                        if (scanItems(module.items, module.logical_name, want, want_home)) return true;
+                    },
+                    else => {},
+                }
+            }
+            return false;
+        }
+        fn scopeOfFlow(prog: *const ast.Program, target: *const ast.Flow) []const u8 {
+            const Finder = struct {
+                fn find(items: []const ast.Item, needle: *const ast.Flow, scope: []const u8) ?[]const u8 {
+                    for (items) |*entry| {
+                        switch (entry.*) {
+                            .flow => |*f| {
+                                if (f == needle) return scope;
+                            },
+                            .module_decl => |*m| {
+                                if (find(m.items, needle, m.logical_name)) |s| return s;
+                            },
+                            else => {},
+                        }
+                    }
+                    return null;
+                }
+            };
+            return Finder.find(prog.items, target, prog.main_module_name) orelse prog.main_module_name;
+        }
+        fn isDeclared(prog: *const ast.Program, ftype: []const u8, scope_home: []const u8) bool {
+            if (std.mem.indexOfScalar(u8, ftype, ':') != null) return false;
+            const want = bareName(ftype);
+            if (want.len == 0) return false;
+            return scanItems(prog.items, prog.main_module_name, want, scope_home);
+        }
+    };
+    // K1 (union members): a seed field naming a compound proto expands to
+    // the member's leaves — the store derives its columns from its members.
+    // Sketch 1: members are plain `name: Type` fields, no new glyphs. Leaves
+    // fold by bare name under one-identity-per-name (same type text skips,
+    // different text refuses loudly); divergent members, nested compounds
+    // inside members, and member defaults refuse — presence-bit columns and
+    // qualified members are later rungs.
+    const MemberRef = struct {
+        fn isCompoundDoor(inv: *const ast.Invocation) bool {
+            if (inv.path.segments.len != 1) return false;
+            const verb = inv.path.segments[0];
+            const mq = inv.path.module_qualifier orelse return false;
+            const types_door = std.mem.eql(u8, verb, "proto") and
+                (std.mem.eql(u8, mq, "std.types") or std.mem.eql(u8, mq, "std/types"));
+            const default_door = std.mem.eql(u8, verb, "default") and
+                (std.mem.eql(u8, mq, "std.proto") or std.mem.eql(u8, mq, "std/proto"));
+            return types_door or default_door;
+        }
+        const Found = struct { text: []const u8, scope: []const u8 };
+        fn fieldsOf(prog: *const ast.Program, ftype: []const u8, scope_home: []const u8) ?Found {
+            if (std.mem.indexOfScalar(u8, ftype, ':') != null) return null;
+            const want = TermRef.bareName(ftype);
+            if (want.len == 0) return null;
+            return scanProg(prog.items, prog.main_module_name, want, scope_home);
+        }
+        fn scanProg(items: []const ast.Item, scope: []const u8, want: []const u8, want_home: []const u8) ?Found {
+            for (items) |entry| {
+                switch (entry) {
+                    .flow => |candidate| {
+                        if (!std.mem.eql(u8, scope, want_home)) continue;
+                        if (candidate.body.node) |*node| {
+                            if (node.* == .invocation and isCompoundDoor(&node.invocation)) {
+                                const inv = &node.invocation;
+                                if (inv.args.len == 0) continue;
+                                if (!std.mem.eql(u8, TermRef.bareName(inv.args[0].value), want)) continue;
+                                for (inv.args) |a| {
+                                    if (a.source_value) |sv| return .{ .text = sv.text, .scope = scope };
+                                }
+                                return .{ .text = "", .scope = scope };
+                            }
+                        }
+                    },
+                    .inline_code => |inline_code| {
+                        if (!std.mem.eql(u8, scope, want_home)) continue;
+                        var lines = std.mem.splitScalar(u8, inline_code.code, '\n');
+                        while (lines.next()) |raw| {
+                            const line = std.mem.trimLeft(u8, raw, " \t");
+                            const prefix = "// proto ";
+                            if (!std.mem.startsWith(u8, line, prefix)) continue;
+                            const colon = std.mem.indexOfScalar(u8, line[prefix.len..], ':') orelse continue;
+                            const nm = std.mem.trim(u8, line[prefix.len .. prefix.len + colon], " \t");
+                            if (!std.mem.eql(u8, nm, want)) continue;
+                            return .{ .text = line[prefix.len + colon + 1 ..], .scope = scope };
+                        }
+                    },
+                    .module_decl => |module| {
+                        if (scanProg(module.items, module.logical_name, want, want_home)) |f| return f;
+                    },
+                    else => {},
+                }
+            }
+            return null;
+        }
+    };
+    const store_scope_home = TermRef.scopeOfFlow(program, flow);
+    // Union members in seed order (deduped): the kind vocabulary. Filled by
+    // the expansion below; drives the kind tag (ordinals are seed order,
+    // 1-based) and the `// store-kinds` marker insert reads post-erase.
+    var member_names = std.ArrayList([]const u8).initCapacity(allocator, 2) catch unreachable;
+    cell_fields = blk: {
+        var out = std.ArrayList(struct_literal.StructField).initCapacity(allocator, cell_fields.len) catch unreachable;
+        for (cell_fields) |cf| {
+            const peeled0 = struct_literal.peelBaseType(cf.value);
+            const has_default0 = peeled0.type.len != 0;
+            const ftype0 = if (has_default0) peeled0.type else std.mem.trim(u8, cf.value, " ");
+            const member = MemberRef.fieldsOf(program, ftype0, store_scope_home);
+            if (member == null) {
+                out.append(allocator, cf) catch unreachable;
+                continue;
+            }
+            const mname = TermRef.bareName(ftype0);
+            // The kind vocabulary is FIELD names (the store's own namespace),
+            // not proto names: the tag lives in the store, and field names can
+            // distinguish tag-only kinds over one proto (rookie/veteran).
+            var seen_member = false;
+            for (member_names.items) |mn| {
+                if (std.mem.eql(u8, mn, cf.name)) {
+                    seen_member = true;
+                    break;
+                }
+            }
+            if (!seen_member) member_names.append(allocator, cf.name) catch unreachable;
+            if (has_default0) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' carries a default — members expand to columns, they hold no value", .{ store_name, mname }) } };
+            }
+            var saw: usize = 0;
+            var toks = std.mem.tokenizeAny(u8, member.?.text, "\n,");
+            while (toks.next()) |raw| {
+                const seg = std.mem.trim(u8, raw, " \t\r,");
+                if (seg.len == 0) continue;
+                const colon = std.mem.indexOfScalar(u8, seg, ':') orelse continue;
+                const lname = std.mem.trim(u8, seg[0..colon], " \t");
+                const ltype = std.mem.trim(u8, seg[colon + 1 ..], " \t,");
+                if (lname.len == 0 or ltype.len == 0) continue;
+                saw += 1;
+                const known_scalar_leaf = std.mem.eql(u8, ltype, "i64") or std.mem.eql(u8, ltype, "i32") or
+                    std.mem.eql(u8, ltype, "f64") or std.mem.eql(u8, ltype, "f32");
+                const char_shaped = std.mem.startsWith(u8, ltype, "char[");
+                const owned_shaped = std.mem.startsWith(u8, ltype, "*") or std.mem.indexOfScalar(u8, ltype, '<') != null;
+                if (MemberRef.fieldsOf(program, ltype, member.?.scope) != null) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' names compound '{s}' — nesting inside store members is a later rung", .{ store_name, mname, ltype }) } };
+                }
+                if (!known_scalar_leaf and !char_shaped and !owned_shaped and !TermRef.isDeclared(program, ltype, member.?.scope)) {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' names unknown '{s}' — a leaf must be a scalar material or a terminal of its home", .{ store_name, mname, ltype }) } };
+                }
+                var folded = false;
+                for (out.items) |prev| {
+                    if (!std.mem.eql(u8, prev.name, lname)) continue;
+                    if (std.mem.eql(u8, std.mem.trim(u8, prev.value, " "), ltype)) {
+                        folded = true;
+                    } else {
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}': leaf '{s}' as '{s}' collides with '{s}' — one bare name, one identity; divergent members are a later rung (presence-bit columns)", .{ store_name, mname, lname, ltype, std.mem.trim(u8, prev.value, " ") }) } };
+                    }
+                    break;
+                }
+                if (!folded) {
+                    out.append(allocator, .{ .name = lname, .value = ltype }) catch unreachable;
+                }
+            }
+            if (saw == 0) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' declares no fields — a union member must name at least one leaf", .{ store_name, mname }) } };
+            }
+        }
+        break :blk out.toOwnedSlice(allocator) catch unreachable;
+    };
+    // A hand-written `kind` column and union members refuse each other: the
+    // synthesized tag owns that name when members exist (690_273's manual tag
+    // has no members, so it never meets this wall).
+    if (member_names.items.len > 0) {
+        for (cell_fields) |cf| {
+            if (std.mem.eql(u8, cf.name, "kind")) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): column 'kind' collides with the synthesized kind tag — union members own that name; drop the explicit column or the members", .{store_name}) } };
+            }
+        }
+    }
+    // Write-demand for the kind tag (lazy by construction): the tag column
+    // exists iff some insert names `kind:` for this store — see
+    // `storeKindDemanded` (both spellings, heads and continuations). Nothing
+    // asks → K1 plain behavior, no tag, no ceremony.
+    const want_kind: bool = member_names.items.len > 0 and storeKindDemanded(allocator, program, store_name);
 
     // ------------------------------------------------------------------
     // T2 / queue (d): the interceptor cascade graph is comptime-visible;
@@ -1385,6 +1847,9 @@ fn storeLowerText(
     }
     const CAP: usize = cap_buf;
     const is_plural = CAP > 1;
+    if (want_kind and !is_plural) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): kinds need a container store - declare a capacity (`capacity: N`, N > 1); a capacity-1 value has no rows to tag", .{store_name}) } };
+    }
 
     // [tree] sits on the container substrate — a capacity-1 value has no
     // rows to arrange into a forest.
@@ -1397,7 +1862,12 @@ fn storeLowerText(
     // (i64 self-FK, -1 = root) after them. `user_field_count` bounds the
     // insert surface: inserts never name `parent`.
     const user_field_count = cell_fields.len;
-    const synth_count: usize = if (is_tree) 1 else 0;
+    const synth_count: usize = blk: {
+        var n: usize = 0;
+        if (is_tree) n += 1;
+        if (want_kind) n += 1;
+        break :blk n;
+    };
     const field_names = allocator.alloc([]const u8, cell_fields.len + synth_count) catch unreachable;
     const field_types = allocator.alloc([]const u8, cell_fields.len + synth_count) catch unreachable;
     // Per-column optional default (the seed): `hp: 100[i64]` carries "100",
@@ -1533,7 +2003,14 @@ fn storeLowerText(
         // a container carries per-field typed SoA columns.
         const known_scalar = std.mem.eql(u8, ftype, "i64") or std.mem.eql(u8, ftype, "i32") or
             std.mem.eql(u8, ftype, "f64") or std.mem.eql(u8, ftype, "f32");
-        if (!known_scalar and char_cap == null and !owned_col) {
+        // Slice A: a bare in-scope terminal (Health) is a column — the alias
+        // emits verbatim and lowers through its host type. Qualified names
+        // refuse below as before (address resolution is a later rung).
+        const known_terminal = if (!known_scalar and char_cap == null and !owned_col)
+            TermRef.isDeclared(program, ftype, store_scope_home)
+        else
+            false;
+        if (!known_scalar and char_cap == null and !owned_col and !known_terminal) {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): field '{s}' is {s} — columns are scalars (i64/i32/f64/f32), fixed-char (char[N], 690_052), or owned strings (*std/string:String<std/string:instance!>, 690_053); vec/mat tiers are pinned at 690_020", .{ store_name, cf.name, ftype }) } };
         }
         field_names[i] = cf.name;
@@ -1555,6 +2032,25 @@ fn storeLowerText(
         field_owned[user_field_count] = false;
         field_owned_info[user_field_count] = null;
         field_defaults[user_field_count] = null;
+    }
+    // The demanded kind tag (write-demand): one hidden i64 column after the
+    // user fields (and after `parent`), holding the insert's member ordinal
+    // (seed order, 1-based). Like `parent`, it is invisible to the insert
+    // surface — but unlike `parent` it has no default: the insert names the
+    // kind (`kind: player`), and a missing kind on a kinded store refuses at
+    // the insert. Singleton tag is refused below (kinds need rows).
+    const kind_idx: usize = blk: {
+        var k: usize = user_field_count;
+        if (is_tree) k += 1;
+        break :blk k;
+    };
+    if (want_kind) {
+        field_names[kind_idx] = allocator.dupe(u8, "kind") catch unreachable;
+        field_types[kind_idx] = allocator.dupe(u8, "i64") catch unreachable;
+        field_char_caps[kind_idx] = null;
+        field_owned[kind_idx] = false;
+        field_owned_info[kind_idx] = null;
+        field_defaults[kind_idx] = null;
     }
     var has_owned = false;
     for (field_owned) |fo| {
@@ -3388,6 +3884,24 @@ fn storeLowerText(
             .module = allocator.dupe(u8, flow.module) catch unreachable,
         } };
         appended_items.append(allocator, pcell_item) catch unreachable;
+        // The kind vocabulary for insert's post-erase twin: member names in
+        // seed order (ordinals are position + 1). Emitted whenever members
+        // exist — vocabulary is not demand; the COLUMN is.
+        if (member_names.items.len > 0) {
+            var mk = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+            mk.appendSlice(allocator, "// store-kinds ") catch unreachable;
+            mk.appendSlice(allocator, store_name) catch unreachable;
+            mk.appendSlice(allocator, ": ") catch unreachable;
+            for (member_names.items, 0..) |mn, mi| {
+                if (mi > 0) mk.appendSlice(allocator, ", ") catch unreachable;
+                mk.appendSlice(allocator, mn) catch unreachable;
+            }
+            appended_items.append(allocator, ast.Item{ .inline_code = ast.InlineCode{
+                .code = mk.toOwnedSlice(allocator) catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+        }
 
         // ---- shared: the row-append text + standing-enter calls ----
         //
@@ -3427,6 +3941,13 @@ fn storeLowerText(
             }
             if (is_tree) {
                 const w = std.fmt.allocPrint(allocator, "__koru_store_{s}.parent[__koru_new_row] = -1;\n", .{store_name}) catch unreachable;
+                ap.appendSlice(allocator, w) catch unreachable;
+            }
+            // The demanded kind tag writes its insert binding like any user
+            // column (the binding exists because the insert event carries it —
+            // see ins_* above). Same statement on both targets.
+            if (want_kind) {
+                const w = std.fmt.allocPrint(allocator, "__koru_store_{s}.kind[__koru_new_row] = kind;\n", .{store_name}) catch unreachable;
                 ap.appendSlice(allocator, w) catch unreachable;
             }
             const bump = std.fmt.allocPrint(allocator, "__koru_store_{s}.len += 1;\n", .{store_name}) catch unreachable;
@@ -3514,6 +4035,13 @@ fn storeLowerText(
                 const w = std.fmt.allocPrint(allocator, "__koru_store_{s}.parent[__koru_new_row] = -1;\n", .{store_name}) catch unreachable;
                 ap.appendSlice(allocator, w) catch unreachable;
             }
+            // The demanded kind tag writes its insert binding like any user
+            // column (the binding exists because the insert event carries it —
+            // see ins_* above). Same statement on both targets.
+            if (want_kind) {
+                const w = std.fmt.allocPrint(allocator, "__koru_store_{s}.kind[__koru_new_row] = kind;\n", .{store_name}) catch unreachable;
+                ap.appendSlice(allocator, w) catch unreachable;
+            }
             const bump = std.fmt.allocPrint(allocator, "__koru_store_{s}.len += 1;\n", .{store_name}) catch unreachable;
             ap.appendSlice(allocator, bump) catch unreachable;
             // `inserted` lifecycle interceptors fire as part of the write (the
@@ -3565,6 +4093,29 @@ fn storeLowerText(
             }
         }
         const append_text = ap.toOwnedSlice(allocator) catch unreachable;
+        // Insert-facing field lists: user columns plus the demanded kind tag
+        // (an i64 event param the insert fills from `kind: member`). The cell
+        // keeps `parent` after kind; the insert surface never sees either.
+        var ins_len: usize = user_field_count;
+        if (want_kind) ins_len += 1;
+        const ins_names = blk_insn: {
+            const s = allocator.alloc([]const u8, ins_len) catch unreachable;
+            @memcpy(s[0..user_field_count], field_names[0..user_field_count]);
+            if (want_kind) s[user_field_count] = field_names[kind_idx];
+            break :blk_insn s;
+        };
+        const ins_types = blk_inst: {
+            const s = allocator.alloc([]const u8, ins_len) catch unreachable;
+            @memcpy(s[0..user_field_count], field_types[0..user_field_count]);
+            if (want_kind) s[user_field_count] = field_types[kind_idx];
+            break :blk_inst s;
+        };
+        const ins_owned = blk_inso: {
+            const s = allocator.alloc(?OwnedCol, ins_len) catch unreachable;
+            @memcpy(s[0..user_field_count], field_owned_info[0..user_field_count]);
+            if (want_kind) s[user_field_count] = field_owned_info[kind_idx];
+            break :blk_inso s;
+        };
 
         const mkInsertInput = struct {
             // An owned column's insert param CONSUMES the caller's obligation:
@@ -3592,7 +4143,7 @@ fn storeLowerText(
             const insert_name = std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, home_ns, insert_name),
-                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count]) },
+                .input = ast.Shape{ .fields = mkInsertInput(allocator, ins_names, ins_types, ins_owned) },
                 .branches = &[_]ast.Branch{},
                 .is_public = false,
                 .is_implicit_flow = false,
@@ -3630,7 +4181,7 @@ fn storeLowerText(
             };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, home_ns, inserth_name),
-                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count]) },
+                .input = ast.Shape{ .fields = mkInsertInput(allocator, ins_names, ins_types, ins_owned) },
                 .branches = row_branches,
                 .is_public = false,
                 .is_implicit_flow = false,
@@ -3690,8 +4241,8 @@ fn storeLowerText(
                 };
                 break :blk pf;
             } else if (has_owned) blk: {
-                const pf = allocator.alloc(ast.Field, user_field_count) catch unreachable;
-                for (field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count], 0..) |pfname, pftype, pfoi, pfi| {
+                const pf = allocator.alloc(ast.Field, ins_len) catch unreachable;
+                for (ins_names, ins_types, ins_owned, 0..) |pfname, pftype, pfoi, pfi| {
                     pf[pfi] = ast.Field{
                         .name = allocator.dupe(u8, pfname) catch unreachable,
                         .type = allocator.dupe(u8, pftype) catch unreachable,
@@ -3709,7 +4260,7 @@ fn storeLowerText(
             };
             appended_items.append(allocator, ast.Item{ .event_decl = ast.EventDecl{
                 .path = H.mkPathH(allocator, home_ns, insertf_name),
-                .input = ast.Shape{ .fields = mkInsertInput(allocator, field_names[0..user_field_count], field_types[0..user_field_count], field_owned_info[0..user_field_count]) },
+                .input = ast.Shape{ .fields = mkInsertInput(allocator, ins_names, ins_types, ins_owned) },
                 .branches = f_branches,
                 .is_public = false,
                 .is_implicit_flow = false,
@@ -3723,7 +4274,7 @@ fn storeLowerText(
                     fb.appendSlice(allocator, std.fmt.allocPrint(allocator, "if (__koru_store_{s}.len >= {d}) return {s};\n", .{ store_name, CAP, HS.branchOne(allocator, host_target, "full", field_names[0]) }) catch unreachable) catch unreachable;
                 } else {
                     var rb = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
-                    for (field_names[0..user_field_count], 0..) |fname, fi| {
+                    for (ins_names, 0..) |fname, fi| {
                         if (fi > 0) rb.appendSlice(allocator, ", ") catch unreachable;
                         rb.appendSlice(allocator, HS.recField(allocator, host_target, fname, fname)) catch unreachable;
                     }
@@ -6190,7 +6741,7 @@ fn storeLowerText(
         jp.appendSlice(allocator, "let __koru_store_") catch unreachable;
         jp.appendSlice(allocator, store_name) catch unreachable;
         jp.appendSlice(allocator, " = { ") catch unreachable;
-        for (cell_fields, 0..) |cf, i| {
+    for (cell_fields, 0..) |cf, i| {
             if (i > 0) jp.appendSlice(allocator, ", ") catch unreachable;
             jp.appendSlice(allocator, cf.name) catch unreachable;
             jp.appendSlice(allocator, ": ") catch unreachable;
@@ -8353,12 +8904,53 @@ fn storeLowerText(
 
     var store_name: []const u8 = "";
     var block_text: ?[]const u8 = null;
+    var kind_name: ?[]const u8 = null;
     for (invocation.args) |arg| {
         if (std.mem.eql(u8, arg.name, "expr")) store_name = H.stripQuotes(arg.value);
         if (std.mem.eql(u8, arg.name, "source")) block_text = arg.value;
+        if (std.mem.eql(u8, arg.name, "kind")) kind_name = H.stripQuotes(std.mem.trim(u8, arg.value, " "));
     }
     if (store_name.len == 0 or block_text == null) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert requires a store name and a row block: insert(name) {{ field: value }}", .{}) } };
+    }
+
+    // Kind channel: `insert(s, kind: member)` writes the demanded tag.
+    // Ordinals are seed order, 1-based (the `// store-kinds` vocabulary).
+    // A missing kind on a kinded store refuses; a kind on a memberless store
+    // refuses — the tag is never silently dropped nor silently zero.
+    var kind_ordinal: ?usize = null;
+    if (kind_name) |kn_raw| {
+        const kn = std.mem.trim(u8, kn_raw, " \t");
+        const members = storeKindMembers(allocator, program, store_name) orelse {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): kind: '{s}' names no members — store '{s}' declares no union members (a kind needs members: player: Player, ...)", .{ store_name, kn, store_name }) } };
+        };
+        if (members.len == 0) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): kind: '{s}' names no members — store '{s}' declares no union members (a kind needs members: player: Player, ...)", .{ store_name, kn, store_name }) } };
+        }
+        var found: ?usize = null;
+        for (members, 0..) |m, mi| {
+            if (std.mem.eql(u8, m, kn)) found = mi + 1;
+        }
+        if (found == null) {
+            var ml = std.ArrayList(u8).initCapacity(allocator, 32) catch unreachable;
+            for (members, 0..) |m, mi| {
+                if (mi > 0) ml.appendSlice(allocator, ", ") catch unreachable;
+                ml.appendSlice(allocator, m) catch unreachable;
+            }
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): unknown kind '{s}' — members are {s}", .{ store_name, kn, ml.items }) } };
+        }
+        kind_ordinal = found;
+    } else {
+        if (storeKindDemanded(allocator, program, store_name)) {
+            const members = storeKindMembers(allocator, program, store_name) orelse &[_][]const u8{};
+            var ml = std.ArrayList(u8).initCapacity(allocator, 32) catch unreachable;
+            for (members, 0..) |m, mi| {
+                if (mi > 0) ml.appendSlice(allocator, ", ") catch unreachable;
+                ml.appendSlice(allocator, m) catch unreachable;
+            }
+            const first: []const u8 = if (members.len > 0) members[0] else "member";
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): this store holds kinds ({s}) — name one: insert({s}, kind: {s})", .{ store_name, ml.items, store_name, first }) } };
+        }
     }
 
     // The generated units live in the STORE's home namespace, which is the
@@ -8396,8 +8988,12 @@ fn storeLowerText(
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): a row block names every column exactly once ({d} given, {d} declared)", .{ store_name, row_fields.len, order.len }) } };
     }
 
-    // Args in declared column order; every column required.
-    const call_args = allocator.alloc(ast.Arg, order.len + 1) catch unreachable;
+    // Args in declared column order; every column required. A named kind
+    // travels as one more param ahead of __site_line (the event carries it —
+    // see ins_* in `new`); the row block never names it.
+    var kind_slots: usize = 0;
+    if (kind_ordinal != null) kind_slots = 1;
+    const call_args = allocator.alloc(ast.Arg, order.len + 1 + kind_slots) catch unreachable;
     for (order, 0..) |col, i| {
         const val: []const u8 = blk: {
             for (row_fields) |rf| {
@@ -8457,7 +9053,13 @@ fn storeLowerText(
             .value = allocator.dupe(u8, seed_val) catch unreachable,
         };
     }
-    call_args[order.len] = ast.Arg{
+    if (kind_ordinal) |ko| {
+        call_args[order.len] = ast.Arg{
+            .name = allocator.dupe(u8, "kind") catch unreachable,
+            .value = std.fmt.allocPrint(allocator, "{d}", .{ko}) catch unreachable,
+        };
+    }
+    call_args[order.len + kind_slots] = ast.Arg{
         .name = allocator.dupe(u8, "__site_line") catch unreachable,
         .value = std.fmt.allocPrint(allocator, "{d}", .{flow.location.line}) catch unreachable,
     };
