@@ -472,63 +472,32 @@ Rulings, each falsifiable:
   first field feeds it the first leaf. A name already expanding passes
   through unexpanded: unreachable while the gate refuses cycles, kept so a
   walk over unvalidated declarations can never hang.
-- **Out, explicitly:** store column folding (690_272 stays red — the store
-  does not read chains yet), value-level records (no construction surface),
-  raw-separation pins (beyond the first leaf nothing flows, so nothing could
-  clobber — recorded, not theater).
+- **Out, explicitly:** value-level records (no construction surface),
+  raw-separation pins (beyond the first leaf nothing flows). Store pack
+  and set-fold are not this walk's — they are 690_285–287.
 
-## The union landed (2026-09-04): members expand, kinds tag on demand
+## A lone store packs; a set folds (2026-09-05)
 
-A store seed may name compound protos as members (`player: Player` — sketch 1,
-plain `name: Type`, no new glyphs even in the opaque block). Members expand to
-their leaves; identical leaves fold by (home, name) identity, so the store
-derives its columns from its members instead of re-declaring them. Pins
-690_272 (terminal in field position) and 690_274 (two members, one column).
-Rulings, each falsifiable:
+Sibling seed fields as kinds (`player: Player, enemy: Enemy`, fold by
+bare name, hidden `kind`, one insert plus zero-fill) was never the
+store surface. A `Source` block is opaque text; that spelling was a
+consumer habit, not a language constraint. 690_274–284 are marked
+BROKEN so they cannot sit as stdlib truth.
 
-- **Type-divergent same-name still refuses.** Same bare name with different
-  identity collides loudly (one name, one identity). That is the remaining
-  presence-bit rung — two `health` columns of different substance — not this
-  slice.
-- **The tag is write-demand (lazy by construction).** The hidden `kind` i64
-  (seed order, 1-based) exists iff an insert names `kind:` — nothing asks,
-  K1 plain behavior, no ceremony. Capability is data (O13), and data nobody
-  queries is waste. Inserts write it (`insert(arena, kind: player)` — head
-  arg, the `capacity:` precedent); queries read `e.kind` like any column.
-  Pins 690_275 (round trip), 690_276/277 (the two refusals). Hand-written
-  `kind` columns (690_273) coexist by rule: demand needs the vocabulary, so
-  a hand tag without members is never mistaken for asking.
-- **Kinds are field names, not proto names.** The tag lives in the store, so
-  the store's namespace is the vocabulary — and field names can distinguish
-  tag-only kinds over one proto, which proto names cannot express.
-- **Two-form scans both sides.** Demand is visible in live `insert` flows and
-  generated `__store_insert*` calls (heads and continuations — conditional
-  insertion still asks); vocabulary in the live seed and the `// store-kinds`
-  marker. The member enumeration exists twice (proc-side and module scope) —
-  land-then-consolidate per the foreign precedent, not a design.
+What holds:
 
-Out, explicitly: type-divergent same-name leaves (presence-bit columns),
-ordinal stability across compilations (named, not solved), singleton tags
-(refused — kinds need rows).
+- **A lone store packs.** Each proto in the seed is its own placement.
+  The DAG dissolves to path-named leaves (`left.health`, `right.health`).
+  Same concept at two paths is two cells. Two protos are two concepts.
+  No fold. Query of a path is one packed leaf, not a pointer walk.
+  Pins 690_285, 690_286.
+- **Fold is a store-set act.** `std/store:set` lists logical stores;
+  that list is the kind vocabulary (`e is Player`). Join key is
+  (path-from-that-store's-root, type). Insert and obligations stay on
+  the logical store. A store in no set keeps its own layout. Pin 690_287.
+- **690_272 is Slice A**, not a union: a handwritten `health: Health`
+  column. Terminal identity in field position. It stays.
 
-## Kinded disjoint leaves + `is` sugar (2026-09-05)
-
-Demand-check flipped the 2026-09-04 "divergent members refuse" bullet:
-extra leaves already became columns; the pain was insert-all-columns and
-unguarded private reads. Kinded-only slice, refuse-unless-narrowed:
-
-- **Own-leaves insert.** A kinded insert names only that member's leaves;
-  the other kind's columns are zero-filled at the call site. Naming a
-  foreign leaf refuses. Kindless stores keep exact arity. Pin 690_281
-  (round trip), 690_284 (foreign leaf).
-- **Planner narrowing.** A leaf owned by some but not all members is
-  private. A query reads it only after the guard proves an owner
-  (`e is player`, `e.kind is player`, or `e.kind == N`). Unnarrowed and
-  wrong-kind refuse. Pins 690_282/283.
-- **`is` sugar.** `e is enemy` / `e.kind is enemy` is `e.kind == 2` with
-  the seed-order ordinal filled from the member vocabulary. Unknown
-  member and kindless store refuse. Pins 690_278/279/280. The tag column
-  projects into a rule guard that reads it.
-- **Vocabulary twins.** `// store-kinds` (field names) plus
-  `// store-member-types` (field=Proto) so insert still sees the proto
-  after `new` erases the seed.
+What would `correct` this: a lone store that merges two placements of
+the same leaf name into one column, or a set that does not fold
+`str: Strength` across its members.

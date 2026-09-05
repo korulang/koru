@@ -1,0 +1,1 @@
+Sibling-field union (`player: Player, enemy: Enemy` in the store seed) is not the store surface. The signed declaration was `entity: Player | Enemy`. These pins must not stay green in stdlib.

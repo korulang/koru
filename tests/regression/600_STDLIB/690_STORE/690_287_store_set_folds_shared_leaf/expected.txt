@@ -1,0 +1,2 @@
+player 18 12
+enemy 10 5
