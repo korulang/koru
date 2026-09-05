@@ -486,21 +486,18 @@ derives its columns from its members instead of re-declaring them. Pins
 690_272 (terminal in field position) and 690_274 (two members, one column).
 Rulings, each falsifiable:
 
-- **Divergence refuses.** Same bare name with different identity collides
-  loudly (one name, one identity); a member with non-shared leaves refuses —
-  presence-bit columns are the named later rung, owned by the planner's guard
-  discipline, not by this slice. A wall that may be refusing its own
-  motivation (real Players diverge) — held by the demand criterion: it stands
-  until a program in pain says otherwise.
+- **Type-divergent same-name still refuses.** Same bare name with different
+  identity collides loudly (one name, one identity). That is the remaining
+  presence-bit rung — two `health` columns of different substance — not this
+  slice.
 - **The tag is write-demand (lazy by construction).** The hidden `kind` i64
   (seed order, 1-based) exists iff an insert names `kind:` — nothing asks,
   K1 plain behavior, no ceremony. Capability is data (O13), and data nobody
   queries is waste. Inserts write it (`insert(arena, kind: player)` — head
-  arg, the `capacity:` precedent); queries read `e.kind` like any column, so
-  no guard syntax was needed. Pins 690_275 (round trip), 690_276/277 (the two
-  refusals). Hand-written `kind` columns (690_273) coexist by rule: demand
-  needs the vocabulary, so a hand tag without members is never mistaken for
-  asking — measured, five reds that proved it.
+  arg, the `capacity:` precedent); queries read `e.kind` like any column.
+  Pins 690_275 (round trip), 690_276/277 (the two refusals). Hand-written
+  `kind` columns (690_273) coexist by rule: demand needs the vocabulary, so
+  a hand tag without members is never mistaken for asking.
 - **Kinds are field names, not proto names.** The tag lives in the store, so
   the store's namespace is the vocabulary — and field names can distinguish
   tag-only kinds over one proto, which proto names cannot express.
@@ -510,7 +507,28 @@ Rulings, each falsifiable:
   marker. The member enumeration exists twice (proc-side and module scope) —
   land-then-consolidate per the foreign precedent, not a design.
 
-Out, explicitly: `is` sugar (guards spell `e.kind == N` with documented
-ordinals — magic numbers acknowledged, sugar unpriced), divergent members,
+Out, explicitly: type-divergent same-name leaves (presence-bit columns),
 ordinal stability across compilations (named, not solved), singleton tags
 (refused — kinds need rows).
+
+## Kinded disjoint leaves + `is` sugar (2026-09-05)
+
+Demand-check flipped the 2026-09-04 "divergent members refuse" bullet:
+extra leaves already became columns; the pain was insert-all-columns and
+unguarded private reads. Kinded-only slice, refuse-unless-narrowed:
+
+- **Own-leaves insert.** A kinded insert names only that member's leaves;
+  the other kind's columns are zero-filled at the call site. Naming a
+  foreign leaf refuses. Kindless stores keep exact arity. Pin 690_281
+  (round trip), 690_284 (foreign leaf).
+- **Planner narrowing.** A leaf owned by some but not all members is
+  private. A query reads it only after the guard proves an owner
+  (`e is player`, `e.kind is player`, or `e.kind == N`). Unnarrowed and
+  wrong-kind refuse. Pins 690_282/283.
+- **`is` sugar.** `e is enemy` / `e.kind is enemy` is `e.kind == 2` with
+  the seed-order ordinal filled from the member vocabulary. Unknown
+  member and kindless store refuse. Pins 690_278/279/280. The tag column
+  projects into a rule guard that reads it.
+- **Vocabulary twins.** `// store-kinds` (field names) plus
+  `// store-member-types` (field=Proto) so insert still sees the proto
+  after `new` erases the seed.

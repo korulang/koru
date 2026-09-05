@@ -1,0 +1,2 @@
+hurt enemy 25
+player 98.6

@@ -585,6 +585,331 @@ fn storeKindMembers(alloc: std.mem.Allocator, prog: *const ast_find.Program, sto
     return null;
 }
 
+const StoreMemberLeaf = struct { name: []const u8, typ: []const u8 };
+const StoreMemberSchema = struct { name: []const u8, leaves: []const StoreMemberLeaf };
+
+/// Proto body text for a compound named `want` in `scope_home` — live
+/// `std/proto(Name) { … }` or the post-erase `// proto Name:` marker.
+fn kindCompoundFieldsText(prog: *const ast_find.Program, want: []const u8, want_home: []const u8) ?[]const u8 {
+    const Finder = struct {
+        fn scan(items: []const ast_find.Item, scope: []const u8, w: []const u8, home: []const u8) ?[]const u8 {
+            for (items) |entry| {
+                switch (entry) {
+                    .flow => |candidate| {
+                        if (!std.mem.eql(u8, scope, home)) continue;
+                        if (candidate.body.node) |*node| {
+                            if (node.* == .invocation and kindIsCompoundDoor(&node.invocation)) {
+                                const inv = &node.invocation;
+                                if (inv.args.len == 0) continue;
+                                if (!std.mem.eql(u8, kindBareName(inv.args[0].value), w)) continue;
+                                for (inv.args) |a| {
+                                    if (a.source_value) |sv| return sv.text;
+                                }
+                                return "";
+                            }
+                        }
+                    },
+                    .inline_code => |inline_code| {
+                        if (!std.mem.eql(u8, scope, home)) continue;
+                        var lines = std.mem.splitScalar(u8, inline_code.code, '\n');
+                        while (lines.next()) |raw| {
+                            const line = std.mem.trimLeft(u8, raw, " \t");
+                            const prefix = "// proto ";
+                            if (!std.mem.startsWith(u8, line, prefix)) continue;
+                            const colon = std.mem.indexOfScalar(u8, line[prefix.len..], ':') orelse continue;
+                            const nm = std.mem.trim(u8, line[prefix.len .. prefix.len + colon], " \t");
+                            if (!std.mem.eql(u8, nm, w)) continue;
+                            return line[prefix.len + colon + 1 ..];
+                        }
+                    },
+                    .module_decl => |module| {
+                        if (scan(module.items, module.logical_name, w, home)) |t| return t;
+                    },
+                    else => {},
+                }
+            }
+            return null;
+        }
+    };
+    return Finder.scan(prog.items, prog.main_module_name, want, want_home);
+}
+
+fn parseMemberLeaves(alloc: std.mem.Allocator, text: []const u8) []const StoreMemberLeaf {
+    var out = std.ArrayList(StoreMemberLeaf){};
+    var toks = std.mem.tokenizeAny(u8, text, "\n,");
+    while (toks.next()) |raw| {
+        const seg = std.mem.trim(u8, raw, " \t\r,");
+        if (seg.len == 0) continue;
+        const colon = std.mem.indexOfScalar(u8, seg, ':') orelse continue;
+        const lname = std.mem.trim(u8, seg[0..colon], " \t");
+        const ltype = std.mem.trim(u8, seg[colon + 1 ..], " \t,");
+        if (lname.len == 0 or ltype.len == 0) continue;
+        out.append(alloc, .{ .name = lname, .typ = ltype }) catch continue;
+    }
+    return out.items;
+}
+
+fn storeScopeOf(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) []const u8 {
+    for (flatItems(alloc, prog.items)) |pi| {
+        if (pi.* != .flow) continue;
+        const f = &pi.flow;
+        const inv = f.inv();
+        if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
+        const mq = inv.path.module_qualifier orelse continue;
+        if (!std.mem.eql(u8, mq, "std.store")) continue;
+        for (inv.args) |a| {
+            if (std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, kindBareName(a.value), store)) {
+                return kindScopeOfFlow(prog, f);
+            }
+        }
+    }
+    return prog.main_module_name;
+}
+
+/// Per-member leaf lists for a union store. Null when the store has no
+/// members. Used by kinded insert (own-leaves + zero-fill) and by
+/// refuse-unless-narrowed reads.
+fn storeMemberSchemas(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const StoreMemberSchema {
+    const members = storeKindMembers(alloc, prog, store) orelse return null;
+    if (members.len == 0) return null;
+    const scope = storeScopeOf(alloc, prog, store);
+    const struct_literal = @import("struct_literal");
+    const schemas = alloc.alloc(StoreMemberSchema, members.len) catch return null;
+    // Post-erase twin of the seed's field→proto map (`// store-member-types`).
+    for (flatItems(alloc, prog.items)) |pi| {
+        if (pi.* != .inline_code) continue;
+        const code = pi.inline_code.code;
+        const prefix = "// store-member-types ";
+        if (!std.mem.startsWith(u8, code, prefix)) continue;
+        const colon = std.mem.indexOfScalar(u8, code, ':') orelse continue;
+        const nm = std.mem.trim(u8, code[prefix.len..colon], " \t");
+        if (!std.mem.eql(u8, nm, store)) continue;
+        var toks = std.mem.splitScalar(u8, code[colon + 1 ..], ',');
+        while (toks.next()) |raw| {
+            const pair = std.mem.trim(u8, raw, " \t");
+            const eq = std.mem.indexOfScalar(u8, pair, '=') orelse continue;
+            const field = std.mem.trim(u8, pair[0..eq], " \t");
+            const proto = std.mem.trim(u8, pair[eq + 1 ..], " \t");
+            for (members, 0..) |mn, i| {
+                if (!std.mem.eql(u8, mn, field)) continue;
+                const text = kindCompoundFieldsText(prog, proto, scope) orelse "";
+                schemas[i] = .{ .name = mn, .leaves = parseMemberLeaves(alloc, text) };
+            }
+        }
+        return schemas;
+    }
+    // Seed field name → proto type (player → Player), so we expand the
+    // proto the member named, not a proto that happens to share the field name.
+    var proto_names = alloc.alloc([]const u8, members.len) catch return null;
+    for (members, 0..) |mn, i| proto_names[i] = mn;
+    for (flatItems(alloc, prog.items)) |pi| {
+        if (pi.* != .flow) continue;
+        const f = &pi.flow;
+        const inv = f.inv();
+        if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) continue;
+        const mq = inv.path.module_qualifier orelse continue;
+        if (!std.mem.eql(u8, mq, "std.store")) continue;
+        var hit = false;
+        var seed: ?[]const u8 = null;
+        for (inv.args) |a| {
+            if (std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, kindBareName(a.value), store)) hit = true;
+            if (std.mem.eql(u8, a.name, "source")) seed = a.value;
+        }
+        if (!hit or seed == null) continue;
+        const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{seed.?}) catch continue;
+        const cf = struct_literal.parseFields(alloc, braced) catch continue;
+        for (cf) |c| {
+            const peeled = struct_literal.peelBaseType(c.value);
+            const ftype = if (peeled.type.len != 0) peeled.type else std.mem.trim(u8, c.value, " ");
+            if (!kindIsCompound(prog, ftype, scope)) continue;
+            for (members, 0..) |mn, mi| {
+                if (std.mem.eql(u8, mn, c.name)) proto_names[mi] = kindBareName(ftype);
+            }
+        }
+    }
+    for (members, 0..) |mn, i| {
+        const text = kindCompoundFieldsText(prog, proto_names[i], scope) orelse "";
+        schemas[i] = .{ .name = mn, .leaves = parseMemberLeaves(alloc, text) };
+    }
+    return schemas;
+}
+
+fn memberOwnsLeaf(schema: StoreMemberSchema, col: []const u8) bool {
+    for (schema.leaves) |lf| {
+        if (std.mem.eql(u8, lf.name, col)) return true;
+    }
+    return false;
+}
+
+fn leafTypeInSchemas(schemas: []const StoreMemberSchema, col: []const u8) ?[]const u8 {
+    for (schemas) |s| {
+        for (s.leaves) |lf| {
+            if (std.mem.eql(u8, lf.name, col)) return lf.typ;
+        }
+    }
+    return null;
+}
+
+/// A leaf is private when some but not all members own it. Shared leaves
+/// (every member names them) and seed columns that no member named stay
+/// unguarded — they are the folded extent.
+fn leafIsPrivate(schemas: []const StoreMemberSchema, col: []const u8) bool {
+    var n: usize = 0;
+    for (schemas) |s| {
+        if (memberOwnsLeaf(s, col)) n += 1;
+    }
+    return n > 0 and n < schemas.len;
+}
+
+fn ownersOfLeaf(alloc: std.mem.Allocator, schemas: []const StoreMemberSchema, col: []const u8) []const []const u8 {
+    var out = std.ArrayList([]const u8){};
+    for (schemas) |s| {
+        if (memberOwnsLeaf(s, col)) out.append(alloc, s.name) catch continue;
+    }
+    return out.items;
+}
+
+fn zeroFillForType(typ: []const u8) ?[]const u8 {
+    if (std.mem.startsWith(u8, typ, "*") or std.mem.indexOfScalar(u8, typ, '<') != null) return null;
+    if (std.mem.eql(u8, typ, "i64") or std.mem.eql(u8, typ, "i32")) return "0";
+    if (std.mem.startsWith(u8, typ, "char[")) return "\"\"";
+    return "0.0";
+}
+
+fn guardNegatedAt(text: []const u8, start: usize) bool {
+    var k = start;
+    while (k > 0 and (text[k - 1] == ' ' or text[k - 1] == '\t')) k -= 1;
+    if (k > 0 and text[k - 1] == '(') {
+        k -= 1;
+        while (k > 0 and (text[k - 1] == ' ' or text[k - 1] == '\t')) k -= 1;
+    }
+    return k > 0 and text[k - 1] == '!';
+}
+
+/// Members the guard has narrowed to. `is` on the raw guard and
+/// `bind.kind == N` on either spelling; a preceding `!` does not prove.
+fn guardProvenMembers(
+    alloc: std.mem.Allocator,
+    raw: []const u8,
+    rewritten: []const u8,
+    bind: []const u8,
+    members: []const []const u8,
+) []const []const u8 {
+    var out = std.ArrayList([]const u8){};
+    const add = struct {
+        fn one(list: *std.ArrayList([]const u8), a: std.mem.Allocator, name: []const u8) void {
+            for (list.items) |e| {
+                if (std.mem.eql(u8, e, name)) return;
+            }
+            list.append(a, name) catch {};
+        }
+    };
+    const scanIs = struct {
+        fn run(a: std.mem.Allocator, text: []const u8, b: []const u8, mems: []const []const u8, list: *std.ArrayList([]const u8)) void {
+            const mask = ast_find.expressionMask(a, text);
+            var i: usize = 0;
+            while (i + 2 < text.len) : (i += 1) {
+                if (!mask[i]) continue;
+                if (text[i] != 'i' or text[i + 1] != 's') continue;
+                if (!ast_find.identBoundaryBefore(text, i)) continue;
+                const after = i + 2;
+                if (after < text.len and storeIdentChar(text[after])) continue;
+                var lend = i;
+                while (lend > 0 and (text[lend - 1] == ' ' or text[lend - 1] == '\t')) lend -= 1;
+                var lstart = lend;
+                while (lstart > 0 and (storeIdentChar(text[lstart - 1]) or text[lstart - 1] == '.')) lstart -= 1;
+                const subj = text[lstart..lend];
+                const is_bind = std.mem.eql(u8, subj, b);
+                const is_kind = std.mem.startsWith(u8, subj, b) and std.mem.eql(u8, subj[b.len..], ".kind");
+                if (!is_bind and !is_kind) continue;
+                if (guardNegatedAt(text, lstart)) continue;
+                var r = after;
+                while (r < text.len and (text[r] == ' ' or text[r] == '\t')) r += 1;
+                var rend = r;
+                while (rend < text.len and storeIdentChar(text[rend])) rend += 1;
+                const mem = text[r..rend];
+                for (mems) |m| {
+                    if (std.mem.eql(u8, m, mem)) add.one(list, a, m);
+                }
+            }
+        }
+    };
+    const scanEq = struct {
+        fn run(a: std.mem.Allocator, text: []const u8, b: []const u8, mems: []const []const u8, list: *std.ArrayList([]const u8)) void {
+            const needle = std.fmt.allocPrint(a, "{s}.kind", .{b}) catch return;
+            const mask = ast_find.expressionMask(a, text);
+            var i: usize = 0;
+            while (i < text.len) : (i += 1) {
+                if (!mask[i]) continue;
+                if (!ast_find.identBoundaryBefore(text, i)) continue;
+                if (!std.mem.startsWith(u8, text[i..], needle)) continue;
+                const after = i + needle.len;
+                var k = after;
+                while (k < text.len and (text[k] == ' ' or text[k] == '\t')) k += 1;
+                if (k + 1 >= text.len or text[k] != '=' or text[k + 1] != '=') continue;
+                k += 2;
+                while (k < text.len and (text[k] == ' ' or text[k] == '\t')) k += 1;
+                var nend = k;
+                while (nend < text.len and text[nend] >= '0' and text[nend] <= '9') nend += 1;
+                if (nend == k) continue;
+                if (guardNegatedAt(text, i)) continue;
+                const ord = std.fmt.parseInt(usize, text[k..nend], 10) catch continue;
+                if (ord == 0 or ord > mems.len) continue;
+                add.one(list, a, mems[ord - 1]);
+            }
+        }
+    };
+    scanIs.run(alloc, raw, bind, members, &out);
+    scanIs.run(alloc, rewritten, bind, members, &out);
+    scanEq.run(alloc, raw, bind, members, &out);
+    scanEq.run(alloc, rewritten, bind, members, &out);
+    return out.items;
+}
+
+fn privateReadRefusal(
+    alloc: std.mem.Allocator,
+    prog: *const ast_find.Program,
+    verb: []const u8,
+    store: []const u8,
+    bind: []const u8,
+    raw_guard: ?[]const u8,
+    rewritten_guard: ?[]const u8,
+    read_names: []const []const u8,
+) ?[]const u8 {
+    if (!storeKindDemanded(alloc, prog, store)) return null;
+    const schemas = storeMemberSchemas(alloc, prog, store) orelse return null;
+    const members = storeKindMembers(alloc, prog, store) orelse return null;
+    const proven = guardProvenMembers(alloc, raw_guard orelse "", rewritten_guard orelse raw_guard orelse "", bind, members);
+    for (read_names) |col| {
+        if (std.mem.eql(u8, col, "kind")) continue;
+        if (!leafIsPrivate(schemas, col)) continue;
+        const owners = ownersOfLeaf(alloc, schemas, col);
+        var owner_list = std.ArrayList(u8).initCapacity(alloc, 16) catch unreachable;
+        for (owners, 0..) |o, oi| {
+            if (oi > 0) owner_list.appendSlice(alloc, ", ") catch unreachable;
+            owner_list.appendSlice(alloc, o) catch unreachable;
+        }
+        const only = if (owners.len == 1)
+            std.fmt.allocPrint(alloc, "{s}-only", .{owners[0]}) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, "owned by {s}", .{owner_list.items}) catch unreachable;
+        if (proven.len == 0) {
+            const hint = if (owners.len > 0) owners[0] else "member";
+            return std.fmt.allocPrint(alloc, "std/store:{s}({s}): '{s}.{s}' is {s} — narrow the guard (`when {s} is {s}`) first", .{ verb, store, bind, col, only, bind, hint }) catch unreachable;
+        }
+        for (proven) |p| {
+            var owns = false;
+            for (owners) |o| {
+                if (std.mem.eql(u8, o, p)) owns = true;
+            }
+            if (!owns) {
+                return std.fmt.allocPrint(alloc, "std/store:{s}({s}): '{s}.{s}' is {s} — the guard narrowed to '{s}', which does not hold it", .{ verb, store, bind, col, only, p }) catch unreachable;
+            }
+        }
+    }
+    return null;
+}
+
 /// Write-demand for the kind tag: does any insert name `kind:` for `store`?
 /// Both spellings — live `insert(s, kind: m)` flows and generated
 /// `__store_insert/inserth/insertf_<s>` calls carrying kind — at flow heads
@@ -649,6 +974,120 @@ fn storeKindDemanded(alloc: std.mem.Allocator, prog: *const ast_find.Program, st
         if (Ask.walkCont(&f.body, store, i_name, h_name, f_name)) return true;
     }
     return false;
+}
+
+/// `is`-sugar in guards: `<bind> is <member>` reads the kind tag by NAME, so
+/// guards never name magic ordinals — `e is enemy` is `e.kind == 2`, the
+/// seed-order ordinal filled in from the member vocabulary (1-based: the same
+/// ordinals the inserts stamp). Rewrites on RAW guard text, BEFORE the scope
+/// rewrites, so the produced `e.kind == N` rides every path a hand-written
+/// `e.kind == 2` already rides (sweep refs, rule bindStrip, cross-store
+/// lowering); the `kind` it names is the demanded tag column, so projection
+/// derives it like any guard-read column.
+///
+/// Returns null when no bare `is` stands outside strings/templates (the fast
+/// path — one scan, no allocation; the caller keeps the original text) and
+/// when `is` IS present but cannot lower, with `refusal` naming the misuse:
+/// a memberless store, a kindless store (no insert names `kind:` — there is
+/// no tag to read), or a member outside the vocabulary. String/template spans
+/// are masked, so `"this is fine"` is never a guard. `<bind>.kind is
+/// <member>` rewrites the same way; any other bare `is` refuses with the
+/// shape it wants. `is not` is a later slice — negate outside.
+fn rewriteIsGuard(
+    alloc: std.mem.Allocator,
+    prog: *const ast_find.Program,
+    verb: []const u8,
+    store: []const u8,
+    bind: []const u8,
+    text: []const u8,
+    refusal: *?[]const u8,
+) ?[]const u8 {
+    const IsAt = struct {
+        fn at(t: []const u8, m: []const bool, i: usize) bool {
+            if (i + 2 > t.len) return false;
+            if (!m[i]) return false;
+            if (t[i] != 'i' or t[i + 1] != 's') return false;
+            if (!ast_find.identBoundaryBefore(t, i)) return false;
+            const after = i + 2;
+            if (after < t.len and storeIdentChar(t[after])) return false;
+            return true;
+        }
+    };
+    const mask = ast_find.expressionMask(alloc, text);
+    var any = false;
+    var s: usize = 0;
+    while (s < text.len) : (s += 1) {
+        if (IsAt.at(text, mask, s)) {
+            any = true;
+            break;
+        }
+    }
+    if (!any) return null;
+    const members = storeKindMembers(alloc, prog, store) orelse {
+        refusal.* = std.fmt.allocPrint(alloc, "std/store:{s}({s}): the guard reads `{s} is ...`, but store '{s}' declares no members - `is` reads the kind tag over union members (`new({s}) {{ player: Player, ... }}`)", .{ verb, store, bind, store, store }) catch unreachable;
+        return null;
+    };
+    if (!storeKindDemanded(alloc, prog, store)) {
+        refusal.* = std.fmt.allocPrint(alloc, "std/store:{s}({s}): the guard reads `{s} is ...`, but no insert names `kind:` - there is no tag to read; tag the inserts (`insert({s}, kind: player) {{ ... }}`) first", .{ verb, store, bind, store }) catch unreachable;
+        return null;
+    }
+    var vocab = std.ArrayList(u8).initCapacity(alloc, 32) catch unreachable;
+    for (members, 0..) |m, mi| {
+        if (mi > 0) vocab.appendSlice(alloc, ", ") catch unreachable;
+        vocab.appendSlice(alloc, m) catch unreachable;
+    }
+    const vocab_s = vocab.toOwnedSlice(alloc) catch unreachable;
+    var out = std.ArrayList(u8).initCapacity(alloc, text.len + 16) catch unreachable;
+    var seg: usize = 0;
+    var i: usize = 0;
+    while (i < text.len) {
+        if (!IsAt.at(text, mask, i)) {
+            i += 1;
+            continue;
+        }
+        var lend = i;
+        while (lend > 0 and (text[lend - 1] == ' ' or text[lend - 1] == '\t')) lend -= 1;
+        var lstart = lend;
+        while (lstart > 0 and (storeIdentChar(text[lstart - 1]) or text[lstart - 1] == '.')) lstart -= 1;
+        const subj = text[lstart..lend];
+        const is_bind_kind = std.mem.startsWith(u8, subj, bind) and std.mem.eql(u8, subj[bind.len..], ".kind");
+        if (!std.mem.eql(u8, subj, bind) and !is_bind_kind) {
+            refusal.* = std.fmt.allocPrint(alloc, "std/store:{s}({s}): `is` reads the kind tag - `{s} is <member>` or `{s}.kind is <member>`", .{ verb, store, bind, bind }) catch unreachable;
+            return null;
+        }
+        var rstart = i + 2;
+        while (rstart < text.len and (text[rstart] == ' ' or text[rstart] == '\t')) rstart += 1;
+        var rend = rstart;
+        while (rend < text.len and storeIdentChar(text[rend])) rend += 1;
+        const member = text[rstart..rend];
+        if (member.len == 0) {
+            refusal.* = std.fmt.allocPrint(alloc, "std/store:{s}({s}): `is` needs a member - `{s} is enemy`", .{ verb, store, bind }) catch unreachable;
+            return null;
+        }
+        if (std.mem.eql(u8, member, "not")) {
+            refusal.* = std.fmt.allocPrint(alloc, "std/store:{s}({s}): `is not` is a later slice - negate outside: `!({s} is <member>)`", .{ verb, store, bind }) catch unreachable;
+            return null;
+        }
+        var ord: ?usize = null;
+        for (members, 0..) |m, mi| {
+            if (std.mem.eql(u8, m, member)) {
+                ord = mi + 1;
+                break;
+            }
+        }
+        const o = ord orelse {
+            refusal.* = std.fmt.allocPrint(alloc, "std/store:{s}({s}): unknown kind '{s}' - members are: {s} (seed order, 1-based)", .{ verb, store, member, vocab_s }) catch unreachable;
+            return null;
+        };
+        out.appendSlice(alloc, text[seg..lstart]) catch unreachable;
+        out.appendSlice(alloc, bind) catch unreachable;
+        out.appendSlice(alloc, ".kind == ") catch unreachable;
+        out.appendSlice(alloc, std.fmt.allocPrint(alloc, "{d}", .{o}) catch unreachable) catch unreachable;
+        i = rend;
+        seg = rend;
+    }
+    out.appendSlice(alloc, text[seg..]) catch unreachable;
+    return out.toOwnedSlice(alloc) catch unreachable;
 }
 
 fn collectFlat(alloc: std.mem.Allocator, items: []const ast_find.Item, out: *std.ArrayList(*const ast_find.Item)) void {
@@ -1474,9 +1913,12 @@ fn storeLowerText(
     // the member's leaves — the store derives its columns from its members.
     // Sketch 1: members are plain `name: Type` fields, no new glyphs. Leaves
     // fold by bare name under one-identity-per-name (same type text skips,
-    // different text refuses loudly); divergent members, nested compounds
-    // inside members, and member defaults refuse — presence-bit columns and
-    // qualified members are later rungs.
+    // different text refuses loudly). Disjoint extra leaves become columns
+    // (kinded insert names only its own; unnarrowed reads of a private leaf
+    // refuse). Same-name different-identity still refuses — presence-bit
+    // columns for type-divergent names are a later rung. Nested compounds
+    // inside members and member defaults refuse. Qualified members are a
+    // later rung.
     const MemberRef = struct {
         fn isCompoundDoor(inv: *const ast.Invocation) bool {
             if (inv.path.segments.len != 1) return false;
@@ -1539,6 +1981,7 @@ fn storeLowerText(
     // the expansion below; drives the kind tag (ordinals are seed order,
     // 1-based) and the `// store-kinds` marker insert reads post-erase.
     var member_names = std.ArrayList([]const u8).initCapacity(allocator, 2) catch unreachable;
+    var member_protos = std.ArrayList([]const u8).initCapacity(allocator, 2) catch unreachable;
     cell_fields = blk: {
         var out = std.ArrayList(struct_literal.StructField).initCapacity(allocator, cell_fields.len) catch unreachable;
         for (cell_fields) |cf| {
@@ -1561,7 +2004,10 @@ fn storeLowerText(
                     break;
                 }
             }
-            if (!seen_member) member_names.append(allocator, cf.name) catch unreachable;
+            if (!seen_member) {
+                member_names.append(allocator, cf.name) catch unreachable;
+                member_protos.append(allocator, mname) catch unreachable;
+            }
             if (has_default0) {
                 return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' carries a default — members expand to columns, they hold no value", .{ store_name, mname }) } };
             }
@@ -1591,7 +2037,7 @@ fn storeLowerText(
                     if (std.mem.eql(u8, std.mem.trim(u8, prev.value, " "), ltype)) {
                         folded = true;
                     } else {
-                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}': leaf '{s}' as '{s}' collides with '{s}' — one bare name, one identity; divergent members are a later rung (presence-bit columns)", .{ store_name, mname, lname, ltype, std.mem.trim(u8, prev.value, " ") }) } };
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}': leaf '{s}' as '{s}' collides with '{s}' — one bare name, one identity; type-divergent same-name leaves are a later rung (presence-bit columns)", .{ store_name, mname, lname, ltype, std.mem.trim(u8, prev.value, " ") }) } };
                     }
                     break;
                 }
@@ -3526,16 +3972,37 @@ fn storeLowerText(
             // where the store cell is reachable. So it strips the binding to the
             // projected name (`e.hp` -> `hp`) rather than resolving to a column
             // read the way the body does.
-            if (qs.guard) |g| qs.guard = PRewrite.bindStrip(allocator, g, qs.row_bind, field_names, used);
+            if (qs.guard) |g| {
+                var is_refusal: ?[]const u8 = null;
+                const guard_is = rewriteIsGuard(allocator, program, if (qs.is_preorder) "preorder" else "rule", store_name, qs.row_bind, g, &is_refusal);
+                if (is_refusal) |m| {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "{s}", .{m}) } };
+                }
+                qs.guard = PRewrite.bindStrip(allocator, guard_is orelse g, qs.row_bind, field_names, used);
+                var read_names = std.ArrayList([]const u8).initCapacity(allocator, field_names.len) catch unreachable;
+                for (field_names, used) |fnm, u| {
+                    if (u) read_names.append(allocator, fnm) catch unreachable;
+                }
+                const verb = if (qs.is_preorder) "preorder" else if (qs.rule_name != null) "rule" else "query";
+                if (privateReadRefusal(allocator, program, verb, store_name, qs.row_bind, g, guard_is, read_names.items)) |m| {
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "{s}", .{m}) } };
+                }
+            }
             // The derived projection: every column the arm named, in
             // declaration order. The synthesized `parent` of a [tree] store is
-            // not the author's to see, so it stops at the user columns.
+            // not the author's to see, so it stops at the user columns — but
+            // the demanded kind tag IS the author's (`e.kind`, `e is m` in a
+            // guard): when the arm reads it, it projects like any column.
             var pnames = std.ArrayList([]const u8).initCapacity(allocator, user_field_count) catch unreachable;
             var pfields = std.ArrayList(usize).initCapacity(allocator, user_field_count) catch unreachable;
             for (field_names[0..user_field_count], 0..) |fnm, fi| {
                 if (!used[fi]) continue;
                 pnames.append(allocator, allocator.dupe(u8, fnm) catch unreachable) catch unreachable;
                 pfields.append(allocator, fi) catch unreachable;
+            }
+            if (want_kind and used[kind_idx]) {
+                pnames.append(allocator, allocator.dupe(u8, "kind") catch unreachable) catch unreachable;
+                pfields.append(allocator, kind_idx) catch unreachable;
             }
             qs.proj_names = pnames.toOwnedSlice(allocator) catch unreachable;
             qs.proj_fields = pfields.toOwnedSlice(allocator) catch unreachable;
@@ -3898,6 +4365,21 @@ fn storeLowerText(
             }
             appended_items.append(allocator, ast.Item{ .inline_code = ast.InlineCode{
                 .code = mk.toOwnedSlice(allocator) catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            } }) catch unreachable;
+            var mt = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+            mt.appendSlice(allocator, "// store-member-types ") catch unreachable;
+            mt.appendSlice(allocator, store_name) catch unreachable;
+            mt.appendSlice(allocator, ": ") catch unreachable;
+            for (member_names.items, 0..) |mn, mi| {
+                if (mi > 0) mt.appendSlice(allocator, ", ") catch unreachable;
+                mt.appendSlice(allocator, mn) catch unreachable;
+                mt.append(allocator, '=') catch unreachable;
+                mt.appendSlice(allocator, member_protos.items[mi]) catch unreachable;
+            }
+            appended_items.append(allocator, ast.Item{ .inline_code = ast.InlineCode{
+                .code = mt.toOwnedSlice(allocator) catch unreachable,
                 .location = flow.location,
                 .module = allocator.dupe(u8, flow.module) catch unreachable,
             } }) catch unreachable;
@@ -8984,8 +9466,32 @@ fn storeLowerText(
     } else struct_literal.parseFields(allocator, braced) catch |err| {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): {s}", .{ store_name, struct_literal.describeError(err) }) } };
     };
-    if (row_fields.len != order.len) {
+    // Kinded union: the row names this member's leaves only. Columns the
+    // kind does not own are zero-filled at the call site (the insert event
+    // still writes every SoA column). Kindless stores keep the exact-arity
+    // contract — without a tag there is no owner to omit for.
+    const kinded_own: ?StoreMemberSchema = blk_own: {
+        if (kind_ordinal) |ko| {
+            if (storeMemberSchemas(allocator, program, store_name)) |schemas| {
+                if (ko >= 1 and ko <= schemas.len) break :blk_own schemas[ko - 1];
+            }
+        }
+        break :blk_own null;
+    };
+    if (kinded_own == null and row_fields.len != order.len) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): a row block names every column exactly once ({d} given, {d} declared)", .{ store_name, row_fields.len, order.len }) } };
+    }
+    if (kinded_own) |own| {
+        for (row_fields) |rf| {
+            if (!memberOwnsLeaf(own, rf.name)) {
+                var have = std.ArrayList(u8).initCapacity(allocator, 16) catch unreachable;
+                for (own.leaves, 0..) |lf, li| {
+                    if (li > 0) have.appendSlice(allocator, ", ") catch unreachable;
+                    have.appendSlice(allocator, lf.name) catch unreachable;
+                }
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): column '{s}' is not a leaf of kind '{s}' — {s} holds {s}", .{ store_name, rf.name, own.name, own.name, have.items }) } };
+            }
+        }
     }
 
     // Args in declared column order; every column required. A named kind
@@ -8994,10 +9500,21 @@ fn storeLowerText(
     var kind_slots: usize = 0;
     if (kind_ordinal != null) kind_slots = 1;
     const call_args = allocator.alloc(ast.Arg, order.len + 1 + kind_slots) catch unreachable;
+    const schemas_for_fill = if (kinded_own != null) storeMemberSchemas(allocator, program, store_name) else null;
     for (order, 0..) |col, i| {
         const val: []const u8 = blk: {
             for (row_fields) |rf| {
                 if (std.mem.eql(u8, rf.name, col)) break :blk rf.value;
+            }
+            if (kinded_own) |own| {
+                if (!memberOwnsLeaf(own, col)) {
+                    const typ = if (schemas_for_fill) |ss| leafTypeInSchemas(ss, col) else null;
+                    if (typ) |t| {
+                        if (zeroFillForType(t)) |z| break :blk z;
+                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): column '{s}' is owned by another kind and cannot be zero-filled — name it only on the kind that holds it", .{ store_name, col }) } };
+                    }
+                    break :blk "0";
+                }
             }
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:insert({s}): row block is missing column '{s}'", .{ store_name, col }) } };
         };
@@ -9733,13 +10250,27 @@ fn storeLowerText(
     // The arm's own `when` guard is emitted in the LOOP, not the body event —
     // but it reads the same `<srf_prefix><f>` consts, which the loop binds just
     // above it. One spelling, two scopes, no second rule.
+    var is_refusal: ?[]const u8 = null;
+    const guard_is = if (sc.condition) |c| rewriteIsGuard(allocator, program, "query", store_name, row_bind, c, &is_refusal) else null;
+    if (is_refusal) |m| {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "{s}", .{m}) } };
+    }
     const guard_z: ?[]const u8 = if (sc.condition) |c|
-        SRewrite.refs(allocator, c, row_bind, store_name, col_names, srf_prefix, srow_name, .input, used_cols, &unknown_field)
+        SRewrite.refs(allocator, guard_is orelse c, row_bind, store_name, col_names, srf_prefix, srow_name, .input, used_cols, &unknown_field)
     else
         null;
 
     if (unknown_field) |uf| {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): '{s}.{s}' - '{s}' is not a field of store '{s}'", .{ store_name, row_bind, uf, uf, store_name }) } };
+    }
+    {
+        var read_names = std.ArrayList([]const u8).initCapacity(allocator, col_names.len) catch unreachable;
+        for (col_names, used_cols) |cn, u| {
+            if (u) read_names.append(allocator, cn) catch unreachable;
+        }
+        if (privateReadRefusal(allocator, program, "query", store_name, row_bind, sc.condition, guard_is, read_names.items)) |m| {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "{s}", .{m}) } };
+        }
     }
 
     // The derived projection: every column the arm named, in declaration order.

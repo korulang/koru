@@ -62,16 +62,36 @@ fn ioLowerJsExpr(alloc: std.mem.Allocator, text: []const u8) []const u8 {
 //     return .{ .printed = .{} };
 // }
 
-// Read line from stdin (for future interactive programs)
+// One blocking line from stdin. EOF is a branch, not an empty string —
+// an empty line is `line` with length 0. The buffer is module-static:
+// the returned slice is valid until the next readln (the caller must
+// finish with the line first). That is the interactive/pipe contract
+// (`650_009`); read.ln remains the leaky slurp-a-chunk sibling.
 ~pub tor readln {}
 | line string
 | eof
 | failed string
 
+var readln_buf: [8192]u8 = undefined;
+
 ~proc readln|zig {
-    // TODO: Implement actual stdin reading
-    // For now, return a placeholder
-    return .{ .failed = "readln not yet implemented" };
+    const stdin = std.fs.File.stdin();
+    var i: usize = 0;
+    while (i < $mod.readln_buf.len) {
+        var b: [1]u8 = undefined;
+        const n = stdin.read(b[0..]) catch return .{ .failed = "Failed to read stdin" };
+        if (n == 0) {
+            if (i == 0) return .{ .eof = .{} };
+            return .{ .line = $mod.readln_buf[0..i] };
+        }
+        if (b[0] == '\n') {
+            if (i > 0 and $mod.readln_buf[i - 1] == '\r') i -= 1;
+            return .{ .line = $mod.readln_buf[0..i] };
+        }
+        $mod.readln_buf[i] = b[0];
+        i += 1;
+    }
+    return .{ .failed = "line too long" };
 }
 
 // Simple line reader - returns the line, or empty string on EOF/error
