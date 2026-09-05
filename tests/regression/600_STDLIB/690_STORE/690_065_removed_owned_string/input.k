@@ -20,7 +20,7 @@ import std/string
 import std/store
 
 std/store:new(todos, capacity: 8) { label: *std/string:String<std/string:instance!> }
-! removed { label } |> std/string:read(s: label): t |> std/io:print.ln("removed: {{ t:s }}")
+! removed { label } |> std/io:print.ln("removed: {{ label:S }}")
 
 std/string:from-page(text: "task")
 | ok s |> std/string:take(s): owned |> std/store:insert(todos) { label: owned }

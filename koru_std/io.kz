@@ -631,8 +631,12 @@ fn __printInterpolate(
                     missing_spec = placeholder;
                 }
 
-                // :f maps to {} in Zig (default float format — Zig has no {f})
-                const zig_fmt_spec_ln = if (std.mem.eql(u8, format_spec, "f")) "" else format_spec;
+                // :f maps to {} in Zig (default float format — Zig has no {f}).
+                // :S is the handle form (610_007, ruled 2026-09-05): the arg is
+                // a *String, read as `.data` INSIDE the emitted step — the
+                // owner binding is live and KORU030-checked there, so the
+                // borrow never outlives anything. Zero-copy, zero new state.
+                const zig_fmt_spec_ln = if (std.mem.eql(u8, format_spec, "f")) "" else if (std.mem.eql(u8, format_spec, "S")) "s" else format_spec;
                 format_buf.append(allocator, '{') catch unreachable;
                 format_buf.appendSlice(allocator, zig_fmt_spec_ln) catch unreachable;
                 format_buf.append(allocator, '}') catch unreachable;
@@ -642,6 +646,7 @@ fn __printInterpolate(
                 }
                 // Escape Zig keywords in dotted paths (e.g., err.error -> err.@"error")
                 appendEscapedPath(&args_buf, allocator, var_name);
+                if (std.mem.eql(u8, format_spec, "S")) args_buf.appendSlice(allocator, ".data") catch unreachable;
                 first_arg = false;
 
                 i = j + 2; // Skip past }}

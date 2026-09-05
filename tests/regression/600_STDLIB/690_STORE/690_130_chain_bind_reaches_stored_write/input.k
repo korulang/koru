@@ -2,8 +2,8 @@
 //
 // Measured 2026-07-31: 138 `std/store:stored` sites in the corpus and zero of
 // them take a value from a chain binding — every rhs is column reads and
-// literals. A sweep arm demonstrably chains and binds (690_098 binds `t` off
-// `std/string:read` and prints it); this is the same bind carried one step
+// literals. A sweep arm demonstrably chains and binds (690_098 prints the
+// `r.text` handle); this is the same bind carried one step
 // further, into the write block. `t` names `e.a`'s value, `e.b: t` lands it.
 //
 // The composition is what makes written-order (690_126) a mechanism instead of

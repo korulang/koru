@@ -21,6 +21,6 @@ import std/string
 std/string:from-page(text: "abcd")
 | ok a |> std/string:take(s: a): s |> std/string:clear(s)
     |> std/string:append(s, text: "xy")
-        | ok |> std/string:read(s): text |> std/io:print.ln("[{{ text:s }}]") |> std/string:free(s)
+        | ok |> std/io:print.ln("[{{ s:S }}]") |> std/string:free(s)
         | err _ |> std/string:free(s)
 | err _ |> _

@@ -18,7 +18,7 @@ std/store:new(names, capacity: 8) { name: *std/string:String<std/string:instance
 std/string:from-page(text: "hello")
 | ok s |> std/string:take(s): owned |> std/store:insert(names) { name: owned }
     | row r |> std/store:take(names[r])
-        | item i |> std/string:read(s: i): text |> std/io:print.ln("{{ text:s }}")
+        | item i |> std/io:print.ln("{{ i:S }}")
 | err _ |> _
 
 std/string:from-page(text: "kept")

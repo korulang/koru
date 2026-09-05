@@ -3,8 +3,8 @@
 // The downstream half of the WRITE rung (690_062): once owned columns can be
 // WRITTEN, `watch` has something to fire on. The watch arm binds the written
 // field as a BARE BORROW (`*mod:Type<mod:state>`, no `!` — the 690_060
-// projection), read by std/string:read (accepts <view|instance>, consumes
-// nothing); the store keeps the live <instance!> it frees at teardown.
+// projection), printed by handle interpolation (`{{ lbl:S }}`, 610_007);
+// the store keeps the live <instance!> it frees at teardown.
 //
 // The apply body fires the watch arm reading the field FRESH from the stored
 // cell (__koru_store.<f>[row]), NOT the incoming param (whose <!instance> the
@@ -19,7 +19,7 @@ import std/store
 std/store:new(names, capacity: 8) { label: *std/string:String<std/string:instance!> }
 
 std/store:watch(names)
-! label lbl |> std/string:read(s: lbl): t |> std/io:print.ln("watch: {{ t:s }}")
+! label lbl |> std/io:print.ln("watch: {{ lbl:S }}")
 
 std/string:from-page(text: "old")
 | ok s |> std/string:take(s): owned |> std/store:insert(names) { label: owned }

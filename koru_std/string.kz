@@ -94,11 +94,22 @@ pub const String = struct {
 }
 
 // ============================================
-// Read operations - work on view or instance
+// Snapshot - the escape path (610_007, ruled 2026-09-05)
 // ============================================
-
-~pub tor read { s: *String<view|instance> } -> string
-~read -> s.data
+//
+// `read` (`{ s } -> string` via `-> s.data`) retired here: a returned borrow
+// is unpoliceable — the owner can invalidate it by discharge OR mutation —
+// so borrows flow down, never up (KORU095 refuses the projection). Consumers
+// that used `read` to feed a call take the handle instead (borrow-for-the-
+// call, `{{ h:S }}`); genuine escapes copy out through this tor. The copy
+// carries `<view!>` so it cannot leak the way a bare allocating `string`
+// return would. One memcpy, at a boundary, priced as noise.
+~pub tor snapshot { s: *String<view|instance> }
+| ok *String<view!>
+| err string
+~snapshot = std/string:from-page(text: s.data)
+| ok s2 => ok s2
+| err e => err e
 
 ~pub tor len { s: *String<view|instance> } -> usize
 ~len -> s.data.len

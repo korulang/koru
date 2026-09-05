@@ -31,4 +31,4 @@ std/string:from-page(text: "task")
 | err _ |> _
 
 std/store:query(todos)
-! query e |> std/string:read(s: e.label): text |> std/io:print.ln("{{ text:s }} done={{ e.done:d }}")
+! query e |> std/io:print.ln("{{ e.label:S }} done={{ e.done:d }}")

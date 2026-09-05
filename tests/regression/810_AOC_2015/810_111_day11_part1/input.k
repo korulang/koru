@@ -18,6 +18,7 @@
 import std/io
 import std/fs
 import std/string
+import std/fmt
 
 // Parse 8 letters into a base-26 number.
 pub tor to-n { s: string } -> i64
@@ -48,11 +49,11 @@ std/fs:read-lines(path: "tests/regression/810_AOC_2015/810_111_day11_part1/input
             | ok alpha |> std/string:from-page(text: "")
                 | ok base |> std/string:take(s: base): buf |> for(0..8)
                         ! each k |> std/string:substring(s: alpha, start: @mod(@divTrunc(@as(usize, @intCast(n)), 8031810176 * @as(usize, @intFromBool(k == 0)) + 308915776 * @as(usize, @intFromBool(k == 1)) + 11881376 * @as(usize, @intFromBool(k == 2)) + 456976 * @as(usize, @intFromBool(k == 3)) + 17576 * @as(usize, @intFromBool(k == 4)) + 676 * @as(usize, @intFromBool(k == 5)) + 26 * @as(usize, @intFromBool(k == 6)) + 1 * @as(usize, @intFromBool(k == 7))), 26), end: @mod(@divTrunc(@as(usize, @intCast(n)), 8031810176 * @as(usize, @intFromBool(k == 0)) + 308915776 * @as(usize, @intFromBool(k == 1)) + 11881376 * @as(usize, @intFromBool(k == 2)) + 456976 * @as(usize, @intFromBool(k == 3)) + 17576 * @as(usize, @intFromBool(k == 4)) + 676 * @as(usize, @intFromBool(k == 5)) + 26 * @as(usize, @intFromBool(k == 6)) + 1 * @as(usize, @intFromBool(k == 7))), 26) + 1)
-                            | ok cs |> std/string:read(s: cs): csl |> std/string:append(s: buf, text: csl)
+                            | ok cs |> std/fmt:ln("{{ cs:S }}"): t |> std/string:append(s: buf, t.text)
                                     | ok |> std/string:free(s: cs)
                                     | err _ |> std/string:free(s: cs)
                             | err _ |> _
-                        | done |> std/string:read(s: buf): all |> std/io:print.ln("{{ all:s }}") |> std/string:free(s: buf) |> std/string:free(s: alpha)
+                        | done |> std/io:print.ln("{{ buf:S }}") |> std/string:free(s: buf) |> std/string:free(s: alpha)
                 | err _ |> std/string:free(s: alpha)
             | err _ |> _
 | done _ |> _

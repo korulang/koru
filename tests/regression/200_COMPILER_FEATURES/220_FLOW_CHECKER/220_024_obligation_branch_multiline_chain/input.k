@@ -20,9 +20,8 @@ import std/string
 import std/io
 
 std/string:from-page(text: "hello")
-| ok s |> std/string:read(s): text
-    |> std/io:print.ln("a")
+| ok s |> std/io:print.ln("a")
     |> std/io:print.ln("b")
-    |> std/io:print.ln("{{ text:s }}")
+    |> std/io:print.ln("{{ s:S }}")
     |> std/string:free(s)
 | err _ |> _

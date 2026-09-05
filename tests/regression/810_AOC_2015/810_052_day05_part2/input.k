@@ -26,6 +26,7 @@ import std/io
 import std/fs
 import std/string
 import std/string-map
+import std/fmt
 
 // Map lookup defaulting to 0.
 pub tor get0 { m: *Map_string_i64<std/string-map:map>, k: string } -> i64
@@ -38,14 +39,14 @@ get0 = std/string-map:get(m, k)
 pub tor walk { h: *String<std/string:instance>, cm: *Map_string_i64<std/string-map:map>, wm: *Map_string_i64<std/string-map:map>, i: usize, sand: i64, pair: i64 } -> i64
 
 walk = std/string:substring(s: h, start: i, end: i + 1)
-| ok c |> std/string:read(s: c): cstr
-    |> get0(m: cm, k: cstr): oc
-    |> std/string-map:set(m: cm, k: cstr, v: oc | (@as(i64, 1) << @as(u6, @intCast(i + 2))))
+| ok c |> std/fmt:ln("{{ c:S }}"): key
+    |> get0(m: cm, k: key.text): oc
+    |> std/string-map:set(m: cm, k: key.text, v: oc | (@as(i64, 1) << @as(u6, @intCast(i + 2))))
     |> std/string:free(s: c)
     |> std/string:substring(s: h, start: i, end: i + 2)
-        | ok w |> std/string:read(s: w): wstr
-            |> get0(m: wm, k: wstr): ow
-            |> std/string-map:set(m: wm, k: wstr, v: ow | (@as(i64, 1) << @as(u6, @intCast(i + 2))))
+        | ok w |> std/fmt:ln("{{ w:S }}"): key2
+            |> get0(m: wm, k: key2.text): ow
+            |> std/string-map:set(m: wm, k: key2.text, v: ow | (@as(i64, 1) << @as(u6, @intCast(i + 2))))
             |> std/string:free(s: w)
             |> decide(h, cm, wm, i, oc, ow, sand, pair): d -> d
         | err _ -> 0

@@ -1,7 +1,8 @@
-// PIN (enforcement): reading a String after free is use-after-discharge.
+// PIN (enforcement): using a String after free is use-after-discharge
+// (610_007: `read` retired — `len` is the borrow-use that remains).
 ~import std/string
 ~import std/io
 
 ~std/string:from-page(text: "hello")
-| ok s |> std/string:free(s) |> std/string:read(s): text |> std/io:print.ln("{{ text:s }}")
+| ok s |> std/string:free(s) |> std/string:len(s): n |> std/io:print.ln("{{ n:d }}")
 | err _ |> _

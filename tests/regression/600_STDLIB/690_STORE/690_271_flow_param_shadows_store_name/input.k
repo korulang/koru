@@ -18,6 +18,7 @@
 import std/io
 import std/store
 import std/string
+import std/fmt
 
 std/store:new(history, capacity: 2) { *std/string:String<std/string:instance!> }
 
@@ -44,6 +45,6 @@ proc reframe|zig {
 
 tor drive {}
 drive = nop() |> std/store:query(history)
-! query h |> std/string:read(s: h): thing |> transit(goal: "GOAL", history: thing): out |> std/io:print.ln("{{ out:s }}")
+! query h |> std/fmt:ln("{{ h:S }}"): past |> transit(goal: "GOAL", history: past.text): out |> std/io:print.ln("{{ out:s }}")
 
 drive()

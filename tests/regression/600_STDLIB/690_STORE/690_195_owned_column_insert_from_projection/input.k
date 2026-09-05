@@ -25,4 +25,4 @@ std/store:query(a)
 ! query r |> std/store:insert(b) { name: r.name }
 
 std/store:query(b)
-! query w |> std/string:read(s: w.name): t |> std/io:print.ln("b {{ t:s }}")
+! query w |> std/io:print.ln("b {{ w.name:S }}")

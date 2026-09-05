@@ -9,6 +9,6 @@ import std/io
 
 std/string:from-page(text: "hello world")
 | ok s |> std/string:substring(s, start: 0, end: 5)
-    | ok sub |> std/string:read(s: sub): text |> std/io:print.ln("{{ text:s }}") |> std/string:free(s: sub) |> std/string:free(s)
+    | ok sub |> std/io:print.ln("{{ sub:S }}") |> std/string:free(s: sub) |> std/string:free(s)
     | err _ |> std/string:free(s)
 | err _ |> _

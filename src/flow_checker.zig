@@ -405,6 +405,7 @@ pub const FlowChecker = struct {
                     .{ name, branchNameList(&names_buf, decl) },
                 );
             }
+            try self.checkBareReturnOwnsPayload(ii, decl, name);
             return;
         }
 
@@ -432,6 +433,46 @@ pub const FlowChecker = struct {
             .{ name, ii.value.branch_name },
             "declared branches are: {s}",
             .{branchNameList(&names_buf, decl)},
+        );
+    }
+
+    /// KORU095 (610_007, ruled 2026-09-05): borrows flow down, never up. A
+    /// `-> string` bare return whose expression projects a parameter's memory
+    /// (`s.data`) hands back a borrow the owner can invalidate by discharge
+    /// OR mutation — every String mutator reallocs with the owner alive — and
+    /// nothing tracks it. Refuse at the declaration.
+    ///
+    /// Gate is deliberately narrow: the declared return must be bare `string`
+    /// (`len`'s `-> s.data.len` is a usize scalar and lives), and the
+    /// projection must root DIRECTLY at an input parameter. Literals, calls
+    /// (checked at the callee's own declaration), and bare bindings (moves,
+    /// policed by KORU030) pass through. A projection laundered through a
+    /// local is the same aliasing wall lifetimes would need — knowingly out
+    /// of scope; the ban removes the manufacture, not every laundering.
+    fn checkBareReturnOwnsPayload(self: *FlowChecker, ii: *const ast.ImmediateImpl, decl: *const ast.EventDecl, name: []const u8) anyerror!void {
+        const want = decl.return_type orelse return;
+        if (!std.mem.eql(u8, want, "string")) return;
+        const pv = ii.value.plain_value orelse return;
+        const expr = std.mem.trim(u8, pv, " \t");
+        var i: usize = 0;
+        while (i < expr.len and (std.ascii.isAlphanumeric(expr[i]) or expr[i] == '_' or expr[i] == '-')) : (i += 1) {}
+        if (i == 0 or i >= expr.len or expr[i] != '.') return;
+        const root = expr[0..i];
+        var is_param = false;
+        for (decl.input.fields) |f| {
+            if (std.mem.eql(u8, f.name, root)) {
+                is_param = true;
+                break;
+            }
+        }
+        if (!is_param) return;
+        try self.reporter.addErrorAtLocationWithHint(
+            .KORU095,
+            ii.location,
+            "tor '{s}' returns a borrow of its parameter '{s}' (`{s}`) — borrows flow down, never up; a `-> string` return must own what it carries",
+            .{ name, root, expr },
+            "copy it into an owned String and return the handle (*String<view!>), or take the handle at the consumer instead of reading (610_007)",
+            .{},
         );
     }
 

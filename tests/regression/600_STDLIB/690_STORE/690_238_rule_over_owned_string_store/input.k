@@ -33,4 +33,4 @@ std/string:from-page(text: "old")
 | err _ |> _
 
 std/store:rule(names)
-! row e |> std/string:read(s: e.label): text |> std/io:print.ln("{{ text:s }}")
+! row e |> std/io:print.ln("{{ e.label:S }}")

@@ -195,14 +195,18 @@ pub const FormattedText = struct {
                     format_spec = placeholder[colon_pos + 1..];
                 }
 
+                // :S is the handle form (610_007, ruled 2026-09-05): the arg
+                // is a *String, read as `.data` inside the emitted step.
+                const zig_fmt_spec = if (std.mem.eql(u8, format_spec, "S")) "s" else format_spec;
                 format_buf.append(allocator, '{') catch unreachable;
-                format_buf.appendSlice(allocator, format_spec) catch unreachable;
+                format_buf.appendSlice(allocator, zig_fmt_spec) catch unreachable;
                 format_buf.append(allocator, '}') catch unreachable;
 
                 if (!first_arg) {
                     args_buf.appendSlice(allocator, ", ") catch unreachable;
                 }
                 appendEscapedPath(&args_buf, allocator, var_name);
+                if (std.mem.eql(u8, format_spec, "S")) args_buf.appendSlice(allocator, ".data") catch unreachable;
                 first_arg = false;
                 i = j + 2;
             } else {
@@ -492,14 +496,17 @@ pub const FormattedText = struct {
                     format_spec = placeholder[colon_pos + 1..];
                 }
 
+                // :S is the handle form (610_007, ruled 2026-09-05).
+                const zig_fmt_spec_ln = if (std.mem.eql(u8, format_spec, "S")) "s" else format_spec;
                 format_buf.append(allocator, '{') catch unreachable;
-                format_buf.appendSlice(allocator, format_spec) catch unreachable;
+                format_buf.appendSlice(allocator, zig_fmt_spec_ln) catch unreachable;
                 format_buf.append(allocator, '}') catch unreachable;
 
                 if (!first_arg) {
                     args_buf.appendSlice(allocator, ", ") catch unreachable;
                 }
                 appendEscapedPath(&args_buf, allocator, var_name);
+                if (std.mem.eql(u8, format_spec, "S")) args_buf.appendSlice(allocator, ".data") catch unreachable;
                 first_arg = false;
                 i = j + 2;
             } else {

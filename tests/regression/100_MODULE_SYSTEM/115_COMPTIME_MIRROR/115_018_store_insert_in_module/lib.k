@@ -3,7 +3,7 @@ import std/string
 import std/store
 
 std/store:new(todos, capacity: 4) { label: *std/string:String<std/string:instance!> }
-! inserted { label } |> std/string:read(s: label): t |> std/io:print.ln("added {{ t:s }}")
+! inserted { label } |> std/io:print.ln("added {{ label:S }}")
 
 pub tor run {}
 run = std/string:from-page(text: "hi")

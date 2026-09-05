@@ -13,6 +13,6 @@ import std/io
 
 std/string:from-page(text: "hello")
 | ok s |> std/string:take(s): owned |> std/string:append(s: owned, text: " world")
-        | ok |> std/string:read(s: owned): text |> std/io:print.ln(text) |> std/string:free(s: owned)
+        | ok |> std/io:print.ln("{{ owned:S }}") |> std/string:free(s: owned)
         | err _ |> _
 | err _ |> _

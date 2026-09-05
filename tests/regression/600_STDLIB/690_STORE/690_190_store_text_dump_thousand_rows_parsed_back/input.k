@@ -20,6 +20,7 @@
 import std/io
 import std/string
 import std/store
+import std/fmt
 
 tor echo { v: i64 } -> i64
 echo -> v
@@ -41,10 +42,10 @@ std/string:from-page(text: "")
 std/store:query(src)
 ! query r |> std/store:query(buf)
     ! query b |> std/string:from-int(n: r.id)
-        | ok t1 |> std/string:read(s: t1): x1 |> std/string:append(s: b.text, text: x1)
+        | ok t1 |> std/fmt:ln("{{ t1:S }}"): k1 |> std/string:append(s: b.text, k1.text)
             | ok |> std/string:append(s: b.text, text: " ")
                 | ok |> std/string:from-int(n: r.hp)
-                    | ok t2 |> std/string:read(s: t2): x2 |> std/string:append(s: b.text, text: x2)
+                    | ok t2 |> std/fmt:ln("{{ t2:S }}"): k2 |> std/string:append(s: b.text, k2.text)
                         | ok |> std/string:append(s: b.text, text: " ")
                             | ok |> _
                             | err _ |> _
@@ -58,7 +59,9 @@ std/store:query(buf)
 ! query b |> std/string:len(s: b.text): n |> std/io:print.ln("dump bytes {{ n:d }}")
 
 std/store:query(buf)
-! query b |> std/string:read(s: b.text): dump |> std/string:split(s: dump, sep: " ")
+! query b |> std/fmt:fmt.blk {
+    {{ b.text:S }}
+}: dump |> std/string:split(s: dump, sep: " ")
     ! piece tok |> std/string:from-page(text: tok)
         | ok h |> std/string:parse-int(s: h)
             | ok n |> if(pstate.have == 0)

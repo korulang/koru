@@ -13,7 +13,7 @@ import std/string
 import std/store
 
 std/store:new(log, capacity: 8) { label: *std/string:String<std/string:instance!> }
-! inserted { label } |> std/string:read(s: label): text |> std/io:print.ln("logged: {{ text:s }}")
+! inserted { label } |> std/io:print.ln("logged: {{ label:S }}")
 
 std/string:from-page(text: "hello")
 | ok s |> std/string:take(s): owned |> std/store:insert(log) { label: owned }

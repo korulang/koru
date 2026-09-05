@@ -4,5 +4,5 @@ import std/string
 import std/io
 
 std/string:from-int(n: 42)
-| ok s |> std/string:read(s): text |> std/io:print.ln("{{ text:s }}") |> std/string:free(s)
+| ok s |> std/io:print.ln("{{ s:S }}") |> std/string:free(s)
 | err _ |> _

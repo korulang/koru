@@ -4,8 +4,8 @@
 // element read-only — hand a *String<view> of the still-owned pointer —
 // WITHOUT moving it out. `take` moves out (reissues <instance!>); `query`
 // borrows and leaves the store owning <instance!>. The projected `name`
-// binds the <view>; std/string:read accepts <view|instance> (string.kz:106)
-// so the borrow reads cleanly. Teardown still auto-frees every live element.
+// binds the <view>; handle interpolation (`{{ e.name:S }}`, 610_007) reads
+// it cleanly. Teardown still auto-frees every live element.
 //
 // Currently WALLED at store.kz:1361 ("query over a store with an owned-string
 // column is a later rung"). This pins the TARGET behavior — MUST_RUN, red
@@ -18,7 +18,7 @@ import std/store
 std/store:new(names, capacity: 8) { name: *std/string:String<std/string:instance!> }
 
 std/store:rule(names)
-! row e |> std/string:read(s: e.name): text |> std/io:print.ln("{{ text:s }}")
+! row e |> std/io:print.ln("{{ e.name:S }}")
 
 std/string:from-page(text: "hello")
 | ok s |> std/string:take(s): owned |> std/store:insert(names) { name: owned }

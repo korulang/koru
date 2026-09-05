@@ -66,6 +66,7 @@ pub const ErrorCode = enum(u16) {
     KORU092, // Point-free thread has no home — the next step is still incomplete and none of its unfilled parameters accepts the `-> T` the previous stage produced (210_176)
     KORU093, // Point-free thread cannot elect — several unfilled parameters of the next step accept its type; write one of them (210_176)
     KORU094, // A flow's chain does not produce its declared `-> T` — the last step returns a different type, or returns nothing at all (210_184)
+    KORU095, // A `-> string` bare return projects a parameter's memory (`s.data`) — the borrow outlives nothing trackable; borrows flow down, never up (610_007, ruled 2026-09-05)
 
     // Parser errors
     PARSE001, // Unexpected end of file
@@ -136,6 +137,7 @@ pub const ErrorCode = enum(u16) {
     KORU171, // A std/vendor:bindings declaration is malformed, or does not match the tree it pins — unpinned source, a missing vendor.lock entry, an unreadable vendored tree, a file that drifted from its recorded hash, a line that is not `module: ./path`, or a module that already resolves somewhere else. One code for the class; the message names the binding and the file. Emitted by koru_std/vendor.kz for the tree faults, and by src/parser.zig for the declaration faults, because the same block also redirects the import and so must act before the imports it governs are resolved.
     KORU172, // A std/compiler:paths declaration is malformed — a line that is not `alias: path`, an alias that is not a usable import alias, the reserved alias `main`, or a `{{ flag:name }}` whose flag was not supplied. One code for the class; the message names the fault. Emitted by src/parser.zig at parse time, because the declaration must act before the imports it governs are resolved.
     KORU173, // A std/types.proto declaration or a derived-container call site is malformed — a duplicate proto name (two registrants), an unusable entry name, an unsupported field type, an unresolvable element reference, or a container op whose handle is not bound by std/list:new in the same flow. One code for the class; the message names the fault. Emitted by koru_std/types.kz and koru_std/list.kz — registered in the transform-refusal family (all refusals land as comptime @compileError nodes).
+    KORU174, // The compile memory budget fired — the backend's compilation exceeded --compile-mem-mb / KORU_COMPILE_MEM_MB (default 4096 MB) and the compiler REFUSED instead of ballooning until the OS SIGKILLed it. Nothing was miscompiled and nothing ran; the message names the budget and the escape hatch. Emitted by the generated backend's BudgetAllocator (src/main.zig template), which wraps the compile arena and every pass allocator.
 
     // Module structure errors
     KORU200, // Ambiguous module structure (both foo.kz and foo/ exist)

@@ -11,9 +11,9 @@
 //   - take consuming <!view>:    koru_std/string.kz:74
 //   - take producing instance!:  koru_std/string.kz:75
 //   - from-page/take flow shape: 610_002_string_ownership/input.kz:5-11
-//   - use-after-discharge shape: 610_005_reject_use_after_free/input.kz:6 (free then read)
+//   - use-after-discharge shape: 610_005_reject_use_after_free/input.kz:6 (free then len)
 import std/string
 
 std/string:from-page(text: "hello")
-| ok s |> std/string:take(s): owned |> std/string:read(s): _ |> std/string:free(s: owned)
+| ok s |> std/string:take(s): owned |> std/string:len(s): _ |> std/string:free(s: owned)
 | err _ |> _

@@ -28,4 +28,4 @@ std/string:from-page(text: "buy milk")
 
 for(0..2)
 ! each _ |> std/store:query(todos)
-    ! query e |> std/string:read(s: e.label): t |> std/io:print.ln("{{ t:s }} [{{ e.done:d }}]")
+    ! query e |> std/io:print.ln("{{ e.label:S }} [{{ e.done:d }}]")
