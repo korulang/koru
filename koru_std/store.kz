@@ -433,9 +433,35 @@ fn flowParamNamesStore(alloc: std.mem.Allocator, prog: *const ast_find.Program, 
 /// Pointers, not copies, so a site may take `&pi.flow` and keep it, and so the
 /// two mutating walks can `@constCast` a real program node rather than a
 /// temporary.
+///
+/// The result is MEMOIZED per items-epoch. Flattening is O(program); the store
+/// machinery calls it per field, per leaf, per interceptor arm — thousands of
+/// times per compile — and every result lands on the compile arena, which frees
+/// nothing until exit. That product is what SIGKILLed monolithic programs
+/// (≈9.7 GB live for the 003_ecs benchmark). The memo keeps ONE flatten per
+/// items-epoch. The key is the items SLICE HEADER (buffer pointer + length):
+/// every structural write-back — appendItems, boxed replacements, site splices —
+/// allocates a fresh top-level array, so minted declarations are never hidden
+/// behind a stale list, and a write path that mutated the header in place would
+/// serve stale structure (none exists; this is the memo's contract). Content
+/// mutations (rewrites that @constCast nodes in place) are visible through the
+/// cached pointers and need no invalidation. Returned slices are never freed or
+/// mutated, only abandoned, so a nested call that evicts the cache cannot
+/// invalidate an outer caller's iteration.
+var flat_memo_buf_ptr: usize = 0;
+var flat_memo_buf_len: usize = std.math.maxInt(usize);
+var flat_memo_out: []const *const ast_find.Item = &.{};
+var flat_memo_lock: std.Thread.Mutex = .{};
+
 fn flatItems(alloc: std.mem.Allocator, items: []const ast_find.Item) []const *const ast_find.Item {
+    flat_memo_lock.lock();
+    defer flat_memo_lock.unlock();
+    if (flat_memo_buf_ptr == @intFromPtr(items.ptr) and flat_memo_buf_len == items.len) return flat_memo_out;
     var out = std.ArrayList(*const ast_find.Item){};
     collectFlat(alloc, items, &out);
+    flat_memo_buf_ptr = @intFromPtr(items.ptr);
+    flat_memo_buf_len = items.len;
+    flat_memo_out = out.items;
     return out.items;
 }
 

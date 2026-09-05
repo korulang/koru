@@ -1,0 +1,1 @@
+error[KORU174]: compilation exceeded its compile memory budget (1 MB)

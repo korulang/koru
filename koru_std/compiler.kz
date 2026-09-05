@@ -2605,7 +2605,7 @@ const joinPathAlloc = struct {
 
     // Create shape checker
     var checker = shape_checker.ShapeChecker.init(
-        std.heap.page_allocator,
+        ctx.allocator,
         reporter
     ) catch {
         // Report error to context
@@ -2692,7 +2692,7 @@ const joinPathAlloc = struct {
 
     // Create flow checker
     var checker = flow_checker.FlowChecker.init(
-        std.heap.page_allocator,
+        ctx.allocator,
         reporter
     ) catch {
         // Report error to context
@@ -2773,7 +2773,7 @@ const joinPathAlloc = struct {
 
     // Create phantom semantic checker (signature-only entry point)
     var checker = phantom_semantic_checker.PhantomSemanticChecker.init(
-        std.heap.page_allocator,
+        ctx.allocator,
         reporter
     ) catch {
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
@@ -2846,7 +2846,7 @@ const joinPathAlloc = struct {
 
     // Create phantom semantic checker (argument-only entry point)
     var checker = phantom_semantic_checker.PhantomSemanticChecker.init(
-        std.heap.page_allocator,
+        ctx.allocator,
         reporter
     ) catch {
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
@@ -2985,7 +2985,7 @@ const joinPathAlloc = struct {
 
     // Create inserter with warn_mode flag
     var inserter = auto_discharge_inserter.AutoDischargeInserter.init(
-        std.heap.page_allocator,
+        ctx.allocator,
         reporter,
         warn_mode,
         strict_panic_branches,
@@ -3064,7 +3064,7 @@ const joinPathAlloc = struct {
 
     // Create phantom semantic checker
     var checker = phantom_semantic_checker.PhantomSemanticChecker.init(
-        std.heap.page_allocator,
+        ctx.allocator,
         reporter
     ) catch {
         // Report error to context
@@ -3139,7 +3139,7 @@ const joinPathAlloc = struct {
 
     const dead_strip = @import("dead_strip");
 
-    var pass = dead_strip.DeadStripPass.init(std.heap.page_allocator);
+    var pass = dead_strip.DeadStripPass.init(ctx.allocator);
     defer pass.deinit();
     // A library keeps its exports; a program keeps what it calls. The flag
     // rides CompilerEnv for the same reason `lang` does — this pass runs

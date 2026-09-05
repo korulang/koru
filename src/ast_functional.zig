@@ -288,6 +288,19 @@ const ReplaceContResult = struct {
     conts: []ast.Continuation,
 };
 
+/// Write-back rebuilds share UNCHANGED items by value. The new items array is
+/// fresh, but an item the rebuild did not touch is copied as a bare struct and
+/// keeps pointing at the same underlying nodes as the abandoned program. This
+/// is the O(change) rebuild contract: deep-cloning every unchanged item per
+/// write-back was O(program) per transformed site and is what made even a
+/// 10-line store program pay ~2.6 GB (the 003_ecs SIGKILL path, via
+/// AutoDischargeInserter's per-flow rebuilds). Sharing is safe here because
+/// the site runner re-derives site refs from the CURRENT program on every walk
+/// and abandons the previous program after each splice; it already
+/// shallow-copies items when building site programs (transform_pass_runner.zig
+/// spliceSiteProgram); and the metacircular pipeline already accepts in-place
+/// mutation of the writable seed (compiler.kz context-create). A caller that
+/// needs EXCLUSIVE ownership of unchanged items must deep-clone them itself.
 fn replaceFlowInItems(
     allocator: std.mem.Allocator,
     items: []const ast.Item,
@@ -320,12 +333,12 @@ fn replaceFlowInItems(
                 };
                 found = true;
             } else {
-                // Not found - clone the item
-                new_items[i] = try cloneItem(allocator, item);
+                // Not found - share the item unchanged
+                new_items[i] = item.*;
             }
         } else {
-            // Clone the item unchanged
-            new_items[i] = try cloneItem(allocator, item);
+            // Share the item unchanged
+            new_items[i] = item.*;
         }
     }
 
@@ -351,7 +364,7 @@ fn replaceInvocationNodeInItems(
                     };
                     found = true;
                 } else {
-                    new_items[i] = try cloneItem(allocator, item);
+                    new_items[i] = item.*;
                 }
             },
             .module_decl => |*mod| {
@@ -369,11 +382,11 @@ fn replaceInvocationNodeInItems(
                     };
                     found = true;
                 } else {
-                    new_items[i] = try cloneItem(allocator, item);
+                    new_items[i] = item.*;
                 }
             },
             else => {
-                new_items[i] = try cloneItem(allocator, item);
+                new_items[i] = item.*;
             },
         }
     }
@@ -409,7 +422,7 @@ fn replaceInvocationNodeAndContinuationsInItems(
                     };
                     found = true;
                 } else {
-                    new_items[i] = try cloneItem(allocator, item);
+                    new_items[i] = item.*;
                 }
             },
             .module_decl => |*mod| {
@@ -434,11 +447,11 @@ fn replaceInvocationNodeAndContinuationsInItems(
                     };
                     found = true;
                 } else {
-                    new_items[i] = try cloneItem(allocator, item);
+                    new_items[i] = item.*;
                 }
             },
             else => {
-                new_items[i] = try cloneItem(allocator, item);
+                new_items[i] = item.*;
             },
         }
     }
@@ -555,7 +568,7 @@ fn replaceInvocationInItems(
                     };
                     found = true;
                 } else {
-                    new_items[i] = try cloneItem(allocator, item);
+                    new_items[i] = item.*;
                 }
             },
             .module_decl => |*mod| {
@@ -573,11 +586,11 @@ fn replaceInvocationInItems(
                     };
                     found = true;
                 } else {
-                    new_items[i] = try cloneItem(allocator, item);
+                    new_items[i] = item.*;
                 }
             },
             else => {
-                new_items[i] = try cloneItem(allocator, item);
+                new_items[i] = item.*;
             },
         }
     }
