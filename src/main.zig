@@ -7753,15 +7753,30 @@ pub fn main() !void {
         if (zig_reqs.len > 0) {
             const zon_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build.zig.zon" });
             defer allocator.free(zon_path);
-            // When compiling in-place (output_dir == "." or empty), basename
-            // produces "." which Zig rejects as a package name. Fall back to
-            // the input file's basename (without .kz) in that case.
-            const dir_basename = std.fs.path.basename(output_dir);
-            const project_name = if (dir_basename.len == 0 or std.mem.eql(u8, dir_basename, "."))
-                std.fs.path.stem(std.fs.path.basename(input_file orelse "koru_app"))
-            else
-                dir_basename;
-            try emit_package_files.emitBuildZigZon(allocator, zig_reqs, zon_path, project_name);
+            // The zon is shared by every entry point built into this directory,
+            // so the name is resolved per DIRECTORY (cwd basename when building
+            // in place), never per input file — a per-entry name folds into
+            // zig's fingerprint and rewrites it on every build (hole 5).
+            const cwd_path = std.process.getCwdAlloc(allocator) catch null;
+            defer if (cwd_path) |p| allocator.free(p);
+            const cwd_basename = if (cwd_path) |p| std.fs.path.basename(p) else "";
+            const project_name = emit_package_files.resolveProjectName(output_dir, cwd_basename, input_file);
+            // Re-emit a previously-resolved fingerprint when one is on disk.
+            // Zig accepts previously-issued fingerprints but mints a fresh
+            // nondeterministic low half on every probe, so re-probing
+            // unconditionally can never converge; the probe below still
+            // replaces the value if it went stale.
+            var kept_buf: ?[]u8 = null;
+            defer if (kept_buf) |b| allocator.free(b);
+            var kept_fp: ?[]const u8 = null;
+            if (std.fs.cwd().openFile(zon_path, .{})) |existing| {
+                defer existing.close();
+                if (existing.readToEndAlloc(allocator, 64 * 1024)) |old| {
+                    kept_buf = old;
+                    kept_fp = emit_package_files.existingFingerprint(old);
+                } else |_| {}
+            } else |_| {}
+            const zon_wrote = try emit_package_files.emitBuildZigZon(allocator, zig_reqs, zon_path, project_name, kept_fp);
 
             // Zig 0.15 requires a valid .fingerprint in build.zig.zon.
             // Run a probe build to extract the correct fingerprint from zig's error message,
@@ -7775,6 +7790,7 @@ pub fn main() !void {
             defer allocator.free(probe_result.stderr);
 
             // Look for "use this value: 0x..." in stderr (Zig 0.15 fingerprint error)
+            var zon_patched = false;
             if (std.mem.indexOf(u8, probe_result.stderr, "use this value: 0x")) |idx| {
                 const hex_start = idx + "use this value: ".len;
                 // Find end of hex value (next non-hex char)
@@ -7784,27 +7800,40 @@ pub fn main() !void {
                 {}
                 const fingerprint_str = probe_result.stderr[hex_start..hex_end];
 
-                // Read the zon, replace the placeholder fingerprint, write it back
+                // Read the zon and replace the emitted fingerprint value (the
+                // 0xDEAD placeholder or a kept-but-stale value) with the
+                // probed one.
                 const zon_file = try std.fs.cwd().openFile(zon_path, .{});
                 const zon_content = try zon_file.readToEndAlloc(allocator, 64 * 1024);
                 zon_file.close();
                 defer allocator.free(zon_content);
 
-                if (std.mem.indexOf(u8, zon_content, "0xDEAD")) |placeholder_pos| {
+                const fp_marker = ".fingerprint = ";
+                if (std.mem.indexOf(u8, zon_content, fp_marker)) |mp| {
+                    const val_start = mp + fp_marker.len;
+                    var val_end = val_start;
+                    while (val_end < zon_content.len and
+                        (std.ascii.isHex(zon_content[val_end]) or zon_content[val_end] == 'x')) : (val_end += 1)
+                    {}
                     var patched = try std.ArrayList(u8).initCapacity(allocator, zon_content.len + 20);
                     defer patched.deinit(allocator);
                     const w = patched.writer(allocator);
-                    try w.writeAll(zon_content[0..placeholder_pos]);
+                    try w.writeAll(zon_content[0..val_start]);
                     try w.writeAll(fingerprint_str);
-                    try w.writeAll(zon_content[placeholder_pos + "0xDEAD".len ..]);
+                    try w.writeAll(zon_content[val_end..]);
 
                     const zon_out = try std.fs.cwd().createFile(zon_path, .{});
                     defer zon_out.close();
                     try zon_out.writeAll(patched.items);
+                    zon_patched = true;
                 }
             }
 
-            try printStdout(allocator, "✓ Generated {s}\n", .{zon_path});
+            if (zon_wrote or zon_patched) {
+                try printStdout(allocator, "✓ Generated {s}\n", .{zon_path});
+            } else {
+                try printStdout(allocator, "✓ {s} unchanged\n", .{zon_path});
+            }
         }
 
         // Optionally run package managers if --install-packages flag is set

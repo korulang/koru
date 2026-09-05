@@ -164,6 +164,40 @@ fn parseJsonField(source: []const u8, field: []const u8) []const u8 {
     return "";
 }
 
+/// Resolve the package name for an emitted build.zig.zon.
+/// The zon lives in the output directory and is shared by every entry point
+/// built there, so the name must be stable per DIRECTORY, not per input file:
+/// compiling `live.k` then `headed.k` in one directory must not flip `.name`
+/// (zig folds the name into `.fingerprint`, so a flip rewrites the fingerprint
+/// and dirties the tree on every build — hole 5).
+/// `cwd_basename` is the basename of the process working directory, used when
+/// `output_dir` is in-place ("." or empty); the input file stem is the last
+/// resort when neither directory yields a name.
+pub fn resolveProjectName(output_dir: []const u8, cwd_basename: []const u8, input_file: ?[]const u8) []const u8 {
+    const dir_basename = std.fs.path.basename(output_dir);
+    if (dir_basename.len > 0 and !std.mem.eql(u8, dir_basename, ".")) return dir_basename;
+    if (cwd_basename.len > 0 and !std.mem.eql(u8, cwd_basename, ".") and !std.mem.eql(u8, cwd_basename, "/")) return cwd_basename;
+    return std.fs.path.stem(std.fs.path.basename(input_file orelse "koru_app"));
+}
+
+/// Extract the `.fingerprint = 0x...` value from an existing build.zig.zon.
+/// Returns null when absent, malformed, or the 0xDEAD placeholder (which means
+/// "never resolved", not a fingerprint). The caller re-emits a kept fingerprint
+/// and lets zig's probe reject it if it went stale, rather than minting a fresh
+/// one every build — zig accepts previously-issued fingerprints, but mints a
+/// nondeterministic low half on each fresh probe, so re-probing unconditionally
+/// can never converge.
+pub fn existingFingerprint(zon_content: []const u8) ?[]const u8 {
+    const marker = ".fingerprint = 0x";
+    const idx = std.mem.indexOf(u8, zon_content, marker) orelse return null;
+    var end = idx + marker.len;
+    while (end < zon_content.len and std.ascii.isHex(zon_content[end])) : (end += 1) {}
+    if (end == idx + marker.len) return null;
+    const value = zon_content[idx + ".fingerprint = ".len .. end];
+    if (std.mem.eql(u8, value, "0xDEAD")) return null;
+    return value;
+}
+
 /// Emit build.zig.zon for Zig package manager dependencies
 /// Takes Source parameters (JSON) like:
 ///   { "name": "vaxis", "url": "git+https://...", "hash": "vaxis-0.5.1-..." }
@@ -179,12 +213,17 @@ fn parseJsonField(source: []const u8, field: []const u8) []const u8 {
 ///       },
 ///       .paths = .{""},
 ///   }
+/// `fingerprint` is the previously-resolved value to keep, or null to emit the
+/// 0xDEAD placeholder for the probe-and-patch pass. Returns true when the file
+/// was written, false when the existing content was already identical (so a
+/// no-change build leaves the tree untouched).
 pub fn emitBuildZigZon(
     allocator: std.mem.Allocator,
     zig_requirements: []const []const u8,
     output_path: []const u8,
     project_name: []const u8,
-) !void {
+    fingerprint: ?[]const u8,
+) !bool {
     var content = try std.ArrayList(u8).initCapacity(allocator, 0);
     defer content.deinit(allocator);
 
@@ -209,9 +248,14 @@ pub fn emitBuildZigZon(
     try writer.writeAll("    .version = \"0.0.0\",\n");
 
     // Zig 0.15 requires a .fingerprint for package identity.
-    // We emit a placeholder that main.zig will fix up by running zig build once
-    // to get the correct value from the error message.
-    try writer.writeAll("    .fingerprint = 0xDEAD,\n");
+    // A kept value from the previous zon is re-emitted verbatim; the probe
+    // pass rejects it if it went stale. Null means "never resolved": emit the
+    // placeholder the probe-and-patch pass replaces.
+    if (fingerprint) |fp| {
+        try writer.print("    .fingerprint = {s},\n", .{fp});
+    } else {
+        try writer.writeAll("    .fingerprint = 0xDEAD,\n");
+    }
 
     try writer.writeAll("    .dependencies = .{\n");
 
@@ -233,9 +277,21 @@ pub fn emitBuildZigZon(
     try writer.writeAll("    .paths = .{\"\"},\n");
     try writer.writeAll("}\n");
 
+    // A no-change build must leave the tree untouched: skip the write when the
+    // existing file is already byte-identical.
+    if (std.fs.cwd().openFile(output_path, .{})) |existing| {
+        defer existing.close();
+        const old = existing.readToEndAlloc(allocator, 1024 * 1024) catch null;
+        if (old) |old_content| {
+            defer allocator.free(old_content);
+            if (std.mem.eql(u8, old_content, content.items)) return false;
+        }
+    } else |_| {}
+
     const file = try std.fs.cwd().createFile(output_path, .{});
     defer file.close();
     try file.writeAll(content.items);
+    return true;
 }
 
 // Tests
@@ -372,7 +428,8 @@ test "emit build.zig.zon with single dependency" {
     const output_path = "test_build.zig.zon";
     defer std.fs.cwd().deleteFile(output_path) catch {};
 
-    try emitBuildZigZon(allocator, &requirements, output_path, "hello_vaxis");
+    const wrote = try emitBuildZigZon(allocator, &requirements, output_path, "hello_vaxis", null);
+    try std.testing.expect(wrote);
 
     const file = try std.fs.cwd().openFile(output_path, .{});
     defer file.close();
@@ -400,7 +457,8 @@ test "emit build.zig.zon with multiple dependencies" {
     const output_path = "test_build_multi.zig.zon";
     defer std.fs.cwd().deleteFile(output_path) catch {};
 
-    try emitBuildZigZon(allocator, &requirements, output_path, "myproject");
+    const wrote = try emitBuildZigZon(allocator, &requirements, output_path, "myproject", "0x1234abcd");
+    try std.testing.expect(wrote);
 
     const file = try std.fs.cwd().openFile(output_path, .{});
     defer file.close();
@@ -411,6 +469,50 @@ test "emit build.zig.zon with multiple dependencies" {
     try std.testing.expect(std.mem.indexOf(u8, content, ".vaxis = .{") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, ".zap = .{") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, ".name = .myproject,") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, ".fingerprint = 0x1234abcd,") != null);
+}
+
+test "resolveProjectName is stable per directory, not per entry file" {
+    // An explicit output directory names the package.
+    try std.testing.expectEqualStrings("backend", resolveProjectName("backend", "whatever", "live.kz"));
+    try std.testing.expectEqualStrings("backend", resolveProjectName("/tmp/build/backend", "whatever", null));
+    // In-place builds ("." or empty) take the working directory's basename —
+    // two entry files in one directory share one identity (hole 5).
+    try std.testing.expectEqualStrings("headless", resolveProjectName(".", "headless", "live.kz"));
+    try std.testing.expectEqualStrings("headless", resolveProjectName(".", "headless", "headed.k"));
+    try std.testing.expectEqualStrings("headless", resolveProjectName("", "headless", "session.k"));
+    // Only when no directory yields a name does the input stem serve.
+    try std.testing.expectEqualStrings("live", resolveProjectName(".", "", "live.kz"));
+    try std.testing.expectEqualStrings("koru_app", resolveProjectName(".", "", null));
+}
+
+test "existingFingerprint keeps resolved values, refuses the placeholder" {
+    try std.testing.expectEqualStrings("0x9aa61d90bb082983", existingFingerprint(
+        ".{\n    .name = .headless,\n    .fingerprint = 0x9aa61d90bb082983,\n}\n",
+    ).?);
+    try std.testing.expect(existingFingerprint(
+        ".{\n    .name = .headless,\n    .fingerprint = 0xDEAD,\n}\n",
+    ) == null);
+    try std.testing.expect(existingFingerprint(".{\n    .name = .x,\n}\n") == null);
+}
+
+test "emit build.zig.zon skips identical rewrites" {
+    const allocator = std.testing.allocator;
+
+    const requirements = [_][]const u8{
+        \\{ "name": "vaxis", "url": "git+https://example.com/vaxis#abc", "hash": "hash1" }
+    };
+
+    const output_path = "test_build_idempotent.zig.zon";
+    defer std.fs.cwd().deleteFile(output_path) catch {};
+
+    // First emit writes; second emit with identical inputs skips.
+    try std.testing.expect(try emitBuildZigZon(allocator, &requirements, output_path, "stable", "0xaaaa"));
+    try std.testing.expect(!try emitBuildZigZon(allocator, &requirements, output_path, "stable", "0xaaaa"));
+    // A changed name or fingerprint is a real change and writes again.
+    try std.testing.expect(try emitBuildZigZon(allocator, &requirements, output_path, "other", "0xaaaa"));
+    try std.testing.expect(try emitBuildZigZon(allocator, &requirements, output_path, "other", "0xbbbb"));
+    try std.testing.expect(!try emitBuildZigZon(allocator, &requirements, output_path, "other", "0xbbbb"));
 }
 
 test "parseJsonField extracts values" {
