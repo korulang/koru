@@ -501,3 +501,22 @@ What holds:
 What would `correct` this: a lone store that merges two placements of
 the same leaf name into one column, or a set that does not fold
 `str: Strength` across its members.
+
+### The set is the authority, not a second seed (2026-09-05b)
+
+Landing the section above (690_287 extended with an unguarded fold
+query) forced a precedence ruling the design left implicit. A store
+named by a set resolves its kind members from the set — set outranks
+the `new`-seed twin everywhere kinds are read: members, schemas,
+write-demand, home. The seed stays as fallback for lone stores, which
+keep packing (690_285). The prior mechanism had only one source and so
+never had to choose; two sources made precedence the belief, and
+"set wins" is the ruling.
+
+Second fact the section understated: over a set, a query with NO kind
+guard is legal and folds every member — polymorphism by omitting the
+guard. This does not repeal the unnarrowed-read refusal (690_282);
+guards narrow kinds on a kinded store, and no guard over a set means
+all kinds. What would `correct` this: an unguarded set query that
+silently skips a member kind, or a set-and-seed store whose members
+come from the seed.

@@ -529,6 +529,7 @@ fn kindScanProg(items: []const ast_find.Item, scope: []const u8, want: []const u
 /// marker (post-erase twin) preferred, else the live `new` seed's
 /// compound-typed fields. Null when the store declares no members.
 fn storeKindMembers(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const []const u8 {
+    if (storeSetMembers(alloc, prog, store)) |mems| return mems;
     const struct_literal = @import("struct_literal");
     for (flatItems(alloc, prog.items)) |pi| {
         if (pi.* != .inline_code) continue;
@@ -670,6 +671,18 @@ fn storeScopeOf(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: 
 /// members. Used by kinded insert (own-leaves + zero-fill) and by
 /// refuse-unless-narrowed reads.
 fn storeMemberSchemas(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const StoreMemberSchema {
+    if (storeSetMembers(alloc, prog, store)) |mems| {
+        const schemas = alloc.alloc(StoreMemberSchema, mems.len) catch return null;
+        for (mems, 0..) |m, mi| {
+            const cols = storeMemberColumns(alloc, prog, m) orelse &[_]StoreColInfo{};
+            const leaves = alloc.alloc(StoreMemberLeaf, cols.len) catch return null;
+            for (cols, 0..) |c, ci| {
+                leaves[ci] = .{ .name = c.name, .typ = c.type };
+            }
+            schemas[mi] = .{ .name = m, .leaves = leaves };
+        }
+        return schemas;
+    }
     const members = storeKindMembers(alloc, prog, store) orelse return null;
     if (members.len == 0) return null;
     const scope = storeScopeOf(alloc, prog, store);
@@ -771,9 +784,10 @@ fn ownersOfLeaf(alloc: std.mem.Allocator, schemas: []const StoreMemberSchema, co
 
 fn zeroFillForType(typ: []const u8) ?[]const u8 {
     if (std.mem.startsWith(u8, typ, "*") or std.mem.indexOfScalar(u8, typ, '<') != null) return null;
-    if (std.mem.eql(u8, typ, "i64") or std.mem.eql(u8, typ, "i32")) return "0";
-    if (std.mem.startsWith(u8, typ, "char[")) return "\"\"";
-    return "0.0";
+    if (std.mem.eql(u8, typ, "f64") or std.mem.eql(u8, typ, "f32")) return "0.0";
+    if (std.mem.eql(u8, typ, "bool")) return "false";
+    if (std.mem.startsWith(u8, typ, "char[") or std.mem.eql(u8, typ, "String")) return "\"\"";
+    return "0";
 }
 
 fn guardNegatedAt(text: []const u8, start: usize) bool {
@@ -916,6 +930,7 @@ fn privateReadRefusal(
 /// and inside continuations (nested inserts count: conditional insertion of a
 /// kind is still asking).
 fn storeKindDemanded(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) bool {
+    if (storeSetMembers(alloc, prog, store) != null) return true;
     // A hand-written user column named kind (690_273's manual tag) is NOT
     // demand: its values ride generated calls as `kind:` args,
     // indistinguishable by name alone. Demand needs the vocabulary too.
@@ -1114,7 +1129,44 @@ fn collectFlat(alloc: std.mem.Allocator, items: []const ast_find.Item, out: *std
 fn storeHome(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const u8 {
     const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
     if (findSynthDecl(prog.items, apply_name)) |ed| return ed.path.module_qualifier;
-    return storeNewHomeIn(prog.items, store, null);
+    if (storeNewHomeIn(prog.items, store, null)) |m| return m;
+    if (storeSetHomeIn(prog.items, store, null)) |m| return m;
+    return null;
+}
+
+fn storeSetHomeIn(its: []const ast_find.Item, want: []const u8, enclosing: ?[]const u8) ?[]const u8 {
+    for (its) |*pi| {
+        if (pi.* == .flow) {
+            if (isStoreSetFor(&pi.flow, want)) return enclosing orelse pi.flow.module;
+        } else if (pi.* == .inline_code) {
+            const code = pi.inline_code.code;
+            const prefix = "// store-set ";
+            if (std.mem.startsWith(u8, code, prefix)) {
+                if (std.mem.indexOfScalar(u8, code, ':')) |colon| {
+                    const nm = std.mem.trim(u8, code[prefix.len..colon], " \t");
+                    if (std.mem.eql(u8, nm, want)) return enclosing orelse pi.inline_code.module;
+                }
+            }
+        } else if (pi.* == .module_decl) {
+            if (storeSetHomeIn(pi.module_decl.items, want, pi.module_decl.logical_name)) |m| return m;
+        }
+    }
+    return null;
+}
+
+fn isStoreSetFor(f: *const ast_find.Flow, want: []const u8) bool {
+    const inv = f.inv();
+    if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "set")) return false;
+    const mq = inv.path.module_qualifier orelse return false;
+    if (!std.mem.eql(u8, mq, "std.store")) return false;
+    for (inv.args) |a| {
+        if (std.mem.eql(u8, a.name, "expr")) {
+            var v = a.value;
+            if (v.len >= 2 and v[0] == '"') v = v[1 .. v.len - 1];
+            return std.mem.eql(u8, v, want);
+        }
+    }
+    return false;
 }
 
 /// `enclosing` is the containing module's logical name; top-level flows keep
@@ -1204,9 +1256,11 @@ fn storeAllNames(alloc: std.mem.Allocator, prog: *const ast_find.Program) []cons
                     if (n.* == .invocation) {
                         const inv = &n.invocation;
                         if (inv.path.module_qualifier) |mq| {
-                            if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "new")) {
-                                for (inv.args) |a| {
-                                    if (std.mem.eql(u8, a.name, "expr")) names.append(alloc, storeStripQuotes(a.value)) catch unreachable;
+                            if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1) {
+                                if (std.mem.eql(u8, inv.path.segments[0], "new") or std.mem.eql(u8, inv.path.segments[0], "set")) {
+                                    for (inv.args) |a| {
+                                        if (std.mem.eql(u8, a.name, "expr")) names.append(alloc, storeStripQuotes(a.value)) catch unreachable;
+                                    }
                                 }
                             }
                         }
@@ -1218,10 +1272,96 @@ fn storeAllNames(alloc: std.mem.Allocator, prog: *const ast_find.Program) []cons
                     names.append(alloc, ed.path.segments[0]["__store_apply_".len..]) catch unreachable;
                 }
             },
+            .inline_code => |*ic| {
+                const prefix = "// store-set ";
+                if (std.mem.startsWith(u8, ic.code, prefix)) {
+                    if (std.mem.indexOfScalar(u8, ic.code, ':')) |colon| {
+                        const nm = std.mem.trim(u8, ic.code[prefix.len..colon], " \t");
+                        names.append(alloc, alloc.dupe(u8, nm) catch unreachable) catch unreachable;
+                    }
+                }
+            },
             else => {},
         }
     }
     return names.toOwnedSlice(alloc) catch unreachable;
+}
+
+const StoreColInfo = struct {
+    name: []const u8,
+    type: []const u8,
+    module_path: ?[]const u8,
+    phantom: ?[]const u8,
+};
+
+fn storeSetMembers(alloc: std.mem.Allocator, prog: *const ast_find.Program, set_name: []const u8) ?[]const []const u8 {
+    for (flatItems(alloc, prog.items)) |pi| {
+        if (pi.* == .inline_code) {
+            const code = pi.inline_code.code;
+            const prefix = "// store-set ";
+            if (!std.mem.startsWith(u8, code, prefix)) continue;
+            const colon = std.mem.indexOfScalar(u8, code, ':') orelse continue;
+            const nm = std.mem.trim(u8, code[prefix.len..colon], " \t");
+            if (!std.mem.eql(u8, nm, set_name)) continue;
+            var out = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
+            var toks = std.mem.splitScalar(u8, code[colon + 1 ..], ',');
+            while (toks.next()) |raw| {
+                const m = std.mem.trim(u8, raw, " \t\r\n");
+                if (m.len == 0) continue;
+                out.append(alloc, alloc.dupe(u8, m) catch unreachable) catch unreachable;
+            }
+            return out.toOwnedSlice(alloc) catch unreachable;
+        } else if (pi.* == .flow) {
+            const f = &pi.flow;
+            const inv = f.inv();
+            if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "set")) continue;
+            const mq = inv.path.module_qualifier orelse continue;
+            if (!std.mem.eql(u8, mq, "std.store")) continue;
+            var hit = false;
+            var source_text: ?[]const u8 = null;
+            for (inv.args) |a| {
+                if (std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, storeStripQuotes(a.value), set_name)) hit = true;
+                if (std.mem.eql(u8, a.name, "source")) source_text = if (a.source_value) |sv| sv.text else a.value;
+            }
+            if (!hit or source_text == null) continue;
+            var out = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
+            var toks = std.mem.tokenizeAny(u8, source_text.?, "\n\r,\t {}");
+            while (toks.next()) |raw| {
+                const m = std.mem.trim(u8, raw, " \t\r\n,{}");
+                if (m.len == 0) continue;
+                out.append(alloc, alloc.dupe(u8, m) catch unreachable) catch unreachable;
+            }
+            return out.toOwnedSlice(alloc) catch unreachable;
+        }
+    }
+    return null;
+}
+
+fn storeMemberColumns(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const StoreColInfo {
+    const insert_name = std.fmt.allocPrint(alloc, "__store_insert_{s}", .{store}) catch unreachable;
+    if (findSynthDecl(prog.items, insert_name)) |ed| {
+        var count: usize = 0;
+        for (ed.input.fields) |f| {
+            if (std.mem.eql(u8, f.name, "__site_line")) continue;
+            if (std.mem.eql(u8, f.name, "kind")) continue;
+            count += 1;
+        }
+        const cols = alloc.alloc(StoreColInfo, count) catch unreachable;
+        var idx: usize = 0;
+        for (ed.input.fields) |f| {
+            if (std.mem.eql(u8, f.name, "__site_line")) continue;
+            if (std.mem.eql(u8, f.name, "kind")) continue;
+            cols[idx] = .{
+                .name = f.name,
+                .type = f.type,
+                .module_path = f.module_path,
+                .phantom = f.phantom,
+            };
+            idx += 1;
+        }
+        return cols;
+    }
+    return null;
 }
 
 /// A store's COLUMNS, in declaration order — every column the SoA cell holds,
@@ -1236,6 +1376,25 @@ fn storeAllNames(alloc: std.mem.Allocator, prog: *const ast_find.Program) []cons
 /// five 695_STORE_TREE tests, which is this concept's own half-rule tell caught
 /// in the act — two functions correct in their own scope, one name apart.
 fn storeFieldOrder(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const []const u8 {
+    if (storeSetMembers(alloc, prog, store)) |mems| {
+        var names = std.ArrayList([]const u8).initCapacity(alloc, 8) catch unreachable;
+        for (mems) |m| {
+            if (storeMemberColumns(alloc, prog, m)) |cols| {
+                for (cols) |c| {
+                    var seen = false;
+                    for (names.items) |prev| {
+                        if (std.mem.eql(u8, prev, c.name)) {
+                            seen = true;
+                            break;
+                        }
+                    }
+                    if (!seen) names.append(alloc, c.name) catch unreachable;
+                }
+            }
+        }
+        names.append(alloc, "kind") catch unreachable;
+        return names.toOwnedSlice(alloc) catch unreachable;
+    }
     const struct_literal = @import("struct_literal");
     const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
     if (findSynthDecl(prog.items, apply_name)) |ed| {
@@ -1381,6 +1540,25 @@ fn storeNameIn(xs: []const []const u8, n: []const u8) bool {
     return false;
 }
 
+fn isPrecededByIs(text: []const u8, idx: usize) bool {
+    var p = idx;
+    while (p > 0 and (text[p - 1] == ' ' or text[p - 1] == '\t')) p -= 1;
+    if (p >= 3 and std.mem.eql(u8, text[p - 3 .. p], "not")) {
+        const not_pos = p - 3;
+        if (not_pos == 0 or !storeIdentChar(text[not_pos - 1])) {
+            p = not_pos;
+            while (p > 0 and (text[p - 1] == ' ' or text[p - 1] == '\t')) p -= 1;
+        }
+    }
+    if (p >= 2 and std.mem.eql(u8, text[p - 2 .. p], "is")) {
+        const is_pos = p - 2;
+        if (is_pos == 0 or !storeIdentChar(text[is_pos - 1])) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// `<store>.<field>` → the cell path, boundary-aware, for ONE store.
 ///
 /// `prefix` is the emitted-namespace qualifier the reader needs (`""` when the
@@ -1400,14 +1578,14 @@ fn storeRefsText(alloc: std.mem.Allocator, text: []const u8, name: []const u8, p
     var i: usize = 0;
     while (i < text.len) {
         const at_boundary = ast_find.identBoundaryBefore(text, i);
-        const starts = at_boundary and std.mem.startsWith(u8, text[i..], name);
+        const starts = at_boundary and (i == 0 or text[i - 1] != '.') and std.mem.startsWith(u8, text[i..], name);
         const after = i + name.len;
         if (starts and after < text.len and text[after] == '.') {
             out.appendSlice(alloc, prefix) catch unreachable;
             out.appendSlice(alloc, "__koru_store_") catch unreachable;
             out.appendSlice(alloc, name) catch unreachable;
             i += name.len;
-        } else if (is_identity and expr_ctx[i] and starts and
+        } else if (is_identity and expr_ctx[i] and starts and !isPrecededByIs(text, i) and
             (after >= text.len or (!storeIdentChar(text[after]) and text[after] != '[')))
         {
             out.appendSlice(alloc, prefix) catch unreachable;
@@ -1924,9 +2102,9 @@ fn storeLowerText(
             if (inv.path.segments.len != 1) return false;
             const verb = inv.path.segments[0];
             const mq = inv.path.module_qualifier orelse return false;
-            const types_door = std.mem.eql(u8, verb, "proto") and
+            const types_door = (std.mem.eql(u8, verb, "proto") or std.mem.eql(u8, verb, "default")) and
                 (std.mem.eql(u8, mq, "std.types") or std.mem.eql(u8, mq, "std/types"));
-            const default_door = std.mem.eql(u8, verb, "default") and
+            const default_door = (std.mem.eql(u8, verb, "default") or std.mem.eql(u8, verb, "proto")) and
                 (std.mem.eql(u8, mq, "std.proto") or std.mem.eql(u8, mq, "std/proto"));
             return types_door or default_door;
         }
@@ -1977,80 +2155,106 @@ fn storeLowerText(
         }
     };
     const store_scope_home = TermRef.scopeOfFlow(program, flow);
-    // Union members in seed order (deduped): the kind vocabulary. Filled by
-    // the expansion below; drives the kind tag (ordinals are seed order,
-    // 1-based) and the `// store-kinds` marker insert reads post-erase.
-    var member_names = std.ArrayList([]const u8).initCapacity(allocator, 2) catch unreachable;
-    var member_protos = std.ArrayList([]const u8).initCapacity(allocator, 2) catch unreachable;
-    cell_fields = blk: {
-        var out = std.ArrayList(struct_literal.StructField).initCapacity(allocator, cell_fields.len) catch unreachable;
-        for (cell_fields) |cf| {
-            const peeled0 = struct_literal.peelBaseType(cf.value);
-            const has_default0 = peeled0.type.len != 0;
-            const ftype0 = if (has_default0) peeled0.type else std.mem.trim(u8, cf.value, " ");
-            const member = MemberRef.fieldsOf(program, ftype0, store_scope_home);
-            if (member == null) {
-                out.append(allocator, cf) catch unreachable;
-                continue;
-            }
-            const mname = TermRef.bareName(ftype0);
-            // The kind vocabulary is FIELD names (the store's own namespace),
-            // not proto names: the tag lives in the store, and field names can
-            // distinguish tag-only kinds over one proto (rookie/veteran).
-            var seen_member = false;
-            for (member_names.items) |mn| {
-                if (std.mem.eql(u8, mn, cf.name)) {
-                    seen_member = true;
-                    break;
-                }
-            }
-            if (!seen_member) {
-                member_names.append(allocator, cf.name) catch unreachable;
-                member_protos.append(allocator, mname) catch unreachable;
-            }
-            if (has_default0) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' carries a default — members expand to columns, they hold no value", .{ store_name, mname }) } };
-            }
-            var saw: usize = 0;
-            var toks = std.mem.tokenizeAny(u8, member.?.text, "\n,");
+    const ProtoExpander = struct {
+        const FlatFields = struct {
+            names: [][]const u8,
+            types: [][]const u8,
+        };
+        fn getFlat(alloc: std.mem.Allocator, prog: *const ast.Program, ftype: []const u8, scope_home: []const u8) ?FlatFields {
+            const member = MemberRef.fieldsOf(prog, ftype, scope_home) orelse return null;
+            var names = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
+            var types = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
+            var toks = std.mem.tokenizeAny(u8, member.text, "\n,");
             while (toks.next()) |raw| {
                 const seg = std.mem.trim(u8, raw, " \t\r,");
                 if (seg.len == 0) continue;
                 const colon = std.mem.indexOfScalar(u8, seg, ':') orelse continue;
                 const lname = std.mem.trim(u8, seg[0..colon], " \t");
                 const ltype = std.mem.trim(u8, seg[colon + 1 ..], " \t,");
-                if (lname.len == 0 or ltype.len == 0) continue;
-                saw += 1;
-                const known_scalar_leaf = std.mem.eql(u8, ltype, "i64") or std.mem.eql(u8, ltype, "i32") or
-                    std.mem.eql(u8, ltype, "f64") or std.mem.eql(u8, ltype, "f32");
-                const char_shaped = std.mem.startsWith(u8, ltype, "char[");
-                const owned_shaped = std.mem.startsWith(u8, ltype, "*") or std.mem.indexOfScalar(u8, ltype, '<') != null;
-                if (MemberRef.fieldsOf(program, ltype, member.?.scope) != null) {
-                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' names compound '{s}' — nesting inside store members is a later rung", .{ store_name, mname, ltype }) } };
-                }
-                if (!known_scalar_leaf and !char_shaped and !owned_shaped and !TermRef.isDeclared(program, ltype, member.?.scope)) {
-                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' names unknown '{s}' — a leaf must be a scalar material or a terminal of its home", .{ store_name, mname, ltype }) } };
-                }
-                var folded = false;
-                for (out.items) |prev| {
-                    if (!std.mem.eql(u8, prev.name, lname)) continue;
-                    if (std.mem.eql(u8, std.mem.trim(u8, prev.value, " "), ltype)) {
-                        folded = true;
-                    } else {
-                        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}': leaf '{s}' as '{s}' collides with '{s}' — one bare name, one identity; type-divergent same-name leaves are a later rung (presence-bit columns)", .{ store_name, mname, lname, ltype, std.mem.trim(u8, prev.value, " ") }) } };
-                    }
-                    break;
-                }
-                if (!folded) {
-                    out.append(allocator, .{ .name = lname, .value = ltype }) catch unreachable;
+                if (lname.len > 0 and ltype.len > 0) {
+                    names.append(alloc, alloc.dupe(u8, lname) catch unreachable) catch unreachable;
+                    types.append(alloc, alloc.dupe(u8, ltype) catch unreachable) catch unreachable;
                 }
             }
-            if (saw == 0) {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' declares no fields — a union member must name at least one leaf", .{ store_name, mname }) } };
+            return .{ .names = names.toOwnedSlice(alloc) catch unreachable, .types = types.toOwnedSlice(alloc) catch unreachable };
+        }
+        fn expand(alloc: std.mem.Allocator, prog: *const ast.Program, scope_home: []const u8, prefix: []const u8, fname: []const u8, ftype: []const u8, stack: *std.ArrayList([]const u8), out_fields: *std.ArrayList(struct_literal.StructField)) void {
+            const full = if (prefix.len == 0)
+                alloc.dupe(u8, fname) catch unreachable
+            else if (fname.len == 0)
+                alloc.dupe(u8, prefix) catch unreachable
+            else
+                std.fmt.allocPrint(alloc, "{s}{s}", .{ prefix, fname }) catch unreachable;
+            const bare = TermRef.bareName(ftype);
+            for (stack.items) |s| {
+                if (std.mem.eql(u8, s, bare)) {
+                    out_fields.append(alloc, .{ .name = full, .value = ftype }) catch unreachable;
+                    return;
+                }
             }
+            const maybe_sub = getFlat(alloc, prog, ftype, scope_home);
+            if (maybe_sub == null) {
+                out_fields.append(alloc, .{ .name = full, .value = ftype }) catch unreachable;
+                return;
+            }
+            const sub = maybe_sub.?;
+            if (sub.names.len == 0) {
+                out_fields.append(alloc, .{ .name = full, .value = ftype }) catch unreachable;
+                return;
+            }
+            stack.append(alloc, bare) catch unreachable;
+            const inner = if (full.len == 0) "" else std.fmt.allocPrint(alloc, "{s}.", .{full}) catch unreachable;
+            for (sub.names, sub.types) |sn, st| {
+                expand(alloc, prog, scope_home, inner, sn, st, stack, out_fields);
+            }
+            _ = stack.pop();
+        }
+    };
+
+    // Lone store packing: compound protos in the seed dissolve into path-named
+    // leaves (left: Limb -> left.health: Health). Distinct placements do not fold.
+    // Bare { Proto } expands at the store's root: prefix is empty (""), leaves keep
+    // bare field names (str, not Player.str).
+    const member_names = std.ArrayList([]const u8).initCapacity(allocator, 2) catch unreachable;
+    const member_protos = std.ArrayList([]const u8).initCapacity(allocator, 2) catch unreachable;
+    cell_fields = blk: {
+        var out = std.ArrayList(struct_literal.StructField).initCapacity(allocator, cell_fields.len) catch unreachable;
+        var stack = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
+        for (cell_fields) |cf| {
+            const peeled0 = struct_literal.peelBaseType(cf.value);
+            const has_default0 = peeled0.type.len != 0;
+            const ftype0 = if (has_default0) peeled0.type else std.mem.trim(u8, cf.value, " ");
+            const is_root_proto = (std.mem.eql(u8, cf.name, ast.STORE_IDENTITY_COLUMN) or cf.name.len == 0);
+            const member = MemberRef.fieldsOf(program, ftype0, store_scope_home);
+            if (member == null) {
+                out.append(allocator, cf) catch unreachable;
+                continue;
+            }
+            const mname = TermRef.bareName(ftype0);
+            if (has_default0) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' carries a default — members expand to columns, they hold no value", .{ store_name, mname }) } };
+            }
+            const flat = ProtoExpander.getFlat(allocator, program, ftype0, store_scope_home);
+            if (flat == null or flat.?.names.len == 0) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): member '{s}' declares no fields — a proto must name at least one leaf", .{ store_name, mname }) } };
+            }
+            const fname = if (is_root_proto) "" else cf.name;
+            ProtoExpander.expand(allocator, program, store_scope_home, "", fname, ftype0, &stack, &out);
         }
         break :blk out.toOwnedSlice(allocator) catch unreachable;
     };
+    for (cell_fields) |cf| {
+        const peeled = struct_literal.peelBaseType(cf.value);
+        const ltype = if (peeled.type.len != 0) peeled.type else std.mem.trim(u8, cf.value, " ");
+        const known_scalar_leaf = std.mem.eql(u8, ltype, "i64") or std.mem.eql(u8, ltype, "i32") or
+            std.mem.eql(u8, ltype, "f64") or std.mem.eql(u8, ltype, "f32") or
+            std.mem.eql(u8, ltype, "bool") or std.mem.eql(u8, ltype, "string");
+        const char_shaped = std.mem.startsWith(u8, ltype, "char[");
+        const owned_shaped = std.mem.startsWith(u8, ltype, "*") or std.mem.indexOfScalar(u8, ltype, '<') != null;
+        if (!known_scalar_leaf and !char_shaped and !owned_shaped and !TermRef.isDeclared(program, ltype, store_scope_home)) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): leaf '{s}' names unknown '{s}' — a leaf must be a scalar material or a terminal of its home", .{ store_name, cf.name, ltype }) } };
+        }
+    }
     // A hand-written `kind` column and union members refuse each other: the
     // synthesized tag owns that name when members exist (690_273's manual tag
     // has no members, so it never meets this wall).
@@ -3537,7 +3741,8 @@ fn storeLowerText(
             // body binding of the field's own name cannot claim it (the same
             // reservation the read path's srf_* names make).
             fn projName(alloc: std.mem.Allocator, field: []const u8) []const u8 {
-                return std.fmt.allocPrint(alloc, "__koru_qproj_{s}", .{field}) catch unreachable;
+                const mangled = std.mem.replaceOwned(u8, alloc, field, ".", "_") catch unreachable;
+                return std.fmt.allocPrint(alloc, "__koru_qproj_{s}", .{mangled}) catch unreachable;
             }
             // `cur` is the row cursor's NAME and `dense` says what it holds.
             //
@@ -3570,6 +3775,7 @@ fn storeLowerText(
                     std.fmt.allocPrint(alloc, "@as(usize, @intCast({s}))", .{cur}) catch unreachable
                 else
                     std.fmt.allocPrint(alloc, "__koru_store_{s}.__koru_resolve({s})", .{ store, cur }) catch unreachable;
+                const esc_field = codegen_utils_store.escapeZigIdentifier(alloc, field) catch field;
                 // A char column reads as the string slice up to the first NUL
                 // (the same shape the qrow projection binds); scalars read
                 // their cell slot directly. On the JS target the char cell IS
@@ -3578,11 +3784,11 @@ fn storeLowerText(
                 // lowering and must never reach that emitter.
                 if (is_char) {
                     if (std.mem.eql(u8, CompilerEnv.lang, "js")) {
-                        return std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[{s}]", .{ store, field, idx }) catch unreachable;
+                        return std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[{s}]", .{ store, esc_field, idx }) catch unreachable;
                     }
-                    return std.fmt.allocPrint(alloc, "@import(\"std\").mem.sliceTo(&(&__koru_store_{s}.{s})[{s}], 0)", .{ store, field, idx }) catch unreachable;
+                    return std.fmt.allocPrint(alloc, "@import(\"std\").mem.sliceTo(&(&__koru_store_{s}.{s})[{s}], 0)", .{ store, esc_field, idx }) catch unreachable;
                 }
-                return std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[{s}]", .{ store, field, idx }) catch unreachable;
+                return std.fmt.allocPrint(alloc, "(&__koru_store_{s}.{s})[{s}]", .{ store, esc_field, idx }) catch unreachable;
             }
             fn entityRefs(alloc: std.mem.Allocator, text: []const u8, store: []const u8, fields: []const []const u8, char_caps: []const ?usize, owned: []const bool, target_form: bool, use_owned_param: bool, bind: []const u8, used: []bool, cur: []const u8, dense: bool) []const u8 {
                 const prefix = std.fmt.allocPrint(alloc, "{s}.", .{bind}) catch unreachable;
@@ -3604,16 +3810,25 @@ fn storeLowerText(
                     // rather than a special case.
                     if (at_boundary and expr_ctx[i] and std.mem.startsWith(u8, text[i..], prefix)) {
                         const fstart = i + prefix.len;
-                        var fend = fstart;
-                        while (fend < text.len and H.isIdentChar(text[fend])) fend += 1;
-                        const fname = text[fstart..fend];
-                        var known: ?usize = null;
+                        const rest = text[fstart..];
+                        var best_fi: ?usize = null;
+                        var best_len: usize = 0;
                         for (fields, 0..) |f, kfi| {
-                            if (std.mem.eql(u8, f, fname)) known = kfi;
+                            if (std.mem.startsWith(u8, rest, f)) {
+                                const after_char_idx = fstart + f.len;
+                                const boundary_ok = after_char_idx >= text.len or !H.isIdentChar(text[after_char_idx]);
+                                if (boundary_ok and f.len > best_len) {
+                                    best_fi = kfi;
+                                    best_len = f.len;
+                                }
+                            }
                         }
-                        if (known) |kidx| {
+                        if (best_fi) |kidx| {
+                            const fname = fields[kidx];
+                            const fend = fstart + best_len;
                             if (target_form) {
-                                const t = std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cur, fname }) catch unreachable;
+                                const esc_fname = codegen_utils_store.escapeZigIdentifier(alloc, fname) catch fname;
+                                const t = std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cur, esc_fname }) catch unreachable;
                                 out.appendSlice(alloc, t) catch unreachable;
                             } else if (use_owned_param and owned[kidx]) {
                                 // The ONLY body reference that needs a
@@ -3763,14 +3978,25 @@ fn storeLowerText(
                         // The guard runs in the qrow scope, where a column is
                         // reachable only as a projected const — so stripping a
                         // reference is what PUTS that column in the projection.
-                        var fend = i + prefix.len;
-                        while (fend < text.len and H.isIdentChar(text[fend])) fend += 1;
-                        const fname = text[i + prefix.len .. fend];
+                        const fstart = i + prefix.len;
+                        const rest = text[fstart..];
+                        var best_fi: ?usize = null;
+                        var best_len: usize = 0;
                         for (fields, 0..) |f, fi| {
-                            if (std.mem.eql(u8, f, fname)) used[fi] = true;
+                            if (std.mem.startsWith(u8, rest, f)) {
+                                const after_char_idx = fstart + f.len;
+                                const boundary_ok = after_char_idx >= text.len or !H.isIdentChar(text[after_char_idx]);
+                                if (boundary_ok and f.len > best_len) {
+                                    best_fi = fi;
+                                    best_len = f.len;
+                                }
+                            }
                         }
-                        i += prefix.len;
-                        continue;
+                        if (best_fi) |fi| {
+                            used[fi] = true;
+                            i += prefix.len;
+                            continue;
+                        }
                     }
                     if (at_boundary and expr_ctx[i] and fields.len == 1 and
                         std.mem.eql(u8, fields[0], ast.STORE_IDENTITY_COLUMN) and
@@ -3997,7 +4223,8 @@ fn storeLowerText(
             var pfields = std.ArrayList(usize).initCapacity(allocator, user_field_count) catch unreachable;
             for (field_names[0..user_field_count], 0..) |fnm, fi| {
                 if (!used[fi]) continue;
-                pnames.append(allocator, allocator.dupe(u8, fnm) catch unreachable) catch unreachable;
+                const mangled = std.mem.replaceOwned(u8, allocator, fnm, ".", "_") catch unreachable;
+                pnames.append(allocator, mangled) catch unreachable;
                 pfields.append(allocator, fi) catch unreachable;
             }
             if (want_kind and used[kind_idx]) {
@@ -4100,12 +4327,13 @@ fn storeLowerText(
             // (the store OWNS the pointers — teardown frees the live ones) with
             // Type the discovered host cell (e.g. koru_std.koru_string.String);
             // scalars emit their own type.
+            const esc_fname = codegen_utils_store.escapeZigIdentifier(allocator, fname) catch fname;
             const col = if (fcc) |n|
-                std.fmt.allocPrint(allocator, "    {s}: [{d}][{d}]u8 = undefined,\n", .{ fname, CAP, n }) catch unreachable
+                std.fmt.allocPrint(allocator, "    {s}: [{d}][{d}]u8 = undefined,\n", .{ esc_fname, CAP, n }) catch unreachable
             else if (foi) |oi|
-                std.fmt.allocPrint(allocator, "    {s}: [{d}]*{s} = undefined,\n", .{ fname, CAP, oi.host_type }) catch unreachable
+                std.fmt.allocPrint(allocator, "    {s}: [{d}]*{s} = undefined,\n", .{ esc_fname, CAP, oi.host_type }) catch unreachable
             else
-                std.fmt.allocPrint(allocator, "    {s}: [{d}]{s} = undefined,\n", .{ fname, CAP, ftype }) catch unreachable;
+                std.fmt.allocPrint(allocator, "    {s}: [{d}]{s} = undefined,\n", .{ esc_fname, CAP, ftype }) catch unreachable;
             pc.appendSlice(allocator, col) catch unreachable;
         }
         pc.appendSlice(allocator, "    len: usize = 0,\n") catch unreachable;
@@ -4240,7 +4468,7 @@ fn storeLowerText(
         for (field_names, field_types, 0..) |fname, ftype, fi| {
             if (fi > 0) pc.appendSlice(allocator, ",") catch unreachable;
             pc.appendSlice(allocator, " ") catch unreachable;
-            pc.appendSlice(allocator, fname) catch unreachable;
+            pc.appendSlice(allocator, codegen_utils_store.escapeZigIdentifier(allocator, fname) catch fname) catch unreachable;
             pc.appendSlice(allocator, ": ") catch unreachable;
             if (field_char_caps[fi]) |n| {
                 const rt = std.fmt.allocPrint(allocator, "[{d}]u8", .{n}) catch unreachable;
@@ -4502,15 +4730,16 @@ fn storeLowerText(
                 // (comptime-known overflow is a compile error at the insert
                 // site; runtime bytes truncate — the `| toolong` branch is a
                 // deferred refinement), zero-padding the rest.
+                const esc_fname = codegen_utils_store.escapeZigIdentifier(allocator, fname) catch fname;
                 const w = if (field_char_caps[fci]) |n|
                     std.fmt.allocPrint(allocator,
                         \\__koru_store_{s}.{s}[__koru_new_row] = @import("std").mem.zeroes([{d}]u8);
                         \\const __koru_cl_{s} = @min({s}.len, {d});
                         \\@memcpy(__koru_store_{s}.{s}[__koru_new_row][0..__koru_cl_{s}], {s}[0..__koru_cl_{s}]);
                         \\
-                    , .{ store_name, fname, n, fname, fname, n, store_name, fname, fname, fname, fname }) catch unreachable
+                    , .{ store_name, esc_fname, n, esc_fname, esc_fname, n, store_name, esc_fname, esc_fname, esc_fname, esc_fname }) catch unreachable
                 else
-                    std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_new_row] = {s};\n", .{ store_name, fname, fname }) catch unreachable;
+                    std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_new_row] = {s};\n", .{ store_name, esc_fname, esc_fname }) catch unreachable;
                 ap.appendSlice(allocator, w) catch unreachable;
             }
             if (is_tree) {
@@ -4913,18 +5142,19 @@ fn storeLowerText(
                 // discharger on it (the teardown call convention,
                 // `<host>.<event>_event.handler`), then move the new pointer
                 // in. The caller's <!state> was consumed at the write event.
+                const esc_fname = codegen_utils_store.escapeZigIdentifier(allocator, fname) catch fname;
                 const wr = if (field_owned_info[i]) |oi| (if (host_is_js)
                     std.fmt.allocPrint(allocator, "const __koru_old_ptr = __koru_store_{s}.{s}[__koru_r]; {s}.{s}_event.handler({{ {s}: __koru_old_ptr }}); __koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, oi.disch_host, oi.disch_event, oi.disch_param, store_name, fname, i }) catch unreachable
                 else
-                    std.fmt.allocPrint(allocator, "const __koru_old_ptr = __koru_store_{s}.{s}[__koru_r]; _ = {s}.{s}_event.handler(.{{ .{s} = __koru_old_ptr }}); __koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, oi.disch_host, oi.disch_event, oi.disch_param, store_name, fname, i }) catch unreachable)
+                    std.fmt.allocPrint(allocator, "const __koru_old_ptr = __koru_store_{s}.{s}[__koru_r]; _ = {s}.{s}_event.handler(.{{ .{s} = __koru_old_ptr }}); __koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, esc_fname, oi.disch_host, oi.disch_event, oi.disch_param, store_name, esc_fname, i }) catch unreachable)
                 else if (field_char_caps[i]) |n| (if (host_is_js)
                     // A JS char column is a string: the fixed-width buffer is a
                     // truncation and the zero-fill has no observable analogue.
                     std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}.slice(0, {d}); ", .{ store_name, fname, i, n }) catch unreachable
                 else
-                    std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value_{d}.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value_{d}[0..__koru_wl]); ", .{ store_name, fname, n, i, n, store_name, fname, i }) catch unreachable)
+                    std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value_{d}.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value_{d}[0..__koru_wl]); ", .{ store_name, esc_fname, n, i, n, store_name, esc_fname, i }) catch unreachable)
                 else
-                    std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, i }) catch unreachable;
+                    std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, esc_fname, i }) catch unreachable;
                 atext.appendSlice(allocator, wr) catch unreachable;
                 for (updated_arms.items, 0..) |ua, ai| {
                     const upd_payload = if (ua.fields.len != 0) blk_up: {
@@ -4942,7 +5172,7 @@ fn storeLowerText(
                 // param (the 690_061 fresh-from-cell rule, 690_063): the watch
                 // arm borrow-reads the value the store now owns.
                 const arm_value = if (field_owned_info[i] != null)
-                    HS.branchOne(allocator, host_target, fname, std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r]", .{ store_name, fname }) catch unreachable)
+                    HS.branchOne(allocator, host_target, fname, std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r]", .{ store_name, esc_fname }) catch unreachable)
                 else
                     HS.branchOne(allocator, host_target, fname, std.fmt.allocPrint(allocator, "value_{d}", .{i}) catch unreachable);
                 const tail = HS.switchArmClose(allocator, host_target, arm_value);
@@ -5268,6 +5498,7 @@ fn storeLowerText(
                 // (frag-a-fix-lands-in-one-lowering-path), so there is one.
                 const col_arm = allocator.alloc([]const u8, field_names.len) catch unreachable;
                 for (field_names, 0..) |fname, i| {
+                    const esc_fname = codegen_utils_store.escapeZigIdentifier(allocator, fname) catch fname;
                     var ab = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
                     // The write half of the bundled apply arm, verbatim: tree
                     // guard, pre-image read, cell write, updated interceptors.
@@ -5278,15 +5509,15 @@ fn storeLowerText(
                     }
                     if (updated_needs_old) {
                         const eoldr = if (field_char_caps[i] != null)
-                            std.fmt.allocPrint(allocator, "const __koru_oldbuf = __koru_store_{s}.{s}[__koru_r]; const __koru_old = @import(\"std\").mem.sliceTo(&__koru_oldbuf, 0); ", .{ store_name, fname }) catch unreachable
+                            std.fmt.allocPrint(allocator, "const __koru_oldbuf = __koru_store_{s}.{s}[__koru_r]; const __koru_old = @import(\"std\").mem.sliceTo(&__koru_oldbuf, 0); ", .{ store_name, esc_fname }) catch unreachable
                         else
-                            std.fmt.allocPrint(allocator, "const __koru_old = __koru_store_{s}.{s}[__koru_r]; ", .{ store_name, fname }) catch unreachable;
+                            std.fmt.allocPrint(allocator, "const __koru_old = __koru_store_{s}.{s}[__koru_r]; ", .{ store_name, esc_fname }) catch unreachable;
                         ab.appendSlice(allocator, eoldr) catch unreachable;
                     }
                     const ewr = if (field_char_caps[i]) |n|
-                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value_{d}.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value_{d}[0..__koru_wl]); ", .{ store_name, fname, n, i, n, store_name, fname, i }) catch unreachable
+                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = @import(\"std\").mem.zeroes([{d}]u8); const __koru_wl = @min(value_{d}.len, {d}); @memcpy(__koru_store_{s}.{s}[__koru_r][0..__koru_wl], value_{d}[0..__koru_wl]); ", .{ store_name, esc_fname, n, i, n, store_name, esc_fname, i }) catch unreachable
                     else
-                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, fname, i }) catch unreachable;
+                        std.fmt.allocPrint(allocator, "__koru_store_{s}.{s}[__koru_r] = value_{d}; ", .{ store_name, esc_fname, i }) catch unreachable;
                     ab.appendSlice(allocator, ewr) catch unreachable;
                     for (updated_arms.items, 0..) |ua, ai| {
                         const ecall = if (ua.fields.len != 0)
@@ -5646,12 +5877,13 @@ fn storeLowerText(
                 // the bytes up to the first NUL (zero-padded buffers trim;
                 // an N-full buffer yields all N bytes). On JS the column IS a
                 // string, and `_ = &x;` is Zig's discard, not JavaScript.
+                const esc_f = codegen_utils_store.escapeZigIdentifier(allocator, field_names[pfidx]) catch field_names[pfidx];
                 const ld = if (host_is_js)
-                    std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_r];\n", .{ pname, store_name, field_names[pfidx] }) catch unreachable
+                    std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_r];\n", .{ pname, store_name, esc_f }) catch unreachable
                 else if (field_char_caps[pfidx] != null)
-                    std.fmt.allocPrint(allocator, "const {s} = @import(\"std\").mem.sliceTo(&__koru_store_{s}.{s}[__koru_r], 0);\n_ = &{s};\n", .{ pname, store_name, field_names[pfidx], pname }) catch unreachable
+                    std.fmt.allocPrint(allocator, "const {s} = @import(\"std\").mem.sliceTo(&__koru_store_{s}.{s}[__koru_r], 0);\n_ = &{s};\n", .{ pname, store_name, esc_f, pname }) catch unreachable
                 else
-                    std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_r];\n_ = &{s};\n", .{ pname, store_name, field_names[pfidx], pname }) catch unreachable;
+                    std.fmt.allocPrint(allocator, "const {s} = __koru_store_{s}.{s}[__koru_r];\n_ = &{s};\n", .{ pname, store_name, esc_f, pname }) catch unreachable;
                 qr.appendSlice(allocator, ld) catch unreachable;
             }
             // `[id]` — the visited row's HANDLE, bound before the guard so a
@@ -7922,6 +8154,80 @@ fn storeLowerText(
 }
 
 // ============================================================================
+// STORE.SET — a vocabulary of stores, folded for iteration
+// ============================================================================
+//
+//   std/store:set(Entities) { Player, Enemy }
+//
+// A store-set is not a container: it has no capacity, no allocation, no insert,
+// and no SoA cell. The rows live in the member stores. It registers the kind
+// vocabulary and the folded shared schema.
+
+~[keyword|comptime|transform]pub tor set {
+    expr: Expression,
+    source: Source,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    reporter: *std/compiler:ErrorReporter,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~[transform]proc set|zig {
+    const ast = @import("ast");
+
+    if (item.* != .flow) @panic("store:set transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    var set_name: []const u8 = "";
+    var source_text: ?[]const u8 = null;
+    for (invocation.args) |a| {
+        if (std.mem.eql(u8, a.name, "expr")) set_name = storeStripQuotes(a.value);
+        if (std.mem.eql(u8, a.name, "source")) source_text = if (a.source_value) |sv| sv.text else a.value;
+    }
+    if (set_name.len == 0) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:set requires a set name: set(name)", .{}) } };
+    }
+    if (source_text == null) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:set requires a member block: set(name) {{ Member1, Member2 }}", .{}) } };
+    }
+
+    var members = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
+    var toks = std.mem.tokenizeAny(u8, source_text.?, "\n\r,\t {}");
+    while (toks.next()) |tok| {
+        const trimmed = std.mem.trim(u8, tok, " \t\r\n,{}");
+        if (trimmed.len == 0) continue;
+        members.append(allocator, allocator.dupe(u8, trimmed) catch unreachable) catch unreachable;
+    }
+    if (members.items.len == 0) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:set({s}): a store set must name at least one member store", .{set_name}) } };
+    }
+
+    for (members.items) |mem| {
+        const fo = storeFieldOrder(allocator, program, mem);
+        if (fo == null) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:set({s}): unknown member store '{s}' — no std/store:new({s}) found", .{ set_name, mem, mem }) } };
+        }
+    }
+
+    var code = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+    code.appendSlice(allocator, "// store-set ") catch unreachable;
+    code.appendSlice(allocator, set_name) catch unreachable;
+    code.appendSlice(allocator, ": ") catch unreachable;
+    for (members.items, 0..) |m, mi| {
+        if (mi > 0) code.appendSlice(allocator, ", ") catch unreachable;
+        code.appendSlice(allocator, m) catch unreachable;
+    }
+    code.appendSlice(allocator, "\n") catch unreachable;
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .inline_code = ast.InlineCode{
+        .code = code.toOwnedSlice(allocator) catch unreachable,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } } } };
+}
+
+// ============================================================================
 // STORE.STORED — the sole write path: an ordinary call into the subflow
 // ============================================================================
 //
@@ -9857,43 +10163,87 @@ fn storeLowerText(
     // coincide in the entry file and diverge inside a library (115_018).
     const home_ns = storeHome(allocator, program, store_name) orelse flow.module;
     // --- schema from the persistent __store_insert_<s> event (survives after
-    //     the raw `new` flow lowers — the same source insert.fieldOrder reads).
+    //     the raw `new` flow lowers — the same source insert.fieldOrder reads),
+    //     or from the folded member stores of a store-set.
     //     Its input fields ARE the columns; the trailing field is the synthetic
     //     __site_line arg. ---
-    const insert_ev_name = std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
+    const set_members = storeSetMembers(allocator, program, store_name);
+    const is_set = set_members != null;
     var col_names: []const []const u8 = &[_][]const u8{};
     var col_types: []const []const u8 = &[_][]const u8{};
     var col_mods: []const ?[]const u8 = &[_]?[]const u8{};
     var col_phantoms: []const ?[]const u8 = &[_]?[]const u8{};
-    for (flatItems(allocator, program.items)) |pi| {
-        if (pi.* != .event_decl) continue;
-        const ed = &pi.event_decl;
-        if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], insert_ev_name)) {
-            const flds = ed.input.fields;
-            const n = if (flds.len > 0) flds.len - 1 else 0;
-            const nm = allocator.alloc([]const u8, n) catch unreachable;
-            const ty = allocator.alloc([]const u8, n) catch unreachable;
-            const mp = allocator.alloc(?[]const u8, n) catch unreachable;
-            const ph = allocator.alloc(?[]const u8, n) catch unreachable;
-            for (flds[0..n], 0..) |f2, i| {
-                nm[i] = f2.name;
-                ty[i] = f2.type;
-                mp[i] = f2.module_path;
-                ph[i] = f2.phantom;
+
+    if (is_set) {
+        var set_col_names = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+        var set_col_types = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+        var set_col_mods = std.ArrayList(?[]const u8).initCapacity(allocator, 8) catch unreachable;
+        var set_col_phantoms = std.ArrayList(?[]const u8).initCapacity(allocator, 8) catch unreachable;
+
+        for (set_members.?) |mem| {
+            const mem_cols = storeMemberColumns(allocator, program, mem) orelse {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): set member '{s}' has no schema — no std/store:new({s}) found", .{ store_name, mem, mem }) } };
+            };
+            for (mem_cols) |mc| {
+                var found = false;
+                for (set_col_names.items, set_col_types.items) |prev_n, prev_t| {
+                    if (std.mem.eql(u8, prev_n, mc.name)) {
+                        found = true;
+                        if (!std.mem.eql(u8, prev_t, mc.type)) {
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:set({s}): member '{s}': leaf '{s}' as '{s}' collides with '{s}' — one bare name, one identity; type-divergent same-name leaves across a set are refused", .{ store_name, mem, mc.name, mc.type, prev_t }) } };
+                        }
+                        break;
+                    }
+                }
+                if (!found) {
+                    set_col_names.append(allocator, mc.name) catch unreachable;
+                    set_col_types.append(allocator, mc.type) catch unreachable;
+                    set_col_mods.append(allocator, mc.module_path) catch unreachable;
+                    set_col_phantoms.append(allocator, mc.phantom) catch unreachable;
+                }
             }
-            col_names = nm;
-            col_types = ty;
-            col_mods = mp;
-            col_phantoms = ph;
-            break;
         }
-    }
-    if (col_names.len == 0) {
-        // The store's OWN declaration was already refused; that diagnostic is the
-        // true one and this lookup can only ever fail. Staying silent here is what
-        // keeps one mistake to one error.
-        if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{store_name})) return .{ .transformed = .{} };
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): unknown plural store - no std/store:new({s}, capacity: N) found (query reads a plural container's live rows)", .{ store_name, store_name }) } };
+        set_col_names.append(allocator, "kind") catch unreachable;
+        set_col_types.append(allocator, "i64") catch unreachable;
+        set_col_mods.append(allocator, null) catch unreachable;
+        set_col_phantoms.append(allocator, null) catch unreachable;
+
+        col_names = set_col_names.toOwnedSlice(allocator) catch unreachable;
+        col_types = set_col_types.toOwnedSlice(allocator) catch unreachable;
+        col_mods = set_col_mods.toOwnedSlice(allocator) catch unreachable;
+        col_phantoms = set_col_phantoms.toOwnedSlice(allocator) catch unreachable;
+    } else {
+        const insert_ev_name = std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
+        for (flatItems(allocator, program.items)) |pi| {
+            if (pi.* != .event_decl) continue;
+            const ed = &pi.event_decl;
+            if (ed.path.segments.len == 1 and std.mem.eql(u8, ed.path.segments[0], insert_ev_name)) {
+                const flds = ed.input.fields;
+                const n = if (flds.len > 0) flds.len - 1 else 0;
+                const nm = allocator.alloc([]const u8, n) catch unreachable;
+                const ty = allocator.alloc([]const u8, n) catch unreachable;
+                const mp = allocator.alloc(?[]const u8, n) catch unreachable;
+                const ph = allocator.alloc(?[]const u8, n) catch unreachable;
+                for (flds[0..n], 0..) |f2, i| {
+                    nm[i] = f2.name;
+                    ty[i] = f2.type;
+                    mp[i] = f2.module_path;
+                    ph[i] = f2.phantom;
+                }
+                col_names = nm;
+                col_types = ty;
+                col_mods = mp;
+                col_phantoms = ph;
+                break;
+            }
+        }
+        if (col_names.len == 0) {
+            // The store's OWN declaration was already refused; that diagnostic is the
+            // true one and this lookup can only ever fail. Staying silent here is what
+            // keeps one mistake to one error.
+            if (ast.declarationRefused(allocator, program, flow.module, "std/store:new({s}):", .{store_name})) return .{ .transformed = .{} };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): unknown plural store - no std/store:new({s}, capacity: N) found (query reads a plural container's live rows)", .{ store_name, store_name }) } };
+        }
     }
 
     // --- parse the `! query <row> |> body` branch ---
@@ -10076,32 +10426,44 @@ fn storeLowerText(
                 const at_boundary = ast.identBoundaryBefore(text, i);
                 if (at_boundary and std.mem.startsWith(u8, text[i..], prefix)) {
                     const fstart = i + prefix.len;
-                    var fend = fstart;
-                    while (fend < text.len and isIdentCh(text[fend])) fend += 1;
-                    const fname = text[fstart..fend];
-                    var cidx: ?usize = null;
+                    const rest = text[fstart..];
+                    var best_fi: ?usize = null;
+                    var best_len: usize = 0;
                     for (fields, 0..) |f, fi| {
-                        if (std.mem.eql(u8, f, fname)) cidx = fi;
+                        if (std.mem.startsWith(u8, rest, f)) {
+                            const after_char_idx = fstart + f.len;
+                            const boundary_ok = after_char_idx >= text.len or !isIdentCh(text[after_char_idx]);
+                            if (boundary_ok and f.len > best_len) {
+                                best_fi = fi;
+                                best_len = f.len;
+                            }
+                        }
                     }
-                    if (cidx) |ci| {
+                    if (best_fi) |ci| {
+                        const fname = fields[ci];
+                        const fend = fstart + best_len;
+                        const esc_fname = codegen_utils_store.escapeZigIdentifier(alloc, fname) catch fname;
                         const t = switch (form) {
-                            .target => std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cursor, fname }) catch unreachable,
+                            .target => std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cursor, esc_fname }) catch unreachable,
                             // The cursor is dense — a direct column read, no
                             // resolve chain in the loop body (O10.iv elision).
-                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[{s}]", .{ store, fname, codegen_utils_store.HostShape.asIndex(alloc, storeHostTarget(), cursor) }) catch unreachable,
+                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[{s}]", .{ store, esc_fname, codegen_utils_store.HostShape.asIndex(alloc, storeHostTarget(), cursor) }) catch unreachable,
                             .input => blk3: {
                                 used[ci] = true;
-                                break :blk3 std.fmt.allocPrint(alloc, "{s}{s}", .{ srf, fname }) catch unreachable;
+                                const mangled = std.mem.replaceOwned(u8, alloc, fname, ".", "_") catch unreachable;
+                                break :blk3 std.fmt.allocPrint(alloc, "{s}{s}", .{ srf, mangled }) catch unreachable;
                             },
                         };
                         out.appendSlice(alloc, t) catch unreachable;
                         i = fend;
                         continue;
                     }
+                    var fend = fstart;
+                    while (fend < text.len and (isIdentCh(text[fend]) or text[fend] == '.')) fend += 1;
                     // `<row>.<not-a-column>`: the binding is unambiguous, so this
                     // is a typo the store can name, not a free name to pass on to
                     // the host as `undeclared identifier`.
-                    if (fend > fstart and unknown.* == null) unknown.* = alloc.dupe(u8, fname) catch unreachable;
+                    if (fend > fstart and unknown.* == null) unknown.* = alloc.dupe(u8, text[fstart..fend]) catch unreachable;
                 }
                 // A ONE-column store's row names no field, so the BARE binding is
                 // the value: `! query n |> use(v: n)`. Derived from `fields`
@@ -10278,7 +10640,8 @@ fn storeLowerText(
     var pcols = std.ArrayList(usize).initCapacity(allocator, col_names.len) catch unreachable;
     for (col_names, 0..) |cn, ci| {
         if (!used_cols[ci]) continue;
-        pnames.append(allocator, std.fmt.allocPrint(allocator, "{s}{s}", .{ srf_prefix, cn }) catch unreachable) catch unreachable;
+        const mangled = std.mem.replaceOwned(u8, allocator, cn, ".", "_") catch unreachable;
+        pnames.append(allocator, std.fmt.allocPrint(allocator, "{s}{s}", .{ srf_prefix, mangled }) catch unreachable) catch unreachable;
         pcols.append(allocator, ci) catch unreachable;
     }
     const proj_names = pnames.toOwnedSlice(allocator) catch unreachable;
@@ -10840,56 +11203,6 @@ fn storeLowerText(
         .module = allocator.dupe(u8, flow.module) catch unreachable,
     } }) catch unreachable;
 
-    // --- the inline sweep loop, emitted SITE-LOCAL (never a coordinator unit).
-    //     Reads the SoA cell (__koru_store_<s>.len + column arrays), binds the
-    //     projected fields per row, calls the transplanted body event — plus any
-    //     enclosing captures (names already live in this Zig scope). ---
-    var loop = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-    // The SoA cell is declared in the STORE'S OWN module, so every reference to
-    // it needs the SAME qualifier the body call below already uses — both name
-    // things living in `home_ns`.
-    //
-    // Emitting it bare was correct only by coincidence of placement. With no
-    // capture this loop is lifted into a `__store_sweeprun_*` event that is
-    // PLACED IN the store's module, so a bare `__koru_store_<s>` resolved
-    // because it happened to be emitted next to the cell it names. A capture
-    // keeps the loop INLINE at the sweep site to hold the captured value in
-    // lexical scope — the CALLER's namespace — and the coincidence ends: one
-    // emitted statement then qualified the body call and not the cell, three
-    // tokens apart (115_043).
-    //
-    // Entry-file programs are unaffected: the qualifier is `main_module.` there
-    // and the cell is declared inside `main_module`.
-    const cellq = storeCellQualifier(allocator, home_ns, program.main_module_name);
-    const cell_len = std.fmt.allocPrint(allocator, "{s}__koru_store_{s}.len", .{ cellq, store_name }) catch unreachable;
-    loop.appendSlice(allocator, "{\n") catch unreachable;
-    loop.appendSlice(allocator, HS.loopHead(allocator, host_target, "__koru_si", cell_len)) catch unreachable;
-    for (proj_names, proj_cols) |pn, ci| {
-        const read = std.fmt.allocPrint(allocator, "{s}__koru_store_{s}.{s}[__koru_si]", .{ cellq, store_name, col_names[ci] }) catch unreachable;
-        loop.appendSlice(allocator, HS.constBind(allocator, host_target, pn, read)) catch unreachable;
-    }
-    // The arm's `when` guard, emitted AFTER the projection binds so it can read
-    // them and BEFORE the body call so it can skip it (690_084). Query does the
-    // same thing one line earlier in its own lowering — `if (!(g)) return;`
-    // inside a per-row proc; a sweep is a loop, so the skip is `continue`.
-    //
-    // It used to be parsed, collected for captures, and then dropped: accepted
-    // and silently ignored, so every row ran the body. A guard that is refused
-    // costs one compile; a guard that is ignored reads as working and quietly
-    // widens every write behind it.
-    if (guard_z) |cond| {
-        var unknown_op: []const u8 = "";
-        const lowered_c = storeLowerExpr(allocator, cond, &unknown_op) orelse
-            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the sweep guard names `@{s}`, and that operation has no lowering for this target - a store guard is a Koru expression, and the operations Koru names with `@` are the shared table in codegen_utils.lowerBuiltin", .{ store_name, unknown_op }) } };
-        const gz = std.fmt.allocPrint(allocator, "if (!({s})) continue;\n", .{lowered_c}) catch unreachable;
-        loop.appendSlice(allocator, gz) catch unreachable;
-    }
-    loop.appendSlice(allocator, storeEventQualifier(allocator, home_ns, program.main_module_name)) catch unreachable;
-    loop.appendSlice(allocator, sbody_name) catch unreachable;
-    // A derived projection can be EMPTY — an arm that never names a field of the
-    // row it stands on (690_087's outer sweep only nests another sweep). The
-    // authored projection block could not express that, so the separator was
-    // free; now the cursor may be the only argument.
     // The argument record, assembled as pairs and then wrapped once, because
     // `.{ … }` and `{ … }` differ at BOTH ends and a per-pair split would put
     // the opening brace three statements away from the closing one.
@@ -10907,9 +11220,95 @@ fn storeLowerText(
     }
     if (argb.items.len > 0) argb.appendSlice(allocator, ", ") catch unreachable;
     argb.appendSlice(allocator, HS.recField(allocator, host_target, srow_name, HS.asI64(allocator, host_target, "__koru_si"))) catch unreachable;
-    loop.appendSlice(allocator, "_event.handler(") catch unreachable;
-    loop.appendSlice(allocator, HS.argRec(allocator, host_target, argb.items)) catch unreachable;
-    loop.appendSlice(allocator, ");\n}\n}\n") catch unreachable;
+
+    // --- the inline sweep loop, emitted SITE-LOCAL (never a coordinator unit).
+    //     Reads the SoA cell (__koru_store_<s>.len + column arrays), binds the
+    //     projected fields per row, calls the transplanted body event — plus any
+    //     enclosing captures (names already live in this Zig scope). ---
+    var loop = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+    if (is_set) {
+        loop.appendSlice(allocator, "{\n") catch unreachable;
+        const members_vocab = storeKindMembers(allocator, program, store_name) orelse &[_][]const u8{};
+        const proven = guardProvenMembers(allocator, sc.condition orelse "", guard_is orelse sc.condition orelse "", row_bind, members_vocab);
+
+        for (set_members.?, 0..) |mem_name, mem_idx| {
+            if (proven.len > 0) {
+                var in_proven = false;
+                for (proven) |p| {
+                    if (std.mem.eql(u8, p, mem_name)) in_proven = true;
+                }
+                if (!in_proven) continue;
+            }
+
+            const mem_home = storeHome(allocator, program, mem_name) orelse home_ns;
+            const mem_cellq = storeCellQualifier(allocator, mem_home, program.main_module_name);
+            const mem_len = std.fmt.allocPrint(allocator, "{s}__koru_store_{s}.len", .{ mem_cellq, mem_name }) catch unreachable;
+            const mem_kind = mem_idx + 1;
+            const mem_cols = storeMemberColumns(allocator, program, mem_name) orelse &[_]StoreColInfo{};
+
+            loop.appendSlice(allocator, "{\n") catch unreachable;
+            loop.appendSlice(allocator, HS.loopHead(allocator, host_target, "__koru_si", mem_len)) catch unreachable;
+
+            for (proj_names, proj_cols) |pn, ci| {
+                const cn = col_names[ci];
+                if (std.mem.eql(u8, cn, "kind")) {
+                    const kind_str = std.fmt.allocPrint(allocator, "{d}", .{mem_kind}) catch unreachable;
+                    loop.appendSlice(allocator, HS.constBind(allocator, host_target, pn, kind_str)) catch unreachable;
+                } else {
+                    var found_col = false;
+                    for (mem_cols) |mc| {
+                        if (std.mem.eql(u8, mc.name, cn)) {
+                            found_col = true;
+                            break;
+                        }
+                    }
+                    if (found_col) {
+                        const esc_cn = codegen_utils_store.escapeZigIdentifier(allocator, cn) catch cn;
+                        const read = std.fmt.allocPrint(allocator, "{s}__koru_store_{s}.{s}[__koru_si]", .{ mem_cellq, mem_name, esc_cn }) catch unreachable;
+                        loop.appendSlice(allocator, HS.constBind(allocator, host_target, pn, read)) catch unreachable;
+                    } else {
+                        const def_val = zeroFillForType(col_types[ci]) orelse "0";
+                        loop.appendSlice(allocator, HS.constBind(allocator, host_target, pn, def_val)) catch unreachable;
+                    }
+                }
+            }
+            if (guard_z) |cond| {
+                var unknown_op: []const u8 = "";
+                const lowered_c = storeLowerExpr(allocator, cond, &unknown_op) orelse
+                    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the sweep guard names `@{s}`, and that operation has no lowering for this target - a store guard is a Koru expression, and the operations Koru names with `@` are the shared table in codegen_utils.lowerBuiltin", .{ store_name, unknown_op }) } };
+                const gz = std.fmt.allocPrint(allocator, "if (!({s})) continue;\n", .{lowered_c}) catch unreachable;
+                loop.appendSlice(allocator, gz) catch unreachable;
+            }
+            loop.appendSlice(allocator, storeEventQualifier(allocator, home_ns, program.main_module_name)) catch unreachable;
+            loop.appendSlice(allocator, sbody_name) catch unreachable;
+            loop.appendSlice(allocator, "_event.handler(") catch unreachable;
+            loop.appendSlice(allocator, HS.argRec(allocator, host_target, argb.items)) catch unreachable;
+            loop.appendSlice(allocator, ");\n}\n}\n") catch unreachable;
+        }
+        loop.appendSlice(allocator, "}\n") catch unreachable;
+    } else {
+        const cellq = storeCellQualifier(allocator, home_ns, program.main_module_name);
+        const cell_len = std.fmt.allocPrint(allocator, "{s}__koru_store_{s}.len", .{ cellq, store_name }) catch unreachable;
+        loop.appendSlice(allocator, "{\n") catch unreachable;
+        loop.appendSlice(allocator, HS.loopHead(allocator, host_target, "__koru_si", cell_len)) catch unreachable;
+        for (proj_names, proj_cols) |pn, ci| {
+            const esc_cn = codegen_utils_store.escapeZigIdentifier(allocator, col_names[ci]) catch col_names[ci];
+            const read = std.fmt.allocPrint(allocator, "{s}__koru_store_{s}.{s}[__koru_si]", .{ cellq, store_name, esc_cn }) catch unreachable;
+            loop.appendSlice(allocator, HS.constBind(allocator, host_target, pn, read)) catch unreachable;
+        }
+        if (guard_z) |cond| {
+            var unknown_op: []const u8 = "";
+            const lowered_c = storeLowerExpr(allocator, cond, &unknown_op) orelse
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): the sweep guard names `@{s}`, and that operation has no lowering for this target - a store guard is a Koru expression, and the operations Koru names with `@` are the shared table in codegen_utils.lowerBuiltin", .{ store_name, unknown_op }) } };
+            const gz = std.fmt.allocPrint(allocator, "if (!({s})) continue;\n", .{lowered_c}) catch unreachable;
+            loop.appendSlice(allocator, gz) catch unreachable;
+        }
+        loop.appendSlice(allocator, storeEventQualifier(allocator, home_ns, program.main_module_name)) catch unreachable;
+        loop.appendSlice(allocator, sbody_name) catch unreachable;
+        loop.appendSlice(allocator, "_event.handler(") catch unreachable;
+        loop.appendSlice(allocator, HS.argRec(allocator, host_target, argb.items)) catch unreachable;
+        loop.appendSlice(allocator, ");\n}\n}\n") catch unreachable;
+    }
 
     // WHERE this replacement lands is the runner's call, and the two placements
     // want different SHAPES. A nested site splices inline, inside a function

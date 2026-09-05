@@ -840,35 +840,39 @@ pub fn mangleJsIdent(allocator: std.mem.Allocator, name: []const u8) ![]const u8
 pub const HostShape = struct {
     /// `| name <value>` — a payload that IS the value.
     pub fn branchOne(alloc: std.mem.Allocator, t: HostTarget, name: []const u8, value: []const u8) []const u8 {
+        const esc_name = escapeZigIdentifier(alloc, name) catch name;
         return if (t == .js)
             std.fmt.allocPrint(alloc, "{{ tag: \"{s}\", {s}: {s} }}", .{ name, name, value }) catch unreachable
         else
-            std.fmt.allocPrint(alloc, ".{{ .{s} = {s} }}", .{ name, value }) catch unreachable;
+            std.fmt.allocPrint(alloc, ".{{ .{s} = {s} }}", .{ esc_name, value }) catch unreachable;
     }
 
     /// `| name` — a branch that carries nothing.
     pub fn branchEmpty(alloc: std.mem.Allocator, t: HostTarget, name: []const u8) []const u8 {
+        const esc_name = escapeZigIdentifier(alloc, name) catch name;
         return if (t == .js)
             std.fmt.allocPrint(alloc, "{{ tag: \"{s}\", {s}: {{}} }}", .{ name, name }) catch unreachable
         else
-            std.fmt.allocPrint(alloc, ".{{ .{s} = .{{}} }}", .{name}) catch unreachable;
+            std.fmt.allocPrint(alloc, ".{{ .{s} = .{{}} }}", .{esc_name}) catch unreachable;
     }
 
     /// `| name { a, b }` — a record payload. `body` is the already-joined field
     /// list in the host's own spelling, which `recField` produces.
     pub fn branchRec(alloc: std.mem.Allocator, t: HostTarget, name: []const u8, body: []const u8) []const u8 {
+        const esc_name = escapeZigIdentifier(alloc, name) catch name;
         return if (t == .js)
             std.fmt.allocPrint(alloc, "{{ tag: \"{s}\", {s}: {{ {s} }} }}", .{ name, name, body }) catch unreachable
         else
-            std.fmt.allocPrint(alloc, ".{{ .{s} = .{{ {s} }} }}", .{ name, body }) catch unreachable;
+            std.fmt.allocPrint(alloc, ".{{ .{s} = .{{ {s} }} }}", .{ esc_name, body }) catch unreachable;
     }
 
     /// One `name = value` pair inside a record payload or argument object.
     pub fn recField(alloc: std.mem.Allocator, t: HostTarget, name: []const u8, value: []const u8) []const u8 {
+        const esc_name = escapeZigIdentifier(alloc, name) catch name;
         return if (t == .js)
             std.fmt.allocPrint(alloc, "{s}: {s}", .{ name, value }) catch unreachable
         else
-            std.fmt.allocPrint(alloc, ".{s} = {s}", .{ name, value }) catch unreachable;
+            std.fmt.allocPrint(alloc, ".{s} = {s}", .{ esc_name, value }) catch unreachable;
     }
 
     /// A handler's ARGUMENT object — `.{ … }` on Zig, `{ … }` on JS. Not a

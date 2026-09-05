@@ -36,6 +36,9 @@ std/store:insert(Player) { str: 18, mana: 12 }
 std/store:insert(Enemy) { str: 10, armor: 5 }
 
 std/store:query(Entities)
+! query e |> std/io:print.ln("entity {{ e.str:d }}")
+
+std/store:query(Entities)
 ! query e when e is Player |> std/io:print.ln("player {{ e.str:d }} {{ e.mana:d }}")
 
 std/store:query(Entities)
