@@ -1,0 +1,8 @@
+--- bridge open
+  A: REFUSED declared '!open' is not discharged by the body
+  B: DENIED eat
+  C: INSTALLED greet
+  D: {"branch":"","value":"hi"}
+  vocab: echo(text: string)
+greet(text: string)
+--- done

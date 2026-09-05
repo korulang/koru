@@ -728,6 +728,96 @@ pub fn findDefinedFlow(defined: *const DefinedFlows, name: []const u8) ?DefinedF
     return defined.get(name);
 }
 
+fn eventInSession(name: []const u8, scope_events: []const []const u8, defined: *DefinedFlows) bool {
+    for (scope_events) |e| {
+        if (std.mem.eql(u8, e, name)) return true;
+    }
+    return defined.get(name) != null;
+}
+
+fn firstDeniedInInv(inv: *const ast.Invocation, scope_events: []const []const u8, defined: *DefinedFlows) ?[]const u8 {
+    if (inv.path.segments.len == 0) return null;
+    const name = inv.path.segments[inv.path.segments.len - 1];
+    if (eventInSession(name, scope_events, defined)) return null;
+    return name;
+}
+
+fn firstDeniedInNode(n: *const ast.Node, scope_events: []const []const u8, defined: *DefinedFlows) ?[]const u8 {
+    return switch (n.*) {
+        .invocation => |*inv| firstDeniedInInv(inv, scope_events, defined),
+        .label_with_invocation => |*lw| firstDeniedInInv(&lw.invocation, scope_events, defined),
+        else => null,
+    };
+}
+
+fn firstDeniedInContinuation(cont: *const ast.Continuation, scope_events: []const []const u8, defined: *DefinedFlows) ?[]const u8 {
+    if (cont.node) |*n| {
+        if (firstDeniedInNode(n, scope_events, defined)) |ev| return ev;
+    }
+    for (cont.continuations) |*c| {
+        if (firstDeniedInContinuation(c, scope_events, defined)) |ev| return ev;
+    }
+    return null;
+}
+
+fn phantomStateName(p: []const u8) []const u8 {
+    var s = p;
+    if (s.len > 0 and s[0] == '!') s = s[1..];
+    if (s.len > 0 and s[s.len - 1] == '!') s = s[0 .. s.len - 1];
+    return s;
+}
+
+fn eventDischargesState(name: []const u8, state: []const u8, discharges_fn: ?DischargesSpecFn, defined: *DefinedFlows) bool {
+    if (discharges_fn) |f| {
+        for (f(name)) |spec| {
+            if (std.mem.eql(u8, phantomStateName(spec.obligation_name), state)) return true;
+        }
+    }
+    if (defined.get(name)) |df| {
+        for (df.param_types) |t| {
+            if (std.mem.indexOfScalar(u8, t, '<')) |lt| {
+                if (t.len > lt + 1 and t[t.len - 1] == '>') {
+                    const ph = t[lt + 1 .. t.len - 1];
+                    if (ph.len > 0 and ph[0] == '!' and std.mem.eql(u8, phantomStateName(ph), state)) return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+fn bodyDischargesState(cont: *const ast.Continuation, state: []const u8, discharges_fn: ?DischargesSpecFn, defined: *DefinedFlows) bool {
+    if (cont.node) |*n| {
+        const hit = switch (n.*) {
+            .invocation => |*inv| blk: {
+                if (inv.path.segments.len == 0) break :blk false;
+                break :blk eventDischargesState(inv.path.segments[inv.path.segments.len - 1], state, discharges_fn, defined);
+            },
+            .label_with_invocation => |*lw| blk: {
+                if (lw.invocation.path.segments.len == 0) break :blk false;
+                break :blk eventDischargesState(lw.invocation.path.segments[lw.invocation.path.segments.len - 1], state, discharges_fn, defined);
+            },
+            else => false,
+        };
+        if (hit) return true;
+    }
+    for (cont.continuations) |*c| {
+        if (bodyDischargesState(c, state, discharges_fn, defined)) return true;
+    }
+    return false;
+}
+
+fn firstDishonestConsume(decl: *const ast.EventDecl, body: *const ast.Continuation, discharges_fn: ?DischargesSpecFn, defined: *DefinedFlows) ?[]const u8 {
+    for (decl.input.fields) |field| {
+        if (field.phantom) |p| {
+            if (p.len > 0 and p[0] == '!') {
+                if (!bodyDischargesState(body, phantomStateName(p), discharges_fn, defined)) return p;
+            }
+        }
+    }
+    return null;
+}
+
 // ============================================================================
 // INTERPRETER CONTEXT - Passed to the execution loop
 // ============================================================================
@@ -1203,20 +1293,33 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // dispatch; every call it makes runs through the same possession machinery,
 // so a defined flow can never reach beyond what the session holds.
 //
-// The definition-time analyses (declared obligations must match the body's
-// real behavior; every call must be within the session's scopes) are the
-// richer guarantee and are rungs of the stance, not this slice; call-time
-// possession enforcement is the floor and is already structural.
+// Definition-time scope filter (440_018): every event the body names must
+// already be in the session — compiled scope events or previously defined
+// flows. Definition-time obligation honesty, consume side (440_019): a
+// declared `<!state>` input must be discharged by some invocation in the
+// body. Create-side honesty (return phantoms vs body creates) is still a
+// later rung; call-time possession remains the floor.
 ~[retain]pub tor define {
     source: string,
-    defined: *DefinedFlows
+    defined: *DefinedFlows,
+    scope: string,
 }
 | defined string
 | parse-error { message: string, line: u32, column: u32 }
 
 ~proc define|zig {
     const koru_errors = @import("koru_errors");
+    const rt = @import("root").koru_std.koru_runtime;
     const allocator = InterpreterThreadState.prepare();
+    const scope_lookup = rt.get_scope_event.handler(.{ .name = scope });
+    const scope_events: []const []const u8 = switch (scope_lookup) {
+        .scope => |s| if (s.events_fn) |f| f() else &.{},
+        .not_found => &.{},
+    };
+    const discharges_fn: ?DischargesSpecFn = switch (scope_lookup) {
+        .scope => |s| s.discharges_spec_fn,
+        .not_found => null,
+    };
 
     var reporter = koru_errors.ErrorReporter.init(allocator, "interpreter", source) catch {
         return .{ .parse_error = .{ .message = "OOM", .line = 0, .column = 0 } };
@@ -1314,6 +1417,32 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
             return .{ .parse_error = .{ .message = "Definition body is empty", .line = @intCast(start_line), .column = 0 }};
         }
         body_source = allocator.dupe(u8, body_source) catch body_source;
+    }
+
+    if (firstDeniedInContinuation(&f.body, scope_events, defined)) |ev| {
+        const msg = std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "event '{s}' is not in this session's scope",
+            .{ev},
+        ) catch "event is not in this session's scope";
+        return .{ .parse_error = .{
+            .message = msg,
+            .line = @intCast(f.location.line),
+            .column = 0,
+        } };
+    }
+
+    if (firstDishonestConsume(ed, &f.body, discharges_fn, defined)) |ph| {
+        const msg = std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "declared '{s}' is not discharged by the body",
+            .{ph},
+        ) catch "declared phantom is not discharged by the body";
+        return .{ .parse_error = .{
+            .message = msg,
+            .line = @intCast(f.location.line),
+            .column = 0,
+        } };
     }
 
     // Install into the durable table. The table OWNS its memory (defined.put

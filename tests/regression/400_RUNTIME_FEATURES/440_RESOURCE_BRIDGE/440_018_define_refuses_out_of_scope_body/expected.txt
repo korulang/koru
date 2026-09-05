@@ -1,0 +1,8 @@
+--- bridge open
+  A: REFUSED event 'sync' is not in this session's scope
+  B: DENIED sneak
+  C: INSTALLED greet
+  D: {"branch":"","value":"hi"}
+  vocab: echo(text: string)
+greet(text: string)
+--- done

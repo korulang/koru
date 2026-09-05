@@ -57,6 +57,12 @@ subflow declaration into the session's durable defined-flows table; a later
 possession machinery. Pinned at 440_008_runtime_define — the belief's
 growth-mechanism half is now code, not prose.
 
+Install is not only "parse and store." A definition whose body names an
+event the session does not hold is refused at install (440_018). A
+definition that claims a consume phantom the body never discharges is
+refused at install (440_019). Call-time possession remains the floor;
+create-side honesty (return phantom vs body creates) is still open.
+
 New side effects are the one thing flows cannot create — they are
 compiled primitives, grown by the platform at build boundaries, with a rare
 gated native-module escape hatch for mid-session needs.

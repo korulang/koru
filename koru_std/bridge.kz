@@ -192,6 +192,7 @@ pub const Bridge = struct {
             return switch (interp.define_event.handler(.{
                 .source = source,
                 .defined = br.defined,
+                .scope = br.scope,
             })) {
                 .defined => |d| .{ .defined = d },
                 .parse_error => |e| .{ .parse_error = .{
@@ -246,9 +247,10 @@ pub const Bridge = struct {
 // becomes a verb callable on subsequent runs, held in the session's durable
 // defined-flows table. The body's calls run through the same possession
 // machinery as any dispatch, so a defined flow cannot reach beyond what the
-// session holds. The agent hears "defined name" — or the parse error — fed
-// back into the transcript (the honest-diagnostics rule applies here most of
-// all: a wrong declaration needs a truthful error).
+// session holds. Install also refuses a body that names an event outside
+// the session (440_018). The agent hears "defined name" — or the parse
+// error — fed back into the transcript (the honest-diagnostics rule
+// applies here most of all: a wrong declaration needs a truthful error).
 
 ~pub tor define { br: *Bridge, source: string }
 | defined string
@@ -260,6 +262,7 @@ pub const Bridge = struct {
     return switch (interp.define_event.handler(.{
         .source = source,
         .defined = br.defined,
+        .scope = br.scope,
     })) {
         .defined => |d| .{ .defined = d },
         .parse_error => |e| .{ .parse_error = .{
