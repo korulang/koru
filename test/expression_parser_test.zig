@@ -726,3 +726,165 @@ test "entry shape: narrowing call parses as function_call" {
     try testing.expectEqualStrings("command", expr.node.function_call.callee.node.identifier);
     try testing.expect(expr.node.function_call.args.len == 1);
 }
+
+// ============================================================================
+// Lenient parse() vs strict parseAll()
+// ============================================================================
+//
+// parse() stops at the first token that can't continue the expression and
+// silently ignores the rest; parseAll() requires the WHOLE input to be one
+// expression and rejects the remainder with error.TrailingGarbage. A store
+// query arm's `when e is Player` rides the lenient entry at FILE parse: only
+// `e` parses, and the `is Player` tail is tolerated (the store transform
+// rewrites the condition TEXT later, before it is lowered as a real
+// expression). Grouped `(expr)` sub-expressions are strict in BOTH entries,
+// so the same `is` guard inside a group dies at file parse.
+
+test "parse (lenient) tolerates trailing garbage after a bare identifier" {
+    const allocator = testing.allocator;
+
+    // `e is Player` is an is-guard, not an expression. parse() reads the
+    // bare identifier `e` and silently ignores `is Player` — this leniency
+    // is what lets `when e is Player` survive FILE parse.
+    var parser = ExpressionParser.init(allocator, "e is Player");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .identifier);
+    try testing.expectEqualStrings("e", expr.node.identifier);
+    try testing.expect(parser.pos < parser.input.len); // tail left unconsumed
+}
+
+test "parse (lenient) tolerates trailing garbage after a complete prefix" {
+    const allocator = testing.allocator;
+
+    // `e is Player or e is Enemy` — parse() reads just `e`; the
+    // `is Player or e is Enemy` tail is silently ignored, which is why the
+    // multi-guard spelling also survives FILE parse.
+    var parser = ExpressionParser.init(allocator, "e is Player or e is Enemy");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .identifier);
+    try testing.expectEqualStrings("e", expr.node.identifier);
+}
+
+test "parse (lenient) tolerates trailing garbage after a unary prefix" {
+    const allocator = testing.allocator;
+
+    // `! e is Boss` — parse() reads `!(e)`; the `is Boss` tail is silently
+    // ignored, so this spelling parses at FILE parse (it mis-lowers later).
+    var parser = ExpressionParser.init(allocator, "! e is Boss");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .unary);
+    try testing.expect(expr.node.unary.op == .not);
+    try testing.expect(expr.node.unary.operand.node == .identifier);
+}
+
+test "parseAll (strict) rejects trailing garbage with TrailingGarbage" {
+    // parseAll requires the WHOLE input to be one expression. The is-guard
+    // text is garbage past the expression's end — exactly the text the store
+    // transform rewrites after the lenient file parse has accepted it.
+    //
+    // Uses an arena: the parser's error path has no errdefer cleanup, so a
+    // failed parse leaks the partially-built expression tree (pre-existing
+    // behavior, expression_parser.zig:parseIdentifier/parsePrimary). These
+    // pins assert the ERROR returned, not the parser's leak behavior.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    {
+        var parser = ExpressionParser.init(allocator, "e is Player");
+        defer parser.deinit();
+        try testing.expectError(error.TrailingGarbage, parser.parseAll());
+    }
+    {
+        var parser = ExpressionParser.init(allocator, "e is Player or e is Enemy");
+        defer parser.deinit();
+        try testing.expectError(error.TrailingGarbage, parser.parseAll());
+    }
+    {
+        var parser = ExpressionParser.init(allocator, "e is not Boss");
+        defer parser.deinit();
+        try testing.expectError(error.TrailingGarbage, parser.parseAll());
+    }
+}
+
+test "parseAll (strict) accepts a complete single expression" {
+    const allocator = testing.allocator;
+
+    // Control: a whole input that IS one expression parses identically under
+    // both entries.
+    {
+        var parser = ExpressionParser.init(allocator, "e");
+        defer parser.deinit();
+        const expr = try parser.parseAll();
+        defer freeExpression(allocator, expr);
+        try testing.expect(expr.node == .identifier);
+        try testing.expectEqualStrings("e", expr.node.identifier);
+    }
+    {
+        var parser = ExpressionParser.init(allocator, "e.act == 1");
+        defer parser.deinit();
+        const expr = try parser.parseAll();
+        defer freeExpression(allocator, expr);
+        try testing.expect(expr.node == .binary);
+        try testing.expect(expr.node.binary.op == .equal);
+    }
+}
+
+// ============================================================================
+// Grouped-expression strictness: (expr) demands an immediate `)`
+// ============================================================================
+
+test "grouped expression requires the closing paren immediately — is-guard inside fails" {
+    // The group parser demands a `)` right after the inner expression. `is`
+    // is not an expression operator, so the inner parse stops at `e` and the
+    // `)` is never found — `!(e is Boss)` dies at FILE parse with
+    // PARSE003/MissingClosingParen while the unguarded spelling survives.
+    //
+    // Uses an arena for the same reason as the parseAll error test: the
+    // error path leaks the partial tree.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    {
+        var parser = ExpressionParser.init(allocator, "(e is Boss)");
+        defer parser.deinit();
+        try testing.expectError(error.MissingClosingParen, parser.parse());
+    }
+    {
+        var parser = ExpressionParser.init(allocator, "!(e is Boss)");
+        defer parser.deinit();
+        try testing.expectError(error.MissingClosingParen, parser.parse());
+    }
+}
+
+test "grouped expression with a real inner expression succeeds — !(e.act == 1)" {
+    const allocator = testing.allocator;
+
+    // A real expression inside the group closes the paren immediately, so the
+    // negation of a grouped comparison parses fine on a plain store.
+    var parser = ExpressionParser.init(allocator, "!(e.act == 1)");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .unary);
+    try testing.expect(expr.node.unary.op == .not);
+    try testing.expect(expr.node.unary.operand.node == .grouped);
+    const inner = expr.node.unary.operand.node.grouped;
+    try testing.expect(inner.node == .binary);
+    try testing.expect(inner.node.binary.op == .equal);
+}

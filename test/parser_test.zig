@@ -483,3 +483,142 @@ test "multi-line annotation syntax for proc definitions" {
         try testing.expect(proc.annotations.len > 0);
     }
 }
+
+// ============================================================================
+// when-condition extraction (parseBranchContinuationBase, parser.zig:7648)
+// ============================================================================
+//
+// A continuation's `when`-guard is extracted as raw TEXT (delimited by the
+// earliest `|>` / `->` / `=>`) and then run through the LENIENT expression
+// entry `ExpressionParser.parse()` (parser.zig:7731-7743). That entry stops
+// at the first token that can't continue the expression, so an `is`-guard —
+// `e is Player`, `e is Player or e is Enemy`, `e is not Boss` — parses as
+// just `e` and the is-text is silently tolerated at FILE parse (the store
+// transform rewrites the whole condition text later). A GROUPED `is`-guard
+// (`!(e is Boss)`) dies here: the group parser requires a `)` immediately
+// after the inner expression, `is` is not an expression operator, so the
+// inner parse stops at `e` and the error surfaces as PARSE003.
+// Store query arms (`! query e when ...`) route through the same
+// parseContinuationInternal → parseBranchContinuationBase path
+// (parser.zig:7048), so these pins cover them.
+
+test "when condition: is-guard text rides lenient parse at file parse" {
+    const allocator = testing.allocator;
+
+    const source =
+        \\~poll()
+        \\| key e when e is Player |> quit()
+    ;
+
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer p.deinit();
+
+    var result = try p.parse();
+    defer result.deinit();
+
+    try testing.expect(!p.reporter.hasErrors());
+    const flow = result.source_file.items[0].flow;
+    const cont = flow.body.continuations[0];
+    try testing.expect(cont.condition != null);
+    // The full guard text is preserved for the store transform's rewrite;
+    // only `e` parsed as an expression, the `is Player` tail was ignored.
+    try testing.expectEqualStrings("e is Player", cont.condition.?);
+}
+
+test "when condition: multi-guard is-text rides lenient parse at file parse" {
+    const allocator = testing.allocator;
+
+    const source =
+        \\~poll()
+        \\| key e when e is Player or e is Enemy |> quit()
+    ;
+
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer p.deinit();
+
+    var result = try p.parse();
+    defer result.deinit();
+
+    try testing.expect(!p.reporter.hasErrors());
+    const flow = result.source_file.items[0].flow;
+    const cont = flow.body.continuations[0];
+    try testing.expect(cont.condition != null);
+    try testing.expectEqualStrings("e is Player or e is Enemy", cont.condition.?);
+}
+
+test "when condition: canonical is-not guard rides lenient parse at file parse" {
+    const allocator = testing.allocator;
+
+    // `e is not Boss` is the settled negated-guard spelling (Lars-ruled
+    // 2026-09-06); it rides the same lenient trailing-garbage path as
+    // `e is Player`, and the store transform rewrites it to `e.kind != N`.
+    const source =
+        \\~poll()
+        \\| key e when e is not Boss |> quit()
+    ;
+
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer p.deinit();
+
+    var result = try p.parse();
+    defer result.deinit();
+
+    try testing.expect(!p.reporter.hasErrors());
+    const flow = result.source_file.items[0].flow;
+    const cont = flow.body.continuations[0];
+    try testing.expect(cont.condition != null);
+    try testing.expectEqualStrings("e is not Boss", cont.condition.?);
+}
+
+test "when condition: grouped is-guard is rejected as PARSE003 MissingClosingParen" {
+    // `!(e is Boss)` fails at FILE parse: the grouped-expression parser is
+    // strict about the closing paren and `is` is not an expression operator,
+    // so the inner parse stops at `e` and PARSE003 fires.
+    //
+    // Uses an arena: this fail-fast error path leaks the already-extracted
+    // binding and condition strings plus the partial condition_expr
+    // (parser.zig:7641/7717 — the leak is the parser's, not this test's).
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const source =
+        \\~poll()
+        \\| key e when !(e is Boss) |> quit()
+    ;
+
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    p.fail_fast = true;
+    defer p.deinit();
+
+    const result = p.parse();
+    try testing.expectError(error.ParseError, result);
+
+    try testing.expect(p.reporter.hasErrors());
+    const first_error = p.reporter.errors.items[0];
+    try testing.expectEqual(errors.ErrorCode.PARSE003, first_error.code);
+    try testing.expect(std.mem.indexOf(u8, first_error.message, "invalid when condition '!(e is Boss)': MissingClosingParen") != null);
+}
+
+test "when condition: grouped real expression is accepted at file parse" {
+    const allocator = testing.allocator;
+
+    // A real expression inside the group closes the paren immediately, so
+    // `!(e.act == 1)` parses fine at FILE parse.
+    const source =
+        \\~poll()
+        \\| key e when !(e.act == 1) |> quit()
+    ;
+
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer p.deinit();
+
+    var result = try p.parse();
+    defer result.deinit();
+
+    try testing.expect(!p.reporter.hasErrors());
+    const flow = result.source_file.items[0].flow;
+    const cont = flow.body.continuations[0];
+    try testing.expect(cont.condition != null);
+    try testing.expectEqualStrings("!(e.act == 1)", cont.condition.?);
+}
