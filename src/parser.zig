@@ -7673,6 +7673,7 @@ pub const Parser = struct {
                     lexer.trim(remaining);
 
                 if (condition_str.len == 0) {
+                    if (binding) |b| self.allocator.free(b);
                     return self.fail(
                         .PARSE003,
                         self.current + 1,
@@ -7703,6 +7704,7 @@ pub const Parser = struct {
                     }
                     if (matched_at) |m| {
                         if (m == condition_str.len - 1) {
+                            if (binding) |b| self.allocator.free(b);
                             try errors.redundantWhenParens(
                                 &self.reporter,
                                 location.line,
@@ -7732,14 +7734,21 @@ pub const Parser = struct {
             var expr_parser = expression_parser.ExpressionParser.init(self.allocator, cond_str);
             defer expr_parser.deinit();
 
+            // On failure the expression parser has freed its own partial tree
+            // (errdefer pass); the binding and condition dupes are ours to
+            // drop. fail() formats the message synchronously, so it must run
+            // while cond_str is still alive — free after, return its error.
             condition_expr = expr_parser.parse() catch |err| {
-                return self.fail(
+                if (binding) |b| self.allocator.free(b);
+                const e = self.fail(
                     .PARSE003,
                     self.current + 1,
                     indent + 2,
                     "invalid when condition '{s}': {s}",
                     .{ cond_str, @errorName(err) },
                 );
+                self.allocator.free(cond_str);
+                return e;
             };
         }
 

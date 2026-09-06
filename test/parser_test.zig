@@ -575,12 +575,10 @@ test "when condition: grouped is-guard is rejected as PARSE003 MissingClosingPar
     // strict about the closing paren and `is` is not an expression operator,
     // so the inner parse stops at `e` and PARSE003 fires.
     //
-    // Uses an arena: this fail-fast error path leaks the already-extracted
-    // binding and condition strings plus the partial condition_expr
-    // (parser.zig:7641/7717 — the leak is the parser's, not this test's).
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    // testing.allocator: the PARSE003 path now frees the binding and
+    // condition dupes and the expression parser frees its partial tree, so a
+    // leak here fails the test.
+    const allocator = testing.allocator;
 
     const source =
         \\~poll()

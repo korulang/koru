@@ -794,13 +794,9 @@ test "parseAll (strict) rejects trailing garbage with TrailingGarbage" {
     // text is garbage past the expression's end — exactly the text the store
     // transform rewrites after the lenient file parse has accepted it.
     //
-    // Uses an arena: the parser's error path has no errdefer cleanup, so a
-    // failed parse leaks the partially-built expression tree (pre-existing
-    // behavior, expression_parser.zig:parseIdentifier/parsePrimary). These
-    // pins assert the ERROR returned, not the parser's leak behavior.
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    // testing.allocator: the error path frees the partial tree (errdefer
+    // pass), so a leak here fails the test.
+    const allocator = testing.allocator;
 
     {
         var parser = ExpressionParser.init(allocator, "e is Player");
@@ -852,11 +848,9 @@ test "grouped expression requires the closing paren immediately — is-guard ins
     // `)` is never found — `!(e is Boss)` dies at FILE parse with
     // PARSE003/MissingClosingParen while the unguarded spelling survives.
     //
-    // Uses an arena for the same reason as the parseAll error test: the
-    // error path leaks the partial tree.
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    // testing.allocator: the error path frees the inner expression (errdefer
+    // pass), so a leak here fails the test.
+    const allocator = testing.allocator;
 
     {
         var parser = ExpressionParser.init(allocator, "(e is Boss)");
@@ -887,4 +881,78 @@ test "grouped expression with a real inner expression succeeds — !(e.act == 1)
     const inner = expr.node.unary.operand.node.grouped;
     try testing.expect(inner.node == .binary);
     try testing.expect(inner.node.binary.op == .equal);
+}
+
+// ============================================================================
+// Error paths must not leak (tested with testing.allocator, which fails the
+// test on leak). These were RED before the errdefer pass: each path dropped
+// partial state (TrailingGarbage dropped the parsed tree; MissingClosingParen
+// dropped the inner expression; the binary-loop error dropped `left`; the
+// bracket error dropped index + object; the conditional errors dropped the
+// parsed arms; the builtin paren error dropped the name dupe). The last two
+// are controls: those paths allocate nothing before failing, so they must be
+// green even without the fix — they prove the mechanism doesn't false-positive.
+// ============================================================================
+
+test "leak: parseAll TrailingGarbage drops the parsed tree" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "e is Player");
+    defer parser.deinit();
+    try testing.expectError(error.TrailingGarbage, parser.parseAll());
+}
+
+test "leak: grouped MissingClosingParen drops the inner expression" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "!(e is Boss)");
+    defer parser.deinit();
+    try testing.expectError(error.MissingClosingParen, parser.parse());
+}
+
+test "leak: binary-loop error drops the accumulated left" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "1 + )");
+    defer parser.deinit();
+    try testing.expectError(error.InvalidIdentifier, parser.parse());
+}
+
+test "leak: MissingClosingBracket drops index and object" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "a[1");
+    defer parser.deinit();
+    try testing.expectError(error.MissingClosingBracket, parser.parse());
+}
+
+test "leak: conditional ExpectedElse drops condition and then-arm" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "if(1) 2");
+    defer parser.deinit();
+    try testing.expectError(error.ExpectedElse, parser.parse());
+}
+
+test "leak: conditional ExpectedCloseParen drops the condition" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "if(1");
+    defer parser.deinit();
+    try testing.expectError(error.ExpectedCloseParen, parser.parse());
+}
+
+test "leak: builtin ExpectedOpenParen drops the name dupe" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "@as 1");
+    defer parser.deinit();
+    try testing.expectError(error.ExpectedOpenParen, parser.parse());
+}
+
+test "control: UnterminatedString allocates nothing before failing" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "\"abc");
+    defer parser.deinit();
+    try testing.expectError(error.UnterminatedString, parser.parse());
+}
+
+test "control: InvalidIdentifier allocates nothing before failing" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "*");
+    defer parser.deinit();
+    try testing.expectError(error.InvalidIdentifier, parser.parse());
 }

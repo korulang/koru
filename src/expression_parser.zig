@@ -143,7 +143,12 @@ pub const ExpressionParser = struct {
     pub fn parseAll(self: *ExpressionParser) ParseError!*Expression {
         const expr = try self.parseExpression(.lowest);
         self.skipWhitespace();
-        if (self.pos < self.input.len) return error.TrailingGarbage;
+        if (self.pos < self.input.len) {
+            // The caller never receives the tree on TrailingGarbage — free it
+            // here or it rides the arena to process end (leak under a GPA).
+            expr.deinit(self.allocator);
+            return error.TrailingGarbage;
+        }
         return expr;
     }
 
@@ -152,6 +157,9 @@ pub const ExpressionParser = struct {
 
         // Parse primary expression
         var left = try self.parsePrimary();
+        // Any error after this point drops the accumulated tree (a later
+        // operator's failure, a recursive parse error) — free it or it leaks.
+        errdefer left.deinit(self.allocator);
 
         // Parse binary operators with precedence climbing
         while (self.pos < self.input.len) {
@@ -167,15 +175,20 @@ pub const ExpressionParser = struct {
             const op = try self.parseOperator();
             // For left-associative operators, pass the current precedence to recursive call
             const right = try self.parseExpression(op_prec);
-
-            const binary_op = op.toBinaryOp() orelse return error.UnknownOperator;
-            const binary = try self.allocator.create(Expression);
-            binary.* = .{ .node = .{ .binary = .{
-                .op = binary_op,
-                .left = left,
-                .right = right,
-            } } };
-            left = binary;
+            {
+                // Scoped: `right` is ours until it is attached to `binary`;
+                // once attached, the accumulated `left` owns it and the outer
+                // errdefer covers the whole chain.
+                errdefer right.deinit(self.allocator);
+                const binary_op = op.toBinaryOp() orelse return error.UnknownOperator;
+                const binary = try self.allocator.create(Expression);
+                binary.* = .{ .node = .{ .binary = .{
+                    .op = binary_op,
+                    .left = left,
+                    .right = right,
+                } } };
+                left = binary;
+            }
         }
 
         return left;
@@ -188,15 +201,20 @@ pub const ExpressionParser = struct {
         if (self.peek() == '(') {
             self.advance();
             const expr = try self.parseExpression(.lowest);
-            self.skipWhitespace();
-            if (self.peek() != ')') {
-                return error.MissingClosingParen;
-            }
-            self.advance();
+            {
+                // Scoped: `expr` is ours until the group node owns it; a
+                // MissingClosingParen would otherwise drop it.
+                errdefer expr.deinit(self.allocator);
+                self.skipWhitespace();
+                if (self.peek() != ')') {
+                    return error.MissingClosingParen;
+                }
+                self.advance();
 
-            const grouped = try self.allocator.create(Expression);
-            grouped.* = .{ .node = .{ .grouped = expr } };
-            return grouped;
+                const grouped = try self.allocator.create(Expression);
+                grouped.* = .{ .node = .{ .grouped = expr } };
+                return grouped;
+            }
         }
 
         // Check for unary operators
@@ -204,14 +222,16 @@ pub const ExpressionParser = struct {
             const op = if (self.peek() == '!') Operator.not_op else Operator.negate;
             self.advance();
             const operand = try self.parsePrimary();
-
-            const unary_op = op.toUnaryOp() orelse return error.UnknownOperator;
-            const unary = try self.allocator.create(Expression);
-            unary.* = .{ .node = .{ .unary = .{
-                .op = unary_op,
-                .operand = operand,
-            } } };
-            return unary;
+            {
+                errdefer operand.deinit(self.allocator);
+                const unary_op = op.toUnaryOp() orelse return error.UnknownOperator;
+                const unary = try self.allocator.create(Expression);
+                unary.* = .{ .node = .{ .unary = .{
+                    .op = unary_op,
+                    .operand = operand,
+                } } };
+                return unary;
+            }
         }
 
         // Check for builtin call (@as, @intCast, etc.)
@@ -261,7 +281,9 @@ pub const ExpressionParser = struct {
         var result = try self.allocator.create(Expression);
         result.* = .{ .node = .{ .identifier = ident } };
 
-        // Parse postfix operators: field access, array indexing, function calls
+        // Parse postfix operators: field access, array indexing, function calls.
+        // parsePostfix OWNS the error path: on failure it frees the whole
+        // accumulated chain, `result` included — nothing to free here.
         result = try self.parsePostfix(result);
 
         return result;
@@ -290,6 +312,7 @@ pub const ExpressionParser = struct {
         self.advance(); // Skip closing quote
 
         const expr = try self.allocator.create(Expression);
+        errdefer self.allocator.destroy(expr);
         expr.* = .{ .node = .{ .literal = .{ .string = try self.allocator.dupe(u8, str) } } };
         return expr;
     }
@@ -361,7 +384,9 @@ pub const ExpressionParser = struct {
         self.advance(); // Skip closing '
 
         const num_str = try std.fmt.allocPrint(self.allocator, "{d}", .{codepoint});
+        errdefer self.allocator.free(num_str);
         const expr = try self.allocator.create(Expression);
+        errdefer self.allocator.destroy(expr);
         expr.* = .{ .node = .{ .literal = .{ .number = num_str } } };
         return expr;
     }
@@ -390,6 +415,7 @@ pub const ExpressionParser = struct {
         const num = self.input[start..self.pos];
 
         const expr = try self.allocator.create(Expression);
+        errdefer self.allocator.destroy(expr);
         expr.* = .{ .node = .{ .literal = .{ .number = try self.allocator.dupe(u8, num) } } };
         return expr;
     }
@@ -431,6 +457,10 @@ pub const ExpressionParser = struct {
     /// and function calls (args). These chain left-to-right.
     fn parsePostfix(self: *ExpressionParser, initial: *Expression) ParseError!*Expression {
         var result = initial;
+        // OWNS the error path: any failure frees the accumulated chain,
+        // `initial` included (each wrapper node owns its object). The caller
+        // must NOT free `initial` itself on error — double free.
+        errdefer result.deinit(self.allocator);
         while (true) {
             self.skipWhitespace();
             if (self.peek() == '.') {
@@ -446,18 +476,22 @@ pub const ExpressionParser = struct {
             } else if (self.peek() == '[') {
                 self.advance();
                 const index = try self.parseExpression(.lowest);
-                self.skipWhitespace();
-                if (self.peek() != ']') {
-                    return error.MissingClosingBracket;
-                }
-                self.advance();
+                {
+                    // Scoped: `index` is ours until the array_index node owns it.
+                    errdefer index.deinit(self.allocator);
+                    self.skipWhitespace();
+                    if (self.peek() != ']') {
+                        return error.MissingClosingBracket;
+                    }
+                    self.advance();
 
-                const array_index = try self.allocator.create(Expression);
-                array_index.* = .{ .node = .{ .array_index = .{
-                    .object = result,
-                    .index = index,
-                } } };
-                result = array_index;
+                    const array_index = try self.allocator.create(Expression);
+                    array_index.* = .{ .node = .{ .array_index = .{
+                        .object = result,
+                        .index = index,
+                    } } };
+                    result = array_index;
+                }
             } else if (self.peek() == '(') {
                 // Function call
                 const args = try self.parseArgList();
@@ -480,6 +514,7 @@ pub const ExpressionParser = struct {
         self.advance(); // skip '@'
 
         const name = try self.parseIdentifier();
+        errdefer self.allocator.free(name);
 
         self.skipWhitespace();
         if (self.peek() != '(') return error.ExpectedOpenParen;
@@ -502,6 +537,7 @@ pub const ExpressionParser = struct {
         if (self.peek() != '(') return error.ExpectedOpenParen;
         self.advance();
         const condition = try self.parseExpression(.lowest);
+        errdefer condition.deinit(self.allocator);
         self.skipWhitespace();
         if (self.peek() != ')') return error.ExpectedCloseParen;
         self.advance();
@@ -509,6 +545,7 @@ pub const ExpressionParser = struct {
         // Parse then expression
         self.skipWhitespace();
         const then_expr = try self.parseExpression(.lowest);
+        errdefer then_expr.deinit(self.allocator);
 
         // Expect 'else' keyword
         self.skipWhitespace();
@@ -520,6 +557,7 @@ pub const ExpressionParser = struct {
         // Parse else expression (may be another if-else)
         self.skipWhitespace();
         const else_expr = try self.parseExpression(.lowest);
+        errdefer else_expr.deinit(self.allocator);
 
         const result = try self.allocator.create(Expression);
         result.* = .{ .node = .{ .conditional = .{
@@ -536,6 +574,12 @@ pub const ExpressionParser = struct {
         self.advance(); // skip '('
 
         var args = try std.ArrayList(*Expression).initCapacity(self.allocator, 0);
+        // On any error the caller never receives the slice: free every parsed
+        // argument and the buffer. toOwnedSlice transfers both on success.
+        errdefer {
+            for (args.items) |a| a.deinit(self.allocator);
+            args.deinit(self.allocator);
+        }
 
         self.skipWhitespace();
         if (self.peek() == ')') {
