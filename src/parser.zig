@@ -7731,6 +7731,10 @@ pub const Parser = struct {
         // Parse the condition expression if we have one
         var condition_expr: ?*ast.Expression = null;
         if (condition) |cond_str| {
+            // LENIENT parse() on purpose, never parseAll(): is-guard text
+            // (`e is Player`, `e is not Boss`) is not an expression — the
+            // std/store transform rewrites it after this parse accepts the
+            // prefix. parseAll() would reject the whole guard (690_298).
             var expr_parser = expression_parser.ExpressionParser.init(self.allocator, cond_str);
             defer expr_parser.deinit();
 
