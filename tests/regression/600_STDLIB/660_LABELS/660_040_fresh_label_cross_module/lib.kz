@@ -1,0 +1,12 @@
+const std = @import("std");
+~pub tor speak { n: i64 }
+| ok string<mine!>
+| err
+~proc speak|zig {
+    var buf: [64]u8 = undefined;
+    const s = std.fmt.bufPrint(&buf, "n={d}", .{n}) catch return .{ .err = .{} };
+    const owned = koru_allocator().dupe(u8, s) catch return .{ .err = .{} };
+    return .{ .ok = owned };
+}
+~pub tor drop { t: string<!mine> }
+~proc drop|zig { koru_allocator().free(t); }

@@ -1,0 +1,3 @@
+MUST_RUN
+CONTAINS explicit n=7
+CONTAINS auto n=9
