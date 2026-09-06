@@ -549,7 +549,7 @@ pub const FormattedText = struct {
             allocator,
             \\{{
             \\    const __S = struct {{ threadlocal var __buf: [4096]u8 = undefined; }};
-            \\    const __text = @import("std").fmt.bufPrint(&__S.__buf, "{s}", .{{{s}}}) catch "";
+            \\    const __text = @import("std").fmt.bufPrint(&__S.__buf, "{s}", .{{{s}}}) catch @panic("std/fmt:ln output exceeds the 4096-byte scratch buffer — use fmt.blk (allocates, no cap) for long lines");
             \\    break :__KORU_INLINE__ .{{ .text = __text }};
             \\}}
             ,
@@ -560,7 +560,7 @@ pub const FormattedText = struct {
             allocator,
             \\{{
             \\    const __S = struct {{ threadlocal var __buf: [4096]u8 = undefined; }};
-            \\    const __text = @import("std").fmt.bufPrint(&__S.__buf, "{s}", .{{{s}}}) catch "";
+            \\    const __text = @import("std").fmt.bufPrint(&__S.__buf, "{s}", .{{{s}}}) catch @panic("std/fmt:ln output exceeds the 4096-byte scratch buffer — use fmt.blk (allocates, no cap) for long lines");
             \\    const __LnResult = union(enum) {{ line: struct {{ text: []const u8 }} }};
             \\    break :__KORU_INLINE__ @as(__LnResult, .{{ .line = .{{ .text = __text }} }});
             \\}}
