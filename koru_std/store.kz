@@ -10443,7 +10443,7 @@ fn storeLowerText(
         fn isIdentCh(ch: u8) bool {
             return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_' or ch == '-';
         }
-        fn refs(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, form: Form, used: []bool, unknown: *?[]const u8) []const u8 {
+        fn refs(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, form: Form, used: []bool, unknown: *?[]const u8, view_mode: bool) []const u8 {
             const prefix = std.fmt.allocPrint(alloc, "{s}.", .{bind}) catch unreachable;
             const expr_ctx = ast.expressionMask(alloc, text);
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 32) catch unreachable;
@@ -10473,11 +10473,23 @@ fn storeLowerText(
                             .target => std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cursor, esc_fname }) catch unreachable,
                             // The cursor is dense — a direct column read, no
                             // resolve chain in the loop body (O10.iv elision).
-                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[{s}]", .{ store, esc_fname, codegen_utils_store.HostShape.asIndex(alloc, storeHostTarget(), cursor) }) catch unreachable,
-                            .input => blk3: {
+                            // EXCEPT through a view, whose body is ONE flow
+                            // shared by the member loops: `store` is the view
+                            // name and no `__koru_store_<view>` exists, so a
+                            // live read has nothing to address. Thread the
+                            // value like `.input` — each member loop binds its
+                            // own column (690_297). A write body cannot write
+                            // the swept row through a view, so row-start and
+                            // live coincide there; nothing is lost.
+                            .live => if (view_mode) blk3: {
                                 used[ci] = true;
                                 const mangled = std.mem.replaceOwned(u8, alloc, fname, ".", "_") catch unreachable;
                                 break :blk3 std.fmt.allocPrint(alloc, "{s}{s}", .{ srf, mangled }) catch unreachable;
+                            } else std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[{s}]", .{ store, esc_fname, codegen_utils_store.HostShape.asIndex(alloc, storeHostTarget(), cursor) }) catch unreachable,
+                            .input => blk4: {
+                                used[ci] = true;
+                                const mangled = std.mem.replaceOwned(u8, alloc, fname, ".", "_") catch unreachable;
+                                break :blk4 std.fmt.allocPrint(alloc, "{s}{s}", .{ srf, mangled }) catch unreachable;
                             },
                         };
                         out.appendSlice(alloc, t) catch unreachable;
@@ -10501,10 +10513,13 @@ fn storeLowerText(
                         const fname = fields[0];
                         const t = switch (form) {
                             .target => std.fmt.allocPrint(alloc, "{s}[{s}].{s}", .{ store, cursor, fname }) catch unreachable,
-                            .live => std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[{s}]", .{ store, fname, codegen_utils_store.HostShape.asIndex(alloc, storeHostTarget(), cursor) }) catch unreachable,
-                            .input => blk4: {
+                            .live => if (view_mode) blk4: {
                                 used[0] = true;
                                 break :blk4 std.fmt.allocPrint(alloc, "{s}{s}", .{ srf, fname }) catch unreachable;
+                            } else std.fmt.allocPrint(alloc, "__koru_store_{s}.{s}[{s}]", .{ store, fname, codegen_utils_store.HostShape.asIndex(alloc, storeHostTarget(), cursor) }) catch unreachable,
+                            .input => blk5: {
+                                used[0] = true;
+                                break :blk5 std.fmt.allocPrint(alloc, "{s}{s}", .{ srf, fname }) catch unreachable;
                             },
                         };
                         out.appendSlice(alloc, t) catch unreachable;
@@ -10530,38 +10545,38 @@ fn storeLowerText(
         // Reads already compose to any depth; this is the write side catching up
         // to one hop. The splitter below uses the FIRST `[` and the LAST `]`, so
         // a lowered read nested inside the brackets survives the re-parse.
-        fn storedTarget(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, used: []bool, unknown: *?[]const u8) []const u8 {
+        fn storedTarget(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, used: []bool, unknown: *?[]const u8, view_mode: bool) []const u8 {
             const lb = std.mem.indexOfScalar(u8, text, '[') orelse
-                return refs(alloc, text, bind, store, fields, srf, cursor, .target, used, unknown);
+                return refs(alloc, text, bind, store, fields, srf, cursor, .target, used, unknown, view_mode);
             const rb = std.mem.lastIndexOfScalar(u8, text, ']') orelse
-                return refs(alloc, text, bind, store, fields, srf, cursor, .target, used, unknown);
-            if (rb <= lb + 1) return refs(alloc, text, bind, store, fields, srf, cursor, .target, used, unknown);
+                return refs(alloc, text, bind, store, fields, srf, cursor, .target, used, unknown, view_mode);
+            if (rb <= lb + 1) return refs(alloc, text, bind, store, fields, srf, cursor, .target, used, unknown, view_mode);
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
-            out.appendSlice(alloc, refs(alloc, text[0 .. lb + 1], bind, store, fields, srf, cursor, .target, used, unknown)) catch unreachable;
-            out.appendSlice(alloc, refs(alloc, text[lb + 1 .. rb], bind, store, fields, srf, cursor, .live, used, unknown)) catch unreachable;
-            out.appendSlice(alloc, refs(alloc, text[rb..], bind, store, fields, srf, cursor, .target, used, unknown)) catch unreachable;
+            out.appendSlice(alloc, refs(alloc, text[0 .. lb + 1], bind, store, fields, srf, cursor, .target, used, unknown, view_mode)) catch unreachable;
+            out.appendSlice(alloc, refs(alloc, text[lb + 1 .. rb], bind, store, fields, srf, cursor, .live, used, unknown, view_mode)) catch unreachable;
+            out.appendSlice(alloc, refs(alloc, text[rb..], bind, store, fields, srf, cursor, .target, used, unknown, view_mode)) catch unreachable;
             return out.toOwnedSlice(alloc) catch unreachable;
         }
         // A stored block is `target: value` pairs — targets take the indexed
         // lvalue, values read the live column.
-        fn storedBlock(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, used: []bool, unknown: *?[]const u8) []const u8 {
+        fn storedBlock(alloc: std.mem.Allocator, text: []const u8, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, used: []bool, unknown: *?[]const u8, view_mode: bool) []const u8 {
             const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{text}) catch unreachable;
             const struct_literal_s = @import("struct_literal");
             const pairs = struct_literal_s.parseFields(alloc, braced) catch return text;
             var out = std.ArrayList(u8).initCapacity(alloc, text.len + 64) catch unreachable;
             for (pairs, 0..) |pr, i| {
                 if (i > 0) out.appendSlice(alloc, ", ") catch unreachable;
-                out.appendSlice(alloc, storedTarget(alloc, pr.name, bind, store, fields, srf, cursor, used, unknown)) catch unreachable;
+                out.appendSlice(alloc, storedTarget(alloc, pr.name, bind, store, fields, srf, cursor, used, unknown, view_mode)) catch unreachable;
                 out.appendSlice(alloc, ": ") catch unreachable;
-                out.appendSlice(alloc, refs(alloc, pr.value, bind, store, fields, srf, cursor, .live, used, unknown)) catch unreachable;
+                out.appendSlice(alloc, refs(alloc, pr.value, bind, store, fields, srf, cursor, .live, used, unknown, view_mode)) catch unreachable;
             }
             return out.toOwnedSlice(alloc) catch unreachable;
         }
-        fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, used: []bool, unknown: *?[]const u8) void {
+        fn walkCont(alloc: std.mem.Allocator, cont: *ast.Continuation, bind: []const u8, store: []const u8, fields: []const []const u8, srf: []const u8, cursor: []const u8, used: []bool, unknown: *?[]const u8, view_mode: bool) void {
             // A nested arm's `when` guard runs inside the body event, so it reads
             // the threaded inputs like any other body expression.
             if (cont.condition) |c| {
-                @constCast(cont).condition = refs(alloc, c, bind, store, fields, srf, cursor, .input, used, unknown);
+                @constCast(cont).condition = refs(alloc, c, bind, store, fields, srf, cursor, .input, used, unknown, view_mode);
             }
             if (cont.node) |*n| {
                 switch (@constCast(n).*) {
@@ -10581,25 +10596,25 @@ fn storeLowerText(
                         for (inv.args) |*a| {
                             const is_source_block = is_stored and std.mem.eql(u8, a.name, "source");
                             @constCast(a).value = if (is_source_block)
-                                storedBlock(alloc, a.value, bind, store, fields, srf, cursor, used, unknown)
+                                storedBlock(alloc, a.value, bind, store, fields, srf, cursor, used, unknown, view_mode)
                             else
-                                refs(alloc, a.value, bind, store, fields, srf, cursor, .input, used, unknown);
+                                refs(alloc, a.value, bind, store, fields, srf, cursor, .input, used, unknown, view_mode);
                             if (a.expression_value) |ev| {
                                 const fresh = alloc.create(ast.CapturedExpression) catch unreachable;
                                 fresh.* = ev.*;
                                 fresh.text = if (is_source_block)
-                                    storedBlock(alloc, ev.text, bind, store, fields, srf, cursor, used, unknown)
+                                    storedBlock(alloc, ev.text, bind, store, fields, srf, cursor, used, unknown, view_mode)
                                 else
-                                    refs(alloc, ev.text, bind, store, fields, srf, cursor, .input, used, unknown);
+                                    refs(alloc, ev.text, bind, store, fields, srf, cursor, .input, used, unknown, view_mode);
                                 @constCast(a).expression_value = fresh;
                             }
                             if (a.source_value) |sv| {
                                 const fresh = alloc.create(ast.Source) catch unreachable;
                                 fresh.* = sv.*;
                                 fresh.text = if (is_source_block)
-                                    storedBlock(alloc, sv.text, bind, store, fields, srf, cursor, used, unknown)
+                                    storedBlock(alloc, sv.text, bind, store, fields, srf, cursor, used, unknown, view_mode)
                                 else
-                                    refs(alloc, sv.text, bind, store, fields, srf, cursor, .input, used, unknown);
+                                    refs(alloc, sv.text, bind, store, fields, srf, cursor, .input, used, unknown, view_mode);
                                 @constCast(a).source_value = fresh;
                             }
                         }
@@ -10629,11 +10644,11 @@ fn storeLowerText(
                         if (std.mem.eql(u8, cb, bind)) continue;
                     }
                 }
-                walkCont(alloc, @constCast(c), bind, store, fields, srf, cursor, used, unknown);
+                walkCont(alloc, @constCast(c), bind, store, fields, srf, cursor, used, unknown, view_mode);
             }
         }
     };
-    SRewrite.walkCont(allocator, @constCast(&body_clone), row_bind, store_name, col_names, srf_prefix, srow_name, used_cols, &unknown_field);
+    SRewrite.walkCont(allocator, @constCast(&body_clone), row_bind, store_name, col_names, srf_prefix, srow_name, used_cols, &unknown_field, is_view);
 
     // The arm's own `when` guard is emitted in the LOOP, not the body event —
     // but it reads the same `<srf_prefix><f>` consts, which the loop binds just
@@ -10644,7 +10659,7 @@ fn storeLowerText(
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "{s}", .{m}) } };
     }
     const guard_z: ?[]const u8 = if (sc.condition) |c|
-        SRewrite.refs(allocator, guard_is orelse c, row_bind, store_name, col_names, srf_prefix, srow_name, .input, used_cols, &unknown_field)
+        SRewrite.refs(allocator, guard_is orelse c, row_bind, store_name, col_names, srf_prefix, srow_name, .input, used_cols, &unknown_field, is_view)
     else
         null;
 
