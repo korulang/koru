@@ -1100,14 +1100,28 @@ fn rewriteIsGuard(
         while (rstart < text.len and (text[rstart] == ' ' or text[rstart] == '\t')) rstart += 1;
         var rend = rstart;
         while (rend < text.len and storeIdentChar(text[rend])) rend += 1;
-        const member = text[rstart..rend];
+        var member = text[rstart..rend];
         if (member.len == 0) {
             refusal.* = std.fmt.allocPrint(alloc, "std/store:{s}({s}): `is` needs a member - `{s} is enemy`", .{ verb, store, bind }) catch unreachable;
             return null;
         }
+        // `e is not <member>` — the canonical is-guard negation (Lars-ruled
+        // 2026-09-06): sweeps every member except this one, rewritten to
+        // `e.kind != N`. The `!(e is X)` spelling dies at file parse (a
+        // grouped expression is strict and `is` is not an expression
+        // operator) and `! e is X` mis-lowers, so `is not` is the surface.
+        var negated = false;
         if (std.mem.eql(u8, member, "not")) {
-            refusal.* = std.fmt.allocPrint(alloc, "std/store:{s}({s}): `is not` is a later slice - negate outside: `!({s} is <member>)`", .{ verb, store, bind }) catch unreachable;
-            return null;
+            negated = true;
+            rstart = rend;
+            while (rstart < text.len and (text[rstart] == ' ' or text[rstart] == '\t')) rstart += 1;
+            rend = rstart;
+            while (rend < text.len and storeIdentChar(text[rend])) rend += 1;
+            member = text[rstart..rend];
+            if (member.len == 0) {
+                refusal.* = std.fmt.allocPrint(alloc, "std/store:{s}({s}): `is not` needs a member - `{s} is not enemy`", .{ verb, store, bind }) catch unreachable;
+                return null;
+            }
         }
         var ord: ?usize = null;
         for (members, 0..) |m, mi| {
@@ -1122,7 +1136,7 @@ fn rewriteIsGuard(
         };
         out.appendSlice(alloc, text[seg..lstart]) catch unreachable;
         out.appendSlice(alloc, bind) catch unreachable;
-        out.appendSlice(alloc, ".kind == ") catch unreachable;
+        out.appendSlice(alloc, if (negated) ".kind != " else ".kind == ") catch unreachable;
         out.appendSlice(alloc, std.fmt.allocPrint(alloc, "{d}", .{o}) catch unreachable) catch unreachable;
         i = rend;
         seg = rend;
