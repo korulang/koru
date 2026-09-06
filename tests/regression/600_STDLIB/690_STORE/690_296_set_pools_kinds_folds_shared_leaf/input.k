@@ -14,6 +14,12 @@
 // Currently red: `no std/store:new(Player) found` — today's `set` is a view
 // over new stores, and the pool's `kind` declarations have no `new` to
 // resolve. Output is identical to 690_287 (same program, new surface).
+// WHEN `std/store:kind` LANDS, mint alongside (ruled in DESIGN.md, unpinnable
+// until the surface exists): kind(Player) + new(Player) refused (one binding
+// per name); claims take layer-1 declarations only (no set-in-set); set/union/
+// view each need >= 2 members. Open ruling to settle with the set: flat pool
+// (per-row tag) vs per-kind segmentation (no tag, split extent) — the flat
+// end's coexistence tax is measured vs the view in the 006 benchmark.
 import std/io
 import std/proto
 import std/store
