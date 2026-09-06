@@ -515,8 +515,15 @@ never had to choose; two sources made precedence the belief, and
 
 Second fact the section understated: over a set, a query with NO kind
 guard is legal and folds every member — polymorphism by omitting the
-guard. This does not repeal the unnarrowed-read refusal (690_282);
-guards narrow kinds on a kinded store, and no guard over a set means
-all kinds. What would `correct` this: an unguarded set query that
+guard. This does not repeal the unnarrowed-read refusal (live pin
+690_291; the original 690_282 was retired with the sibling-field
+surface and its question re-pinned on the set surface); guards narrow
+kinds on a kinded store, and no guard over a set means all kinds. The
+full refusal vocabulary — unknown kind in a guard (690_288), `is` on a
+kindless store (690_289), type-divergent leaves across a set (690_290),
+wrong-kind private reads (690_292), foreign-leaf inserts (690_293) — was
+carried over from the retired pins the same day; the retirement had left
+it unpinned, which an audit caught before it could rot into silence.
+What would `correct` this: an unguarded set query that
 silently skips a member kind, or a set-and-seed store whose members
 come from the seed.
