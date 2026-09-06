@@ -19,7 +19,7 @@ std/proto(Enemy) {
 std/store:new(Player, capacity: 8) { Player }
 std/store:new(Enemy, capacity: 8) { Enemy }
 
-std/store:set(Entities) {
+std/store:view(Entities) {
     Player
     Enemy
 }

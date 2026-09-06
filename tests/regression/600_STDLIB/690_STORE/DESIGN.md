@@ -808,3 +808,75 @@ content mismatch, same no-lying-green outcome. Convention notes: (1)
 BACKEND_COMPILE_ERROR-for-Stage-C-rejections follows 400_149/330_053
 precedent (harness treats it identically to BACKEND_RUNTIME_ERROR); (2)
 expected_error.txt files on the two MUST_ERRORs are DOCUMENTARY.
+
+## Set / View / Kind / Union — surface design capture (2026-09-06)
+
+> Captured from the 2026-09-05/06 design conversation (Lars + agent) before
+> any implementation moves. Same contract as the rest of this file: it is
+> interim scaffolding that migrates into pins; when the pins carry it, this
+> section dies. Every claim is stamped **RULED** (Lars ratified) or **OPEN**
+> (genuine undecided question). The blog post is the design truth-surface:
+> an implementation that diverges from it is a defect in the compiler,
+> never a reason to edit the post — the post re-grounds in the same pass as
+> any surface change.
+
+### The ladder: exclusivity at storage, overlap at projection
+
+    protos → stores (kind | new) → claims (set over kind, union over new) → views (over anything with storage)
+
+- Layer 0 — protos: shapes (existing `std/proto`).
+- Layer 1 — `std/store:new` — RULED: proto → concrete store (shape +
+  storage + capacity + lifecycle). **Not coupled to `kind`**: `new` names a
+  proto and never a kind; a program that never uses sets declares no kinds.
+  Members of view and union. This is today's `new`, unchanged.
+- Layer 1 — `std/store:kind` — RULED: proto → set-member identity (shape +
+  kind ordinal). No storage, no capacity slot — the capacity question cannot
+  arise because the declaration has nothing to size. The only declaration a
+  `set` names. RULED: one binding per name — `kind(Player)` together with
+  `new(Player)` is refused (one name, one role; the insert target must never
+  be ambiguous, and no hidden priority rule decides it).
+- Layer 2 — `std/store:set` — RULED: pool over kinds. Pool-level capacity
+  authority (the set declares it). Kind-agnostic entries; shared leaves fold
+  into one contiguous extent; the kind materializes as a per-row tag. No
+  polymorphic insert/take — writes route through the kind (the kind name IS
+  the kind; `insert(Player)` writes a Player row into the pool). The kinded
+  lone store (690_274/275) already emits this shape — the set inherits that
+  machinery and adds member identities. OPEN: kind-agnostic flat pool vs
+  internal per-kind segmentation — segmentation drops the per-row tag but
+  splits the shared extent, giving up the contiguous fold; the two ends of
+  one slider, currently leaning flat pool.
+- Layer 2 — `std/store:union` — RULED: exclusive pool over new stores.
+  C-union semantics: one active kind at a time, memory = max member, kind =
+  one register, previous kind's data gone on switch. OPEN: switch semantics
+  — empty-only vs reinterpret (leaves must align) vs migrate (brushes O13).
+  OPEN: view over a union member while inactive — empty-when-inactive
+  (accepted) vs refused.
+- Layer 3 — `std/store:view` — RULED: projection over new stores (later:
+  sets, unions). No storage; kind never materializes (per-loop constant);
+  overlap free; read-mostly (no polymorphic insert/take). **The current
+  `set` behavior (690_285-293: sequential loops, kind as per-loop constant)
+  IS this construct** — RULED: rename `set` → `view`, re-spell 690_285-293.
+
+### Arity rules (RULED)
+
+- R1: one claim per store — a store is a member of at most one set or union.
+- R2: claims take layer-1 declarations only; no set-in-set, no
+  union-in-set (nested capacity authorities have no clean semantics). Views
+  take anything with storage.
+- R3: set / union / view each need ≥ 2 members — singletons are refused,
+  because the store (claims) or the query (views) already is the singleton.
+- Test of the design: every refused composition has a one-word alternative —
+  store-in-two-sets → view; set-in-set → view over sets; singleton claim →
+  the store; singleton view → the query. A refusal with no alternative is
+  the only design hole.
+
+### Re-grounding map
+
+- 690_285 / 690_286 — lone-store packing: unchanged (they pin `new`).
+- 690_287 — becomes the view flagship (re-spell `set` → `view`).
+- 690_288-293 — refusals: view semantics, re-spell with `view`.
+- 690_296 — ASPIRATIONAL: the pooled `set` over kinds. Pins the target
+  surface; red until `std/store:kind` + pooled `std/store:set` land. Current
+  failure is the honest tell: today's set refuses with "no
+  std/store:new(Player) found" — it is a view of new stores, not a pool.
+- Union pins: minted when the switch ruling lands.

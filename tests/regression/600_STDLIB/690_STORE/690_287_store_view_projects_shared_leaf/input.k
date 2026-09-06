@@ -1,11 +1,12 @@
-// A store-set is the layout join. `new(Player)` / `new(Enemy)` pack each
-// proto at that store's root (seed names the proto; leaves keep proto
-// field names — `str`, not `Player.str`). The set lists the stores; that
-// list is the kind vocabulary. Fold is (path-from-that-root, type):
-// `str: Strength` meets across the set. `mana` / `armor` stay private.
+// A store-view is the projection join. `new(Player)` / `new(Enemy)` pack
+// each proto at that store's root (seed names the proto; leaves keep proto
+// field names — `str`, not `Player.str`). The view lists the stores; that
+// list is the kind vocabulary. Projection is (path-from-that-root, type):
+// `str: Strength` meets across the view. `mana` / `armor` stay private.
 // Insert and obligations stay on the logical store. Query/stripe of the
-// set is where `e is Player` means anything. A store in no set keeps its
-// own layout (285/286).
+// view is where `e is Player` means anything. A view is not a container —
+// no capacity, no allocation, no insert; the rows live in the member
+// stores. A store in no view keeps its own layout (285/286).
 import std/io
 import std/proto
 import std/store
@@ -27,7 +28,7 @@ std/proto(Enemy) {
 std/store:new(Player, capacity: 8) { Player }
 std/store:new(Enemy, capacity: 8) { Enemy }
 
-std/store:set(Entities) {
+std/store:view(Entities) {
     Player
     Enemy
 }

@@ -555,7 +555,7 @@ fn kindScanProg(items: []const ast_find.Item, scope: []const u8, want: []const u
 /// marker (post-erase twin) preferred, else the live `new` seed's
 /// compound-typed fields. Null when the store declares no members.
 fn storeKindMembers(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const []const u8 {
-    if (storeSetMembers(alloc, prog, store)) |mems| return mems;
+    if (storeViewMembers(alloc, prog, store)) |mems| return mems;
     const struct_literal = @import("struct_literal");
     for (flatItems(alloc, prog.items)) |pi| {
         if (pi.* != .inline_code) continue;
@@ -697,7 +697,7 @@ fn storeScopeOf(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: 
 /// members. Used by kinded insert (own-leaves + zero-fill) and by
 /// refuse-unless-narrowed reads.
 fn storeMemberSchemas(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const StoreMemberSchema {
-    if (storeSetMembers(alloc, prog, store)) |mems| {
+    if (storeViewMembers(alloc, prog, store)) |mems| {
         const schemas = alloc.alloc(StoreMemberSchema, mems.len) catch return null;
         for (mems, 0..) |m, mi| {
             const cols = storeMemberColumns(alloc, prog, m) orelse &[_]StoreColInfo{};
@@ -956,7 +956,7 @@ fn privateReadRefusal(
 /// and inside continuations (nested inserts count: conditional insertion of a
 /// kind is still asking).
 fn storeKindDemanded(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) bool {
-    if (storeSetMembers(alloc, prog, store) != null) return true;
+    if (storeViewMembers(alloc, prog, store) != null) return true;
     // A hand-written user column named kind (690_273's manual tag) is NOT
     // demand: its values ride generated calls as `kind:` args,
     // indistinguishable by name alone. Demand needs the vocabulary too.
@@ -1156,17 +1156,17 @@ fn storeHome(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []c
     const apply_name = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store}) catch unreachable;
     if (findSynthDecl(prog.items, apply_name)) |ed| return ed.path.module_qualifier;
     if (storeNewHomeIn(prog.items, store, null)) |m| return m;
-    if (storeSetHomeIn(prog.items, store, null)) |m| return m;
+    if (storeViewHomeIn(prog.items, store, null)) |m| return m;
     return null;
 }
 
-fn storeSetHomeIn(its: []const ast_find.Item, want: []const u8, enclosing: ?[]const u8) ?[]const u8 {
+fn storeViewHomeIn(its: []const ast_find.Item, want: []const u8, enclosing: ?[]const u8) ?[]const u8 {
     for (its) |*pi| {
         if (pi.* == .flow) {
-            if (isStoreSetFor(&pi.flow, want)) return enclosing orelse pi.flow.module;
+            if (isStoreViewFor(&pi.flow, want)) return enclosing orelse pi.flow.module;
         } else if (pi.* == .inline_code) {
             const code = pi.inline_code.code;
-            const prefix = "// store-set ";
+            const prefix = "// store-view ";
             if (std.mem.startsWith(u8, code, prefix)) {
                 if (std.mem.indexOfScalar(u8, code, ':')) |colon| {
                     const nm = std.mem.trim(u8, code[prefix.len..colon], " \t");
@@ -1174,15 +1174,15 @@ fn storeSetHomeIn(its: []const ast_find.Item, want: []const u8, enclosing: ?[]co
                 }
             }
         } else if (pi.* == .module_decl) {
-            if (storeSetHomeIn(pi.module_decl.items, want, pi.module_decl.logical_name)) |m| return m;
+            if (storeViewHomeIn(pi.module_decl.items, want, pi.module_decl.logical_name)) |m| return m;
         }
     }
     return null;
 }
 
-fn isStoreSetFor(f: *const ast_find.Flow, want: []const u8) bool {
+fn isStoreViewFor(f: *const ast_find.Flow, want: []const u8) bool {
     const inv = f.inv();
-    if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "set")) return false;
+    if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "view")) return false;
     const mq = inv.path.module_qualifier orelse return false;
     if (!std.mem.eql(u8, mq, "std.store")) return false;
     for (inv.args) |a| {
@@ -1283,7 +1283,7 @@ fn storeAllNames(alloc: std.mem.Allocator, prog: *const ast_find.Program) []cons
                         const inv = &n.invocation;
                         if (inv.path.module_qualifier) |mq| {
                             if (std.mem.eql(u8, mq, "std.store") and inv.path.segments.len == 1) {
-                                if (std.mem.eql(u8, inv.path.segments[0], "new") or std.mem.eql(u8, inv.path.segments[0], "set")) {
+                                if (std.mem.eql(u8, inv.path.segments[0], "new") or std.mem.eql(u8, inv.path.segments[0], "view")) {
                                     for (inv.args) |a| {
                                         if (std.mem.eql(u8, a.name, "expr")) names.append(alloc, storeStripQuotes(a.value)) catch unreachable;
                                     }
@@ -1299,7 +1299,7 @@ fn storeAllNames(alloc: std.mem.Allocator, prog: *const ast_find.Program) []cons
                 }
             },
             .inline_code => |*ic| {
-                const prefix = "// store-set ";
+                const prefix = "// store-view ";
                 if (std.mem.startsWith(u8, ic.code, prefix)) {
                     if (std.mem.indexOfScalar(u8, ic.code, ':')) |colon| {
                         const nm = std.mem.trim(u8, ic.code[prefix.len..colon], " \t");
@@ -1320,15 +1320,15 @@ const StoreColInfo = struct {
     phantom: ?[]const u8,
 };
 
-fn storeSetMembers(alloc: std.mem.Allocator, prog: *const ast_find.Program, set_name: []const u8) ?[]const []const u8 {
+fn storeViewMembers(alloc: std.mem.Allocator, prog: *const ast_find.Program, view_name: []const u8) ?[]const []const u8 {
     for (flatItems(alloc, prog.items)) |pi| {
         if (pi.* == .inline_code) {
             const code = pi.inline_code.code;
-            const prefix = "// store-set ";
+            const prefix = "// store-view ";
             if (!std.mem.startsWith(u8, code, prefix)) continue;
             const colon = std.mem.indexOfScalar(u8, code, ':') orelse continue;
             const nm = std.mem.trim(u8, code[prefix.len..colon], " \t");
-            if (!std.mem.eql(u8, nm, set_name)) continue;
+            if (!std.mem.eql(u8, nm, view_name)) continue;
             var out = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
             var toks = std.mem.splitScalar(u8, code[colon + 1 ..], ',');
             while (toks.next()) |raw| {
@@ -1340,13 +1340,13 @@ fn storeSetMembers(alloc: std.mem.Allocator, prog: *const ast_find.Program, set_
         } else if (pi.* == .flow) {
             const f = &pi.flow;
             const inv = f.inv();
-            if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "set")) continue;
+            if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "view")) continue;
             const mq = inv.path.module_qualifier orelse continue;
             if (!std.mem.eql(u8, mq, "std.store")) continue;
             var hit = false;
             var source_text: ?[]const u8 = null;
             for (inv.args) |a| {
-                if (std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, storeStripQuotes(a.value), set_name)) hit = true;
+                if (std.mem.eql(u8, a.name, "expr") and std.mem.eql(u8, storeStripQuotes(a.value), view_name)) hit = true;
                 if (std.mem.eql(u8, a.name, "source")) source_text = if (a.source_value) |sv| sv.text else a.value;
             }
             if (!hit or source_text == null) continue;
@@ -1402,7 +1402,7 @@ fn storeMemberColumns(alloc: std.mem.Allocator, prog: *const ast_find.Program, s
 /// five 695_STORE_TREE tests, which is this concept's own half-rule tell caught
 /// in the act — two functions correct in their own scope, one name apart.
 fn storeFieldOrder(alloc: std.mem.Allocator, prog: *const ast_find.Program, store: []const u8) ?[]const []const u8 {
-    if (storeSetMembers(alloc, prog, store)) |mems| {
+    if (storeViewMembers(alloc, prog, store)) |mems| {
         var names = std.ArrayList([]const u8).initCapacity(alloc, 8) catch unreachable;
         for (mems) |m| {
             if (storeMemberColumns(alloc, prog, m)) |cols| {
@@ -8180,16 +8180,16 @@ fn storeLowerText(
 }
 
 // ============================================================================
-// STORE.SET — a vocabulary of stores, folded for iteration
+// STORE.VIEW — a vocabulary of stores, projected for iteration
 // ============================================================================
 //
-//   std/store:set(Entities) { Player, Enemy }
+//   std/store:view(Entities) { Player, Enemy }
 //
-// A store-set is not a container: it has no capacity, no allocation, no insert,
+// A store-view is not a container: it has no capacity, no allocation, no insert,
 // and no SoA cell. The rows live in the member stores. It registers the kind
 // vocabulary and the folded shared schema.
 
-~[keyword|comptime|transform]pub tor set {
+~[keyword|comptime|transform]pub tor view {
     expr: Expression,
     source: Source,
     invocation: *const Invocation,
@@ -8199,23 +8199,23 @@ fn storeLowerText(
     allocator: std.mem.Allocator
 } -> SiteResult
 
-~[transform]proc set|zig {
+~[transform]proc view|zig {
     const ast = @import("ast");
 
-    if (item.* != .flow) @panic("store:set transform: containing item is not a flow - walker dispatch contract broken");
+    if (item.* != .flow) @panic("store:view transform: containing item is not a flow - walker dispatch contract broken");
     const flow = &item.flow;
 
-    var set_name: []const u8 = "";
+    var view_name: []const u8 = "";
     var source_text: ?[]const u8 = null;
     for (invocation.args) |a| {
-        if (std.mem.eql(u8, a.name, "expr")) set_name = storeStripQuotes(a.value);
+        if (std.mem.eql(u8, a.name, "expr")) view_name = storeStripQuotes(a.value);
         if (std.mem.eql(u8, a.name, "source")) source_text = if (a.source_value) |sv| sv.text else a.value;
     }
-    if (set_name.len == 0) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:set requires a set name: set(name)", .{}) } };
+    if (view_name.len == 0) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:view requires a view name: view(name)", .{}) } };
     }
     if (source_text == null) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:set requires a member block: set(name) {{ Member1, Member2 }}", .{}) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:view requires a member block: view(name) {{ Member1, Member2 }}", .{}) } };
     }
 
     var members = std.ArrayList([]const u8).initCapacity(allocator, 4) catch unreachable;
@@ -8226,19 +8226,19 @@ fn storeLowerText(
         members.append(allocator, allocator.dupe(u8, trimmed) catch unreachable) catch unreachable;
     }
     if (members.items.len == 0) {
-        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:set({s}): a store set must name at least one member store", .{set_name}) } };
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:view({s}): a store view must name at least one member store", .{view_name}) } };
     }
 
     for (members.items) |mem| {
         const fo = storeFieldOrder(allocator, program, mem);
         if (fo == null) {
-            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:set({s}): unknown member store '{s}' — no std/store:new({s}) found", .{ set_name, mem, mem }) } };
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:view({s}): unknown member store '{s}' — no std/store:new({s}) found", .{ view_name, mem, mem }) } };
         }
     }
 
     var code = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-    code.appendSlice(allocator, "// store-set ") catch unreachable;
-    code.appendSlice(allocator, set_name) catch unreachable;
+    code.appendSlice(allocator, "// store-view ") catch unreachable;
+    code.appendSlice(allocator, view_name) catch unreachable;
     code.appendSlice(allocator, ": ") catch unreachable;
     for (members.items, 0..) |m, mi| {
         if (mi > 0) code.appendSlice(allocator, ", ") catch unreachable;
@@ -10190,54 +10190,54 @@ fn storeLowerText(
     const home_ns = storeHome(allocator, program, store_name) orelse flow.module;
     // --- schema from the persistent __store_insert_<s> event (survives after
     //     the raw `new` flow lowers — the same source insert.fieldOrder reads),
-    //     or from the folded member stores of a store-set.
+    //     or from the folded member stores of a store-view.
     //     Its input fields ARE the columns; the trailing field is the synthetic
     //     __site_line arg. ---
-    const set_members = storeSetMembers(allocator, program, store_name);
-    const is_set = set_members != null;
+    const view_members = storeViewMembers(allocator, program, store_name);
+    const is_view = view_members != null;
     var col_names: []const []const u8 = &[_][]const u8{};
     var col_types: []const []const u8 = &[_][]const u8{};
     var col_mods: []const ?[]const u8 = &[_]?[]const u8{};
     var col_phantoms: []const ?[]const u8 = &[_]?[]const u8{};
 
-    if (is_set) {
-        var set_col_names = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
-        var set_col_types = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
-        var set_col_mods = std.ArrayList(?[]const u8).initCapacity(allocator, 8) catch unreachable;
-        var set_col_phantoms = std.ArrayList(?[]const u8).initCapacity(allocator, 8) catch unreachable;
+    if (is_view) {
+        var view_col_names = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+        var view_col_types = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+        var view_col_mods = std.ArrayList(?[]const u8).initCapacity(allocator, 8) catch unreachable;
+        var view_col_phantoms = std.ArrayList(?[]const u8).initCapacity(allocator, 8) catch unreachable;
 
-        for (set_members.?) |mem| {
+        for (view_members.?) |mem| {
             const mem_cols = storeMemberColumns(allocator, program, mem) orelse {
-                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): set member '{s}' has no schema — no std/store:new({s}) found", .{ store_name, mem, mem }) } };
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:query({s}): view member '{s}' has no schema — no std/store:new({s}) found", .{ store_name, mem, mem }) } };
             };
             for (mem_cols) |mc| {
                 var found = false;
-                for (set_col_names.items, set_col_types.items) |prev_n, prev_t| {
+                for (view_col_names.items, view_col_types.items) |prev_n, prev_t| {
                     if (std.mem.eql(u8, prev_n, mc.name)) {
                         found = true;
                         if (!std.mem.eql(u8, prev_t, mc.type)) {
-                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:set({s}): member '{s}': leaf '{s}' as '{s}' collides with '{s}' — one bare name, one identity; type-divergent same-name leaves across a set are refused", .{ store_name, mem, mc.name, mc.type, prev_t }) } };
+                            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:view({s}): member '{s}': leaf '{s}' as '{s}' collides with '{s}' — one bare name, one identity; type-divergent same-name leaves across a view are refused", .{ store_name, mem, mc.name, mc.type, prev_t }) } };
                         }
                         break;
                     }
                 }
                 if (!found) {
-                    set_col_names.append(allocator, mc.name) catch unreachable;
-                    set_col_types.append(allocator, mc.type) catch unreachable;
-                    set_col_mods.append(allocator, mc.module_path) catch unreachable;
-                    set_col_phantoms.append(allocator, mc.phantom) catch unreachable;
+                    view_col_names.append(allocator, mc.name) catch unreachable;
+                    view_col_types.append(allocator, mc.type) catch unreachable;
+                    view_col_mods.append(allocator, mc.module_path) catch unreachable;
+                    view_col_phantoms.append(allocator, mc.phantom) catch unreachable;
                 }
             }
         }
-        set_col_names.append(allocator, "kind") catch unreachable;
-        set_col_types.append(allocator, "i64") catch unreachable;
-        set_col_mods.append(allocator, null) catch unreachable;
-        set_col_phantoms.append(allocator, null) catch unreachable;
+        view_col_names.append(allocator, "kind") catch unreachable;
+        view_col_types.append(allocator, "i64") catch unreachable;
+        view_col_mods.append(allocator, null) catch unreachable;
+        view_col_phantoms.append(allocator, null) catch unreachable;
 
-        col_names = set_col_names.toOwnedSlice(allocator) catch unreachable;
-        col_types = set_col_types.toOwnedSlice(allocator) catch unreachable;
-        col_mods = set_col_mods.toOwnedSlice(allocator) catch unreachable;
-        col_phantoms = set_col_phantoms.toOwnedSlice(allocator) catch unreachable;
+        col_names = view_col_names.toOwnedSlice(allocator) catch unreachable;
+        col_types = view_col_types.toOwnedSlice(allocator) catch unreachable;
+        col_mods = view_col_mods.toOwnedSlice(allocator) catch unreachable;
+        col_phantoms = view_col_phantoms.toOwnedSlice(allocator) catch unreachable;
     } else {
         const insert_ev_name = std.fmt.allocPrint(allocator, "__store_insert_{s}", .{store_name}) catch unreachable;
         for (flatItems(allocator, program.items)) |pi| {
@@ -10691,6 +10691,11 @@ fn storeLowerText(
             /// such local: its value is the loop cursor, so it rides the same
             /// threading with the expression carried here.
             value: ?[]const u8 = null,
+            /// Needs the enclosing frame. False only for synthesized captures
+            /// (`[ordinal]`, `[id]`), whose value is computed inside the loop.
+            /// A rewritten call-site expression (fmt result rebuild, 690_294)
+            /// is still lexical — it reads the enclosing name.
+            lexical: bool = true,
         };
         // The column type of a `std.store:new(...)` seed field — the type an
         // interceptor destructure field binds (690_093). Reads the seed block
@@ -10800,28 +10805,50 @@ fn storeLowerText(
         // (690_252). Defaulted null because `lookupReturn*` shares this record
         // and a bare-return bind has no branch payload to read one from.
         const RetTy = struct { type: []const u8, module_path: ?[]const u8, phantom: ?[]const u8 = null };
-        fn lookupReturnIn(its: []const ast.Item, name: []const u8) ?RetTy {
+        fn namesMatch(a: []const u8, b: []const u8) bool {
+            if (a.len != b.len) return false;
+            for (a, b) |ca, cb| {
+                const na = if (ca == '/') '.' else ca;
+                const nb = if (cb == '/') '.' else cb;
+                if (na != nb) return false;
+            }
+            return true;
+        }
+        fn pathMatch(decl: ast.DottedPath, want: ast.DottedPath) bool {
+            if (decl.segments.len != want.segments.len) return false;
+            for (decl.segments, want.segments) |a, b| {
+                if (!std.mem.eql(u8, a, b)) return false;
+            }
+            return namesMatch(decl.module_qualifier orelse "", want.module_qualifier orelse "");
+        }
+        fn lookupReturnIn(its: []const ast.Item, path: ast.DottedPath) ?RetTy {
             for (its) |pi| {
                 if (pi == .event_decl) {
                     const ed = &pi.event_decl;
-                    if (ed.path.segments.len > 0 and std.mem.eql(u8, ed.path.segments[ed.path.segments.len - 1], name)) {
-                        if (ed.return_type) |rt| {
-                            // `koru/vaxis:Window` → type Window + module_path
-                            if (std.mem.indexOfScalar(u8, rt, ':')) |colon| {
-                                return .{ .type = rt[colon + 1 ..], .module_path = rt[0..colon] };
-                            }
-                            return .{ .type = rt, .module_path = null };
+                    if (!pathMatch(ed.path, path)) continue;
+                    if (ed.return_type) |rt| {
+                        // A `[transform] -> SiteResult` bind holds the RUNTIME
+                        // result struct, not the comptime ABI. fmt:ln / print.ln
+                        // expand to `.{ .text = … }`; leaf-only lookup used to
+                        // return `read.ln`'s `string` instead (690_294).
+                        if (std.mem.eql(u8, rt, "SiteResult")) {
+                            return .{ .type = "struct { text: []const u8 }", .module_path = null };
                         }
+                        // `koru/vaxis:Window` → type Window + module_path
+                        if (std.mem.indexOfScalar(u8, rt, ':')) |colon| {
+                            return .{ .type = rt[colon + 1 ..], .module_path = rt[0..colon] };
+                        }
+                        return .{ .type = rt, .module_path = null };
                     }
                 } else if (pi == .module_decl) {
-                    if (lookupReturnIn(pi.module_decl.items, name)) |r| return r;
+                    if (lookupReturnIn(pi.module_decl.items, path)) |r| return r;
                 }
             }
             return null;
         }
         fn lookupReturn(items: []const ast.Item, path: ast.DottedPath) ?RetTy {
-            const leaf = if (path.segments.len > 0) path.segments[path.segments.len - 1] else return null;
-            return lookupReturnIn(items, leaf);
+            if (path.segments.len == 0) return null;
+            return lookupReturnIn(items, path);
         }
         // The payload type of one BRANCH — the arm-binding twin of lookupReturn.
         // `! progress pr` binds the payload of `progress` on the event the arm
@@ -10990,10 +11017,17 @@ fn storeLowerText(
                         if (n.* == .invocation) {
                             if (n.invocation.return_binding) |rb| {
                                 if (lookupReturn(items, n.invocation.path)) |rt| {
+                                    // Zig treats two identical anonymous structs
+                                    // as distinct types. fmt:ln's `.{ .text = … }`
+                                    // will not coerce into the captured field, so
+                                    // the call site rebuilds through result
+                                    // location (690_294).
+                                    const rebuild = std.mem.eql(u8, rt.type, "struct { text: []const u8 }");
                                     out.append(alloc, .{
                                         .name = rb,
                                         .type = alloc.dupe(u8, rt.type) catch unreachable,
                                         .module_path = if (rt.module_path) |mp| alloc.dupe(u8, mp) catch unreachable else null,
+                                        .value = if (rebuild) std.fmt.allocPrint(alloc, ".{{ .text = {s}.text }}", .{rb}) catch unreachable else null,
                                     }) catch unreachable;
                                 } else {
                                     out.append(alloc, .{
@@ -11105,6 +11139,7 @@ fn storeLowerText(
             .name = allocator.dupe(u8, on) catch unreachable,
             .type = allocator.dupe(u8, "i64") catch unreachable,
             .value = allocator.dupe(u8, "@as(i64, @intCast(__koru_si))") catch unreachable,
+            .lexical = false,
         }) catch unreachable;
     }
 
@@ -11142,6 +11177,7 @@ fn storeLowerText(
             .name = allocator.dupe(u8, idn) catch unreachable,
             .type = allocator.dupe(u8, "i64") catch unreachable,
             .value = std.fmt.allocPrint(allocator, "{s}__koru_store_{s}.__koru_handle_of(__koru_si)", .{ storeCellQualifier(allocator, home_ns, program.main_module_name), store_name }) catch unreachable,
+            .lexical = false,
         }) catch unreachable;
     }
 
@@ -11252,12 +11288,12 @@ fn storeLowerText(
     //     projected fields per row, calls the transplanted body event — plus any
     //     enclosing captures (names already live in this Zig scope). ---
     var loop = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-    if (is_set) {
+    if (is_view) {
         loop.appendSlice(allocator, "{\n") catch unreachable;
         const members_vocab = storeKindMembers(allocator, program, store_name) orelse &[_][]const u8{};
         const proven = guardProvenMembers(allocator, sc.condition orelse "", guard_is orelse sc.condition orelse "", row_bind, members_vocab);
 
-        for (set_members.?, 0..) |mem_name, mem_idx| {
+        for (view_members.?, 0..) |mem_name, mem_idx| {
             if (proven.len > 0) {
                 var in_proven = false;
                 for (proven) |p| {
@@ -11382,16 +11418,17 @@ fn storeLowerText(
     // becomes a PROC implementing the same event. A proc impl binds every
     // event input as a const, so the captures are in scope by construction.
     // Only LEXICAL captures constrain WHERE this loop may live. A synthesized
-    // request (`[ordinal]`) computes its value inside the loop from the cursor,
-    // so it needs nothing from the enclosing scope and must not push a head
-    // site onto the proc road below or the inline road further down — the
-    // inline road at file scope is `expected type expression, found '{'`
-    // (690_081), which is exactly what asking for an ordinal at a top-level
-    // sweep produced before this distinction existed.
+    // request (`[ordinal]`, `[id]`) computes its value inside the loop from
+    // the cursor, so it needs nothing from the enclosing scope and must not
+    // push a head site onto the proc road below or the inline road further
+    // down — the inline road at file scope is `expected type expression,
+    // found '{'` (690_081), which is exactly what asking for an ordinal at a
+    // top-level sweep produced before this distinction existed. A rewritten
+    // call-site expression is still lexical: it reads the enclosing name.
     const lexical_captures = blk: {
         var n: usize = 0;
         for (captures.items) |c| {
-            if (c.value == null) n += 1;
+            if (c.lexical) n += 1;
         }
         break :blk n;
     };

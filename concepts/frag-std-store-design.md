@@ -665,3 +665,40 @@ The write-triggered surface is the reference face (`std/store(s) ! <field> h
 when …`, 690_030). Two reactive surfaces with different trigger semantics and
 adjacent spellings; the distinction is nowhere in the prose and cost a probe to
 rediscover.
+
+## The sum-side vocabulary: view / set / kind / union (evolved 2026-09-06)
+
+The store surface's sum side is a LADDER with one law — **exclusivity at
+storage, overlap at projection**:
+
+    protos → stores (kind | new) → claims (set over kinds, union over new) → views (over anything with storage)
+
+- `new` names a proto and is never coupled to `kind` (Lars-ruled): a program
+  that never uses sets declares no kinds. Members of view and union.
+- `kind` is a set member: shape + kind ordinal, no storage, no capacity slot.
+  One binding per name — `kind(Player)` + `new(Player)` is refused (the
+  insert target must never be ambiguous, and no hidden priority rule
+  decides it).
+- `set` is a pool over kinds: pool-level capacity, kind-agnostic entries, the
+  physical fold (contiguous shared leaves, per-row tag). Writes route through
+  the kind — the kind name IS the kind; the set has no polymorphic insert.
+  Aspirational: 690_296 pins the target. The kinded lone store (690_274/275)
+  already emits the shape the set inherits.
+- `union` is an exclusive pool over new stores: one active kind at a time,
+  C-union semantics, memory = max member, kind = one register, previous
+  kind's data gone on switch. Switch semantics (empty-only vs reinterpret vs
+  migrate) is OPEN and brushes the O13 ruling.
+- `view` is a projection over anything with storage: no storage of its own,
+  kind never materializes (a per-member constant), overlap free, read-mostly.
+  The landing `set` behavior IS this construct — hence the rename (690_287
+  and the refusal cluster re-spelled).
+
+Kind materialization is the axis that orders the space: view never, set per
+row, union one register. The coexistence question (do kinds coexist in
+time?) separates set (yes) from union (no).
+
+Arity (ruled): one claim per store; claims take layer-1 declarations only
+(no set-in-set, no union-in-set); set/union/view each need ≥ 2 members. The
+design test: every refused composition has a one-word alternative
+(store-in-two-sets → view; set-in-set → view over sets; singleton → the
+store or the query). A refusal with no alternative is the only design hole.

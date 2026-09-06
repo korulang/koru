@@ -1,0 +1,4 @@
+entity 18
+entity 10
+player 18 12
+enemy 10 5

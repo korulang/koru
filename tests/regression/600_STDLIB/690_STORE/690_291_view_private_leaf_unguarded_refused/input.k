@@ -19,12 +19,13 @@ std/proto(Enemy) {
 std/store:new(Player, capacity: 8) { Player }
 std/store:new(Enemy, capacity: 8) { Enemy }
 
-std/store:set(Entities) {
+std/store:view(Entities) {
     Player
     Enemy
 }
 
-std/store:insert(Player) { str: 18, mana: 12, armor: 3 }
+std/store:insert(Player) { str: 18, mana: 12 }
+std/store:insert(Enemy) { str: 10, armor: 5 }
 
 std/store:query(Entities)
-! query e when e is Player |> std/io:print.ln("p {{ e.str:d }} {{ e.mana:d }}")
+! query e |> std/io:print.ln("m {{ e.mana:d }}")
