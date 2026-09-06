@@ -6,8 +6,14 @@
 // The current implementation of `set` is a view over new stores (sequential
 // loops, no shared extent) — this test pins the TARGET, not that behavior.
 // Flips green when `std/store:kind` + the pooled `std/store:set` land.
-// Currently red: unknown transform `std/store:kind`. Output is identical to
-// 690_287 (same program, new surface).
+// DEPENDENCY (Lars, 2026-09-06): the kind layer is an ABSTRACT/VIRTUAL shape
+// — `kind(Player)` declares shape + identity with no storage, and the pooled
+// set's dispatch (inserts route through the kind; queries dispatch over kind
+// identities) needs that abstract/virtual machinery, not just a fold. There
+// is no abstract/virtual surface in the language today; the set waits on it.
+// Currently red: `no std/store:new(Player) found` — today's `set` is a view
+// over new stores, and the pool's `kind` declarations have no `new` to
+// resolve. Output is identical to 690_287 (same program, new surface).
 import std/io
 import std/proto
 import std/store

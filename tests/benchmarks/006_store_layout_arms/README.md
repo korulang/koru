@@ -1,14 +1,14 @@
-# Store Layout Arms — product, view, union
+# Store Layout Arms — product, view
 
-Three declared layouts for one logical workload: sweep every entity and sum the
+Two declared layouts for one logical workload: sweep every entity and sum the
 shared `str` leaf; then the player-narrowed subset, guarded. Koru-only, one
 binary, JSON lines out (`elapsed_ns` over the whole timed run, `sink` as the
-anti-DCE checksum). The sinks are the oracle: the unguarded arms must sum the
-same total, the guarded arms the same subset — divergence means a wrong layout,
-not a slow one.
+anti-DCE checksum). The sinks are the oracle: `separate` and `view` must sum
+the same total, `view_player` the same player subset — divergence means a
+wrong layout, not a slow one.
 
 Runs: `./run.sh` (builds with `--release=fast`; `koruc build` defaults to
-Debug, which inflates the per-row call overhead and flattens the differences).
+Debug, which inflates per-row call overhead and flattens the differences).
 
 ## The arms
 
@@ -16,9 +16,7 @@ Debug, which inflates the per-row call overhead and flattens the differences).
 |---|---|---|
 | `separate` | two lone stores, two queries | two loops, one per store |
 | `view` | `std/store:view(Entities)` over the same stores, one query | two loops, same body handler, per-loop constant kind |
-| `union` | ONE store, `kind` column, all leaves folded | one loop over one extent |
 | `view_player` | view query `when e is Player` | two loops; the enemy loop's guard folds to a constant `false` and LLVM eliminates it |
-| `union_player` | union query `when e.kind == 1` | one loop, real `kind` column load + data-dependent branch per row |
 
 Population: 60 000 players (`str`, `mana`) + 40 000 enemies (`str`, `armor`);
 `str` is the shared leaf. 1000 frames of the sweep per arm.
@@ -33,31 +31,43 @@ median of four runs. Sinks agreed exactly across all arms on every run
 |---|---:|---:|
 | separate | 9.3 | 1.00× |
 | view | 9.2 | 0.99× |
-| union | 9.2 | 0.99× |
 | view_player | 5.6 | 0.60× |
-| union_player | 26.4 | 2.84× |
 
 ## What the numbers say
 
 - **The view is the member sweeps.** Unguarded, `view` and `separate` are the
   same to the noise — the polymorphism is free, exactly what the emitted shape
-  (two loops, same handler) promises. The union's single extent buys nothing on
-  this workload: the sum is cache-resident and str-only, so touching one array
-  instead of two does not show.
-- **The guard is where the layout decision lives.** Narrowing to players costs
-  60% of the full sweep in the view (only the player loop does real work; the
-  enemy loop's constant guard is eliminated). The hand-declared union pays 4.7×
-  MORE than the view for the same narrowing: every row loads the real `kind`
-  column and takes a data-dependent branch, and the branch defeats
-  vectorization of the `str` sum. This is the post's claim made measurable —
-  "the kind vocabulary is never stored, the `is` guard resolves to a constant
-  per member loop, no tag column, no discrimination cost."
-- **The union is not refuted, it is unmeasured.** A folded extent wins when the
-  shared leaf dominates wide rows and many kinds share it; this benchmark's
-  str-only sum cannot show that. The hand-declared union arm is also the
-  aspirational surface: `690_296` pins the pooled `std/store:kind` + `set` —
-  when it lands, the union arm becomes that spelling and this file gets a
-  second measurement.
+  (two loops, same handler) promises. This is the post's claim made measurable:
+  the kind never materializes as data, and the unguarded view query is not a
+  slower way to sweep two stores.
+- **The guard is cheaper than the sweep.** Narrowing to players costs LESS than
+  the full sweep (5.6 vs 9.3 ms): the view's `is` guard resolves to a constant
+  per member loop, so the enemy loop's guard is a constant `false` and the
+  whole loop is eliminated. 60 000 real row-processings beat 100 000. The
+  guard is a proof the loop already satisfies — the emitted tag check is its
+  receipt, and the receipt costs nothing.
+
+## Postponed surfaces — deliberately not measured here
+
+The pool (`std/store:set` over kinds) and the exclusive pool
+(`std/store:union`) are not in this benchmark:
+
+- **`set`** — `690_296` pins the target surface as ASPIRATIONAL (red by design
+  until `std/store:kind` + the pooled set land). The set's kind layer is an
+  abstract shape — the set needs abstract/virtual machinery to dispatch
+  inserts and queries over kind identities, not just a fold. Noted in
+  `690_296`'s header.
+- **`union`** — postponed entirely; "an exercise in more than just if over a
+  collection." Its runtime content (exclusive active kind, max-member extent,
+  clear-on-switch) is comptime layout + program state; its reads are views
+  already.
+
+A hand-declared flat pool with a per-row kind tag (a hand-written version of
+the set's flat-pool end) was tried and dropped. It measured ≈3× slower than
+the view on these read-mostly sweeps — but that number belongs to ONE end of
+the set's open flat-vs-segmented question (`DESIGN.md`: segmentation drops
+the per-row tag but splits the shared extent), not to a landed surface. When
+the set lands, it gets its own arm and a real measurement.
 
 ## The defect this benchmark found
 

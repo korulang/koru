@@ -683,11 +683,22 @@ storage, overlap at projection**:
   physical fold (contiguous shared leaves, per-row tag). Writes route through
   the kind — the kind name IS the kind; the set has no polymorphic insert.
   Aspirational: 690_296 pins the target. The kinded lone store (690_274/275)
-  already emits the shape the set inherits.
+  already emits the shape the set inherits. BLOCKED on a missing surface
+  (Lars, 2026-09-06): the kind layer is an ABSTRACT/VIRTUAL shape —
+  `kind(Player)` declares shape + identity with no storage, and the set's
+  dispatch (inserts route through the kind; queries dispatch over kind
+  identities) needs abstract/virtual machinery, not just a fold. No such
+  surface exists in the language today; recorded in 690_296's header.
 - `union` is an exclusive pool over new stores: one active kind at a time,
   C-union semantics, memory = max member, kind = one register, previous
   kind's data gone on switch. Switch semantics (empty-only vs reinterpret vs
-  migrate) is OPEN and brushes the O13 ruling.
+  migrate) is OPEN and brushes the O13 ruling. **POSTPONED (Lars-ruled
+  2026-09-06)**: "an exercise in more than just if over a collection" — its
+  runtime content is comptime layout (extent = max member) plus program state
+  (which kind is active), its reads are views already, and an exclusive sweep
+  is just the active member's own loops, so there is nothing runtime in it to
+  measure. No implementation work scheduled; revisit only for a workload that
+  needs static extent reuse (unikernel footprint).
 - `view` is a projection over anything with storage: no storage of its own,
   kind never materializes (a per-member constant), overlap free, read-mostly.
   The landing `set` behavior IS this construct — hence the rename (690_287
@@ -695,7 +706,10 @@ storage, overlap at projection**:
 
 Kind materialization is the axis that orders the space: view never, set per
 row, union one register. The coexistence question (do kinds coexist in
-time?) separates set (yes) from union (no).
+time?) separates set (yes) from union (no). The set's coexistence tax — the
+per-row tag — is measured against the view in the 006 benchmark: ≈3× on
+read-mostly sweeps, data for the set's flat-vs-segmented open question when
+the set lands.
 
 Arity (ruled): one claim per store; claims take layer-1 declarations only
 (no set-in-set, no union-in-set); set/union/view each need ≥ 2 members. The
