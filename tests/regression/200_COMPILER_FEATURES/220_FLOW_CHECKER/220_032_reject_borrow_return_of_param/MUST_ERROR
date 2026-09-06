@@ -1,0 +1,1 @@
+a `-> string` bare return projecting its parameter's memory (`s.data`)

@@ -1,0 +1,17 @@
+// TEST: KORU095 — a `-> string` bare return may not hand back a borrow of its
+// parameter ("borrows flow down, never up").
+//
+// Found 2026-09-06: the rule landed 2026-09-05 (610_007) and the next day
+// orisha's `pump:raw` (`raw -> x.raw`) tripped it — blocking every Orisha
+// build, native and the korulang.org wasm reactor alike, until `raw` became
+// an owned arena copy. This pins the refusal on the minimal shape: returning
+// `s.data` claims an owned string while handing back the caller's memory,
+// which the owner could invalidate by discharge or mutation.
+
+~tor sink { s: string }
+~proc sink|zig {}
+
+~tor borrow-back { s: string } -> string
+~borrow-back -> s.data
+
+~borrow-back(s: "hello"): r |> sink(s: r)

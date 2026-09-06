@@ -96,19 +96,12 @@ pub var build_config_count: usize = 0;
 
 /// The type→module registry over THIS program's host declarations
 /// (type_registry.buildHostTypeHomes) — attached by VisitorEmitter.emit before
-/// emission starts. writeFieldType consults it to resolve a bare
-/// phantom-carrying base type's home from actual declarations. File-scope like
+/// emission starts. writeFieldType consults it to resolve a bare base type's
+/// home from actual declarations (phantom-carrying or not). File-scope like
 /// the registries above so every emission path — sub-emitters, test-module
 /// subsets — resolves against the same program-wide truth. One program per
 /// compiler process.
 pub var host_type_homes: ?*const type_registry_module.HostTypeHomes = null;
-
-/// The foreign entries over THIS program (type_registry.collectForeignEntries)
-/// — attached beside host_type_homes before emission starts. writeFieldType
-/// consults it as the linkage gate: a bare base type routes to its host home
-/// ONLY when claimed here, so no existing bare-type lowering moves. Same
-/// file-scope channel, same one-program lifetime.
-pub var foreign_names: ?*const type_registry_module.ForeignEntries = null;
 
 /// Register a build config value (called by build:config)
 pub fn registerBuildConfig(key: []const u8, value: []const u8) bool {
@@ -1042,16 +1035,15 @@ pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name:
         // We use string replacement to handle pointers (*const Program) and slices ([]Item)
         const type_name = field.type;
 
-        // FOREIGN LINKAGE (rung 3): a bare base type that is BOTH
-        // foreign-claimed (this program holds a std/foreign entry for it)
-        // AND host-declared (some module's host code declares it) routes to
-        // the declaring home — `*File` → `*koru_app.koru_lib.File`. Either
-        // condition missing falls through to the verbatim behavior below:
-        // unknown stays unknown, the backend owns it (supplemental, never
-        // forced). A top-level ("") home resolves bare, so it falls through
+        // HOST HOME: a bare base type some module's host code declares routes
+        // to that home — `*Token` (declared in app/holder) →
+        // `*koru_app.koru_holder.Token`. Unknown stays unknown (the backend
+        // owns it). A top-level ("") home resolves bare and falls through
         // too. Between modules, host_type_homes' first-declaration-wins
         // rule picks; coexisting same-name hosts stay an open question.
-        if (foreign_names) |fnames| {
+        // A `std/foreign` claim is not required: that door is Koru-side
+        // presence, not Zig path qualification. 220_031 is the pin.
+        {
             var i: usize = 0;
             const prefixes = [_][]const u8{ "[]const ", "?*const ", "*const ", "[]", "?*", "?", "*" };
             strip: while (true) {
@@ -1071,7 +1063,7 @@ pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name:
                     break;
                 }
             }
-            if (base_ok and fnames.contains(base)) {
+            if (base_ok) {
                 if (host_type_homes) |homes| {
                     if (homes.get(base)) |home| {
                         if (home.len > 0) {
@@ -12106,6 +12098,22 @@ pub fn writeBareReturnType(
             try emitter.write(".");
             try emitter.write(remaining[colon + 1 ..]);
             return;
+        }
+    }
+    // Same host-home routing writeFieldType uses for payload fields: a bare
+    // `*Token` whose declaration lives in another module must emit that
+    // module's path, or Output is an undeclared identifier (220_031).
+    if (isModuleLocalBareTypeBase(remaining)) {
+        if (host_type_homes) |homes| {
+            if (homes.get(remaining)) |home| {
+                if (home.len > 0) {
+                    try emitter.write(prefix);
+                    try writeModulePath(emitter, home, main_module_name);
+                    try emitter.write(".");
+                    try emitter.write(remaining);
+                    return;
+                }
+            }
         }
     }
     // Emit the PHANTOM-STRIPPED, trimmed form — not the original `rt`. A record

@@ -1,0 +1,3 @@
+FRONTEND_COMPILE_ERROR
+CONTAINS error[KORU095
+CONTAINS borrows flow down, never up

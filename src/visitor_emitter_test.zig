@@ -451,3 +451,31 @@ test "writeFieldType: any other alias for the same module is mangled" {
     try emitter_helpers.writeFieldType(&ce, field, null);
     try testing.expectEqualStrings("*const ast_mod.__koru_ast.Flow", ce.getOutput());
 }
+
+test "writeFieldType: a bare host type qualifies to its declaring module" {
+    var homes = type_registry_module.HostTypeHomes.init(testing.allocator);
+    defer homes.deinit();
+    try homes.put("Token", "app.holder");
+    emitter_helpers.host_type_homes = &homes;
+    defer emitter_helpers.host_type_homes = null;
+
+    var buffer: [256]u8 = undefined;
+    var ce = emitter_helpers.CodeEmitter.init(&buffer);
+    const field = ast.Field{ .name = "t", .type = "*Token" };
+    try emitter_helpers.writeFieldType(&ce, field, null);
+    try testing.expectEqualStrings("*koru_app.koru_holder.Token", ce.getOutput());
+}
+
+test "writeFieldType: a top-level host type stays bare" {
+    var homes = type_registry_module.HostTypeHomes.init(testing.allocator);
+    defer homes.deinit();
+    try homes.put("Token", "");
+    emitter_helpers.host_type_homes = &homes;
+    defer emitter_helpers.host_type_homes = null;
+
+    var buffer: [256]u8 = undefined;
+    var ce = emitter_helpers.CodeEmitter.init(&buffer);
+    const field = ast.Field{ .name = "t", .type = "*Token" };
+    try emitter_helpers.writeFieldType(&ce, field, null);
+    try testing.expectEqualStrings("*Token", ce.getOutput());
+}

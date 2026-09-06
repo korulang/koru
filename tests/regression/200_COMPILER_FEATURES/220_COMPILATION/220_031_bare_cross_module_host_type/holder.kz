@@ -1,0 +1,11 @@
+const std = @import("std");
+
+pub const Token = struct { id: u32 };
+
+~pub tor mint { id: u32 } -> *Token
+
+~proc mint|zig {
+    const t = std.heap.page_allocator.create(Token) catch unreachable;
+    t.* = Token{ .id = id };
+    return t;
+}

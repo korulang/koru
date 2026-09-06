@@ -1,0 +1,22 @@
+// TEST: bare cross-module host type in a tor signature.
+//
+// `holder` owns the `Token` host (Zig) type. Naming it BARE here — `*Token`,
+// resolved through `~import app/holder` — must emit the holder module's
+// struct at the Zig backend. The qualified spelling (`*app/holder:Token`)
+// is the explicit form of the same path.
+//
+// Found 2026-09-06: `orisha:answer` could not take `*Exchange` (a pump
+// host type) from the index module because the bare name never reached
+// the declaring module in emitted Zig.
+
+~import app/holder
+~import std/io
+
+~tor describe { t: *Token } -> string
+
+~proc describe|zig {
+    _ = t;
+    return "token";
+}
+
+~app/holder:mint(id: 7): t |> describe(t): d |> std/io:print.ln(d)
