@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-09-06T08:22:48.503Z",
+  "timestamp": "2026-09-06T13:26:31.276Z",
   "summary": {
-    "passed": 334,
+    "passed": 355,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 346,
+    "total": 367,
     "suiteCount": 42,
     "status": "success"
   },
@@ -117,10 +117,10 @@
     },
     {
       "name": "expression_parser_tests",
-      "passed": 38,
+      "passed": 54,
       "failed": 0,
       "skipped": 0,
-      "total": 38,
+      "total": 54,
       "status": "success"
     },
     {
@@ -173,10 +173,10 @@
     },
     {
       "name": "integration_tests",
-      "passed": 9,
+      "passed": 14,
       "failed": 0,
       "skipped": 0,
-      "total": 9,
+      "total": 14,
       "status": "success"
     },
     {
