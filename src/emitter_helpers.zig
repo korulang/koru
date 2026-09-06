@@ -5696,8 +5696,50 @@ pub fn emitFlow(
                 }
             }
         } else {
-            // No pre_label - emit all continuations normally
-            try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, &flow.inv().path, true);
+            // No pre_label - emit all continuations normally.
+            // A head step that declares NO terminal branches (a branchless
+            // statement template like `std/io:print.ln`) assigns no switchable
+            // result — `first_result` was emitted as a discard. Its terminal
+            // continuations (`=> ok`, the CALLER's re-raise constructing this
+            // flow's branches) are straight-line returns, not tag reads:
+            // emit each via the void-chain body path, which lowers a
+            // branch_constructor terminal to `return .ok;`. Dispatching them
+            // through emitContinuationList would tag-read `result_N.ok` on a
+            // result that was never assigned and the handler falls off the end
+            // (220_030_void_rereturn_inline_transform).
+            var head_step_branchless = false;
+            if (event_decl_for_partition) |ed| {
+                var n: usize = 0;
+                for (ed.branches) |b| {
+                    if (b.kind == .terminal) n += 1;
+                }
+                // A branchless statement TEMPLATE (e.g. print.ln — annotated
+                // `[comptime|transform]`, lowers to a verbatim statement, not a
+                // value) assigns no switchable result, so a terminal
+                // continuation on its step is the CALLER's straight-line
+                // `=> branch` return — not a tag-read dispatch. A `-> T`
+                // bare-return event (double) has no terminal branches but
+                // DOES produce a bindable value (`: d`), so it keeps the
+                // normal dispatch path. Only transform-marked branchless
+                // events take the direct-return route (220_030).
+                var is_transform_template = false;
+                for (ed.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "transform")) {
+                        is_transform_template = true;
+                        break;
+                    }
+                }
+                head_step_branchless = n == 0 and is_transform_template;
+            }
+            if (head_step_branchless) {
+                for (conts) |*c| {
+                    if (c.branch.len != 0) {
+                        try emitContinuationBody(emitter, ctx, c, &result_counter);
+                    }
+                }
+            } else {
+                try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false, &flow.inv().path, true);
+            }
         }
     } else {
         // Zero continuations — use comptime_result_binding if set (for program return)
@@ -10087,6 +10129,31 @@ pub fn emitContinuationBody(
         if (node == .invocation) {
             if (node.invocation.inline_body) |inline_code_raw| {
                 try emitInlineBodyNode(emitter, ctx, inline_code_raw, cont.continuations, &cont.node.?.invocation.path, result_counter, cont.node.?.invocation.return_binding);
+
+                // A statement-template event (e.g. `std/io:print.ln`) declares
+                // NO branches of its own, so a terminal continuation on its
+                // step is NOT the template's to hand off — it is the CALLER's
+                // `=> branch` re-raise, constructing THIS flow's declared
+                // branch. `emitInlineBodyNode`'s "terminal — returned, not
+                // appended" rule assumes a branch-bearing template (which
+                // emits its own `__koru_return_<idx>` / `.continue` markers);
+                // a branchless statement template has no such marker, and the
+                // terminal would be silently dropped — the handler falls off
+                // the end without returning (220_030). Emit those terminals
+                // now, void-chain style: each lowers to its `return .branch;`.
+                var step_declares_branches = false;
+                if (ctx.ast_items) |items| {
+                    if (findEventDeclByPath(items, &node.invocation.path) != null) {
+                        step_declares_branches = true;
+                    }
+                }
+                if (!step_declares_branches) {
+                    for (cont.continuations) |*nested_cont| {
+                        if (nested_cont.branch.len != 0) {
+                            try emitContinuationBody(emitter, ctx, nested_cont, result_counter);
+                        }
+                    }
+                }
                 return;
             }
         }

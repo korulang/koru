@@ -5952,7 +5952,59 @@ pub const Parser = struct {
                 // same-line `head() | branch r => construct` (single-pipe, no bind,
                 // e.g. 430_004/007) has NO return_binding and must keep flowing
                 // through parseContinuations — never treat its `=>` as the head's.
-                if (invocation.return_binding == null) break :blk null;
+                // The no-bind DIRECT construct (`head(): v => construct` and now
+                // `head() => construct`, where `=>` follows the call with no pipe)
+                // is the head's own terminal: a statement step that constructs the
+                // enclosing flow's branch. Without this the `=> ok` after
+                // `step = print.ln("STEP")` was silently DROPPED — the flow body
+                // arrived empty, the handler fell off the end with no return
+                // (220_030, found 2026-09-06). The pipe-shaped forms keep flowing
+                // through parseContinuations, as before.
+                if (invocation.return_binding == null) {
+                    // The pipe-shaped forms (`head() | branch r => construct`)
+                    // must flow through parseContinuations — never treat their
+                    // `=>` as the head's. Fire only when the head call is
+                    // directly followed by a depth-0 `=>` with NO `|`/`!` pipe
+                    // in between (a statement step constructing the enclosing
+                    // flow's branch: `step = print.ln("STEP") => ok`).
+                    const head_text = lexer.trim(inv_str);
+                    var pd2: i32 = 0;
+                    var bd2: i32 = 0;
+                    var ins2 = false;
+                    var arrow_at: ?usize = null;
+                    var two: usize = 0;
+                    while (two < head_text.len) : (two += 1) {
+                        const c = head_text[two];
+                        if (c == '"' and (two == 0 or head_text[two - 1] != '\\')) {
+                            ins2 = !ins2;
+                            continue;
+                        }
+                        if (ins2) continue;
+                        if (c == '(') {
+                            pd2 += 1;
+                            continue;
+                        }
+                        if (c == ')') {
+                            pd2 -= 1;
+                            continue;
+                        }
+                        if (c == '{') {
+                            bd2 += 1;
+                            continue;
+                        }
+                        if (c == '}') {
+                            bd2 -= 1;
+                            continue;
+                        }
+                        if (pd2 == 0 and bd2 == 0 and c == '|') break; // pipe → not ours
+                        if (pd2 == 0 and bd2 == 0 and c == '=' and two + 1 < head_text.len and head_text[two + 1] == '>') {
+                            arrow_at = two;
+                            break;
+                        }
+                    }
+                    if (arrow_at) |at| break :blk at;
+                    break :blk null;
+                }
                 var i: usize = 0;
                 var pd: i32 = 0;
                 var bd: i32 = 0;
