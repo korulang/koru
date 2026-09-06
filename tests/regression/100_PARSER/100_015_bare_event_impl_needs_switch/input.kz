@@ -1,0 +1,8 @@
+// PIN (GREEN — lint): implementing a DECLARED event with a bare `IDENT = ...`
+// in a host-embedded `.kz` (no `~`) is a forgotten switch, not a host const.
+// Previously this silently became a host_line, the event had no impl, and
+// the failure surfaced as inscrutable Zig. Now: PARSE003 with the `~` hint.
+// Found 2026-09-06 while smelting the void-reraise ladder (220_030).
+~import std/io
+~tor outer { s: string }
+outer = std/io:print.ln("OUTER {{ s:s }}")

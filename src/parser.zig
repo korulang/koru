@@ -1492,6 +1492,39 @@ pub const Parser = struct {
                         .{},
                     );
                 }
+                // A bare `IDENT = ...` line in a host-embedded `.kz`/`.kjs`
+                // where IDENT is a DECLARED EVENT in this module is a forgotten
+                // `~` — the author means a flow implementation, not a host
+                // constant. Without this, `outer = print.ln(...)` for a
+                // declared `~tor outer { ... }` silently becomes a host line,
+                // the event is "implemented" by a Zig const that is never
+                // emitted, and the errors surface inscrutably downstream
+                // (220_030, found 2026-09-06). Detect and say so.
+                if (!self.is_k) {
+                    var maybe_impl_ident: ?[]const u8 = null;
+                    const eq_at = std.mem.indexOfScalar(u8, trimmed, '=');
+                    if (eq_at != null and !lexer.startsWith(trimmed, "=")) {
+                        var k: usize = 0;
+                        while (k < eq_at.? and (std.ascii.isAlphanumeric(trimmed[k]) or trimmed[k] == '_' or trimmed[k] == '-')) : (k += 1) {}
+                        if (k > 0 and k < eq_at.?) {
+                            const ident = trimmed[0..k];
+                            const after = lexer.trim(trimmed[k..eq_at.?]);
+                            if (after.len == 0) maybe_impl_ident = ident;
+                        }
+                    }
+                    if (maybe_impl_ident) |mi| {
+                        const is_declared = self.registry.events.contains(mi);
+                        if (is_declared) {
+                            return self.fail(
+                                .PARSE003,
+                                self.current + 1,
+                                lexer.getIndent(line) + 1,
+                                "implementing the declared event '{s}' needs the host->Koru switch in a host-embedded file: write `~{s} = ...` (or `~tor {s} {{ ... }}` to declare it)", 
+                                .{mi, mi, mi},
+                            );
+                        }
+                    }
+                }
                 // Pass through host language line
                 const owned_line = try self.allocator.dupe(u8, line);
                 try items.append(self.allocator, .{ .host_line = .{
