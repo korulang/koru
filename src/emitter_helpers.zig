@@ -10148,9 +10148,28 @@ pub fn emitContinuationBody(
                     }
                 }
                 if (!step_declares_branches) {
-                    for (cont.continuations) |*nested_cont| {
-                        if (nested_cont.branch.len != 0) {
-                            try emitContinuationBody(emitter, ctx, nested_cont, result_counter);
+                    // Narrow: ONLY the single-continuation `=> ok` RE-RAISE
+                    // (`step = print.ln(...) => ok`). Multi-continuation
+                    // pipelines (`field:new |> for ... | done |> set(...)`)
+                    // have real nested work — emitInlineBodyNode already
+                    // hands THEIR terminals off via template `.continue`
+                    // markers; re-emitting them here for every branchless
+                    // inline step hoists `| done |> set(...)` out of the
+                    // effect loop and breaks loop-scoped bindings
+                    // (115_004/029: the sieve's `k` outside the loop).
+                    if (cont.continuations.len == 1) {
+                        var only_reraise = false;
+                        const only = cont.continuations[0];
+                        if (only.branch.len != 0) {
+                            if (only.node) |nd| {
+                                if (nd == .branch_constructor) {
+                                    const bc = &nd.branch_constructor;
+                                    only_reraise = std.mem.eql(u8, bc.branch_name, only.branch);
+                                }
+                            }
+                        }
+                        if (only_reraise) {
+                            try emitContinuationBody(emitter, ctx, &only, result_counter);
                         }
                     }
                 }
