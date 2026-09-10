@@ -482,6 +482,44 @@ pub const PhantomSemanticChecker = struct {
         return false;
     }
 
+    /// The STATE NAME of a phantom spelling, module prefix and `!` suffix
+    /// removed (`std.bridge:session!` → `session`). Distinguishes a TRANSITION
+    /// (the state changes) from a same-state RE-ISSUE — the latter is not a
+    /// continuation: an event that consumes `<!s>` and hands `s` straight back
+    /// (a failed store insert returning the foreign value) has not advanced
+    /// the entity, and advancing it would resurrect an obligation the call
+    /// settled.
+    fn phantomStateName(ps: []const u8) []const u8 {
+        var s = ps;
+        if (std.mem.endsWith(u8, s, "!")) s = s[0 .. s.len - 1];
+        if (std.mem.lastIndexOfScalar(u8, s, ':')) |i| s = s[i + 1 ..];
+        return s;
+    }
+
+    /// Same base type, module qualifier ignored on either side — the
+    /// continuation rule keys on the base type alone (336_007/010). A stored
+    /// binding type may carry a module stamp (`*app/held:Handle`) while the
+    /// return spelling is bare (`*Handle`), or the two may agree verbatim.
+    fn sameBaseType(a: []const u8, b: []const u8) bool {
+        if (std.mem.eql(u8, a, b)) return true;
+        const a_bare = if (std.mem.lastIndexOfScalar(u8, a, ':')) |i| a[i + 1 ..] else a;
+        const b_bare = if (std.mem.lastIndexOfScalar(u8, b, ':')) |i| b[i + 1 ..] else b;
+        return std.mem.eql(u8, a_bare, b_bare);
+    }
+
+    /// Resolve the input field an argument fills: positional args bind by
+    /// index, named args by param name (the same rule validateArgument uses).
+    fn inputFieldForArg(event_decl: *const ast.EventDecl, arg: ast.Arg, arg_idx: usize) ?ast.Field {
+        if (std.mem.eql(u8, arg.name, arg.value)) {
+            if (arg_idx < event_decl.input.fields.len) return event_decl.input.fields[arg_idx];
+            return null;
+        }
+        for (event_decl.input.fields) |field| {
+            if (std.mem.eql(u8, field.name, arg.name)) return field;
+        }
+        return null;
+    }
+
     /// A tor that consumes <!state> on `base_type` but hands the SAME obligation
     /// back on an exit has settled nothing — calling it leaves the author owing
     /// exactly what they owed before. It is not a disposal candidate, and the
@@ -563,6 +601,177 @@ pub const PhantomSemanticChecker = struct {
         // No payload-bearing exits at all: the plain void disposer. The debt
         // ends at the call — the opposite of re-issuing.
         return any_exit;
+    }
+
+    /// True if `event_decl` declares a consuming (`<!state>`) input whose base
+    /// type matches `canonical_base_type`. The gate that keeps the
+    /// branch-payload continuation from advancing a binding the call could not
+    /// have consumed.
+    fn eventHasConsumingInput(
+        self: *PhantomSemanticChecker,
+        event_decl: *const ast.EventDecl,
+        canonical_base_type: []const u8,
+        event_module: ?[]const u8,
+    ) bool {
+        const module_for_canon = event_module orelse event_decl.module;
+        for (event_decl.input.fields) |f| {
+            const phantom_text = f.phantom orelse continue;
+            var parsed = phantom_parser.PhantomState.parse(self.allocator, phantom_text) catch continue;
+            defer parsed.deinit(self.allocator);
+            const consumes = switch (parsed) {
+                .concrete => |c| c.consumes_obligation,
+                .state_union => |u| blk: {
+                    for (u.members) |m| {
+                        if (m.consumes_obligation) break :blk true;
+                    }
+                    break :blk false;
+                },
+                .variable => false,
+            };
+            if (!consumes) continue;
+            const fbase = self.canonicalizeBaseType(f.type, f.module_path, module_for_canon) catch continue;
+            defer self.allocator.free(fbase);
+            if (sameBaseType(fbase, canonical_base_type)) return true;
+        }
+        return false;
+    }
+
+    /// The continuation rule, branch-payload half (336_008/009). Called from
+    /// `validateContinuation` once a branch payload field with a phantom has
+    /// been bound. If this event consumes (`<!state>`) an input of the field's
+    /// base type AND the branch context holds exactly that consumed binding as
+    /// disposed, the binding advances in place under the payload's new phantom
+    /// state. Identity field → the sole same-based-typed disposed binding;
+    /// named field → the same-named disposed binding. Returns whether it
+    /// advanced.
+    fn continueConsumedBranchPayload(
+        self: *PhantomSemanticChecker,
+        context: *BindingContext,
+        event_decl: *const ast.EventDecl,
+        event_module: ?[]const u8,
+        field: ast.Field,
+        binding_name: []const u8,
+        canonical_base_type: []const u8,
+        canonical_phantom: []const u8,
+    ) !bool {
+        if (!self.eventHasConsumingInput(event_decl, canonical_base_type, event_module)) return false;
+
+        const is_identity = std.mem.eql(u8, field.name, "__type_ref");
+        if (!is_identity) {
+            if (!context.isDisposed(field.name)) return false;
+            if (context.get(field.name)) |cur| {
+                if (std.mem.eql(u8, phantomStateName(cur), phantomStateName(canonical_phantom))) return false;
+            }
+            context.undispose(field.name);
+            context.clearCleanupObligation(field.name);
+            try context.setWithType(field.name, canonical_phantom, canonical_base_type);
+            return true;
+        }
+
+        // Identity payload: the sole disposed binding of this base type is the
+        // input that continues. Two same-typed disposals leave no sole
+        // survivor, so neither continues (the arity guard, one arm over).
+        var found: ?[]const u8 = null;
+        var count: usize = 0;
+        var it = context.disposed_bindings.keyIterator();
+        while (it.next()) |k| {
+            const bt = context.getBaseType(k.*) orelse continue;
+            if (!sameBaseType(bt, canonical_base_type)) continue;
+            found = k.*;
+            count += 1;
+        }
+        if (count != 1) return false;
+        // `found` points INTO disposed_bindings; undispose() frees that key, so
+        // own a copy before lifting the poison (the named path already holds a
+        // stable AST string).
+        const name = try self.allocator.dupe(u8, found.?);
+        defer self.allocator.free(name);
+        if (context.get(name)) |cur| {
+            if (std.mem.eql(u8, phantomStateName(cur), phantomStateName(canonical_phantom))) return false;
+        }
+        // An identity payload has no field name to match, so the continuation
+        // is by TYPE — but only when the author did NOT name the result. An
+        // explicit new binder (`| ok r |` on a payload that re-mints the input
+        // `t`) is the disambiguating rebind the concept keeps while it is
+        // retired; honoring it means the input is spent, not continued. Firing
+        // here would leave `t` advanced-and-unused, an undischarged obligation.
+        // `_auto_N` is the auto-discharge inserter's synthetic rename of a
+        // binder it cloned — the author wrote `_` (or nothing); treat it as
+        // implicit so the post-insertion pass agrees with the pre-insertion one.
+        const binder_implicit = std.mem.eql(u8, binding_name, "_") or
+            std.mem.startsWith(u8, binding_name, "_auto_");
+        if (!binder_implicit and !std.mem.eql(u8, binding_name, name)) return false;
+        context.undispose(name);
+        context.clearCleanupObligation(name);
+        try context.setWithType(name, canonical_phantom, canonical_base_type);
+        return true;
+    }
+
+    /// The continuation rule (336_007/010): a call whose SOLE same-based-typed
+    /// output re-mints the handle advances the consumed binding IN PLACE — the
+    /// binding keeps its name and takes the output's phantom state, instead of
+    /// being spent and the result re-bound under a new name. The rule keys on
+    /// BASE TYPE + the sole survivor; allocation identity is invisible and
+    /// irrelevant (336_010). This function handles the UNNAMED BARE RETURN (an
+    /// explicit `: name` is the author's own bind; the branch-payload forms are
+    /// the same rule one arm over). Two same-typed handles consumed (336_011)
+    /// leave no sole survivor, so neither continues.
+    fn advanceSoleConsumedSurvivor(
+        self: *PhantomSemanticChecker,
+        inv: *const ast.Invocation,
+        event_decl: *const ast.EventDecl,
+        event_module: ?[]const u8,
+        context: *BindingContext,
+    ) !void {
+        if (inv.return_binding != null) return; // explicit rebind: not ours
+        const rt = event_decl.return_type orelse return;
+        const rp = event_decl.return_phantom orelse return;
+        const module_for_canon = event_module orelse event_decl.module;
+
+        const ret_home = try self.typeStringModule(rt);
+        const new_phantom = try self.canonicalizePhantomStateWithBase(rp, module_for_canon, ret_home);
+        defer self.allocator.free(new_phantom);
+        const new_base = try self.canonicalizeBaseType(rt, null, module_for_canon);
+        defer self.allocator.free(new_base);
+
+        // The sole consumed argument whose tracked base type is the re-minted
+        // one. A second such arg is the ambiguity guard (336_011): no sole
+        // survivor, so neither input continues.
+        var survivor: ?[]const u8 = null;
+        var survivor_count: usize = 0;
+        for (inv.args, 0..) |arg, arg_idx| {
+            const field = inputFieldForArg(event_decl, arg, arg_idx) orelse continue;
+            const phantom_text = field.phantom orelse continue;
+            var parsed = phantom_parser.PhantomState.parse(self.allocator, phantom_text) catch continue;
+            defer parsed.deinit(self.allocator);
+            const consumes = switch (parsed) {
+                .concrete => |c| c.consumes_obligation,
+                .state_union => |u| blk: {
+                    for (u.members) |m| {
+                        if (m.consumes_obligation) break :blk true;
+                    }
+                    break :blk false;
+                },
+                .variable => false,
+            };
+            if (!consumes) continue;
+            const arg_base = context.getBaseType(arg.value) orelse continue;
+            if (!sameBaseType(arg_base, new_base)) continue;
+            survivor = arg.value;
+            survivor_count += 1;
+        }
+        if (survivor_count != 1) return;
+
+        const name = survivor.?;
+        // A borrow (no `!`) never reached disposal, and a binding this call did
+        // not consume is not ours to advance. Only lift a disposal we caused.
+        if (!context.isDisposed(name)) return;
+        if (context.get(name)) |cur| {
+            if (std.mem.eql(u8, phantomStateName(cur), phantomStateName(new_phantom))) return;
+        }
+        context.undispose(name);
+        context.clearCleanupObligation(name);
+        try context.setWithType(name, new_phantom, new_base);
     }
 
     /// Find events that can discharge a given phantom state obligation
@@ -1258,6 +1467,18 @@ pub const PhantomSemanticChecker = struct {
             const site_copy = try self.allocator.dupe(u8, site);
             try self.disposed_bindings.put(disposed_key, site_copy);
             log.debug("[CLEANUP] Marked '{s}' as discharged (poisoned) at site '{s}'\n", .{ name, site });
+        }
+
+        /// Undo a disposal — the continuation rule's half of `markDisposed`. A
+        /// consumed binding whose sole same-based-typed output re-mints the
+        /// handle is not spent: it advances under its own name, so the poison
+        /// (and its recorded site) must be lifted before the new phantom state
+        /// is written.
+        fn undispose(self: *BindingContext, name: []const u8) void {
+            if (self.disposed_bindings.fetchRemove(name)) |kv| {
+                self.allocator.free(kv.key);
+                self.allocator.free(kv.value);
+            }
         }
 
         /// Check if a binding has been disposed
@@ -2271,6 +2492,17 @@ pub const PhantomSemanticChecker = struct {
 
                     // Store both phantom state AND base type (both canonicalized)
                     try context.setWithType(field_path, canonical_phantom, canonical_base_type);
+
+                    // The continuation rule, branch-payload half (336_008/009): a
+                    // branch field that re-mints the base type of a binding THIS
+                    // call consumed continues that binding IN PLACE, so the branch
+                    // body can use the original name. An identity field
+                    // (`| advanced *Handle<active!>`) continues the sole
+                    // same-based-typed consumed input; a named field
+                    // (`| advanced { h: *Handle<active!>, n }`) continues the
+                    // same-named input. The field itself is still bound above —
+                    // a named payload's other fields are ordinary new bindings.
+                    _ = try self.continueConsumedBranchPayload(&context, event_decl, event_module, field, binding_name, canonical_base_type, canonical_phantom);
                 } else if (field.type.len > 0 and !std.mem.eql(u8, field.type, "\x00")) {
                     // Phantom-less payload — record the base type on the
                     // separate base_types table (registry rung 1) so the
@@ -3231,6 +3463,12 @@ pub const PhantomSemanticChecker = struct {
         // Validate event-level phantom preconditions
         const context_valid = try self.validateEventContextPhantom(event_info.decl, module_name, context, location, event_name);
         if (!context_valid) has_errors = true;
+
+        // The continuation rule: a consuming call whose sole same-based-typed
+        // output re-mints the handle advances the consumed binding in place
+        // rather than spending it (336_007/010). Runs after the args so the
+        // disposal it lifts is already recorded.
+        try self.advanceSoleConsumedSurvivor(inv, event_info.decl, module_name, context);
 
         return !has_errors;
     }
