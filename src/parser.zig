@@ -1579,6 +1579,24 @@ pub const Parser = struct {
                         }
                     }
                 }
+                // `pub const Name = struct { ... }` gets a STRUCTURED parse:
+                // a host_type_decl's fields are ast.Field, which is the only
+                // surface where `module/path:Type` splits into module_path —
+                // tor signatures get that split at parse; host lines are
+                // verbatim bytes and their `domain/events:NoteRegionJSON`
+                // would emit into Zig as-is. Structured fields also feed the
+                // type-home backfill, so the referenced module is pulled into
+                // emission (the piece a host-text spelling can never reach).
+                // Anything the field grammar can't read — methods, nested
+                // decls, defaults, phantoms — falls through to host_line
+                // passthrough unchanged (same bytes, same behavior).
+                if (!self.is_k) {
+                    if (try self.parseHostStructDecl()) |parsed| {
+                        try items.append(self.allocator, .{ .host_type_decl = parsed.decl });
+                        self.current = parsed.next;
+                        continue;
+                    }
+                }
                 // Pass through host language line
                 const owned_line = try self.allocator.dupe(u8, line);
                 try items.append(self.allocator, .{ .host_line = .{
@@ -9899,6 +9917,136 @@ pub const Parser = struct {
             "phantom state uses angle brackets — write `{s}<{s}>`",
             .{ s[0..at], content },
         );
+    }
+
+    const HostStructParse = struct { decl: ast.HostTypeDecl, next: usize };
+    const HostFieldSplit = struct { type: []const u8, module_path: ?[]const u8 };
+
+    /// `pub const Name = struct { ... }` / `const Name = struct { ... }` → a
+    /// structured HostTypeDecl. The grammar is deliberately narrow — `name:
+    /// Type` fields, `//` comments, `,` separators — because anything else
+    /// (methods, nested decls, defaults, phantoms, packed/explain forms)
+    /// returns null and the caller emits every line as a host_line, byte-
+    /// identical to the pre-existing passthrough. The win for the lines that
+    /// DO read: field types become ast.Field, `module/path:Type` splits into
+    /// module_path (same rule as tor signatures — the colon outside
+    /// brackets), `writeFieldType` emits the qualified Zig path, and the
+    /// type-home backfill pulls the referenced module into emission.
+    fn parseHostStructDecl(self: *Parser) !?HostStructParse {
+        const trimmed = lexer.trim(self.lines[self.current]);
+        var rest = trimmed;
+        if (std.mem.startsWith(u8, rest, "pub ")) rest = lexer.trim(rest[4..]);
+        if (!std.mem.startsWith(u8, rest, "const ")) return null;
+        rest = lexer.trim(rest[6..]);
+        var name_end: usize = 0;
+        while (name_end < rest.len and (std.ascii.isAlphanumeric(rest[name_end]) or rest[name_end] == '_' or rest[name_end] == '-')) name_end += 1;
+        if (name_end == 0) return null;
+        const name = rest[0..name_end];
+        rest = lexer.trim(rest[name_end..]);
+        if (!std.mem.startsWith(u8, rest, "=")) return null;
+        rest = lexer.trim(rest[1..]);
+        if (!std.mem.startsWith(u8, rest, "struct")) return null;
+        rest = lexer.trim(rest[6..]);
+        if (rest.len == 0 or rest[0] != '{') return null;
+        rest = rest[1..];
+
+        var fields = std.ArrayList(ast.Field).initCapacity(self.allocator, 8) catch return error.OutOfMemory;
+        // Every `return null` below hands the decl back to host_line
+        // passthrough — the list and its duped strings must not leak.
+        // On success toOwnedSlice empties the list, so this is a no-op.
+        defer {
+            for (fields.items) |*f| f.deinit(self.allocator);
+            fields.deinit(self.allocator);
+        }
+        var cursor = rest;
+        var scan = self.current;
+        while (true) {
+            cursor = lexer.trim(cursor);
+            if (cursor.len == 0 or std.mem.startsWith(u8, cursor, "//")) {
+                if (scan + 1 >= self.lines.len) return null;
+                scan += 1;
+                cursor = self.lines[scan];
+                continue;
+            }
+            if (cursor[0] == '}') {
+                var tail = lexer.trim(cursor[1..]);
+                if (std.mem.startsWith(u8, tail, ";")) tail = lexer.trim(tail[1..]);
+                if (tail.len != 0 and !std.mem.startsWith(u8, tail, "//")) return null;
+                break;
+            }
+            const colon = std.mem.indexOfScalar(u8, cursor, ':') orelse return null;
+            const fname = lexer.trim(cursor[0..colon]);
+            if (fname.len == 0) return null;
+            for (fname) |fc| {
+                if (!(std.ascii.isAlphanumeric(fc) or fc == '_' or fc == '-')) return null;
+            }
+            const tstart = colon + 1;
+            var tend = tstart;
+            while (tend < cursor.len) {
+                const c = cursor[tend];
+                if (c == ',' or c == '}') break;
+                if (c == '/' and tend + 1 < cursor.len and cursor[tend + 1] == '/') break;
+                if (c == '(' or c == '{' or c == '=' or c == '<' or c == '>') return null;
+                tend += 1;
+            }
+            const ftype = lexer.trim(cursor[tstart..tend]);
+            if (ftype.len == 0) return null;
+            const split = try self.splitHostFieldType(ftype);
+            try fields.append(self.allocator, .{
+                .name = try self.allocator.dupe(u8, fname),
+                .type = split.type,
+                .module_path = split.module_path,
+            });
+            cursor = cursor[tend..];
+            if (cursor.len > 0 and cursor[0] == ',') cursor = cursor[1..];
+            if (std.mem.startsWith(u8, lexer.trim(cursor), "//")) {
+                if (scan + 1 >= self.lines.len) return null;
+                scan += 1;
+                cursor = self.lines[scan];
+            }
+        }
+        return .{
+            .decl = .{
+                .name = try self.allocator.dupe(u8, name),
+                .shape = .{ .fields = fields.toOwnedSlice(self.allocator) catch return error.OutOfMemory },
+                .module = try self.allocator.dupe(u8, self.module_name),
+            },
+            .next = scan + 1,
+        };
+    }
+
+    /// `?*domain/events:NoteRegionJSON` → `{ ?*NoteRegionJSON, domain/events }`:
+    /// the tor-signature split — strip the pointer/slice/optional prefix,
+    /// take the first colon outside brackets, keep the prefix with the base
+    /// type so writeFieldType re-emits `?* + module + . + base`.
+    fn splitHostFieldType(self: *Parser, type_str: []const u8) !HostFieldSplit {
+        var t = type_str;
+        var prefix: []const u8 = "";
+        const prefixes = [_][]const u8{ "[]const ", "?*const ", "*const ", "[]", "?*", "?", "*" };
+        for (prefixes) |p| {
+            if (std.mem.startsWith(u8, t, p)) {
+                prefix = p;
+                t = t[p.len..];
+                break;
+            }
+        }
+        var depth: i32 = 0;
+        for (t, 0..) |c, idx| {
+            if (c == '[') {
+                depth += 1;
+            } else if (c == ']') {
+                depth -= 1;
+            } else if (c == ':' and depth == 0) {
+                return .{
+                    .type = std.fmt.allocPrint(self.allocator, "{s}{s}", .{ prefix, t[idx + 1 ..] }) catch return error.OutOfMemory,
+                    .module_path = self.allocator.dupe(u8, t[0..idx]) catch return error.OutOfMemory,
+                };
+            }
+        }
+        return .{
+            .type = self.allocator.dupe(u8, type_str) catch return error.OutOfMemory,
+            .module_path = null,
+        };
     }
 
     /// Cross-module type references use slash-separated module qualifiers — the

@@ -1,0 +1,31 @@
+const std = @import("std");
+
+~import app/lib
+
+// A host-language struct decl carrying a cross-module field type. The
+// structured parse turns `inner`'s `?*app/lib:Widget` into
+// module_path + base, writeFieldType emits
+// `?*koru_app.koru_lib.Widget`, and the field's module_path feeds the
+// type-home backfill — pulling app/lib into emission even though no
+// implemented tor signature names it.
+pub const Box = struct {
+    inner: ?*app/lib:Widget,
+    tag: u32,
+};
+
+~pub tor box.make {} -> *Box<live!>
+~proc box.make|zig {
+    const b = std.heap.page_allocator.create(Box) catch unreachable;
+    b.* = .{ .inner = null, .tag = 7 };
+    return b;
+}
+
+~pub tor box.tag { b: *Box<live> } -> u32
+~proc box.tag|zig {
+    return b.tag;
+}
+
+~pub tor box.drop { b: *Box<!live> }
+~proc box.drop|zig {
+    std.heap.page_allocator.destroy(b);
+}

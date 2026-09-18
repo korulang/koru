@@ -63,3 +63,22 @@ zig codegen on `log.verbose`. Pinned at 220_039.
 Open: the scan still reads type STRINGS — a compound spelling like
 `[]const [N]T` or `*const fn(...)void` names no home at all and escapes the
 closure. No pin exercises that yet.
+
+Refinement 2026-09-18: the reference surface had a dead zone — host-language
+`pub const X = struct { f: module/path:Type }` decls were verbatim bytes, so
+a `domain/events:NoteRegionJSON` inside one emitted into Zig untranslated
+(`error: expected ',' after field`) and registered nothing even when spelled
+as the emitted path (`koru_domain.koru_events.X` — the module was never
+pulled). The invariant's fix was NOT in the backfill, which already scans
+host_type_decl fields; it was upstream: a decl that wants to carry a module
+reference must be PARSED, not passed through. The parser now lifts
+`pub const X = struct` blocks into HostTypeDecl under a deliberately narrow
+grammar (`name: Type` fields, comments, commas — anything else falls back
+to host_line passthrough byte-identically), splitting `module:Type` into
+module_path exactly as tor signatures do. Then the existing machinery does
+the rest for free: writeFieldType emits the qualified Zig path and the
+type-home backfill pulls the referenced module. Pinned at 220_040 — a host
+struct field is the ONLY reference naming app/lib in that test. The general
+lesson: passthrough is where references go to die; any host-text surface
+that authors want to name cross-module types from must become an AST
+surface first.

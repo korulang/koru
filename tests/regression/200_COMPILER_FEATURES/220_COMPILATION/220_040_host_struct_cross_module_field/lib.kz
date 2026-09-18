@@ -1,0 +1,10 @@
+const std = @import("std");
+
+// A type whose module is referenced ONLY from a host struct field in
+// host.kz — never from a tor signature. Module emission is lazy-by-
+// reference; if the `app/lib:Widget` field's module_path does not reach
+// the type-home backfill, `koru_app.koru_lib` never emits and the
+// backend Zig fails `has no member named 'koru_lib'`.
+pub const Widget = struct {
+    name: []const u8,
+};
