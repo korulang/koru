@@ -2761,7 +2761,7 @@ pub const VisitorEmitter = struct {
                                     if (headLabelBindOnBareReturn(&flow, items_to_search)) |label_bind| {
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("const ");
-                                        try self.code_emitter.write(label_bind);
+                                        try emitter.writeBranchName(self.code_emitter, label_bind);
                                         try self.code_emitter.write(" = ");
                                         try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
                                         try self.code_emitter.write(";\n");
@@ -3193,7 +3193,7 @@ pub const VisitorEmitter = struct {
                                                 if (headLabelBindOnBareReturn(&flow, self.all_items)) |label_bind| {
                                                     try self.code_emitter.writeIndent();
                                                     try self.code_emitter.write("const ");
-                                                    try self.code_emitter.write(label_bind);
+                                                    try emitter.writeBranchName(self.code_emitter, label_bind);
                                                     try self.code_emitter.write(" = ");
                                                     try self.code_emitter.write(defaultHandlerRootBind(flow.inv()));
                                                     try self.code_emitter.write(";\n");
@@ -3737,7 +3737,7 @@ pub const VisitorEmitter = struct {
                                                 const indent_str = indent_buf[0..indent_pos];
 
                                                 const source_event_name = try emitter.buildCanonicalEventName(&flow.inv().path, self.allocator, self.main_module_name);
-                                                try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null, event);
+                                                try emitter.emitSubflowContinuations(self.code_emitter, flow.body.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null, event, flow.inv().return_binding);
                                             }
                                         } else {
                                             // Void/pipeline continuations after an inline-transform head.
@@ -4043,7 +4043,7 @@ pub const VisitorEmitter = struct {
                                         if (flow.inv().return_binding) |rb| {
                                             try self.code_emitter.writeIndent();
                                             try self.code_emitter.write("const ");
-                                            try self.code_emitter.write(rb);
+                                            try emitter.writeBranchName(self.code_emitter, rb);
                                             try self.code_emitter.write(" = result;\n");
                                         }
 
@@ -4053,7 +4053,7 @@ pub const VisitorEmitter = struct {
                                         if (headLabelBindOnBareReturn(&flow, items_to_search)) |label_bind| {
                                             try self.code_emitter.writeIndent();
                                             try self.code_emitter.write("const ");
-                                            try self.code_emitter.write(label_bind);
+                                            try emitter.writeBranchName(self.code_emitter, label_bind);
                                             try self.code_emitter.write(" = result;\n");
                                             sf_head_label_conts = try voidifyHeadLabel(self.allocator, flow.body.continuations);
                                         }
@@ -4082,7 +4082,7 @@ pub const VisitorEmitter = struct {
                                             patched
                                         else
                                             flow.body.continuations;
-                                        try emitter.emitSubflowContinuations(self.code_emitter, sf_switch_conts, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null, event);
+                                        try emitter.emitSubflowContinuations(self.code_emitter, sf_switch_conts, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module", event.return_type != null, event, flow.inv().return_binding);
                                     }
                                     // Close the self-loop `while (true)` wrapper opened before the
                                     // body dispatch. The body always exits via `return` (terminal

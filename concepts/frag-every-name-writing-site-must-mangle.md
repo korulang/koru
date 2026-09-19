@@ -36,6 +36,22 @@ fixed: `bc.fields` loops (~16 sites) emit `.{ .field-name = }` branch-payload
 literals with the same verbatim write — a kebab branch-payload field name
 would hit the identical wall, unexercised today.
 
+2026-09-22, second surface of the same belief, pinned 230_019: the rule is
+not only *sites that write a name* but *text that contains one*. A `: i1`
+bind declares `@"i1"` and `pos-tempo` declares `pos_tempo`, yet every
+reference downstream lives inside author text spliced verbatim — template
+`{{ expr }}` holes, when-guards, arg values, `_ = &x` discards. `i1`
+resolves as the primitive type, `pos-tempo` parses as subtraction; both
+yield "undeclared identifier" in generated code the author cannot open.
+Decl and use must carry ONE spelling, and the use side is unfixable site by
+site — a reference can hide inside arbitrary rendered text — so the correct
+shape is a rewrite pass (`escapeBoundNames` over `replaceIdentifier`, the
+established code-masked word-boundary rewrite) run at the text funnels:
+`lowerExprZig`, the rendered inline body, raw arg-value writes, and every
+`_ = &` discard. The funnel is the invariant's home; a name caught at all
+thirty-odd call sites individually would drift again the same way the four
+injection copies did.
+
 Related:
 [[frag-the-safe-koru-identifier-surface-is-smaller-than-the-language-says]] —
 same wall seen from the author's side (keywords/primitives); this is the

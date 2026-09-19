@@ -1,0 +1,51 @@
+// Pins that a flow binding whose legal Koru name collides with Zig's spelling
+// rules reaches EVERY emitted reference under one spelling.
+//
+// Decl sites spell through writeBranchName: `i1` declares `@"i1"` (it shadows
+// a Zig primitive type) and `pos-tempo` declares `pos_tempo` (kebab mangles).
+// But references live inside author text spliced verbatim — template `{{ expr
+// }}` holes, when-guards, arg values, `_ = &x` discards — and those sites
+// emitted the raw name: `i1` resolves as the primitive, `pos-tempo` parses as
+// subtraction. Both surface here: the `if` guard's operands and a branch arm's
+// `s:` arg would each name an undeclared identifier in generated Zig.
+//
+// Siblings: 230_017 (param named a keyword), 230_018 (binding named a
+// primitive) — those pin the DECL site. This pins the USE sites downstream.
+//
+// Control: rename the bindings to plain snake and nothing else, and the
+// program prints hi / hi.
+
+const std = @import("std");
+
+~import std/io
+
+~tor get-str {} -> string
+~proc get-str|zig {
+    return "hi";
+}
+
+~tor flip {} | heads string | tails
+~proc flip|zig {
+    return .{ .heads = "x" };
+}
+
+~tor show { s: string }
+~proc show|zig {
+    std.debug.print("{s}\n", .{s});
+}
+
+// i1: a legal Koru binding name that is a primitive type in Zig.
+~get-str(): i1
+|> if (i1 == i1 or @panic("i1 use not escaped"))
+| then |> show(s: i1)
+
+// pos-tempo: a legal kebab name that is subtraction in Zig. Bound on the
+// subflow's head, consumed inside a branch arm's argument text.
+~tor drive {}
+
+~drive = get-str(): pos-tempo
+        |> flip()
+        | heads _ |> show(s: pos-tempo)
+        | tails |> show(s: "t")
+
+~drive()
