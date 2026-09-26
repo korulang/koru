@@ -290,6 +290,11 @@
     if (store_name.len == 0 or seed_text == null) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new requires a name and a seed block: create(name) {{ field: value[type] }}", .{}) } };
     }
+    // `__KoruStoreT_<name>` is pasted verbatim into emitted Zig — the name is
+    // a Zig decl, so non-identifiers refuse here, at the author's text.
+    if (!isStoreName(store_name)) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): '{s}' is not a store name — the name mints `__KoruStoreT_<name>` in the emitted program, so it is one identifier (letter or `_`, then letters/digits/`_`)", .{ store_name, store_name }) } };
+    }
 
     // The namespace synthesized units are ADDRESSED under. `flow.module` is the
     // file-derived name (`lib`); every cross-module path in the program resolves
@@ -315,19 +320,9 @@
     // `<std/store:taken!>` on a synthesized type (the arg capitalized, `enemy`
     // → `Enemy`, aliasing the row struct), and the USER authors the discharger
     // (the despawn handler consuming `<std/store:!taken>`). Absent → a bare
-    // value table, `take` frictionless, no obligation.
-    var entity_type: ?[]const u8 = null;
-    for (flow.annotations) |ann| {
-        if (std.mem.startsWith(u8, ann, "entity(") and ann.len > "entity(".len + 1 and ann[ann.len - 1] == ')') {
-            const raw = ann["entity(".len .. ann.len - 1];
-            if (raw.len > 0) {
-                const cap = allocator.alloc(u8, raw.len) catch unreachable;
-                @memcpy(cap, raw);
-                cap[0] = std.ascii.toUpper(cap[0]);
-                entity_type = cap;
-            }
-        }
-    }
+    // value table, `take` frictionless, no obligation. The extraction lives in
+    // the `emitnames` part.
+    const entity_type = newEntityType(allocator, flow);
 
     // `[tree]` — the store is a FOREST (695_STORE_TREE, TT1/TT5): synthesize
     // the invisible canonical `parent` self-FK column (i64 row handle, -1 =

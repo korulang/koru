@@ -49,5 +49,12 @@ unspellable mirror, since a tor is declared in its own module).
 ## Open
 
 - The declaration sites are now all gated (label, tor, proc, subflow impl).
-  What remains unmeasured is the same question on non-declaration name mints —
-  names a transform or a `Source` block registers on the author's behalf.
+  The transform side measured the same way once: `std/store:new(evil(x))`
+  pasted its name argument verbatim into `const __KoruStoreT_<name>` and Zig
+  died on a symbol the author never wrote — gated with the target's
+  identifier grammar at the transform (690_350, KORU161). Note the gate is
+  stricter than Koru's kebab: the name lands inside a Zig decl, so `-` is
+  refused too — a kebab store name would need mangle-on-write, which is
+  frag-every-name-writing-site-must-mangle's contract, not this one's.
+  Other transform-declared names (`std/grid:new`, capture names, `proto`
+  heads) are the still-open cells.

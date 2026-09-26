@@ -1,0 +1,50 @@
+// Koru Standard Library: the `emitnames` part of store.kz — joined via
+// `~part emitnames`; members land in koru_store.
+//
+// Names that reach the emitted program: a store's `new` argument mints
+// `__KoruStoreT_<name>` as a Zig declaration, and every qualifier helper
+// spells the namespace the synthesized units are addressed under. A name
+// that cannot be spelled by the target (or its caller) dies inside
+// generated code on a symbol the author never wrote — so legality is
+// checked here, where the name is taken, not where it lands.
+
+/// A store name is pasted verbatim into `const __KoruStoreT_<name>` in the
+/// emitted Zig — so its grammar is the TARGET's identifier grammar, not
+/// Koru's kebab: letter/`_` first, then letters/digits/`_`. Anything else
+/// (`evil(x)`, `my store`, `9lives`) makes Zig die inside generated code on
+/// a symbol the author never wrote.
+fn isStoreName(n: []const u8) bool {
+    if (n.len == 0) return false;
+    const f = n[0];
+    if (!((f >= 'a' and f <= 'z') or (f >= 'A' and f <= 'Z') or f == '_')) return false;
+    for (n[1..]) |c| {
+        if (!((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '_')) return false;
+    }
+    return true;
+}
+
+/// The `[entity(<name>)]` annotation on `new` — capitalized row-entity name
+/// for the taken-obligation discipline, or null when absent.
+fn newEntityType(alloc: std.mem.Allocator, flow: *const ast_find.Flow) ?[]const u8 {
+    for (flow.annotations) |ann| {
+        if (std.mem.startsWith(u8, ann, "entity(") and ann.len > "entity(".len + 1 and ann[ann.len - 1] == ')') {
+            const raw = ann["entity(".len .. ann.len - 1];
+            if (raw.len > 0) {
+                const cap = alloc.alloc(u8, raw.len) catch unreachable;
+                @memcpy(cap, raw);
+                cap[0] = std.ascii.toUpper(cap[0]);
+                return cap;
+            }
+        }
+    }
+    return null;
+}
+
+/// The store CELL is a module-scope `let` written above `main_module` (the
+/// `.inline_code` path), so it is reachable BARE from every handler and any
+/// qualifier at all is wrong. On Zig the cell lives inside the declaring
+/// module's emitted struct and needs the full namespace.
+fn storeCellQualifier(alloc: std.mem.Allocator, home: []const u8, main_module_name: []const u8) []const u8 {
+    if (std.mem.eql(u8, CompilerEnv.lang, "js")) return "";
+    return storeEmitQualifier(alloc, home, main_module_name);
+}

@@ -18,9 +18,14 @@
 # Consciously retained: package_requires/compiler_requires fixture ASTs,
 # phantom_semantic_checker test items, serializer Zig-vs-Json dialect
 # twins — test scaffolding and intentional dialect split, not slop.
+# Re-pin (measured on tightening-017 working tree): +1 cluster / +2
+# members, all named offenders test_decl and simple_var_decl twins in
+# *_test.zig files (emitter, visitor_emitter, glob_matcher_spec,
+# comptime_eval) — test scaffolding accumulated since the 2026-10-13
+# pin, predating the staged commit; no production-code clone surfaced.
 # Re-pinned members 747 -> 750 in the writeOptString/writeOptQuoted fold:
 # deleting 43 identical emit blocks re-shaped ast_serializer's tree, so
 # three previously-shadowed nodes surfaced as maximal members. Net code
 # is down ~160 lines; the bump is a measurement artifact, not new slop.
-clusters=609
-members=750
+clusters=610
+members=752

@@ -1,0 +1,6 @@
+SUCCESS
+BACKEND_COMPILE_ERROR
+CONTAINS error[KORU161]
+CONTAINS is not a store name
+ERROR_AT 8
+NOT_CONTAINS output_emitted.zig
