@@ -66,3 +66,20 @@ that farms this surface is `challenges/007_combinatorial_composition.md`; its
 oracle is **compositionality** — if A is legal and B is legal, A∘B is legal and
 means the obvious thing unless a *stated rule* forbids it, in which case the
 rejection must carry a correct koru-level diagnostic.
+
+Evolved 2026-10-05: the same mechanism one level deeper — inside a `!`-arm
+body. `stitchPipeChainLines` swallows the arm head's first `|>` line into an
+inline chain; everything after — later same-level `|>` steps AND the `|` arms
+beneath them — flat-collects into one multi-line list that
+`attachToDeepestChainTail` then dumped wholesale under the deepest inline
+tail. A single `|> if` + `| then` under a `!` arm was green forever; the
+composition that broke it was *two* `|> if` steps in one chain: the second
+`if`'s `| then` was attributed to the first (KORU028 duplicate `then`) while
+the second `if` sat unhandled (KORU022). False-reject, and a swallow — the
+misattributed arm erased the second step's own handler before any checker saw
+the real shape. The fold is now a level stack over the interleaved stream: a
+`|` arm binds to the last step at its own indent, an unnamed `|>` step
+extends the chain and becomes the new tail, and parents are resolved against
+the unmutated tree before any slice is touched (the previous draft leaked and
+dangled on realloc — two passes are the ownership discipline, not an
+optimization). Pin: `210_314_second_chain_step_keeps_its_arms`.

@@ -318,19 +318,125 @@ fn hasTopLevelArrow(s: []const u8) bool {
     return indexOfTopLevelArrow(s) != null;
 }
 
+/// An unnamed `|>` step: no branch label, no catch-all, no guard — an
+/// invocation that continues the chain rather than dispatching on it.
+/// Mirrors `isUnnamedStep` in ast_transform.zig (kept local: it is not
+/// exported and parser predates that file's import surface).
+fn isChainStep(c: *const ast.Continuation) bool {
+    if (c.branch.len != 0) return false;
+    if (c.is_catchall) return false;
+    if (c.condition != null) return false;
+    if (c.binding != null) return false;
+    const node = c.node orelse return false;
+    return node == .invocation;
+}
+
 /// Multi-line continuations attach to the deepest inline-chain tail — a
 /// head built from `a |> b |> c` nests them under `c`; a head with no
 /// chain takes them directly. An empty multi-line list leaves `cont`.
-fn attachToDeepestChainTail(cont: *ast.Continuation, multi_line: []ast.Continuation) void {
-    if (cont.continuations.len > 0 and multi_line.len > 0) {
-        var deepest = &cont.continuations[0];
-        while (deepest.continuations.len > 0) {
-            deepest = @constCast(&deepest.continuations[0]);
+///
+/// The collected list is not only arms: it interleaves named `|`/`!` arms
+/// with further `|>` steps — an arm nested between two step lines dispatches
+/// on the step directly above it. Walking it, each unnamed step nests under
+/// the current tail and becomes the new tail (`|> a |> b` stays a chain),
+/// while each named arm lands on the current tail. A flat dump under the
+/// first tail stole later steps' arms — a `|> if`'s `| then` was claimed by
+/// a preceding `|> if`, which reported both duplicate `then` (KORU028) and
+/// an unhandled `if` (KORU022).
+fn attachToDeepestChainTail(allocator: std.mem.Allocator, cont: *ast.Continuation, multi_line: []ast.Continuation) !void {
+    if (multi_line.len == 0) return;
+    // Ownership: every element is memcpy'd into a parent's `continuations`
+    // below; the container slice itself is dead afterwards.
+    defer allocator.free(multi_line);
+
+    // Pass 1 — resolve each item's parent against the UNMUTATED tree, so no
+    // pointer we hold can dangle under a later realloc. The stack is seeded
+    // with the deepest inline-chain tail (`a |> b |> c` → `c`), bottomed at
+    // `cont`. Seed-tail entries record the head line's indent, which is
+    // shallower than every collected line, so only item-steps ever pop.
+    var stack = std.ArrayList(*ast.Continuation).initCapacity(allocator, 8) catch return error.OutOfMemory;
+    defer stack.deinit(allocator);
+    stack.appendAssumeCapacity(cont);
+    var tail = cont;
+    if (cont.continuations.len > 0) {
+        tail = @constCast(&cont.continuations[0]);
+        while (tail.continuations.len > 0) {
+            tail = @constCast(&tail.continuations[0]);
         }
-        @constCast(deepest).continuations = multi_line;
-    } else if (cont.continuations.len == 0) {
-        cont.continuations = multi_line;
+        try stack.append(allocator, tail);
     }
+    const parents = try allocator.alloc(*ast.Continuation, multi_line.len);
+    defer allocator.free(parents);
+    // Every stack entry pushed for a step item, tagged with the item's index —
+    // a step's resolved parent can be an interior link of its own stitched
+    // `|>` tail, never reachable as `&multi_line[i]`.
+    var item_parents = std.ArrayList(struct { idx: usize, ptr: *ast.Continuation }).initCapacity(allocator, 8) catch return error.OutOfMemory;
+    defer item_parents.deinit(allocator);
+    for (multi_line, 0..) |*item, i| {
+        // An arm or step binds to the last step at its own indentation level
+        // (210_174) — pop everything deeper; the remaining top is the parent.
+        while (stack.items.len > 1 and stack.items[stack.items.len - 1].indent > item.indent) {
+            _ = stack.pop();
+        }
+        parents[i] = stack.items[stack.items.len - 1];
+        if (isChainStep(item)) {
+            // The step extends the chain — it is the new tail. Push its own
+            // trailing inline `|>` links too; they share its line's indent, so
+            // a later pop can never land between the item and its tail.
+            var step = item;
+            try stack.append(allocator, step);
+            try item_parents.append(allocator, .{ .idx = i, .ptr = step });
+            while (step.continuations.len > 0 and isChainStep(&step.continuations[step.continuations.len - 1])) {
+                step = @constCast(&step.continuations[step.continuations.len - 1]);
+                try stack.append(allocator, step);
+                try item_parents.append(allocator, .{ .idx = i, .ptr = step });
+            }
+        }
+    }
+
+    // Pass 2 — attach. Children of an item's subtree (its own slot and any
+    // interior tail links that ended up as parents) attach BEFORE the item is
+    // copied into its own parent, so items process in descending index order
+    // (a step's children always have higher indices). Then the seeded parents
+    // (`cont` / tail) take the items resolved to them, subtrees already final.
+    var i = multi_line.len;
+    while (i > 0) {
+        i -= 1;
+        // Interior tail links first: realloc'ing the item's own children (the
+        // appendResolved below) moves the objects these pointers address.
+        for (item_parents.items) |entry| {
+            if (entry.idx == i and entry.ptr != &multi_line[i]) {
+                try appendResolved(allocator, entry.ptr, multi_line, parents);
+            }
+        }
+        try appendResolved(allocator, &multi_line[i], multi_line, parents);
+    }
+    try appendResolved(allocator, tail, multi_line, parents);
+    if (tail != cont) {
+        try appendResolved(allocator, cont, multi_line, parents);
+    }
+}
+
+/// Grows `parent.continuations` by every item in `multi_line` whose resolved
+/// parent is `parent`, in source order, freeing the replaced slice.
+fn appendResolved(allocator: std.mem.Allocator, parent: *ast.Continuation, multi_line: []ast.Continuation, parents: []const *ast.Continuation) !void {
+    var count: usize = 0;
+    for (parents) |p| {
+        if (p == parent) count += 1;
+    }
+    if (count == 0) return;
+    const old = parent.continuations;
+    const kids = try allocator.alloc(ast.Continuation, old.len + count);
+    @memcpy(kids[0..old.len], old);
+    var at = old.len;
+    for (multi_line, 0..) |*item, j| {
+        if (parents[j] == parent) {
+            kids[at] = item.*;
+            at += 1;
+        }
+    }
+    parent.continuations = kids;
+    if (old.len > 0) allocator.free(old);
 }
 
 /// True when `s` carries a chain pipe `|>` at paren/brace depth 0 outside
@@ -7314,7 +7420,7 @@ pub const Parser = struct {
         const multi_line_continuations = try self.parseNestedContinuationsForLevel(indent);
 
         // FIX: If we have inline chained continuations, attach multi-line ones to the deepest
-        attachToDeepestChainTail(&cont, multi_line_continuations);
+        try attachToDeepestChainTail(self.allocator, &cont, multi_line_continuations);
 
         cont.kind = head.branch_kind;
         return cont;
@@ -7384,7 +7490,7 @@ pub const Parser = struct {
         const multi_line_continuations = try self.parseNestedContinuationsForLevel(indent);
 
         // If we have inline chained continuations, attach multi-line ones to the deepest
-        attachToDeepestChainTail(&cont, multi_line_continuations);
+        try attachToDeepestChainTail(self.allocator, &cont, multi_line_continuations);
 
         return cont;
     }
@@ -8438,7 +8544,7 @@ pub const Parser = struct {
 
         // If we have inline chained continuations (from |> step1 |> step2 |> step3),
         // attach multi-line continuations to the DEEPEST continuation in the chain
-        attachToDeepestChainTail(&cont, multi_line_continuations);
+        try attachToDeepestChainTail(self.allocator, &cont, multi_line_continuations);
 
         return cont;
     }
