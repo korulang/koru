@@ -1,0 +1,13 @@
+// koruc generates ./build.zig unconditionally and overwrites whatever was
+// there — a hand-written build.zig is silently destroyed, while build.zig.zon
+// IS diff-checked ("unchanged"). The asymmetry proves the tool knows how to
+// preserve and doesn't, for the file users are most likely to have authored.
+// This pin: a build.zig koruc did not write must survive compilation, or the
+// tool must refuse and say why — never overwrite in silence.
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

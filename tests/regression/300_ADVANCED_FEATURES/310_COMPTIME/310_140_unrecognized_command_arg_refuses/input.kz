@@ -1,0 +1,16 @@
+// The command position after the input file must resolve or refuse — never
+// vanish. `koruc <file> zzzzzz` is byte-identical to `koruc <file>` today:
+// garbage, a typo'd verb, `run` in the wrong position, and an output filename
+// all produce the same "Built executable" observation, exit 0 (Q3 in
+// challenges/018_FIX_QUEUE.md, re-confirmed and widened 2026-10-11).
+// `deps` already refuses a stray argument with a teaching diagnostic
+// (310_115); this pins the same contract for every other token in that
+// position, and for unknown bare flags, which fall into compiler_config and
+// disappear the same way.
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

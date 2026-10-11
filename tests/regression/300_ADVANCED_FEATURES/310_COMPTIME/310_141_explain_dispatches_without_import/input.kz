@@ -1,0 +1,16 @@
+// `koruc <file> explain` is a declared command (koru_std/explain.kz) whose
+// module must ride along under the command — the `command=` provider atom
+// (src/main.zig:7556) exists for exactly this (`~[command(explain)]import
+// std/explain`), but nothing declares that gated import, so on any program
+// that does not itself import std/explain the verb falls through to a plain
+// build. Byte-identical to a typo'd token. Q6's import half is fixed; this
+// pins the dispatch half.
+
+~import std/io
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()
