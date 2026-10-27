@@ -77,3 +77,25 @@ delimiting work is not a wart.
 What would correct this: a live-source block where a comma legitimately
 separates two entries on one line — a grammar that grows multi-entry lines
 reopens the separator question.
+
+## The host-struct lift is the same surface (2026-10-27)
+
+A `pub const Name = struct { ... }` declaration the host-struct lift
+parses (`parseHostStructDecl`) is one more `{ name: type }` entry list —
+and it carried none of the four faults: `x: i32` beside `x: i64` reached
+Zig as `duplicate struct member name 'x'` (rung 3). The lift's field loop
+now keeps a seen-set, PARSE010, caret on the second field's name.
+
+**"Bound twice" is a property of the emitted name, not the source
+spelling.** Kebab `-` mangles to `_` at identifier formation on every
+target, so `a-b` and `a_b` are distinct spellings that write one member —
+the same rung-3 hole behind a different spelling. The shared comparator
+(`struct_literal.emittedFieldNameEql`) compares emitted names; the
+struct-literal seen-set, the AST-level field/destructure/jump-arg checks,
+and the host-struct loop all gate on it. Own-loop copies that still
+compare raw spellings (protoFieldBlock's two instances, tree.registry's
+parseNodeFields) are the same hole, unprobed there — worth the same
+one-line adoption when measured.
+
+Pinned by 220_058 (host struct), 210_332 (branch payload, mangle
+collision).

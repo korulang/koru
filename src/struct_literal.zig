@@ -334,6 +334,23 @@ pub fn punnableName(value: []const u8) ?[]const u8 {
         value;
 }
 
+/// Two field names are the same binding when their EMITTED identifier is
+/// the same: kebab `-` mangles to `_` at identifier-formation on every
+/// target (D2), so `a-b` and `a_b` are distinct source spellings that emit
+/// one struct member — the second reaches the host as a duplicate member
+/// name. Compared byte-wise with `-`/`_` treated as one char class; a
+/// case difference or any other byte still distinguishes the names.
+pub fn emittedFieldNameEql(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |ca, cb| {
+        if (ca == cb) continue;
+        const norm_a: u8 = if (ca == '-') '_' else ca;
+        const norm_b: u8 = if (cb == '-') '_' else cb;
+        if (norm_a != norm_b) return false;
+    }
+    return true;
+}
+
 fn projectRawFields(
     allocator: Allocator,
     raw_fields: []const []const u8,
@@ -343,6 +360,8 @@ fn projectRawFields(
     for (raw_fields) |raw| {
         // A field list takes each name once: a second binding for a name
         // already taken is a silent drop downstream, explicit or pun alike.
+        // The comparison is on the emitted spelling — `a-b` and `a_b` are
+        // one member downstream (kebab mangles to snake at emit).
         const candidate: ?[]const u8 = blk: {
             if (topLevelColon(raw)) |colon| {
                 break :blk std.mem.trim(u8, raw[0..colon], " \t\n\r");
@@ -351,7 +370,7 @@ fn projectRawFields(
         };
         if (candidate) |cand| {
             for (out.items) |seen| {
-                if (std.mem.eql(u8, seen.name, cand)) return error.DuplicateField;
+                if (emittedFieldNameEql(seen.name, cand)) return error.DuplicateField;
             }
         }
         if (std.mem.trim(u8, raw, " \t\n\r").len == 0) continue;
@@ -462,7 +481,7 @@ pub fn duplicateFieldName(allocator: Allocator, input: []const u8) ?[]const u8 {
         };
         if (candidate) |cand| {
             for (seen.items) |s| {
-                if (std.mem.eql(u8, s, cand)) return cand;
+                if (emittedFieldNameEql(s, cand)) return cand;
             }
             seen.append(allocator, cand) catch return null;
         }
