@@ -40,12 +40,14 @@ Same file. `--check` runs only the Koru shape pass and cannot see backend
 errors, but says "passed" without saying what passed. Either the scope goes in
 the message or the two verdicts must agree.
 
-### Q3. `koruc <file> run` builds and never runs
-Byte-identical output to a plain build, exit 0. Only the leading form
-`koruc run <file>` executes. `--help`'s own usage line is
-`koruc [options] <input.kz> [command]` — the trailing form it documents is the
-one that silently does nothing. Any unrecognised word in that position is
-swallowed the same way.
+### Q3. `koruc <file> run` builds and never runs — DRAINED 2026-10-27 (`310_144`)
+Byte-identical output to a plain build, exit 0 — trailing words in command
+position are never forwarded, so every unmatched word was dead input. Now an
+undeclared word there refuses: leading verbs (`run`/`build`/`lib`/`bundle`/`init`/
+`create`/`skills`/`zen`) get "verb first, file second" plus the corrected line;
+anything else gets "not a command the file declares". Flags in the slot stay
+flags, declared comptime commands (`deps`, `explain`, …) still dispatch.
+Pinned by `310_144_command_position_refuses_dead_words`.
 
 ---
 
@@ -179,7 +181,10 @@ next run find different things.
 
 ## Standing leads not closed by this run
 
-- `isUsableAlias` rejects any `/`, so `koru/vaxis` cannot be a source-declared
-  alias — on grounds the longest-match change made false. This is the piece
-  `std/vendor:bindings` needs.
-- The `690_109` fix itself (see Q13) — a fix waiting for someone, not a question.
+- `isUsableAlias` rejects any `/` — MEASURED DRAINED 2026-10-27: binding keys
+  now go through `isUsableModulePrefix` (per-segment check), and
+  `std/vendor:bindings` shipped (`koru_std/vendor.kz`, KORU171).
+- The `690_109` fix (see Q13) — MEASURED DRAINED 2026-10-27: both
+  `690_109_bare_drain_arm_threads_its_column` and `690_107` compiled and ran
+  correctly at HEAD (`inserted` / `cancelled 3`). The fix landed elsewhere;
+  this queue row was a stale claim.
