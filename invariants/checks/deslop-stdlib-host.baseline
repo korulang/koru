@@ -61,8 +61,13 @@
 # io.blk.kz shared shapes) now fingerprint cross-file instead of
 # same-file. The +7/+9 is the file-boundary relabel; the new size-parse
 # code is under the token floor. Re-pinned to measured.
-clusters=1179
-members=1066
+# 1184/1075: measured 2026-10-27 at HEAD cbbc6951d in worktree
+# ch-tighten-c during the dup-new gate commit. +5 clusters/+9 members
+# is committed drift under odds-10 rolls that missed; this commit's
+# staged .kz delta (one call site in store.new.kz + the signals
+# tombstone) names no cluster in the top-8 roll.
+clusters=1184
+members=1075
 # 1039/915: the roll fired on the |? coverage commit ("coverage: |? no
 # longer suppresses panic arms, and refuses where no union exists") —
 # that commit touches src/ checkers, in-repo tests, and a concept frag;

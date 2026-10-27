@@ -1,0 +1,7 @@
+name: widening
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: folded into `correction` — declare that name. (orphan drained 2026-10-27; a rule's enforcement surface widening to sibling positions corrects the prior enumeration belief)
+route: surface, wake
