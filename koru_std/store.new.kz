@@ -546,10 +546,10 @@
     }
     const CAP: usize = cap_buf;
     const is_plural = CAP > 1;
+    if (IndexGate.servableRefusal(allocator, reporter, program, store_name, is_plural)) |r| return .{ .transformed = .{ .replacement = r } };
     if (want_kind and !is_plural) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): kinds need a container store - declare a capacity (`capacity: N`, N > 1); a capacity-1 value has no rows to tag", .{store_name}) } };
     }
-
     // [tree] sits on the container substrate — a capacity-1 value has no
     // rows to arrange into a forest.
     if (is_tree and !is_plural) {

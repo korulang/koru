@@ -51,8 +51,15 @@
 # drift accumulated on main between rolls (interpreter/store/proto/
 # channel import_decl and event_decl residuals; this diff stages zero
 # .kz files). Re-pinning records the tree as measured 2026-11-15.
-clusters=142
-members=216
+# 146/221 (spellings 59, skipped 2): measured 2026-10-27 at HEAD
+# 9f8576850 in worktree ch-tighten-c during the igate-part commit.
+# +4 clusters/+5 members is committed drift under rolls that missed —
+# import_decl/event_decl residual twins in interpreter.runcached,
+# bridge.custody, interpreter.guards, pump.wait, store.bulkjoin, same
+# decl-shell category as every prior re-pin. The commit's own new file
+# (store.igate.kz) names no cluster in the top-8 roll.
+clusters=146
+members=221
 skipped=2
 spellings=59
 # 70/111: store.keyed.kz joined io.blk-style import preamble clone w/ interpreter.select.kz (3 shared compiler-module imports, boilerplate)

@@ -29,7 +29,9 @@ koru_std/bridge.grants.kz	62
 koru_std/bridge.hostverbs.kz	110
 koru_std/bridge.items.kz	9
 koru_std/bridge.kz	176
+koru_std/bridge.mount.kz	176
 koru_std/bridge.note.kz	110
+koru_std/bridge.render.kz	97
 koru_std/bridge.residue.kz	14
 koru_std/bridge.run-exec.kz	124
 koru_std/bridge.run.kz	39
@@ -40,9 +42,10 @@ koru_std/bridge.turn.kz	71
 koru_std/bridge.turnscan.kz	47
 koru_std/bridge.types.kz	11
 koru_std/bridge.wiregate.kz	58
+koru_std/bridge.wirerun.kz	89
 koru_std/bridge.world.kz	104
-koru_std/build.app.kz	19
 koru_std/build_image.kz	357
+koru_std/build.app.kz	19
 koru_std/build.kz	586
 koru_std/ccp_aspirational.kz	108
 koru_std/ccp.kz	109
@@ -97,10 +100,6 @@ koru_std/fleet.kz	248
 koru_std/fleet.lease.kz	79
 koru_std/fleet.mail.kz	138
 koru_std/fleet.renew.kz	66
-koru_std/grid.readwalk.kz	101
-koru_std/node.kz	551
-koru_std/node.new.kz	188
-koru_std/node.world.kz	144
 koru_std/fmt.csprec.kz	371
 koru_std/fmt.jsprec.kz	39
 koru_std/fmt.kz	572
@@ -115,14 +114,15 @@ koru_std/gate.kz	525
 koru_std/gpu.kz	228
 koru_std/grid.cursor.kz	37
 koru_std/grid.for.kz	388
-koru_std/grid.kz	53
 koru_std/grid.idx.kz	165
+koru_std/grid.kz	53
 koru_std/grid.new.kz	429
 koru_std/grid.pool.kz	606
 koru_std/grid.read.kz	379
+koru_std/grid.readwalk.kz	101
+koru_std/grid.slice.kz	163
 koru_std/grid.stored.kz	235
 koru_std/grid.sweep.kz	305
-koru_std/grid.slice.kz	163
 koru_std/grid.walk.kz	322
 koru_std/http.kz	215
 koru_std/index.kz	7
@@ -152,6 +152,7 @@ koru_std/interpreter.invargs.kz	80
 koru_std/interpreter.kz	553
 koru_std/interpreter.literal.kz	40
 koru_std/interpreter.mint.kz	37
+koru_std/interpreter.mounted.kz	510
 koru_std/interpreter.names.kz	18
 koru_std/interpreter.parse.kz	52
 koru_std/interpreter.pool.kz	236
@@ -181,9 +182,9 @@ koru_std/kernel.fpga.kz	192
 koru_std/kernel.fpgaemit.kz	179
 koru_std/kernel.fpgatb.kz	120
 koru_std/kernel.kz	2621
+koru_std/kernel.pairwise.kz	356
 koru_std/kernel.scan.kz	109
 koru_std/koru.kz	211
-koru_std/kernel.pairwise.kz	356
 koru_std/liquid_template.kz	145
 koru_std/list.explain.kz	113
 koru_std/list.fieldkit.kz	71
@@ -199,6 +200,9 @@ koru_std/list.push.kz	30
 koru_std/list.synth.kz	281
 koru_std/map.kz	114
 koru_std/net.kz	63
+koru_std/node.kz	551
+koru_std/node.new.kz	188
+koru_std/node.world.kz	144
 koru_std/optimizations/kernels.kz	62
 koru_std/optimizations/loops.kz	63
 koru_std/optimizer.k	31
@@ -255,6 +259,7 @@ koru_std/runtime.registry.kz	769
 koru_std/runtime.run.kz	69
 koru_std/runtime.runcached.kz	32
 koru_std/runtime.runcimpl.kz	69
+koru_std/runtime.scopelines.kz	91
 koru_std/runtime.scopeverbs.kz	179
 koru_std/runtime.specs.kz	49
 koru_std/runtime.wirelex.kz	37
@@ -281,6 +286,7 @@ koru_std/store.gate.kz	523
 koru_std/store.hostemit.kz	246
 koru_std/store.hstruct.kz	74
 koru_std/store.idecls.kz	104
+koru_std/store.igate.kz	142
 koru_std/store.index.kz	175
 koru_std/store.indexwalk.kz	222
 koru_std/store.insert.kz	418
@@ -356,8 +362,3 @@ koru_std/types.fields.kz	55
 koru_std/types.kz	374
 koru_std/vendor.kz	1145
 koru_std/void.kz	20
-koru_std/bridge.mount.kz	176
-koru_std/bridge.render.kz	97
-koru_std/bridge.wirerun.kz	89
-koru_std/interpreter.mounted.kz	510
-koru_std/runtime.scopelines.kz	91

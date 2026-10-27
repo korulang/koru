@@ -262,3 +262,20 @@ non-void — loud in every optimize mode (`unreachable` would be UB under
 the ReleaseFast output build). Pinned at `248_label_fold_arm_exit_
 without_produce_panics`; found by the benchmark-revisit session, not by
 the suite.
+
+## 2026-10-27 — the same asymmetry in DECLARATION discovery, and the tested half was the emit path
+
+The `std/indexes:*` declaration wall refuses a second claim and a
+column-less claim — but only when the named store's own `new` emit runs
+`fieldSpec`. Every decl that never reaches that call site was the untested
+half: a decl naming a store nobody declared, and a decl naming a
+capacity-1 value store (whose emit branches around the index spec
+entirely). Both sat in the AST as dead claims the author believed were
+live — the same silent drop the second-decl wall exists to kill, one
+enumeration wider. The rule was never "refuse these two shapes"; it is
+"an index declaration that cannot be served is refused at its own line."
+`store.new.kz` now scans `declsAll` once per `new` — the only owner the
+decls have — and refuses orphans and the value-tier claim. The duplicate
+`std/store:new` was the same shape on the sibling surface: the first decl
+won silently, and the fault surfaced as a wrong-blame KORU161 on a legal
+insert (or duplicate-symbol Zig errors). Pins: `690_378`–`690_380`.
