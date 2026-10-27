@@ -262,3 +262,20 @@ non-void — loud in every optimize mode (`unreachable` would be UB under
 the ReleaseFast output build). Pinned at `248_label_fold_arm_exit_
 without_produce_panics`; found by the benchmark-revisit session, not by
 the suite.
+
+## 2026-10-27 — the fold law's enumeration ended at the top-level op
+
+The `[parallel]for` combine check (`classifyCellWrite`) proved the OUTERMOST
+shape of a captured write — `cell.f <op> rest` with `op ∈ {+, *}` — and
+nothing else. The enumeration stopped one token short in two places at
+once: the non-cell operand was never read (`a.acc + i*a.acc` classified
+`+` and partitioned; serial 9! = 362880, the join silently emitted 1),
+and a second `captured` write to the same field was dedupe-skipped past
+the classifier entirely (`+i` then `*2`; serial 1004, join 72). Both are
+the same form: a rule enforced on the shape the author was expected to
+write, absent on every sibling shape the grammar admits. The check now
+reads the operand for a cell mention and refuses a repeated field write —
+the conservative branch the law already declared ("anything the check
+can't see is refused, not miscombined") — and the refusal lands as
+KORU211 with a caret, not the rendered @compileError that was the only
+enforcement path.

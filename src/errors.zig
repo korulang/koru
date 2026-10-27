@@ -174,6 +174,7 @@ pub const ErrorCode = enum(u16) {
     KORU208, // `mod/path:default(...)` spelled explicitly — the default door is invoked by the bare module path `mod/path(...)`; the `:default` segment is compiler-manufactured, never source. Emitted by src/import_pipeline.zig.
     KORU209, // `dir:` relocates the emitted artifact while the program declares build:requires — generated build_output.zig stages output_emitted.zig in cwd. Printed by the host-build-zig tor in koru_std/compiler.materialize.kz.
     KORU210, // A std/build:app declaration is malformed — the Source block did not parse as `name: "…", id: "…"` plus optional `version: "…"`, `icon: "…"`, or carried a key the collector does not know. An identity is whole or refused; never defaulted. Emitted by src/compiler_requires.zig at requirement collection.
+    KORU211, // A `captured` write under `[parallel]for` is not a provable fold — the non-cell operand reads the partitioned cell, the field is written a second time, or the write sits where the partition walk cannot reach it (a conditional arm, a nested [parallel] scope). Partition without a combine law is a wrong answer. Emitted by src/template_processor.zig at template render — for is a [template] proc, so its refusal surfaces through the render path.
 };
 
 pub const SourceLocation = struct {
