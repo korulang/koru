@@ -968,9 +968,55 @@ fn collectParallelCells(
     allocator: std.mem.Allocator,
     cont: *const ast.Continuation,
     cells: *std.StringArrayHashMap(ParallelCellSpec),
+    in_branch: bool,
 ) !void {
     if (cont.node) |*step| {
-        if (step.* == .assignment) {
+        switch (step.*) {
+            // A [parallel] scope cannot nest inside a [parallel] body —
+            // the lowering emits one worker fn per for, and a second
+            // fork inside it reaches Zig as shadow/member errors on
+            // names the author never wrote (400_228). Same wall whether
+            // the nested scope sits under a conditional arm or inline.
+            .invocation => |*inv| {
+                for (inv.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "parallel")) {
+                        emitLocatedDiagAndExit(.KORU211, cont.location, std.fmt.allocPrint(allocator, "[parallel]for: a [parallel] scope cannot nest inside a [parallel] body — the worker fn emits no second fork; hoist the inner [parallel] out of the loop or drop the annotation", .{}) catch "[parallel]for: a [parallel] scope cannot nest inside a [parallel] body — drop the inner annotation");
+                    }
+                }
+            },
+            .label_with_invocation => |*li| {
+                for (li.invocation.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "parallel")) {
+                        emitLocatedDiagAndExit(.KORU211, cont.location, std.fmt.allocPrint(allocator, "[parallel]for: a [parallel] scope cannot nest inside a [parallel] body — the worker fn emits no second fork; hoist the inner [parallel] out of the loop or drop the annotation", .{}) catch "[parallel]for: a [parallel] scope cannot nest inside a [parallel] body — drop the inner annotation");
+                    }
+                }
+            },
+            // Conditional/switch/foreach arms carry their bodies on the
+            // NODE, not the continuation — an earlier walk only saw
+            // `cont.continuations`, so a write inside an arm was neither
+            // classified nor retargeted and reached the worker fn as a
+            // reference to a cell Zig cannot see (400_229). Collecting
+            // them is a ruling the partition hasn't made; refuse loudly.
+            .conditional => |*cond| {
+                for (cond.branches) |*br| {
+                    for (br.body) |*bc| try collectParallelCells(allocator, bc, cells, true);
+                }
+            },
+            .switch_result => |*sr| {
+                for (sr.branches) |*br| {
+                    for (br.body) |*bc| try collectParallelCells(allocator, bc, cells, true);
+                }
+            },
+            .foreach => |*fe| {
+                for (fe.branches) |*br| {
+                    for (br.body) |*bc| try collectParallelCells(allocator, bc, cells, true);
+                }
+            },
+            .assignment => {
+                if (in_branch) {
+                    emitLocatedDiagAndExit(.KORU211, cont.location, std.fmt.allocPrint(allocator, "[parallel]for: a `captured` write inside a conditional arm cannot be partitioned — the combine law is proved per field on the body's own steps; hoist the write out of the arm or drop [parallel]", .{}) catch "[parallel]for: a `captured` write inside a conditional arm cannot be partitioned — drop [parallel]");
+                }
+                {
             const asgn = @constCast(&step.assignment);
             // Writes under [parallel] retarget to a synthesized worker-local
             // name (`__koru_parcell_<cell>`): inside the spawned worker fn the
@@ -1039,9 +1085,12 @@ fn collectParallelCells(
                 }
                 asgn.target = par_name;
             }
+                }
+            },
+            else => {},
         }
     }
-    for (cont.continuations) |*nested| try collectParallelCells(allocator, nested, cells);
+    for (cont.continuations) |*nested| try collectParallelCells(allocator, nested, cells, in_branch);
 }
 
 /// The monoid combine law a `cell.f = <expr>` write proves, or none.
@@ -1347,7 +1396,7 @@ pub fn renderTemplateInvocation(
         if (parallel_text.len > 0) {
             for (continuations) |*cont| {
                 if (cont.kind != .effect) continue;
-                try collectParallelCells(allocator, cont, &par_cells);
+                try collectParallelCells(allocator, cont, &par_cells, false);
             }
         }
         const arr = try allocator.alloc(*liquid.Context, par_cells.count());

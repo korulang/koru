@@ -279,3 +279,14 @@ the conservative branch the law already declared ("anything the check
 can't see is refused, not miscombined") — and the refusal lands as
 KORU211 with a caret, not the rendered @compileError that was the only
 enforcement path.
+
+## 2026-10-27 (2) — the walk's reach was the same half again
+
+Same day, same surface, second enumeration: the partition walk recursed
+`cont.continuations` and nothing else — so a nested `[parallel]` scope
+inside a `[parallel]for` body reached Zig as shadow errors on
+`__koru_par_*` names, and a write inside a conditional arm was neither
+classified nor retargeted. The fix is not a second wall — it is the same
+walk made to see the positions it claims to audit: every nested
+invocation's annotations, every node-carried branch body. 400_228 pins
+the nested-scope refusal.
