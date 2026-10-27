@@ -8479,6 +8479,28 @@ pub fn main() !void {
                 std.process.exit(1);
             }
         }
+
+        // Nothing claimed the word in command position. Shell, zig, and koru
+        // commands execute in the scan above and never reach here; comptime
+        // commands resolved just now; the frontend verbs (mint, help, glance,
+        // at, to-k) all returned earlier. What remains is dead input — a word
+        // no consumer reads (trailing args are never forwarded to the program).
+        // `run`/`build`/`lib`/`bundle` landing here is the leading verb typed
+        // in the trailing position: the file builds and the verb is swallowed
+        // (Q3 in challenges/018_FIX_QUEUE.md). A flag in this slot is the
+        // misplaced-flag case above, so skip anything that starts with '-'.
+        if (detected_comptime_command == null and
+            !std.mem.startsWith(u8, potential_command, "-"))
+        {
+            inline for (.{ "run", "build", "lib", "bundle", "init", "create", "skills", "zen" }) |verb| {
+                if (std.mem.eql(u8, potential_command, verb)) {
+                    try printStderr(allocator, "koruc: '{s}' is a leading verb, not a command — verb first, file second\n\n      koruc {s} {s}\n\n  The word after the input file names a command the program declares (`koruc {s} help` lists them).\n", .{ verb, verb, input_file.?, input_file.? });
+                    std.process.exit(1);
+                }
+            }
+            try printStderr(allocator, "koruc: '{s}' is not a command {s} declares\n\n  The word after the input file names a command the program declares — `koruc {s} help` lists them.\n  To build and run the program: `koruc run {s}`.\n", .{ potential_command, input, input_file.?, input_file.? });
+            std.process.exit(1);
+        }
     }
 
     // compiler:use — the mint directive. Frontend-collected textually like
