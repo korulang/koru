@@ -6377,15 +6377,18 @@ fn checkFieldsBindOnce(
     for (fields, 0..) |field, i| {
         if (field.name.len == 0) continue;
         for (fields[0..i]) |earlier| {
-            if (!std.mem.eql(u8, earlier.name, field.name)) continue;
-            try reporter.addErrorWithHint(
+            if (!struct_literal.emittedFieldNameEql(earlier.name, field.name)) continue;
+            try reportNameReuse(
+                reporter,
                 .PARSE010,
-                location.line,
-                location.column,
+                location,
+                earlier.name,
+                field.name,
+                owner,
                 "field '{s}' is bound twice in {s} — a field list takes each name once",
-                .{ field.name, owner },
+                "fields '{s}' and '{s}' in {s} write the same member — '-' and '_' are one identifier in the emitted struct; rename one",
                 "drop one, or rename it — the list cannot carry two '{s}'",
-                .{field.name},
+                "kebab '-' mangles to '_' at identifier formation — two spellings, one struct member downstream",
             );
             break;
         }
@@ -6546,18 +6549,43 @@ fn checkJumpArgsBindOnce(
         if (arg.name.len == 0) continue;
         for (args[0..i]) |earlier| {
             if (earlier.name.len == 0) continue;
-            if (!std.mem.eql(u8, earlier.name, arg.name)) continue;
-            try reporter.addErrorWithHint(
+            if (!struct_literal.emittedFieldNameEql(earlier.name, arg.name)) continue;
+            try reportNameReuse(
+                reporter,
                 .PARSE009,
-                location.line,
-                location.column,
+                location,
+                earlier.name,
+                arg.name,
+                label,
                 "argument '{s}' is bound twice — '@{s}' takes each name once",
-                .{ arg.name, label },
+                "arguments '{s}' and '{s}' write the same member — '-' and '_' are one identifier in the emitted struct; '@{s}' takes each name once",
                 "drop one, or give it a different name — the jump cannot carry two '{s}'",
-                .{arg.name},
+                "kebab '-' mangles to '_' at identifier formation — two spellings, one bound name downstream",
             );
             break;
         }
+    }
+}
+
+/// The shared refusal for a name taken twice in one list — byte-identical
+/// spellings report "bound twice"; spellings that collide only after the
+/// kebab→snake mangle report the emitted member both write.
+fn reportNameReuse(
+    reporter: *ErrorReporter,
+    code: errors.ErrorCode,
+    location: errors.SourceLocation,
+    earlier: []const u8,
+    name: []const u8,
+    owner: []const u8,
+    comptime identical_fmt: []const u8,
+    comptime collision_fmt: []const u8,
+    comptime identical_hint_fmt: []const u8,
+    comptime collision_hint_fmt: []const u8,
+) !void {
+    if (std.mem.eql(u8, earlier, name)) {
+        try reporter.addErrorWithHint(code, location.line, location.column, identical_fmt, .{ name, owner }, identical_hint_fmt, .{name});
+    } else {
+        try reporter.addErrorWithHint(code, location.line, location.column, collision_fmt, .{ earlier, name, owner }, collision_hint_fmt, .{});
     }
 }
 
@@ -6653,15 +6681,18 @@ fn checkDestructureBindOnce(
     for (fields) |field| {
         if (std.mem.eql(u8, field.name, "_")) continue;
         for (bound.items) |n| {
-            if (!std.mem.eql(u8, n, field.name)) continue;
-            try reporter.addErrorWithHint(
+            if (!struct_literal.emittedFieldNameEql(n, field.name)) continue;
+            try reportNameReuse(
+                reporter,
                 .PARSE010,
-                location.line,
-                location.column,
+                location,
+                n,
+                field.name,
+                owner,
                 "field '{s}' is bound twice in {s} — a field list takes each name once",
-                .{ field.name, owner },
+                "fields '{s}' and '{s}' in {s} write the same member — '-' and '_' are one identifier in the emitted struct; rename one",
                 "drop one, or rename it — the list cannot carry two '{s}'",
-                .{field.name},
+                "kebab '-' mangles to '_' at identifier formation — two spellings, one struct member downstream",
             );
             break;
         }

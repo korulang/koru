@@ -1,0 +1,5 @@
+FRONTEND_COMPILE_ERROR
+CONTAINS error[PARSE010]
+CONTAINS write the same member
+ERROR_AT 6
+NOT_CONTAINS output_emitted.zig
