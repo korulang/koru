@@ -166,6 +166,13 @@ backend_cache_key() {
         cat "$td/backend.zig" "$bf" 2>/dev/null
         grep -v '^[[:space:]]*//' "$td/backend_output_emitted.zig" 2>/dev/null || true
         printf '%s\n' "$inputs"
+        # ABI salt: backend binaries are dynamically linked and versioned
+        # symbols make a foreign-glibc binary hard-fail on exec — a cache that
+        # keys on content alone replays it anyway (measured 2026-10-13: a
+        # glibc-2.34 host's mints all refused on a 2.31 image). Same fix shape
+        # as the env override: name the ABI the binary was built for.
+        printf 'KORU_BACKEND_TARGET=%s\n' "${KORU_BACKEND_TARGET-}"
+        ldd --version 2>/dev/null | head -1 || true
     } | _backend_sha256
 }
 

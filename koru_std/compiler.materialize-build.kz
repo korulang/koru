@@ -26,8 +26,11 @@
     const output_exe = if (output) |o| allocator.dupe(u8, o) catch unreachable else emitter_helpers.outputExeName(allocator);
     const emitted_src = if (dir) |d| std.fs.path.join(allocator, &.{ d, "output_emitted.zig" }) catch unreachable else "output_emitted.zig";
 
-    // Check for cross-compilation target from build:config
-    const build_target = emitter_helpers.getBuildConfig("target");
+    // Cross target: build:config, then KORU_BACKEND_TARGET for hosts
+    // whose glibc predates zig's native baseline — declared wins.
+    const env_target = std.process.getEnvVarOwned(allocator, "KORU_BACKEND_TARGET") catch null;
+    defer if (env_target) |t| allocator.free(t);
+    const build_target = emitter_helpers.getBuildConfig("target") orelse env_target;
 
     var zig_lib_buf: [4096]u8 = undefined;
     const zig_lib_overlay = emitter_helpers.ensureZigLibOverlay(allocator, CompilerEnv.koru_home, &zig_lib_buf);
