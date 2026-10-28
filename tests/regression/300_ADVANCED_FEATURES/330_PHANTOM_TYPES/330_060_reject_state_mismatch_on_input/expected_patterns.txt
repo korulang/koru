@@ -14,7 +14,7 @@
 # On re-measurement the checker DOES refuse — KORU030 "Phantom state
 # mismatch: argument 'conn' has no tracked phantom state" — so this pin
 # is now GREEN: input-side state enforcement exists for unstated handles.
-error\[KORU\d+\]
+error\[KORU[0-9]+\]
 phantom state
 connected
 input\.kz

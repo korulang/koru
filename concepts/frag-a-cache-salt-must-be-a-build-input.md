@@ -59,3 +59,30 @@ walk follows them and a test pins that it does.
   "an over-wide key serves no answers and says nothing". Both were the same
   mistake in different sites — the content-hash fix went to the key itself and
   left the salt behind for a month.
+
+---
+
+Extended 2026-10-14 (the third key had the same omission): the binary
+backend cache (`backendCacheKey`, the `~/.cache/koru-backend-cache` lookup
+the regression hot path lives on) carried NO ABI identity — a glibc-2.34
+mint replayed verbatim under a `KORU_BACKEND_TARGET=...2.31` build and the
+binary hard-failed at exec. The mint-manifest key
+(`backendHashComponents`) had carried the env+ABI salt since the earlier
+repair; the binary cache is a second key over the same artifact and the
+salt never reached it — the same pattern this frag already records for
+relative imports: a fix landed in the key that was *being looked at*, and
+the sibling key kept serving wrong answers silently. Two keys over one
+artifact is one belief: a salt that is not a build input poisons BOTH
+sides of the divide — under-salted serves stale, over-salted serves
+nothing.
+
+Extended 2026-10-28 (a fourth site, found by replaying the fix on a
+branch that predated it): the contract was documented — env var, cache
+salt, emitted-build default — but this branch's tree carried none of it,
+and its stage-D fallback (`host-build-zig`'s bare `zig build-exe -lc`)
+read only `build:config`, so even a caller that pinned the env got a
+native-target binary that could not exec. A contract that lives in one
+lineage is not a contract: every consumer of the build graph — emitted
+build.zig defaults, spawn-time -Dtarget, both cache keys, and each
+stage's own fallback path — must honor the salt independently, because
+each can be the one that runs.
