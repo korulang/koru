@@ -8,7 +8,7 @@
 #
 # Currently emits: KORU021 "event 'input:branching-event' has no
 # branch 'error' (available: (none))". Pin matches current behavior.
-error\[KORU\d+\]
+error\[KORU[0-9]+\]
 branching-event
 no branch
 input\.k
