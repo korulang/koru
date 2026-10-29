@@ -9,7 +9,7 @@ import std/rand
 tor ask {}
 | count i64
 | miss
-| quit
+| quit |> _
 
 ask = std/io:print("How many dice (0 to exit): ") |> std/io:readln()
 | line s |> std/string:parse-int(s)
@@ -25,4 +25,4 @@ ask = std/io:print("How many dice (0 to exit): ") |> std/io:readln()
     ! each _ |> std/rand:between(lo: 1, hi: 7): f |> std/io:print("{{ f:d }} ")
     | done |> std/io:print.ln("") |> @repl()
 | miss |> @repl()
-| quit
+| quit |> _

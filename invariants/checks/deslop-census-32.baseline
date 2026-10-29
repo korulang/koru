@@ -266,5 +266,10 @@ members=2529
 # committed under rolls that missed; this commit stages zero src/
 # files (koru_std + tests only). Census re-measured on this tree:
 # 1971/2543.
-clusters=1971
-members=2543
+clusters=1972
+members=2545
+# Re-pinned 1971/2543 -> 1972/2545 (2026-10-29): roll fired on the
+# dice.k terminal-arm revert — zero src/ files staged. Named offenders
+# are parser.zig:1347-1352 x 3124-3129 twins and the documented
+# test-scaffolding classes; foreign drift the census reads off the
+# working tree, none of it this diff.

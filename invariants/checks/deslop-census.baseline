@@ -204,5 +204,13 @@ members=950
 # are unchanged from the note above (cs_emitter emitAssignment /
 # if_simple x js_emitter — the per-target dialect duplication this
 # baseline already documents). Re-measured on this tree: 854/966.
-clusters=854
-members=966
+clusters=857
+members=970
+# Re-pinned 854/966 -> 857/970 (2026-10-29): the roll fired on the
+# dice.k terminal-arm revert — zero src/ files staged. The named
+# offenders are the documented classes (cs_emitter x js_emitter
+# per-target port pairs, emitter_test/visitor_emitter_test/
+# glob_matcher_spec_test scaffolding, requires-fixture ASTs,
+# phantom_semantic_checker twins). Growth is committed drift between
+# sampled rolls plus uncommitted foreign main.zig work in the tree —
+# the census reads the working tree; none of it is this diff.
