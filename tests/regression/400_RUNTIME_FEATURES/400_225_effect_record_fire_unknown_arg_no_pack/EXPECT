@@ -1,0 +1,5 @@
+BACKEND_COMPILE_ERROR
+CONTAINS error[KORU021]
+CONTAINS has no payload field 'wrong'
+NOT_CONTAINS missing at the firing site
+ERROR_AT 12

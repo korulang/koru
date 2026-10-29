@@ -1046,6 +1046,7 @@ pub const ShapeChecker = struct {
                 try field_names.appendSlice(self.allocator, ": ...");
             }
             var shape_errors = false;
+            var unknown_arg = false;
             for (inv.args) |arg| {
                 const known = for (arm.payload.fields) |*f| {
                     if (std.mem.eql(u8, f.name, arg.name)) break true;
@@ -1057,14 +1058,22 @@ pub const ShapeChecker = struct {
                     try self.reporter.addErrorAtLocation(.KORU021, location, "effect '{s}' has no payload field '{s}' (fields: {s})", .{ arm.name, arg.name, field_names.items });
                 }
                 shape_errors = true;
+                unknown_arg = true;
             }
-            for (arm.payload.fields) |*f| {
-                const provided = for (inv.args) |arg| {
-                    if (std.mem.eql(u8, arg.name, f.name)) break true;
-                } else false;
-                if (!provided) {
-                    try self.reporter.addErrorAtLocation(.KORU022, location, "effect '{s}' payload field '{s}' missing at the firing site ({s}({s}))", .{ arm.name, f.name, arm.name, field_names.items });
-                    shape_errors = true;
+            // Once an arg fails to resolve, "field missing" is speculative —
+            // the unknown arg may be a misspelling of the field it would
+            // claim absent. The unknown-arg diagnostic already names the
+            // offender and lists every declared field; asserting per-field
+            // absences on top of it packs one fault into N reports.
+            if (!unknown_arg) {
+                for (arm.payload.fields) |*f| {
+                    const provided = for (inv.args) |arg| {
+                        if (std.mem.eql(u8, arg.name, f.name)) break true;
+                    } else false;
+                    if (!provided) {
+                        try self.reporter.addErrorAtLocation(.KORU022, location, "effect '{s}' payload field '{s}' missing at the firing site ({s}({s}))", .{ arm.name, f.name, arm.name, field_names.items });
+                        shape_errors = true;
+                    }
                 }
             }
             if (shape_errors) return error.ValidationFailed;

@@ -175,6 +175,14 @@ busy. A `cont.location` slapped on a flow-level verdict is its own defect.
   new pins (210_219–210_237), five stale expected-files re-pinned.
   `lexer.zig`/`flow_parser.zig` have no direct emissions — declared out
   of family (ledger below for the boundary ruling).
+- `src/shape_checker.zig` remaining (non-coverage) emission sites:
+  audited 2026-10-29, ledger below. One pack-firing defect fixed (the
+  record-fire missing-field loop asserting speculative absences beside an
+  unknown-arg refusal — pins 400_225/400_226). `validateEventTap` +
+  `validateTapContinuations` confirmed dead: nothing produces
+  `.event_tap` items since `parseEventTap` was removed and `~tap` became
+  a transform. The pilot's branch-coverage sites were re-read, not
+  re-charged.
 
 ## What "done" looks like
 
@@ -559,3 +567,129 @@ the `name.len == 0` refusal through the existing site. Pin: `210_237`.
   `koruc` — no backend-behavior claim is made.
 - Full board NOT run (per challenge rules — targeted subsets only).
   `test-results/unit-tests.json` restored after filtered runs.
+
+
+---
+
+## Ledger — 2026-10-29 — shape_checker.zig remaining sites (worktree `023-the-diagnostic-site-audit`, base `9f8576850`)
+
+**Family boundaries.** Every `self.reporter.addErrorAtLocation*` emission call
+in `src/shape_checker.zig` outside the pilot's branch-coverage set
+(`fa026be34`: KORU021/022/028/030/040/101 coverage sites, kind-aware KORU022
+wording, chain-link `step_loc`, aggregate dedup), plus one
+`errors.branchKindMismatch` helper call. The pilot's sites were re-read for
+context but not re-charged. **Denominator: 55 sites** (54 `addErrorAtLocation`
+{,WithHint} + 1 `branchKindMismatch`). `ShapeChecker` runs in the backend's
+`check-structure` pass (`koru_std/compiler.kz:2106`) on the serialized AST —
+live code, but reachable only through `--deep-check` or a full build; `koruc
+-c` is frontend-only and cannot see any of these sites fire.
+
+### Findings (ladder-ordered)
+
+**P1 — Speculative second-pass diagnostics: the missing-field loop asserts
+absences the unknown-arg refusal already made unknowable (ladder rung 4 arity,
+never-false-adjacent).**
+`validateArmFire`'s record-payload block ran two independent passes over
+`inv.args`: the unknown-arg loop (KORU021/KORU030) then an unconditional
+missing-field loop (KORU022 per absent field). Measured: `pair(wrong: 1)`
+against `! pair { a: i64, b: i64 }` produced **three diagnostics at one
+caret** — `KORU021 no payload field 'wrong' (fields: a, b)` + `KORU022 'a'
+missing` + `KORU022 'b' missing`. The KORU021's own field list already carries
+the missing information, and the "missing" claims are speculative — `wrong`
+may be a misspelling of `a`, in which case `a` is not missing at all.
+- Fix: `unknown_arg` flag; the missing-field loop runs only when every arg
+  resolved. `pair(wrong: 1)` → 1 diagnostic; `pair(a: 1)` → `b` missing
+  (unchanged); `pair()` → per-field reports (unchanged, see needs-ruling).
+- Pins: `400_225_effect_record_fire_unknown_arg_no_pack` (CONTAINS KORU021 +
+  `NOT_CONTAINS missing at the firing site` + `ERROR_AT`), and
+  `400_226_effect_record_fire_missing_field_reports` (the preserved half —
+  clean args still report the absent field).
+- Board blindness: **zero message pins on the whole firing-site family.** No
+  `CONTAINS`/`ERROR_AT`/`expected_error.txt` anywhere covers the arm-fire
+  KORU021/022/030/102/130/131 diagnostics — 400_149/150 pin stage only. A
+  3-for-1 pack at a correct caret was invisible to the board.
+
+### Verified clean (guard read; the marked ones also live-repro'd)
+
+- `validateArmFire` remaining sites (1015, 1032, 1037, 1055, 1057, 1075,
+  1091, 1100, 1111, 1120, 1125): the `location`/`cont.location` split is
+  deliberate — faults owned by the fire call (payload arity, stray `:` bind,
+  missing resume arms) report at the invocation; faults owned by a written
+  `|` arm report at `cont.location`. `ast.Arg` carries no location, so the
+  invocation is the narrowest honest caret for arg-shape faults. Repro'd:
+  KORU130 unguarded optional-resume fire → caret on the fire line; missing
+  `| timeout` resume arm → caret on the fire line (a missing arm has no
+  narrower owner).
+- `checkBranchCoverageWithTerminals` non-pilot sites: KORU026 dead-catchall
+  (1214, `cont.location` + line-0 fallback), KORU021 bare-return tag (1238,
+  `cont.location` + fallback + kind-aware hint), KORU131 pair (1259 `if`-test
+  at the parent invocation's `location`, 1313 `when`-guard at `cont.location`
+  — different constructs, different owners, matched wording), KORU050
+  guarded-only branch (1401, `location` — the absent else owns the call site).
+- `validateFlow` KORU042/040 cluster (567, 605–675): `location`/`flow.location`
+  — the head invocation IS the fault owner for unknown-tor and unattached
+  variant blocks.
+- `checkInvokedEventImplemented` KORU047 (802): invocation site — guarded by
+  has_impl / impl-head / test-blocks / norun / comptime / glob / abstract
+  carve-outs.
+- `validatePipelineSteps` non-pilot sites (1643, 1663, 1684, 1695, 1715, 1730,
+  1771): `cont.location` throughout — glyph-discipline and resume-arm verdicts
+  own the arm.
+- `validateProc` KORU050 (1974): `proc.location` — decl owns the
+  proc-without-event verdict.
+- `validateInlineFlow` KORU040 (2010, 2040): `flow.location` — head invocation.
+- `validateLabelJump` KORU041/045/046 (2125–2159) and
+  `validateContinuationLabelJumps` KORU041 (2217, 2231):
+  `continuation.location`/`cont.location` — the jump site owns it.
+- `checkDuplicateBranchHandlers` SHAPE002 (2083, 2090) and
+  `checkBranchCoverage` SHAPE002 (167, 174): `cont.location` — the surplus
+  sibling owns it.
+- `checkForeignDeref`/`validateImmediateImplShape` KORU030 (2306, 2378, 2388,
+  2398): `ii.location` — the impl decl owns constructor-shape verdicts.
+- `branchKindMismatch` call (1348): `cont.location` — the mis-kinded arm.
+
+### Dead / unreachable sites (recorded, not charged)
+
+- `validateTapContinuations` (867–910, site 903): zero callers. Its
+  per-continuation KORU021 at inherited `location` is formally the D2
+  defect shape — unreachable, so recorded not fixed.
+- `validateEventTap` sites (822, 833) and the wildcard-tap KORU021 (860):
+  `.event_tap` items are never produced — `parseEventTap*` removed
+  (`parser.zig:4557` note), `~tap` is a `[comptime|transform]` consuming
+  `.flow` items (`koru_std/taps.kz`), and the only `EventTap{}` constructors
+  in the tree are `tap_collector` unit tests. Site 860 also carries a dead
+  guard clause (`cont.branch.len == 0 and !eql(cont.branch, "transition")` —
+  the `eql` is vacuously true at len 0).
+- `checkBranchCoverage` is `pub` and called by `flow_checker` for non-terminal
+  coverage — its SHAPE002 sites are reachable and read clean.
+
+### needs-ruling / unsettled
+
+- **`pair()` / N-absent-fields fires per-field KORU022s** at one caret. The
+  claims are unconditionally true (no unknown arg exists to cast doubt), so it
+  is not the P1 defect — but "N reports for one arg list" reads as pack noise;
+  a single `fields a, b missing` aggregate is the alternative form. Left
+  unchanged; wants a wording/arity ruling, not a fix-by-analogy.
+- `validateLabelJump` appends `jump_sites` with `.line = 0 // TODO` — latent;
+  no current diagnostic reads it.
+- KORU040 `unknown tor '{s}'` (675, 1812, 2010, 2040) names the fault, teaches
+  no remedy — recorded for the wording-drift family, not charged as a defect.
+
+### Verified vs unverified
+
+- `zig build` clean; `zig build test` green. Repros run against the worktree
+  `koruc --deep-check`, with the backend rebuilt manually via
+  `zig build --build-file build_backend.zig -Dtarget=x86_64-linux-gnu.2.31`
+  — this host is glibc 2.31 and `KORU_BACKEND_TARGET` is unread on this
+  branch (fleet brief `backend_target_env_gap`), so koruc's own backend build
+  and stage-D `build-exe` produce binaries that cannot exec here. All quoted
+  carets come from the 2.31 backend's rendered output.
+- `./run_regression.sh` targeted: `Running N tests` matched each run —
+  pins 400_225 + 400_226 PASS; controls 400_140/149/150 and
+  400_144–148/153/154/156 PASS (12/12 green with the fix).
+- Environmental caveat, measured: every checked-out `EXPECT` carries CRLF on
+  this clone, so `grep -qF 'substr\r'` never matches the LF `backend.err` —
+  every assertion-bearing negative test verdicts `wrong-error` here regardless
+  of compiler state. The three control EXPECTs were LF-normalized (their
+  git-stored form) to make the run real. Same host-drift family as the
+  backend-target gap.
