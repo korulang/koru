@@ -323,9 +323,9 @@ package.json
 zig-out/
 .agent/
 temp_build.zig
-.vscode/
+.vscode
 !tools/**/.vscode/
-.idea/
+.idea
 *.swp
 *.swo
 *~
@@ -422,3 +422,26 @@ test-results/js-scan-slice.json
 friction/corpus.json
 friction/corpus-timing.json
 friction/corpus.md
+
+# ============================================================================
+# Agent-host skeleton droppings (019 replay, 2026-10-29)
+# ============================================================================
+# The fleet/sandbox host seeds ~empty rc and config files at the worktree root,
+# and `!.*` re-includes every dotfile — so each one is tracked-by-default and
+# rides any `git add -A` (the 74c9fd1d shape, new corpus). Named one per line,
+# never globbed: deliberate dotfiles (.gitattributes, .claude/) must stay
+# addable. `.idea`/`.vscode` were widened in place above so the 0-byte FILE
+# form the env drops is covered, not only the directory form. `.devin/` is
+# Devin session state — its config.json is the sandbox's permission file,
+# written per-session, never repo content; a deliberate project config earns
+# a `!` re-include, same pattern as `.claude/*` + `!.claude/skills/`.
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.gitmodules
+/.mcp.json
+/.profile
+/.ripgreprc
+/.zprofile
+/.zshrc
+/.devin/
