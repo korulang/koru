@@ -1,0 +1,108 @@
+{
+  "items": [
+    {
+      "event_decl": {
+        "path": {"module_qualifier": "input", "segments": ["tick"]},
+        "input": {"fields": [
+          {"name": "i", "type": "i64"},
+          {"name": "limit", "type": "i64"}
+        ]},
+        "branches": [
+          {"name": "live", "payload": {"fields": [
+            {"name": "i", "type": "i64"},
+            {"name": "limit", "type": "i64"}
+          ]}},
+          {"name": "done", "payload": {"fields": [{"name": "i", "type": "i64"}]}}
+        ],
+        "location": {"line": 11, "column": 1, "file": "input.k"}
+      }
+    },
+    {
+      "flow": {
+        "impl_of": {"module_qualifier": "input", "segments": ["tick"]},
+        "pre_label": null,
+        "body": {
+          "branch": "", "binding": null, "condition": null,
+          "node": {"invocation": {
+            "path": {"module_qualifier": "std.control", "segments": ["if"]},
+            "args": [{"name": "expr", "value": "i < limit"}]
+          }},
+          "continuations": [
+            {
+              "branch": "then", "binding": null, "condition": null, "continuations": [],
+              "node": {"branch_constructor": {
+                "branch_name": "live", "plain_value": null,
+                "fields": [
+                  {"name": "i", "expression_str": "i"},
+                  {"name": "limit", "expression_str": "limit"}
+                ]
+              }}
+            },
+            {
+              "branch": "else", "binding": null, "condition": null, "continuations": [],
+              "node": {"branch_constructor": {
+                "branch_name": "done", "fields": [], "plain_value": "i"
+              }}
+            }
+          ]
+        },
+        "location": {"line": 14, "column": 1, "file": "input.k"}
+      }
+    },
+    {
+      "flow": {
+        "impl_of": null,
+        "pre_label": null,
+        "body": {
+          "branch": "", "binding": null, "condition": null, "continuations": [],
+          "node": {"invocation": {
+            "path": {"module_qualifier": "std.spec", "segments": ["claim"]},
+            "args": [
+              {"name": "atom", "value": "terminates"},
+              {"name": "on", "value": "tick"},
+              {"name": "source", "value": "\"rank\": \"limit - i\""}
+            ]
+          }}
+        },
+        "location": {"line": 24, "column": 1, "file": "input.k"}
+      }
+    },
+    {
+      "flow": {
+        "impl_of": null,
+        "pre_label": "L",
+        "body": {
+          "branch": "", "binding": null, "condition": null,
+          "node": {"invocation": {
+            "path": {"module_qualifier": "input", "segments": ["tick"]},
+            "args": [
+              {"name": "i", "value": "0"},
+              {"name": "limit", "value": "3"}
+            ]
+          }},
+          "continuations": [
+            {
+              "branch": "live", "binding": "l", "condition": null, "continuations": [],
+              "location": {"line": 27, "column": 3, "file": "input.k"},
+              "node": {"label_jump": {
+                "label": "L",
+                "args": [
+                  {"name": "i", "value": "l.i + 1"},
+                  {"name": "limit", "value": "l.limit"}
+                ]
+              }}
+            },
+            {
+              "branch": "done", "binding": "d", "condition": null, "continuations": [],
+              "node": {"value": "d"}
+            }
+          ]
+        },
+        "location": {"line": 26, "column": 1, "file": "input.k"}
+      }
+    }
+  ],
+  "module_annotations": [],
+  "main_module_name": "input",
+  "parts": []
+}

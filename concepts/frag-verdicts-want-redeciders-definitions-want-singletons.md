@@ -113,7 +113,23 @@ again, with the disagreement hidden inside one file.
   header rather than absorbed. Pins: `675_036` plus enforced arms on
   `675_008`/`675_009`/`675_010`/`675_012` covering every verdict
   class; `tampered.txt` catches a well-formed-but-unentailed
-  `proven`.
+  `proven`. Then the channel itself closed for claims too:
+  `verify/claims_ast/claims_ast_check.py` is the same Python-over-
+  `program.ast.json` shape as the strip oracle, but a *full* port —
+  claim-site harvest, subject fields, `&`-type rows, guard DNF, arm
+  meets, entry bindings, back-edge substitutions, and `linFeasible`
+  itself — so the verdict word, the detail prose, and every premise
+  row must equal the artifact's derivation line for line. The
+  extraction is what needed two implementations, not only the
+  entailment: a pass that drops a premise the artifact carries now
+  fails `EVID-DIFF`/`SITE-MISS` exactly the way an under-committed
+  `used` set did. It is still a re-decider, not a second semantics —
+  the .kz pipeline remains the referent for what a claim MEANS; the
+  oracle only re-derives what it COMMITTED, and disagreement is a
+  wall, not a fork. Same named boundary as strip: the artifact
+  precedes `run-pre-transforms`, so a transform that rewrites a
+  claim's subject region makes rows underivable — measured absent on
+  the armed corpus (12/12 shapes), failed-loud if it ever lands.
 - The doctrine now spans **command-produced** verdicts. Commands are
   solvers: koru-os's `realize` commits admission/declaration verdicts
   through `emitter_helpers.commitCommandMark` — a validated sink, not a

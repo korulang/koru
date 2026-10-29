@@ -54,6 +54,7 @@
 !**/HOLDS_CHECK
 !**/CLAIMS_CHECK
 !**/STRIP_AST_CHECK
+!**/CLAIMS_AST_CHECK
 !**/ARGS
 !**/STDIN
 !**/input.txt

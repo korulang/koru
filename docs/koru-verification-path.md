@@ -267,6 +267,36 @@ ledger. For K3 the same artifact carries the arm premises claim evidence
 commits — the channel pattern generalizes; only the strip side is wired
 today.
 
+**Claims channel leg landed (2026-10-29) — the K3 half of the same
+boundary.** The claims pass commits its FM pre-image as
+`[claim-term]`/`[claim-goal]`/`[claim-head]`/`[claim-edge]` lines, and
+ClaimsCheck.lean re-decides the entailment *given* those rows — but
+whether the rows correspond to the actual program was still the pass's
+word. `verify/claims_ast/claims_ast_check.py` closes it: a faithful
+Python port of the claims pipeline over the raw `program.ast.json`
+(claim-site harvest from `std.spec:claim` flow items, subject
+resolution, `&`-type rows, the guard parser + DNF case walk, arm meets,
+fold-head entry bindings, back-edge substitutions through the binding
+map, and the integer FM discharge itself — `linFeasible` included).
+The oracle requires the committed ledger to equal the artifact's own
+derivation line for line: site coverage both ways (`SITE-MISS`/`SITE-STRAY`),
+the verdict word AND detail prose (`VERDICT`), every premise row and
+substitution in order (`EVID-DIFF`/`EVID-MISS`/`EVID-STRAY`), and the
+census cross-counted against both the ledger and the derived verdicts
+(`CENSUS`/`CENSUS-ART`). A claim whose committed `proven` cannot be
+re-derived fails — the verdict is now artifact-decided, not
+pass-asserted. Same named boundary as the strip leg: `program.ast.json`
+precedes `run-pre-transforms` inside `elaborate` while
+`pass-claims-check` reads `mutable_ctx.ast` after it — a transform that
+rewrites a claim's subject region makes the committed rows underivable
+and the oracle fails loud; none is observed on the armed corpus
+(12/12 live shapes re-derive: declared + inferred rank, honors
+base+step, `&`-typed fields and payloads, conj/disj/mixed guards,
+cond dispatch with binding rename and prior-arm negation, nested
+if/cond). The `CLAIMS_AST_CHECK` marker arms it under `KORU_WITNESS=1`
+on the five claims-ledger tests; `verify/claims_ast/fixtures/` carries
+a minimal honest pair plus a forged-premise pair the selfcheck gates.
+
 ---
 
 ## 3. K3 — Proof-carrying obligations

@@ -928,6 +928,57 @@ regression_check_claims_oracle() {
     echo -e "${GREEN}  ✓ claims oracle: verdict ledger balanced (Lean)${NC}"
 }
 
+# Claims artifact oracle leg — opt-in via a `CLAIMS_AST_CHECK` marker
+# AND KORU_WITNESS=1. The claims-ast checker
+# (verify/claims_ast/claims_ast_check.py) re-runs the claims pass's own
+# extraction over program.ast.json — site harvest, subject fields,
+# `&`-type rows, guard DNF arm meets, fold-head bindings, back-edge
+# substitutions, the FM discharge — and requires the committed
+# [claim-*] ledger to equal the artifact's derivation, line for line.
+# Opt-in for the same reason as STRIP_AST_CHECK: a marker without
+# KORU_WITNESS is a named NOT-ARMED verdict — never green, and FAIL
+# under KORU_ORACLE_REQUIRED=1. A marked test whose artifact carries a
+# claim but whose run printed no [claim-check] FAILS inside the
+# checker — the pin is the ledger's presence, not just its verdict.
+regression_check_claims_ast_oracle() {
+    local test_dir="$1"
+    local TEST_NAME
+    TEST_NAME=$(basename "$test_dir")
+
+    [ -f "$test_dir/CLAIMS_AST_CHECK" ] || return 0
+    [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ] || return 0
+
+    _claims_ast_oracle_fail() {
+        rm -f "$test_dir/SUCCESS"
+        echo "$1" > "$test_dir/FAILURE"
+        FAILED_TESTS="$FAILED_TESTS $TEST_NAME($1)"
+        [ "${PASSED_TESTS:-0}" -gt 0 ] && PASSED_TESTS=$((PASSED_TESTS - 1))
+        echo -e "${RED}  ✗ claims-ast oracle: $2${NC}"
+    }
+
+    if [ "${KORU_WITNESS:-0}" != "1" ]; then
+        if [ "${KORU_ORACLE_REQUIRED:-0}" = "1" ]; then
+            _claims_ast_oracle_fail "claims-ast-oracle" "marker is the contract but the oracle is not armed (set KORU_WITNESS=1)"
+        else
+            regression_oracle_not_armed "$test_dir" "claims-ast-oracle" "set KORU_WITNESS=1"
+        fi
+        return 0
+    fi
+
+    local ast_json="$(cd "$test_dir" && pwd)/program.ast.json"
+    local claims_corpus="$(cd "$test_dir" && pwd)/backend.err"
+    if [ ! -f "$ast_json" ]; then
+        _claims_ast_oracle_fail "claims-ast-oracle" "marker is the contract but no program.ast.json artifact exists"
+        return 0
+    fi
+    if ! "$SCRIPT_DIR/scripts/claims_ast_gate.sh" "$ast_json" "$claims_corpus" >"$test_dir/claims_ast_check.out" 2>&1; then
+        _claims_ast_oracle_fail "claims-ast-check" "gate failed (see claims_ast_check.out)"
+        tail -15 "$test_dir/claims_ast_check.out" | sed 's/^/    /'
+        return 0
+    fi
+    echo -e "${GREEN}  ✓ claims-ast oracle: premises re-derived from artifact${NC}"
+}
+
 # C-refine oracle leg — opt-in via a `C_REFINE_CHECK` marker AND
 # KORU_WITNESS=1 (same Lean toolchain gate), and only meaningful on a
 # test that already ran the C lane (`c` in LANGUAGES). This is the A.5
@@ -2675,6 +2726,12 @@ EOF
     # The claims ledger oracle leg — opt-in via CLAIMS_CHECK +
     # KORU_WITNESS=1; the Lean checker re-decides the [claim-check] ledger.
     regression_check_claims_oracle "$test_dir"
+    # The claims-ast oracle leg — opt-in via CLAIMS_AST_CHECK +
+    # KORU_WITNESS=1; the artifact oracle re-derives every committed
+    # claim premise (site, rank/goal, type rows, head rows, edge
+    # rows/subs, verdict) from program.ast.json rather than trusting
+    # the claims pass's own walk.
+    regression_check_claims_ast_oracle "$test_dir"
     # The c-refine oracle leg — opt-in via C_REFINE_CHECK + KORU_WITNESS=1 +
     # the c lane having run; A.5 per-instance graph→C refinement.
     regression_check_c_refine_oracle "$test_dir"

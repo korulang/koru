@@ -357,6 +357,7 @@ examples/**/generated/
 # the runtime reads program.ast.json beside the entry it generates)
 **/program.ast.json
 !verify/strip_ast/fixtures/**/program.ast.json
+!verify/claims_ast/fixtures/**/program.ast.json
 **/program_ast.zig
 # Ward runtime state — the host writes setup.ini on POST /api/setup
 examples/ward/setup.ini

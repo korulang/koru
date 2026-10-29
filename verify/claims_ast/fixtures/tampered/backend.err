@@ -1,0 +1,5 @@
+[claim] input.k:24 terminates on tick: proven — rank decreases and stays bounded at 1 back-edge
+[claim-check] site input.k:24 terminates on tick proven — rank decreases and stays bounded at 1 back-edge
+[claim-term] site input.k:24 cand=0 rank=1*limit,-1*i type=-
+[claim-edge] site input.k:24 cand=0 fold=0 edge=0 arm=live case=0 rows=1*i,-1*limit~<~1 sub=i=1*i,1;limit=1*limit
+[claim-census] claims=1 declared=0 proven=1 unproven=0 outside=0 edges=1
