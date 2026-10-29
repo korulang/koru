@@ -129,3 +129,18 @@ Probe compile output already denied `backend.zig` / `build*.zig` /
 `program.ast.json`, `.zig-cache/`, and `zig-out/` under `probes/**/` — the
 r1 tree had ~64M of ignored regenerables on disk after `build.zig` was purged
 from the index.
+
+## Closed 2026-10-29 — the host's skeleton is a corpus too
+
+019 replay at 9f857685, from a fleet WSL worktree: the committed tree measured
+clean — the wall's own oracle (`git check-ignore --no-index` over `git
+ls-files`) found exactly the one allowlisted row, `.claude/.add/`. The live
+hole was the same bet against a corpus nobody aimed at: `!.*` re-includes
+every dotfile, so the *host's* skeleton — `.bashrc`, `.zshrc`, `.gitconfig`,
+`.gitmodules`, `.idea`, `.vscode`, `.mcp.json`, `.devin/config.json` — sat
+untracked-but-trackable at the root, one `git add -A` from a ceremony commit.
+The bet was written against project tooling; what arrived was the machine the
+session runs on. Deny-lines now name the observed set, `/.devin/` is denied
+wholesale (a deliberate `.devin/` config earns a `!` re-include, the
+`.claude/skills/` pattern), and `.idea`/`.vscode` were widened in place —
+the env drops 0-byte *files*, which `.idea/` never matched.
