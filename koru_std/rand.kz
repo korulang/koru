@@ -6,28 +6,24 @@
 //
 // Usage:
 //   import std/rand
-//   std/rand:between(lo: 1, hi: 7) | n f |> ... | empty |> ...
-//   std/rand:below(n: 6) | n f |> ... | empty |> ...
+//   std/rand:between(lo: 1, hi: 7): f |> ...
+//   std/rand:below(n: 6): v |> ...
 
 const std = @import("std");
 
-// Uniform integer in [lo, hi) — nextInt(lo, hi). An empty or inverted
-// range isn't an exception, it's a named outcome.
-~pub tor between { lo: i64, hi: i64 }
-| n i64
-| empty
+// Uniform integer in [lo, hi) — nextInt(lo, hi). Contract: hi > lo —
+// an empty or inverted range is a programmer error, not an outcome, so
+// there is no `| empty` to arm at every call site; the zig safety check
+// inside intRangeAtMost is the enforcer and panics on violation.
+~pub tor between { lo: i64, hi: i64 } -> i64
 
 ~proc between|zig {
-    if (hi <= lo) return .{ .empty = .{} };
-    return .{ .n = std.crypto.random.intRangeAtMost(i64, lo, hi - 1) };
+    return std.crypto.random.intRangeAtMost(i64, lo, hi - 1);
 }
 
-// Uniform integer in [0, n) — nextInt(n). n <= 0 is `empty`.
-~pub tor below { n: i64 }
-| v i64
-| empty
+// Uniform integer in [0, n) — nextInt(n). Contract: n > 0, same class.
+~pub tor below { n: i64 } -> i64
 
 ~proc below|zig {
-    if (n <= 0) return .{ .empty = .{} };
-    return .{ .v = std.crypto.random.intRangeAtMost(i64, 0, n - 1) };
+    return std.crypto.random.intRangeAtMost(i64, 0, n - 1);
 }

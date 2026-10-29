@@ -22,9 +22,7 @@ ask = std/io:print("How many dice (0 to exit): ") |> std/io:readln()
 
 #repl ask()
 | count n |> for(0..n)
-    ! each _ |> std/rand:between(lo: 1, hi: 7)
-        | n f |> std/io:print("{{ f:d }} ")
-        | empty |> _
+    ! each _ |> std/rand:between(lo: 1, hi: 7): f |> std/io:print("{{ f:d }} ")
     | done |> std/io:print.ln("") |> @repl()
 | miss |> @repl()
 | quit |> _
