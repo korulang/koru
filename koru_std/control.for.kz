@@ -62,8 +62,8 @@
         var __koru_par_wg{{ __site }}: @import("std").Thread.WaitGroup = .{};
         {% if __cells %}var __koru_par_caps{{ __site }}: [__koru_par_CAP{{ __site }}]@TypeOf(.{ {% for c in __cells %}.{{ c.name }} = {{ c.real }},{% endfor %} }) = undefined;
         var __koru_par_ok{{ __site }}: [__koru_par_CAP{{ __site }}]bool = @splat(false);
-        {% endif %}{% if __range_lo != "" %}const __koru_par_rlo{{ __site }}: usize = {{ __range_lo }};
-        const __koru_par_rhi{{ __site }}: usize = {{ __range_hi }};
+        {% endif %}{% if __range_lo != "" %}const __koru_par_rlo{{ __site }}: usize = @intCast({{ __range_lo }});
+        const __koru_par_rhi{{ __site }}: usize = @intCast({{ __range_hi }});
         for (0..__koru_par_C{{ __site }}) |__koru_par_c| {
             const __koru_par_lo = __koru_par_rlo{{ __site }} + __koru_par_c * (__koru_par_rhi{{ __site }} - __koru_par_rlo{{ __site }}) / __koru_par_C{{ __site }};
             const __koru_par_hi = __koru_par_rlo{{ __site }} + (__koru_par_c + 1) * (__koru_par_rhi{{ __site }} - __koru_par_rlo{{ __site }}) / __koru_par_C{{ __site }};
@@ -109,14 +109,14 @@
         {% endif %}
     }
     {% else %}{% if continuations["each"] %}{% comp error %}for: `each` is an effect arm — write `! each`, not `| each` (the traversal delivers through `!` handlers, `|` arms are for the terminal axes){% endcomp %}{% endif %}{% if continuations["reverse-each"] %}{% comp error %}for: `reverse-each` is an effect arm — write `! reverse-each`, not `| reverse-each`{% endcomp %}{% endif %}{% if effects["done"] %}{% comp error %}for: `done` is a terminal arm — write `| done`, not `! done`{% endcomp %}{% endif %}{% if effects["each"] %}{% if effects["reverse-each"] %}{% comp error %}for: `! each` and `! reverse-each` cannot both attach to one call — pick an axis (a single call is a single traversal){% endcomp %}
-    {% else %}for ({{ expr }}) |__koru_item{{ __site }}| {
+    {% else %}for ({% if __range_lo != "" %}@as(usize, @intCast({{ __range_lo }}))..@as(usize, @intCast({{ __range_hi }})){% else %}{{ expr }}{% endif %}) |__koru_item{{ __site }}| {
         {% if keep != "" %}if (!({{ keep }})) break;
         {% endif %}{% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item{{ __site }});
         {% endfor %}{% for h in effects["else"] %}{{ h.inlined_link[scope] }}(__koru_item{{ __site }});{% endfor %}
     }
     {% endif %}{% else %}{% if effects["reverse-each"] %}{% if __range_lo != "" %}{
-        const __koru_rev_lo{{ __site }}: usize = {{ __range_lo }};
-        const __koru_rev_hi{{ __site }}: usize = {{ __range_hi }};
+        const __koru_rev_lo{{ __site }}: usize = @intCast({{ __range_lo }});
+        const __koru_rev_hi{{ __site }}: usize = @intCast({{ __range_hi }});
         for (0..__koru_rev_hi{{ __site }} - __koru_rev_lo{{ __site }}) |__koru_rev_i{{ __site }}| {
             const __koru_item{{ __site }} = __koru_rev_hi{{ __site }} - 1 - __koru_rev_i{{ __site }};
             {% if keep != "" %}if (!({{ keep }})) break;
