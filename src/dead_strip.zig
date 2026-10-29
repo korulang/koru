@@ -49,12 +49,17 @@ pub const DeadStripPass = struct {
     ev_roots: usize = 0,
     ev_rms: usize = 0,
     ev_cargo: usize = 0,
+    /// Comment-cargo digests, buffered for packed emission — one line per
+    /// 64 digests keeps a ~2400-item cargo corpus at ~40 lines. The
+    /// multiset is the identity; packing loses nothing the oracle checks.
+    cargo_digests: std.ArrayList(u64),
 
     pub fn init(allocator: std.mem.Allocator) DeadStripPass {
         return .{
             .allocator = allocator,
             .used = std.StringHashMap(void).init(allocator),
             .evidence = .{},
+            .cargo_digests = .{},
         };
     }
 
@@ -66,6 +71,7 @@ pub const DeadStripPass = struct {
         self.used.deinit();
         for (self.evidence.items) |line| self.allocator.free(line);
         self.evidence.deinit(self.allocator);
+        self.cargo_digests.deinit(self.allocator);
     }
 
     /// Buffer one evidence line. No-op when witness enforcement is off —
@@ -114,6 +120,25 @@ pub const DeadStripPass = struct {
         // evidence printed earlier could orphan in an otherwise-clean corpus.
         if (eh.witness_enforced) {
             try self.evLine("[witness] site strip-census dead-strip totals uses={d};roots={d};removed={d};cargo={d}\n", .{ self.used.count(), self.ev_roots, self.ev_rms, self.ev_cargo });
+            // Cargo digests ride packed lines — 64 per `strip-cargo`
+            // payload — so the dominant corpus class costs ~40 lines, not
+            // ~2400. Order and multiset are preserved exactly.
+            var ci: usize = 0;
+            while (ci < self.cargo_digests.items.len) {
+                const end = @min(ci + 64, self.cargo_digests.items.len);
+                var pack = try std.ArrayList(u8).initCapacity(self.allocator, 48 + (end - ci) * 17);
+                errdefer pack.deinit(self.allocator);
+                try pack.appendSlice(self.allocator, "[witness] site strip-cargo ");
+                for (self.cargo_digests.items[ci..end], 0..) |digest, j| {
+                    if (j > 0) try pack.append(self.allocator, ',');
+                    const hex = try std.fmt.allocPrint(self.allocator, "{x:0>16}", .{digest});
+                    defer self.allocator.free(hex);
+                    try pack.appendSlice(self.allocator, hex);
+                }
+                try pack.appendSlice(self.allocator, " text cargo\n");
+                try self.evidence.append(self.allocator, try pack.toOwnedSlice(self.allocator));
+                ci = end;
+            }
             for (self.evidence.items) |line| std.debug.print("{s}", .{line});
         }
 
@@ -426,7 +451,8 @@ pub const DeadStripPass = struct {
                         // Comment cargo carries no path — the content digest is
                         // its only identity; two identical comment blocks strip
                         // as two lines, which the census counts honestly.
-                        try self.evLine("[witness] site strip-cargo {x:0>16} text cargo\n", .{std.hash.Fnv1a_64.hash(line.content)});
+                        if (eh.witness_enforced)
+                            try self.cargo_digests.append(self.allocator, std.hash.Fnv1a_64.hash(line.content));
                         self.ev_cargo += 1;
                     } else {
                         try result.append(self.allocator, item);

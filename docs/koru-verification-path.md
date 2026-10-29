@@ -200,9 +200,11 @@ the enclosing-module fallback), `strip-cargo` digests for comment-only
 host-line removals, and a `strip-census`. WitnessCheck re-decides the law
 on the committed sets alone — a `strip-rm` naming a still-spelled path is a
 semantic forgery (`drift_strip.txt` gates it expecting rejection), roots
-must appear among uses, and the census must count honestly. A real
-compile of `675_036` commits 67 uses / 107 removals / 2345 cargo lines —
-the corpus is the ledger, weight included. Evidence lines buffer and print
+must appear among uses, and the census must count honestly. Cargo digests
+ride packed lines — up to 64 comma-joined digests per `strip-cargo`
+payload — so `675_036`'s 2345 comment-cargo removals cost ~37 lines
+rather than ~2400; the multiset is the identity and order is preserved,
+so both oracles re-decide exactly what the per-line spelling carried. Evidence lines buffer and print
 only on a fully successful run: the caller swallows a failed pass, and a
 half-ledger in an otherwise-clean corpus would read as drift rather than
 failure. Every other koru transform remains at

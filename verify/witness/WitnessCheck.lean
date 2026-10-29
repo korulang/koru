@@ -910,7 +910,8 @@ pass commits the pre-image rather than the verdict:
     strip-use   <path>  collect marked     — a key in the pass's `used` set
     strip-root  <path>  seed    rooted     — a seeded library export
     strip-rm    <key>   <alt>   removed    — a removed decl, both spellings tested
-    strip-cargo <hash>  text    cargo      — a comment-only host line (fnv1a-64)
+    strip-cargo <h,…>   text    cargo      — comment-cargo digests (fnv1a-64),
+                                             packed up to 64 per line
     strip-census dead-strip totals uses=<u>;roots=<r>;removed=<n>;cargo=<c>
 
 The oracle re-decides the lawful-removal law the pass itself enforces:
@@ -950,7 +951,7 @@ def ruleStripRm (s : SiteLine) : Ruling :=
 
 def ruleStripCargo (s : SiteLine) : Ruling :=
   if s.arrow == "text" && s.verdict == "cargo" &&
-     isHexDigest s.site && s.extra.isEmpty
+     (s.site.splitOn ",").all isHexDigest && s.extra.isEmpty
   then .match_ else .malformed
 
 def ruleStripCensus (s : SiteLine) : Ruling :=
@@ -979,6 +980,9 @@ def stripCheck (sites : List SiteLine) : List String :=
   let roots := (sites.filter (·.kind == "strip-root")).map (·.site)
   let rms := sites.filter (·.kind == "strip-rm")
   let cargo := sites.filter (·.kind == "strip-cargo")
+  -- `strip-cargo` payloads are packed: comma-joined digests per line.
+  -- The census counts DIGESTS, not lines — sum the payload lengths.
+  let cargoCount := cargo.foldl (fun acc c => acc + (c.site.splitOn ",").length) 0
   let cens := sites.filter (·.kind == "strip-census")
   let live := uses ++ roots
   let unlawful := rms.filter fun r =>
@@ -996,7 +1000,7 @@ def stripCheck (sites : List SiteLine) : List String :=
               fieldOf toks "removed=", fieldOf toks "cargo=" with
         | some u, some r, some n, some g =>
           if u.toNat? == some uses.length && r.toNat? == some roots.length &&
-             n.toNat? == some rms.length && g.toNat? == some cargo.length
+             n.toNat? == some rms.length && g.toNat? == some cargoCount
           then [] else ["census mis-counts committed lines"]
         | _, _, _, _ => ["census fields unparsable"]
       | _ => ["census missing or duplicated"]

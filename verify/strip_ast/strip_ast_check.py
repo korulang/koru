@@ -205,7 +205,9 @@ def parse_ledger(err_path):
             elif kind == "strip-rm":
                 rms.append((a, parts[4]))
             elif kind == "strip-cargo":
-                cargo[int(a, 16)] += 1
+                # Packed payload: comma-joined digests, up to 64 per line.
+                for h in a.split(","):
+                    cargo[int(h, 16)] += 1
             elif kind == "strip-census":
                 kv = dict(kv.split("=", 1) for kv in parts[5].split(";"))
                 census = {k: int(v) for k, v in kv.items()}

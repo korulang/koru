@@ -59,4 +59,5 @@
 [witness] site strip-rm app:dead.fn - removed
 [witness] site strip-rm util:helper app:util.helper removed
 [witness] site strip-cargo 0123456789abcdef text cargo
-[witness] site strip-census dead-strip totals uses=3;roots=1;removed=2;cargo=1
+[witness] site strip-cargo 46440f0473db49a6,13701ebe262908fa text cargo
+[witness] site strip-census dead-strip totals uses=3;roots=1;removed=2;cargo=3
