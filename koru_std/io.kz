@@ -24,7 +24,7 @@ const codegen_utils_io = @import("codegen_utils");
 // stage/runtime printing is the future std/compiler print-family). Its
 // positional-arg mis-emit bug died with the codepath.
 ~[keyword|comptime|transform]pub tor print {
-    expr: Expression,
+    expr: ?Expression,
     invocation: *const Invocation,
     item: *const std/compiler:Item,
     program: *const std/compiler:Program,
@@ -260,7 +260,7 @@ var readln_buf: [8192]u8 = undefined;
 // This is NOT a regular tor - it's a pure compile-time transformation.
 
 ~[keyword|comptime|transform]pub tor print.ln {
-    expr: Expression,
+    expr: ?Expression,
     invocation: *const Invocation,
     item: *const std/compiler:Item,
     program: *const std/compiler:Program,
@@ -740,13 +740,13 @@ fn __printInterpolate(
 ~proc print.ln|zig {
     _ = invocation;
     _ = program;
-    return __printInterpolate(expr, item, reporter, allocator, true, "print.ln", 1);
+    return __printInterpolate(expr orelse "\"\"", item, reporter, allocator, true, "print.ln", 1);
 }
 
 ~proc print|zig {
     _ = invocation;
     _ = program;
-    return __printInterpolate(expr, item, reporter, allocator, false, "print", 1);
+    return __printInterpolate(expr orelse "\"\"", item, reporter, allocator, false, "print", 1);
 }
 
 // eprint family — same interpolation engine, routed to stderr (fd 2). The
@@ -978,13 +978,13 @@ fn __printInterpolateJs(
 ~proc print.ln|js {
     _ = invocation;
     _ = program;
-    return __printInterpolateJs(expr, item, allocator, true, 1);
+    return __printInterpolateJs(expr orelse "\"\"", item, allocator, true, 1);
 }
 
 ~proc print|js {
     _ = invocation;
     _ = program;
-    return __printInterpolateJs(expr, item, allocator, false, 1);
+    return __printInterpolateJs(expr orelse "\"\"", item, allocator, false, 1);
 }
 
 ~proc eprint.ln|js {

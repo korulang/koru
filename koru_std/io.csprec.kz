@@ -212,13 +212,13 @@ fn __printInterpolateCs(
 ~proc print.ln|cs {
     _ = invocation;
     _ = program;
-    return __printInterpolateCs(expr, item, allocator, true, 1);
+    return __printInterpolateCs(expr orelse "\"\"", item, allocator, true, 1);
 }
 
 ~proc print|cs {
     _ = invocation;
     _ = program;
-    return __printInterpolateCs(expr, item, allocator, false, 1);
+    return __printInterpolateCs(expr orelse "\"\"", item, allocator, false, 1);
 }
 
 ~proc eprint.ln|cs {
