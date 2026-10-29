@@ -1,0 +1,4 @@
+BACKEND_COMPILE_ERROR
+CONTAINS error[KORU022]
+CONTAINS payload field 'b' missing at the firing site
+ERROR_AT 10
