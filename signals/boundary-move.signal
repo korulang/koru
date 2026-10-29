@@ -1,0 +1,11 @@
+name: boundary-move
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a verification trust boundary relocated — what a producer asserted
+  is now re-derived by an independent oracle from a serialized artifact,
+  or the reverse. The claim's content doesn't change; its justification
+  source does. Distinct from widened (coverage catching up to an existing
+  surface): this is the trust locus moving, e.g. evidence-follows-AST
+  going from the pass's word to re-derivation from program.ast.json.

@@ -1,0 +1,6 @@
+{"items": [
+  {"event_decl": {"path": {"module_qualifier": "m", "segments": ["a"]}, "is_public": false, "annotations": [], "branches": []}},
+  {"event_decl": {"path": {"module_qualifier": "m", "segments": ["b"]}, "is_public": false, "annotations": [], "branches": []}},
+  {"flow": {"body": {"node": {"invocation": {"path": {"module_qualifier": "m", "segments": ["a"]}, "args": []}}, "continuations": []}, "inline_body": null, "impl_of": {"module_qualifier": "m", "segments": ["a"]}, "annotations": []}},
+  {"host_line": {"content": "// a comment", "location": {"line": 1, "column": 1, "file": "x.kz"}, "module": "m"}}
+], "module_annotations": [], "main_module_name": "m", "parts": []}

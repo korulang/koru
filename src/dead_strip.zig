@@ -144,11 +144,14 @@ pub const DeadStripPass = struct {
             if (entry_module.len == 0 or !std.mem.eql(u8, mq, entry_module)) continue;
             const path = try self.pathToStringInner(&ev.path);
             defer self.allocator.free(path);
+            roots += 1;
+            // Commit the seeding per qualifying pub, not per insertion: a
+            // pub whose own impl already marked it used still IS a root —
+            // the census counts seeded exports, not hashmap inserts.
+            try self.evLine("[witness] site strip-root {s} seed rooted\n", .{path});
+            self.ev_roots += 1;
             if (!self.used.contains(path)) {
                 try self.used.put(try self.allocator.dupe(u8, path), {});
-                roots += 1;
-                try self.evLine("[witness] site strip-root {s} seed rooted\n", .{path});
-                self.ev_roots += 1;
             }
         }
         log.debug("[DEAD-STRIP] library mode: {d} exported root(s)\n", .{roots});

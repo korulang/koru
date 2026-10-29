@@ -1,0 +1,3 @@
+[witness] site strip-rm m:a - removed
+[witness] site strip-cargo 52531bfb9bc8e24d text cargo
+[witness] site strip-census dead-strip totals uses=0;roots=0;removed=1;cargo=1

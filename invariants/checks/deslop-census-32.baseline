@@ -295,3 +295,11 @@ members=2758
 # prior re-pin documents.
 clusters=2119
 members=2759
+# 2120/2761: the roll fired on the strip-ast artifact-channel commit. The
+# +1/+2 over the 2119/2759 pin is committed drift since the ci re-pin —
+# the census names the same standing classes every prior note documents
+# (parser.zig errdefer line-shapes, emitter_test/test_decl literal
+# clusters); this commit's own src/ delta (dead_strip.zig's root-seed
+# evidence restructure) is additive lines, not a new clone cluster.
+clusters=2120
+members=2761

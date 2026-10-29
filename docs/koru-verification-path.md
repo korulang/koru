@@ -205,15 +205,41 @@ compile of `675_036` commits 67 uses / 107 removals / 2345 cargo lines —
 the corpus is the ledger, weight included. Evidence lines buffer and print
 only on a fully successful run: the caller swallows a failed pass, and a
 half-ledger in an otherwise-clean corpus would read as drift rather than
-failure. What is still NOT covered, stated in the checker's own header:
-the inverse law (a kept decl was reachable or `@retain`-marked — keep-ness
-is the default and needs kept-keys committed, a different leg) and
-evidence-follows-AST (that the committed `used` set faithfully mirrors the
-program's invocations is still the pass's word — the channel-trust
-boundary, same as claims). Every other koru transform remains at
+failure. Every other koru transform remains at
 accounting level — `strip-*` is the template for the class: commit the
 decidable pre-image of the transform's own justification, let the oracle
 re-run the membership law, never serialize a verdict.
+
+**Artifact channel landed (2026-10-27) — evidence-follows-AST is now
+re-derived, not trusted, for the dead-strip leg.** The 2026-10-15 leg
+re-decided verdicts on the pass's *committed* sets; a pass that
+under-commits `used` to license a removal still passed. The shared fix
+both K2 and K3 named: `program.ast.json` is the serialized
+frontend→backend channel — the artifact the backend deserializes as
+`original_ast` — so an oracle can re-derive the reachability pre-image
+independently instead of trusting the ledger. `verify/strip_ast/
+strip_ast_check.py` (a from-scratch Python walk over the raw JSON, not the
+Zig decoder) mirrors `collectUsedPaths` and `filterItems` and re-decides:
+every artifact-spelled key must be committed (`UNSPELLED` — the
+under-commitment class the old leg was blind to), no `strip-rm` key may be
+artifact-spelled (`UNLAWFUL-RM` — the law, against the derived set rather
+than the committed one), removals may not exceed a decl's declared
+multiplicity (`RM-OVERCOUNT`), cargo digests must match the artifact's
+host-line multiset exactly (`CARGO-MISS`), and under `--library` every pub
+entry-module decl must be a committed root and vice versa
+(`ROOT-MISSING`/`ROOT-STRAY`; any root in a program compile is forged).
+The `STRIP_AST_CHECK` marker arms it in the regression harness under
+`KORU_WITNESS=1`; `220_074` is the first live `strip-root` coverage — a
+`post.sh` `koruc lib` compile whose ledger is re-decided in `--library`
+mode (program compiles commit zero roots, so the root machinery only saw
+synthetic corpora before). Named boundary, measured not assumed: the pass
+filters the *post-transform* tree while the artifact is pre-transform, so
+removals of transform-introduced decls can't be re-decided from this
+channel — `690_380` shows 14 such; the oracle reports them rather than
+fails. Closing that needs the filter-input decl set committed, a separate
+ledger. For K3 the same artifact carries the arm premises claim evidence
+commits — the channel pattern generalizes; only the strip side is wired
+today.
 
 ---
 

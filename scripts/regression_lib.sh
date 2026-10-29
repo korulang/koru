@@ -786,6 +786,56 @@ regression_check_witness_oracle() {
     echo -e "${GREEN}  ✓ witness oracle: all site verdicts match (Lean)${NC}"
 }
 
+# strip-ast oracle leg — opt-in via a `STRIP_AST_CHECK` marker AND
+# KORU_WITNESS=1. The artifact oracle (verify/strip_ast/strip_ast_check.py)
+# re-derives dead-strip's reachability pre-image from program.ast.json — the
+# serialized frontend->backend channel — and re-decides the committed
+# strip-* ledger: under-committed use keys, removals that name a spelled
+# path, removals beyond a decl's multiplicity, cargo fidelity, and (under
+# --library, exercised by post.sh) export-root coverage. Opt-in for the same
+# reason as WITNESS_CHECK: a marker without KORU_WITNESS is a named
+# NOT-ARMED verdict — never green, and FAIL under KORU_ORACLE_REQUIRED=1.
+# A marked test whose compile printed no strip-census FAILS inside the
+# checker — the pin is the ledger's presence, not just its conformance.
+regression_check_strip_ast_oracle() {
+    local test_dir="$1"
+    local TEST_NAME
+    TEST_NAME=$(basename "$test_dir")
+
+    [ -f "$test_dir/STRIP_AST_CHECK" ] || return 0
+    [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ] || return 0
+
+    _strip_ast_oracle_fail() {
+        rm -f "$test_dir/SUCCESS"
+        echo "$1" > "$test_dir/FAILURE"
+        FAILED_TESTS="$FAILED_TESTS $TEST_NAME($1)"
+        [ "${PASSED_TESTS:-0}" -gt 0 ] && PASSED_TESTS=$((PASSED_TESTS - 1))
+        echo -e "${RED}  ✗ strip-ast oracle: $2${NC}"
+    }
+
+    if [ "${KORU_WITNESS:-0}" != "1" ]; then
+        if [ "${KORU_ORACLE_REQUIRED:-0}" = "1" ]; then
+            _strip_ast_oracle_fail "strip-ast-oracle" "marker is the contract but the oracle is not armed (set KORU_WITNESS=1)"
+        else
+            regression_oracle_not_armed "$test_dir" "strip-ast-oracle" "set KORU_WITNESS=1"
+        fi
+        return 0
+    fi
+
+    local ast_json="$(cd "$test_dir" && pwd)/program.ast.json"
+    local strip_corpus="$(cd "$test_dir" && pwd)/backend.err"
+    if [ ! -f "$ast_json" ]; then
+        _strip_ast_oracle_fail "strip-ast-oracle" "marker is the contract but no program.ast.json artifact exists"
+        return 0
+    fi
+    if ! "$SCRIPT_DIR/scripts/strip_ast_gate.sh" "$ast_json" "$strip_corpus" >"$test_dir/strip_ast_check.out" 2>&1; then
+        _strip_ast_oracle_fail "strip-ast-check" "gate failed (see strip_ast_check.out)"
+        tail -15 "$test_dir/strip_ast_check.out" | sed 's/^/    /'
+        return 0
+    fi
+    echo -e "${GREEN}  ✓ strip-ast oracle: ledger re-decided against artifact${NC}"
+}
+
 # Flow-eval oracle leg — opt-in via a `FLOW_EVAL_CHECK` marker AND
 # KORU_WITNESS=1 (same Lean toolchain gate as the witness oracle). The
 # semantics kernel checker (verify/semantics/FlowCheck.lean) re-decides
@@ -2615,6 +2665,10 @@ EOF
     # The witness oracle leg — opt-in via WITNESS_CHECK + KORU_WITNESS=1; the
     # Lean checker re-decides the [witness] site verdicts in backend.err.
     regression_check_witness_oracle "$test_dir"
+    # The strip-ast oracle leg — opt-in via STRIP_AST_CHECK + KORU_WITNESS=1;
+    # the artifact oracle re-decides the strip-* ledger against
+    # program.ast.json rather than trusting the pass's reachability set.
+    regression_check_strip_ast_oracle "$test_dir"
     # The flow-eval oracle leg — opt-in via FLOW_EVAL_CHECK + KORU_WITNESS=1;
     # the semantics kernel re-decides the [flow-eval] claims in backend.err.
     regression_check_flow_eval_oracle "$test_dir"

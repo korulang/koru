@@ -37,9 +37,19 @@ Measured at `ccomp` `e94bfeeb9` (2026-10-14).
   = ∅`), and the pass now commits the `used` set plus both probed keys
   per removal as `strip-*` lines, so the oracle re-decides lawful
   removal — not meaning-preservation, but a real semantic property of
-  the rewrite. Still open there: the kept-side law (kept decls were
-  reachable or retained) is uncommitted, and evidence-follows-AST is
-  the pass's word, same channel boundary as claims.
+  the rewrite. Evidence-follows-AST partially closed (2026-10-27):
+  `verify/strip_ast/strip_ast_check.py` re-derives the use set, decl
+  multiset, pub roots, and cargo digests from `program.ast.json` — the
+  serialized channel the backend deserializes — and re-decides the
+  committed ledger (under-committed uses, unlawful/over-count removals,
+  cargo fidelity, root coverage) rather than trusting the pass's `used`
+  set. Still open there: the kept-side law is implied by the
+  removal partition only while kept ⊆ uses∪retained holds; and the
+  post-transform side of the walk is unchecked — decls transforms
+  introduce or drop between serialization and strip are uncheckable
+  from this channel (14 on `690_380`), as is the claims evidence
+  following the same artifact (channel pattern landed, claims wiring
+  not yet).
 - **Only dead-strip re-decides.** Every other transform — tap
   write-backs, template procs, desugar, codegen lowering — remains at
   digest-accounting level; the `strip-*` pattern applies only where the

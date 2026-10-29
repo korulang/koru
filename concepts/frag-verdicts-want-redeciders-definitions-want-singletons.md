@@ -152,8 +152,29 @@ again, with the disagreement hidden inside one file.
   an adjacent rule the same week: the registry normalizes a bare
   `-> T` return to a canonical `ok` branch, which the descriptor
   checker had to learn before `430_069`'s emit row could re-decide.
-  What it does NOT yet re-decide: the kept-side law and
-  evidence-follows-AST — the same two-frontier shape as claims.
+- The committed pre-image's own trust boundary broke the same week it
+  was named: a pass that commits a *partial* `used` set passes every
+  committed-set law while licensing unlawful removals. The fix was the
+  channel, not more ledger: `program.ast.json` — the serialized
+  frontend→backend artifact the backend deserializes as
+  `original_ast` — carries the whole pre-image already, so
+  `verify/strip_ast/strip_ast_check.py` re-derives it with a
+  from-scratch walk and re-decides the ledger against the derivation:
+  every artifact-spelled key must be committed, no removal may name an
+  artifact-spelled path or exceed a decl's multiplicity, cargo must
+  match the host-line multiset, and under `koruc lib` roots must equal
+  the pub decl set exactly. Verdicts want re-deciders — and a
+  committed pre-image wants an independently-derivable one, or the
+  ledger merely moves the trust from verdict to ledger. The artifact,
+  not the pass, is the channel. Two boundaries it measured open
+  rather than assumed: the pass filters the post-transform tree, so
+  transform-introduced decls (`690_380` shows 14) are uncheckable from
+  this channel — and the same artifact carries the arm premises K3
+  claims commit, so the pattern generalizes but only the strip side
+  is wired. A second correction first contact surfaced: root-seeding
+  evidence must commit per qualifying export, not per set insertion —
+  a pub already impl-marked is still a root, and insertion-coupled
+  evidence reports a lib's root count as zero.
 - There is a defensible middle: two mechanized semantics with a proved
   equivalence (a definitional and a denotational reading, as in textbook
   PL formalizations). That is one semantics stated twice and *proved*

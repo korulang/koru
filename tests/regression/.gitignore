@@ -53,6 +53,7 @@
 !**/C_REFINE_CHECK
 !**/HOLDS_CHECK
 !**/CLAIMS_CHECK
+!**/STRIP_AST_CHECK
 !**/ARGS
 !**/STDIN
 !**/input.txt
