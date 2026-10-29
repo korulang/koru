@@ -137,3 +137,24 @@ takes `expr_ctx` and rules `:` a naming colon only when the mask marks
 it expression context. A role rule that re-derives region knowledge
 locally is the drift this frag exists to kill; a role rule that CONSULTS
 the region map is the intended consumer shape.
+
+## Eighth site: the same defect at the produce-substitution boundary (2026-10-29)
+
+`substituteParamNamesInPlainValue` — the immediate-impl inline path that
+splices a `-> <expr>` produce into the caller's `blk:` block — substituted
+every identifier matching a param name, and "every" included two name
+positions: the record LABEL `{ x: <expr> }` (`x:` names the produced
+field — the subflow's own vocabulary, never a reference to the param)
+and the member segment `e.x`. A punnable `x` in the caller's scope
+(`f(r.x)`) rewrote the label to `r.x: r.x + 1`; the struct-literal
+lowerer then read the spliced text as a pun and emitted
+`.@"x + 1" = r.x: r.x + 1`, dead at the zig stage (230_032). The defect
+was invisible in every test whose produce fields happened not to share a
+param's name — the substitution only corrupts when the subflow's field
+vocabulary collides with the caller's binding names, which is exactly
+the collision pun machinery guarantees will happen (`f(r.x)` puns TO
+`x`). The fix is the site-four rule restated at this boundary: name
+position is a per-occurrence classification, not a per-string one —
+`x` the label and `x` the value sit inside one field entry and split at
+the `:`, so the rewriter must consult the character after the match,
+not just the match itself.

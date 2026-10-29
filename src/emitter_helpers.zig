@@ -2869,7 +2869,10 @@ fn substituteParamNamesInPlainValue(
             if (idx + param.len <= plain_value.len and
                 std.mem.eql(u8, plain_value[idx .. idx + param.len], param))
             {
-                const valid_start = idx == 0 or !isIdentifierChar(plain_value[idx - 1]);
+                // A `.`-led segment is a member NAME (`r.x`'s `x`), bound to
+                // the object it hangs off — never a reference to the param.
+                const valid_start = idx == 0 or
+                    (!isIdentifierChar(plain_value[idx - 1]) and plain_value[idx - 1] != '.');
                 const valid_end = idx + param.len >= plain_value.len or
                     !isIdentifierChar(plain_value[idx + param.len]);
                 if (valid_start and valid_end) {
@@ -2894,6 +2897,19 @@ fn substituteParamNamesInPlainValue(
                         }
                         break :blk 0;
                     };
+                    // A `:`-led identifier is a LABEL — the record field's or
+                    // arg's own name (`{ x: <expr> }`, `f(x: <expr>)`), spelled
+                    // by the subflow's produce/arg vocabulary, not a reference
+                    // to the param. Substituting the call-site text here rewrites
+                    // the field's NAME (`{ r.x: r.x + 1 }` → the pun lowerer reads
+                    // `r.x:` as a pun and emits `.@"x + 1" = r.x: r.x + 1` —
+                    // 230_032). Paste the label through untouched.
+                    if (next_ns == ':') {
+                        try out.appendSlice(allocator, param);
+                        idx += param.len;
+                        replaced = true;
+                        break;
+                    }
                     if ((prev_ns == '{' or prev_ns == ',') and (next_ns == ',' or next_ns == '}')) {
                         try out.appendSlice(allocator, param);
                         try out.appendSlice(allocator, ": ");

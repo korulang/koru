@@ -273,3 +273,11 @@ members=2545
 # are parser.zig:1347-1352 x 3124-3129 twins and the documented
 # test-scaffolding classes; foreign drift the census reads off the
 # working tree, none of it this diff.
+clusters=1973
+members=2548
+# Re-pinned 1972/2545 -> 1973/2548 (2026-10-29): roll fired on the
+# 230_032 record-label emit fix — +1 cluster / +3 members of foreign
+# drift (parser.zig line-shape twins, the documented emitter_test /
+# visitor_emitter_test scaffolding). This commit's only src/ edit is a
+# two-branch guard inside substituteParamNamesInPlainValue
+# (emitter_helpers.zig) — it names no census member.
