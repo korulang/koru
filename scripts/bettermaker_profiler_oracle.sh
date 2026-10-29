@@ -12,6 +12,7 @@ CONTROLS=(
     513_profiler_multiline_conditional_import
     514_profiler_comptime_event_taps
     510_profiler_end_to_end
+    515_profiler_parallel_for
     420_003_profiler_loop
     690_121_twenty_six_component_stores
     310_113_gated_import_inside_imported_module
