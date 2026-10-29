@@ -25,12 +25,13 @@
 [witness] site descriptor files main:nix discharge-refused cost=1;decl=in:h=*Handle<!nix>;emit=in:h=*Handle<!nix>
 [witness] site descriptor-scope files files events count=4
 
-[witness] site transform-app tap tap wp site=e471c4e610d684b1;preserves=!flow,!module_decl;rm=7c3981eab94001ed,de23510294c3c951,41fa0cd74d3f14e1,5064baf9889758e6,e471c4e610d684b1,38b5000d546d100d;rmk=module_decl,module_decl,module_decl,module_decl,flow,flow;add=96670b2959368485,949803eb38dc1a82,12f7fb610dc64f64,b13d06771e8d93f2,2fd527fdc9dc90b6;addk=module_decl,module_decl,module_decl,module_decl,flow;obliges=kind-stable
+[witness] site transform-app tap tap wp site=e471c4e610d684b1;sitepath=std.taps:tap;preserves=!flow,!module_decl;rm=7c3981eab94001ed,de23510294c3c951,41fa0cd74d3f14e1,5064baf9889758e6,e471c4e610d684b1,38b5000d546d100d;rmk=module_decl,module_decl,module_decl,module_decl,flow,flow;add=96670b2959368485,949803eb38dc1a82,12f7fb610dc64f64,b13d06771e8d93f2,2fd527fdc9dc90b6;addk=module_decl,module_decl,module_decl,module_decl,flow;inv+=std.taps:observed*2;inv-=std.taps:tap*1;obliges=kind-stable,consume-only
 [witness] site transform-oblige tap tap kind-stable ok
-[witness] site transform-app relabel relabel wp site=aaaa1111bbbb2222;preserves=;rm=cccc3333dddd4444,aaaa1111bbbb2222;rmk=flow,flow;add=eeee5555ffff6666;addk=flow;obliges=kind-stable,matched-only
+[witness] site transform-oblige tap tap consume-only ok
+[witness] site transform-app relabel relabel wp site=aaaa1111bbbb2222;sitepath=my.mod:relabel;preserves=;rm=cccc3333dddd4444,aaaa1111bbbb2222;rmk=flow,flow;add=eeee5555ffff6666;addk=flow;inv+=;inv-=my.mod:relabel*1;obliges=kind-stable,matched-only
 [witness] site transform-oblige relabel relabel kind-stable ok
 [witness] site transform-oblige relabel relabel matched-only ok;justified=cccc3333dddd4444
-[witness] site transform-app-census transform transform count=2 obliges=3
+[witness] site transform-app-census transform transform count=2 obliges=4
 
 [witness] site pass-graph-edge desugar-chains requires resolve-with-scopes
 [witness] site pass-graph-edge pass-auto-discharge requires check-phantom-signatures

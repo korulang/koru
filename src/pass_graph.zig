@@ -89,11 +89,16 @@ const item_kinds = [_][]const u8{
 ///   matched-only — every removed non-site item contains an invocation
 ///                  matching this transform's own dispatch predicate:
 ///                  the transform consumes only items it was called on.
+///   consume-only — every invocation path the write-back removed IS the
+///                  transform's own consumed call: inv- ⊆ {site path}.
+///                  Additions are free (a transform's job is inserting
+///                  calls); removals may not touch another path.
 /// An atom naming no known predicate refuses — a declared obligation
 /// the runner cannot decide is a claim checked by nobody.
 const oblige_names = [_][]const u8{
     "kind-stable",
     "matched-only",
+    "consume-only",
 };
 
 const PassDecl = struct {
@@ -542,7 +547,7 @@ pub fn validate(allocator: std.mem.Allocator, items: []const ast.Item) !Summary 
                 if (std.mem.eql(u8, atom, o)) known = true;
             }
             if (!known) {
-                std.debug.print("error[KORU185]: transform `{s}` obliges `{s}`, which names no known obligation predicate\n  {s}:{d}: an obligation the runner cannot decide is a claim checked by nobody — refusing rather than letting the word stand as a contract\n  known obligations: kind-stable matched-only\n  fix: fix the spelling, or widen the vocabulary deliberately\n", .{ d.name, atom, d.location.file, d.location.line });
+                std.debug.print("error[KORU185]: transform `{s}` obliges `{s}`, which names no known obligation predicate\n  {s}:{d}: an obligation the runner cannot decide is a claim checked by nobody — refusing rather than letting the word stand as a contract\n  known obligations: kind-stable matched-only consume-only\n  fix: fix the spelling, or widen the vocabulary deliberately\n", .{ d.name, atom, d.location.file, d.location.line });
                 std.process.exit(1);
             }
         }

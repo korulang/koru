@@ -163,10 +163,12 @@ re-decidable claims about the write-back itself. `kind-stable` — the
 collateral rm/add kind multisets must agree (the site item stays
 licensed, as with `contract:preserves`). `matched-only` — every removed non-site
 item must contain an invocation the transform fires on: no silent
-consumption of unrelated items. The vocabulary is closed at declaration
-time (KORU180 refuses unknown predicates and `contract:obliges` on non-transform
+consumption of unrelated items. `consume-only` — every invocation path
+the write-back removed is the transform's own consumed call. The
+vocabulary is closed at declaration
+time (KORU185 refuses unknown predicates and `contract:obliges` on non-transform
 decls); enforcement is unconditional — a violated obligation refuses
-with KORU182 whether or not witnesses are emitted. Under enforce each
+with KORU187 whether or not witnesses are emitted. Under enforce each
 declared obligation commits one `transform-oblige` line per application
 — the claim plus verdict; `kind-stable` carries no fields because its
 whole evidence is already on the paired app line (`site`, `rmk`,
@@ -184,7 +186,29 @@ therefore passes untouched items through by value, which is the pattern
 the obligation exists to force: clone only what you change.
 Pins: `220_068`/`220_069` declaration refusals, `220_070`/`220_071`
 enforcement refusals, `220_072` the satisfied shape; `koru_std/taps.kz`
-declares `contract:obliges("kind-stable")`.
+declares `contract:obliges("kind-stable","consume-only")`.
+
+**Runner-measured invocation delta landed (2026-10-29) — the third
+obligation is decided over a delta the transform never sees.** Every
+`wp` transform-app line now commits `sitepath=` (the consumed call's
+canonical path) plus `inv+=`/`inv-=` — the `path*count` multiset delta of
+invocation spellings below top level, collected by the runner over the
+pre and post trees at the write-back boundary. The delta is measured,
+not reported: the handler cannot under-declare what its splice did.
+`consume-only` bounds it: `inv- ⊆ {sitepath}` — the transform may add
+calls freely (that is its job) but may not silently delete or rename
+away a call it was not fired on. `kind-stable` bounds item *kinds*;
+`matched-only` bounds *which items* moved; `consume-only` bounds *which
+call paths* vanished — the invocation-level analog of matched-only.
+Measured first on the only live application before declaring it:
+tap's actual delta is exactly `inv- = {std.taps:tap*1}`, `inv+ = ∅` —
+the rewrite consumes only its own call. The granularity limit is named:
+the law bounds the *path*, not the position — k removals of the consumed
+path spell the same as one; positions are not in the multiset.
+`220_075` pins the refusal (a write-back dropping a `victim` call
+refuses KORU187); `310_140` pins the committed line; golden carries the
+consume-only pair and drift.txt a forged `ok` whose `inv-` names a
+non-site path.
 
 **Dead-strip justification landed (2026-10-15) — the first Use-B transform
 whose semantic claim is re-decided, not accounted.** `pass-dead-strip`

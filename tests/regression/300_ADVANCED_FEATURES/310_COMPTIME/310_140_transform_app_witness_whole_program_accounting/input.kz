@@ -1,13 +1,17 @@
 // PINS: the transform-app witness kind (K2 Use B) — under
 // std/witness:enforce every whole_program transform write-back commits an
 // accounting line: the site's canonical-AST digest plus the multiset diff
-// of top-level item digests (rm=/add=). whole_program is the ONE splice
+// of top-level item digests (rm=/add=) plus the runner-measured
+// invocation-path delta (inv+=/inv-= — measured over both trees by the
+// runner, never reported by the handler). whole_program is the ONE splice
 // where a handler may rewrite items outside its site; the tap transform
 // (koru_std/taps.kz) is the producer — it drops its own decl and rewrites
 // the tapped flows, so rm= holds several digests including the site.
 // Site-local results emit nothing — confined by construction. The Lean
 // oracle rules on accounting honesty (site must appear in rm; gc is a
-// singleton removal); declared blast-radius bounds are pass-graph surface.
+// singleton removal); declared blast-radius bounds are pass-graph surface;
+// contract:obliges atoms re-decide against the committed fields — here
+// consume-only holds because inv-= removes only the consumed tap call.
 
 ~import std/witness
 ~std/witness:enforce { }

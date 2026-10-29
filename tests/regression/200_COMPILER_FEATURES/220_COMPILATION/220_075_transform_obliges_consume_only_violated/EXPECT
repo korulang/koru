@@ -1,0 +1,2 @@
+CONTAINS error[KORU187]
+CONTAINS violated its declared `consume-only` obligation

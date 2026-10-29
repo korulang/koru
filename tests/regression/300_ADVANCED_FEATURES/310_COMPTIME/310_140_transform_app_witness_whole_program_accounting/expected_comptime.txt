@@ -1,4 +1,5 @@
-[witness] site transform-app tap tap wp site=4814878363234401;preserves=!flow,!module_decl;rm=4814878363234401,a9b08f1fb726a079;rmk=flow,flow;add=d462837efc0a81c1;addk=flow;obliges=kind-stable
+[witness] site transform-app tap tap wp site=4814878363234401;sitepath=std.taps:tap;preserves=!flow,!module_decl;rm=4814878363234401,a9b08f1fb726a079;rmk=flow,flow;add=214e688dad791e25;addk=flow;inv+=;inv-=std.taps:tap*1;obliges=kind-stable,consume-only
 [witness] site transform-oblige tap tap kind-stable ok
-[witness] site transform-app-census transform transform count=1 obliges=1
+[witness] site transform-oblige tap tap consume-only ok
+[witness] site transform-app-census transform transform count=1 obliges=2
 [witness] custody-edge: mint=0 held=0 borrow=0 discharge=0 issued=0

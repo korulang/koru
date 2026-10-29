@@ -1,0 +1,47 @@
+// PINS: consume-only is a runtime-enforced obligation on whole-program
+// write-backs, decided over the runner-MEASURED invocation-path multiset
+// delta — never reported by the handler. drop-call declares
+// contract:obliges("consume-only") — the site's own call (`drop-call`) is
+// the licensed removal, but its write-back also drops the flow calling
+// `victim`, so inv- carries a path the transform did not consume and
+// KORU187 refuses with the transform name, the count, and the declared
+// obligation. Backend-phase refusal: the obligation is decided when the
+// transform runs inside the generated backend, not at frontend parse.
+const std = @import("std");
+const ast = @import("ast");
+const ast_functional = @import("ast_functional");
+
+~tor victim {} -> string
+~proc victim|zig { return "v"; }
+
+~[keyword|comptime|transform|contract:obliges("consume-only")]pub tor drop-call {
+    invocation: *const Invocation,
+    item: *const std/compiler:Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~proc drop-call|zig {
+    var new_items = std.ArrayList(ast.Item).initCapacity(allocator, program.items.len) catch unreachable;
+    for (program.items) |*prog_item| {
+        if (prog_item == item) continue;
+        if (prog_item.* == .flow) {
+            const segs = prog_item.flow.inv().path.segments;
+            if (segs.len > 0 and std.mem.eql(u8, segs[segs.len-1], "victim")) continue;
+        }
+        new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
+    }
+    const new_program = allocator.create(ast.Program) catch unreachable;
+    new_program.* = ast.Program{
+        .items = new_items.toOwnedSlice(allocator) catch unreachable,
+        .module_annotations = program.module_annotations,
+        .main_module_name = program.main_module_name,
+        .allocator = allocator,
+    };
+    return .{ .whole_program = new_program };
+}
+
+~import std/io
+~drop-call()
+~victim()
+~std/io:print.ln("unreachable")

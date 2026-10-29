@@ -662,7 +662,7 @@ runner (src/transform_pass_runner.zig `emitTransformAppLine`) commits, per
 application, the site's canonical-AST digest and the multiset diff of
 top-level item digests:
 
-    <transform> <site-flow>   wp   site=<d>;rm=<d,...>;add=<d,...>
+    <transform> <site-flow>   wp   site=<d>;sitepath=<p>;preserves=..;rm=<d,...>;rmk=..;add=<d,...>;addk=..;inv+=<p*n,...>;inv-=<p*n,...>;obliges=..
     <transform> <site-flow>   gc   site=<d>;rm=<d>;add=
 
 The checkable contract is accounting honesty plus, when the transform
@@ -672,7 +672,14 @@ malformed contract), `rmk`/`addk` carry the kinds positionally aligned
 with `rm`/`add`, and the site item itself is always licensed — it is the
 point of application, not collateral. Every other changed item must be
 a kind the transform did not preserve. `gc` lines keep the plain
-`site=;rm=;add=` shape — the singleton site removal needs no bound. -/
+`site=;rm=;add=` shape — the singleton site removal needs no bound.
+
+`wp` lines additionally commit the runner-MEASURED invocation-path
+multiset delta: `sitepath` is the consumed call's canonical spelling,
+`inv+=`/`inv-=` are `path*count` lists of what the write-back gained and
+lost below top-level — measured by the runner over both trees, never
+reported by the handler, so a transform cannot self-certify its own
+delta. `consume-only` obligations are re-decided against `inv-`. -/
 
 def isHexDigest (d : String) : Bool :=
   d.length == 16 && d.all fun c => c ∈ "0123456789abcdef".toList
@@ -722,7 +729,7 @@ def fieldOf (toks : List String) (pfx : String) : Option String :=
 /-- The obligation predicate vocabulary — mirrored from
 `src/pass_graph.zig oblige_names`. A `transform-oblige` line's verdict
 position names which predicate the evidence decides. -/
-def obligeNames : List String := ["kind-stable", "matched-only"]
+def obligeNames : List String := ["kind-stable", "matched-only", "consume-only"]
 
 /-- Oblige atoms: comma-separated names, each in the vocabulary. -/
 def obligeAtoms (raw : String) : Option (List String) :=
@@ -731,8 +738,33 @@ def obligeAtoms (raw : String) : Option (List String) :=
     let parts := raw.splitOn ","
     if parts.all (· ∈ obligeNames) then some parts else none
 
-def parseAppExtra (extra : String) :
-    Option (String × List String × List String × List String × List String × List String × List String) :=
+/-- A `path*count` comma list — the invocation-path multiset delta the
+runner commits on `wp` lines (`inv+=`/`inv-=`). Each part is a canonical
+path spelling, `*`, and a multiplicity. -/
+def invPathList (raw : String) : Option (List (String × Nat)) :=
+  if raw.isEmpty then some []
+  else
+    raw.splitOn "," |>.mapM fun p =>
+      match p.splitOn "*" with
+      | [path, n] =>
+        match n.toNat? with
+        | some k => if path.isEmpty || path.contains ' ' then none else some (path, k)
+        | none => none
+      | _ => none
+
+structure AppExtra where
+  siteD : String
+  pres : List String
+  rm : List String
+  rmk : List String
+  add : List String
+  addk : List String
+  obs : List String
+  sitepath : Option String
+  invAdd : Option (List (String × Nat))
+  invRm : Option (List (String × Nat))
+
+def parseAppExtra (extra : String) : Option AppExtra :=
   let toks := extra.splitOn ";"
   match fieldOf toks "site=", fieldOf toks "rm=", fieldOf toks "add=" with
   | some siteTok, some rmTok, some addTok =>
@@ -742,9 +774,20 @@ def parseAppExtra (extra : String) :
       let rmk := (fieldOf toks "rmk=").map kindList |>.getD (some [])
       let addk := (fieldOf toks "addk=").map kindList |>.getD (some [])
       let obs := (fieldOf toks "obliges=").getD ""
-      match preservesAtoms pres, rmk, addk, obligeAtoms obs with
-      | some p, some rk, some ak, some ob => some (siteTok, p, rm, rk, add, ak, ob)
-      | _, _, _, _ => none
+      let invAdd := (fieldOf toks "inv+=").bind invPathList
+      let invRm := (fieldOf toks "inv-=").bind invPathList
+      let sitepath := fieldOf toks "sitepath="
+      let invPresent := invAdd.isSome || invRm.isSome || sitepath.isSome
+      -- All-or-none: the runner writes the three fields together on wp
+      -- lines and never on gc; a partial set is an evidence forgery.
+      let invOk :=
+        if invPresent then invAdd.isSome && invRm.isSome && sitepath.isSome
+        else true
+      match preservesAtoms pres, rmk, addk, obligeAtoms obs, invOk with
+      | some p, some rk, some ak, some ob, true =>
+        if invPresent then some ⟨siteTok, p, rm, rk, add, ak, ob, sitepath, invAdd, invRm⟩
+        else some ⟨siteTok, p, rm, rk, add, ak, ob, none, none, none⟩
+      | _, _, _, _, _ => none
     | _, _ => none
   | _, _, _ => none
 
@@ -752,18 +795,20 @@ def ruleTransformApp (s : SiteLine) : Ruling :=
   if s.verdict != "wp" && s.verdict != "gc" then .malformed
   else match parseAppExtra s.extra with
   | none => .malformed
-  | some (siteD, pres, rm, rmk, add, addk, _) =>
-    if !isHexDigest siteD then .malformed
-    else if s.verdict == "wp" && !(rmk.length == rm.length && addk.length == add.length) then
+  | some e =>
+    if !isHexDigest e.siteD then .malformed
+    else if s.verdict == "wp" && (e.invAdd.isNone || e.invRm.isNone) then .malformed
+    else if s.verdict == "gc" && (e.invAdd.isSome || e.invRm.isSome) then .malformed
+    else if s.verdict == "wp" && !(e.rmk.length == e.rm.length && e.addk.length == e.add.length) then
       .malformed
-    else if s.verdict == "wp" && !rm.contains siteD then
-      .mismatch s!"site {siteD} absent from rm {rm}"
-    else if s.verdict == "gc" && !(rm == [siteD] && add.isEmpty) then
-      .mismatch s!"gc {siteD} vs rm {rm} add {add}"
+    else if s.verdict == "wp" && !e.rm.contains e.siteD then
+      .mismatch s!"site {e.siteD} absent from rm {e.rm}"
+    else if s.verdict == "gc" && !(e.rm == [e.siteD] && e.add.isEmpty) then
+      .mismatch s!"gc {e.siteD} vs rm {e.rm} add {e.add}"
     else if s.verdict == "wp" &&
-            (((rm.zip rmk).any fun (d, k) => d != siteD && preservedKind pres k) ||
-             (addk.any (preservedKind pres))) then
-      .mismatch s!"blast radius exceeds declared bound {pres}"
+            (((e.rm.zip e.rmk).any fun (d, k) => d != e.siteD && preservedKind e.pres k) ||
+             (e.addk.any (preservedKind e.pres))) then
+      .mismatch s!"blast radius exceeds declared bound {e.pres}"
     else .match_
 
 def ruleTransformAppCensus (s : SiteLine) : Ruling :=
@@ -816,7 +861,11 @@ app's rmk minus ONE occurrence of the site item's kind (licensed point
 of application) to equal addk as a multiset; matched-only requires
 justified to equal exactly the app's rm minus the site — every removed
 non-site item contained an invocation the transform fires on, and a
-superset claim is a lie too. Every obligation the app declared must be
+superset claim is a lie too; consume-only requires every path in the
+app's inv-= multiset to equal its committed sitepath — the write-back
+removed only the call it consumed (additions are free — a transform's
+job is inserting calls; an `inv-` naming another path is a silent
+deletion the `ok` cannot hide). Every obligation the app declared must be
 followed by exactly one oblige line before any other line kind. -/
 
 /-- Multiset equality on lists of strings: remove each element of `a`
@@ -832,7 +881,8 @@ def ruleTransformOblige (s : SiteLine) : Ruling :=
   if !(s.verdict ∈ obligeNames) then .malformed
   else
     match s.extra.splitOn ";" with
-    | ["ok"] => if s.verdict == "kind-stable" then .match_ else .malformed
+    | ["ok"] =>
+      if s.verdict == "kind-stable" || s.verdict == "consume-only" then .match_ else .malformed
     | ["ok", just] =>
       if s.verdict == "matched-only" && just.startsWith "justified=" &&
          (digestList (just.drop 10).toString).isSome then .match_ else .malformed
@@ -846,6 +896,8 @@ structure PendingApp where
   rm : List String
   rmk : List String
   addk : List String
+  sitepath : Option String
+  invrm : Option (List (String × Nat))
   owed : List String
 
 /-- Corpus-level pairing: a `transform-oblige` line belongs to the
@@ -864,8 +916,8 @@ def transformObligeCheck (sites : List SiteLine) : List String :=
         | none => bad
       if s.verdict != "wp" then (none, bad')
       else match parseAppExtra s.extra with
-        | some (siteD, _, rm, rmk, _, addk, obs) =>
-          (some ⟨s.site, siteD, rm, rmk, addk, obs⟩, bad')
+        | some e =>
+          (some ⟨s.site, e.siteD, e.rm, e.rmk, e.addk, e.sitepath, e.invRm, e.obs⟩, bad')
         | none => (none, bad')  -- malformed app ruled on per-line
     else if s.kind == "transform-oblige" then
       match pend with
@@ -881,6 +933,10 @@ def transformObligeCheck (sites : List SiteLine) : List String :=
               match (p.rm.zip p.rmk).find? (·.1 == p.site) with
               | some (_, siteKind) => strMultisetEq (p.rmk.erase siteKind) p.addk
               | none => false
+            else if s.verdict == "consume-only" then
+              match p.sitepath, p.invrm with
+              | some sp, some ir => ir.all (·.1 == sp)
+              | _, _ => false
             else
               match (fieldOf toks "justified=").bind digestList with
               | some j =>

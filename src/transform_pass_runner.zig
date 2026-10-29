@@ -784,6 +784,10 @@ pub const TransformEntry = struct {
     ///   "matched-only" — every removed non-site item contains an
     ///                    invocation matching this transform's dispatch
     ///                    predicate: consume only what called you.
+    ///   "consume-only" — every invocation path the write-back removed IS
+    ///                    the transform's own consumed call (inv- ⊆
+    ///                    {site path}): it may not silently delete or
+    ///                    rename away another call.
     /// Violations refuse with KORU187; satisfied obligations commit as
     /// `transform-oblige` witness lines for the oracle to re-decide.
     /// Empty = no obligations claimed (the honest default).
@@ -1334,8 +1338,138 @@ const AppAccounting = struct {
     site_digest: ?u64,
     rm: []DiffItem,
     add: []DiffItem,
+    /// Invocation-path multiset delta — the granularity an `additive`-
+    /// class obligation is decidable over: which call spellings the
+    /// write-back gained and lost, by path, with multiplicities.
+    inv_add: []PathCount,
+    inv_rm: []PathCount,
+    /// The consumed call's canonical path — the path-level anchor
+    /// `consume-only` bounds `inv_rm` against.
+    site_path: ?[]const u8,
     malformed: bool,
 };
+
+const PathCount = struct {
+    path: []const u8,
+    count: u32,
+};
+
+/// Canonical `module:seg.seg` spelling — same key shape dead_strip's
+/// pathToStringInner commits, so a transform-delta path and a strip-use
+/// path spell identically and cross-channel checks can join them.
+fn deltaPathKey(allocator: std.mem.Allocator, path: *const ast.DottedPath) ![]u8 {
+    var len: usize = 0;
+    if (path.module_qualifier) |mq| len += mq.len + 1;
+    for (path.segments, 0..) |s, i| len += s.len + @intFromBool(i > 0);
+    const buf = try allocator.alloc(u8, len);
+    var pos: usize = 0;
+    if (path.module_qualifier) |mq| {
+        @memcpy(buf[pos .. pos + mq.len], mq);
+        pos += mq.len;
+        buf[pos] = ':';
+        pos += 1;
+    }
+    for (path.segments, 0..) |s, i| {
+        if (i > 0) {
+            buf[pos] = '.';
+            pos += 1;
+        }
+        @memcpy(buf[pos .. pos + s.len], s);
+        pos += s.len;
+    }
+    return buf;
+}
+
+fn bumpDeltaPath(map: *std.StringHashMap(u32), allocator: std.mem.Allocator, path: *const ast.DottedPath) !void {
+    const key = try deltaPathKey(allocator, path);
+    const gop = try map.getOrPut(key);
+    if (gop.found_existing) {
+        allocator.free(key);
+        gop.value_ptr.* += 1;
+    } else {
+        gop.value_ptr.* = 1;
+    }
+}
+
+/// Invocation-path walk — the same node dispatch dead_strip's
+/// collectUsedPaths uses, minus the inline-body text scrape (a text
+/// spelling is not an invocation; the delta law counts AST calls only).
+const DeltaError = std.mem.Allocator.Error;
+
+fn collectDeltaNodePaths(allocator: std.mem.Allocator, node: *const ast.Node, map: *std.StringHashMap(u32)) DeltaError!void {
+    switch (node.*) {
+        .invocation => |*inv| try bumpDeltaPath(map, allocator, &inv.path),
+        .label_with_invocation => |*lwi| try bumpDeltaPath(map, allocator, &lwi.invocation.path),
+        .conditional_block => |*cb| for (cb.nodes) |*n| try collectDeltaNodePaths(allocator, n, map),
+        .conditional => |*n| for (n.branches) |*br| try collectDeltaContPaths(allocator, br.body, map),
+        .foreach => |*n| for (n.branches) |*br| try collectDeltaContPaths(allocator, br.body, map),
+        .switch_result => |*n| for (n.branches) |*br| try collectDeltaContPaths(allocator, br.body, map),
+        else => {},
+    }
+}
+
+fn collectDeltaContPaths(allocator: std.mem.Allocator, conts: []const ast.Continuation, map: *std.StringHashMap(u32)) DeltaError!void {
+    for (conts) |*c| {
+        if (c.node) |*n| try collectDeltaNodePaths(allocator, n, map);
+        try collectDeltaContPaths(allocator, c.continuations, map);
+    }
+}
+
+fn collectDeltaItemPaths(allocator: std.mem.Allocator, items: []const ast.Item, map: *std.StringHashMap(u32)) DeltaError!void {
+    for (items) |*it| {
+        switch (it.*) {
+            .flow => |*fl| {
+                try bumpDeltaPath(map, allocator, &fl.inv().path);
+                try collectDeltaContPaths(allocator, fl.body.continuations, map);
+            },
+            .event_tap => |*tap| {
+                if (tap.source) |*s| try bumpDeltaPath(map, allocator, s);
+                if (tap.destination) |*d| try bumpDeltaPath(map, allocator, d);
+                try collectDeltaContPaths(allocator, tap.continuations, map);
+            },
+            .module_decl => |*mod| try collectDeltaItemPaths(allocator, mod.items, map),
+            .proc_decl => |*pd| {
+                for (pd.inline_flows) |*fl| {
+                    try bumpDeltaPath(map, allocator, &fl.inv().path);
+                    try collectDeltaContPaths(allocator, fl.body.continuations, map);
+                }
+            },
+            .immediate_impl => |*impl| try bumpDeltaPath(map, allocator, &impl.event_path),
+            else => {},
+        }
+    }
+}
+
+/// Path multiset of a program's invocations — one canonical key per call.
+fn invocationMultiset(allocator: std.mem.Allocator, program: *const Program) !std.StringHashMap(u32) {
+    var map = std.StringHashMap(u32).init(allocator);
+    try collectDeltaItemPaths(allocator, program.items, &map);
+    return map;
+}
+
+/// Sorted `path×count` slices of `post − pre` and `pre − post`.
+fn multisetDelta(allocator: std.mem.Allocator, pre: *const std.StringHashMap(u32), post: *const std.StringHashMap(u32)) !struct { add: []PathCount, rm: []PathCount } {
+    var add: std.ArrayList(PathCount) = .empty;
+    var rm: std.ArrayList(PathCount) = .empty;
+    var it = post.iterator();
+    while (it.next()) |e| {
+        const p = pre.get(e.key_ptr.*) orelse 0;
+        if (e.value_ptr.* > p) try add.append(allocator, .{ .path = e.key_ptr.*, .count = e.value_ptr.* - p });
+    }
+    var it2 = pre.iterator();
+    while (it2.next()) |e| {
+        const q = post.get(e.key_ptr.*) orelse 0;
+        if (e.value_ptr.* > q) try rm.append(allocator, .{ .path = e.key_ptr.*, .count = e.value_ptr.* - q });
+    }
+    const lt = struct {
+        fn f(_: void, a: PathCount, b: PathCount) bool {
+            return std.mem.order(u8, a.path, b.path) == .lt;
+        }
+    }.f;
+    std.mem.sort(PathCount, add.items, {}, lt);
+    std.mem.sort(PathCount, rm.items, {}, lt);
+    return .{ .add = try add.toOwnedSlice(allocator), .rm = try rm.toOwnedSlice(allocator) };
+}
 
 fn itemKindName(item: *const ast.Item) []const u8 {
     return @tagName(item.*);
@@ -1361,6 +1495,10 @@ fn itemContainsMatch(allocator: std.mem.Allocator, it: *const ast.Item, transfor
 fn computeAppAccounting(allocator: std.mem.Allocator, pre: *const Program, post: *const Program, sr: SiteRef, transform: *const TransformEntry) ?AppAccounting {
     const site_idx = siteItemIndex(allocator, pre, sr);
     const site_digest = if (site_idx) |i| itemDigest(allocator, &pre.items[i], pre.main_module_name) else null;
+    const site_path: ?[]const u8 = if (site_idx) |i|
+        (if (pre.items[i] == .flow) (deltaPathKey(allocator, &pre.items[i].flow.inv().path) catch null) else null)
+    else
+        null;
 
     const post_digests = allocator.alloc(?u64, post.items.len) catch return null;
     for (post.items, 0..) |*it, i| post_digests[i] = itemDigest(allocator, it, post.main_module_name);
@@ -1394,11 +1532,34 @@ fn computeAppAccounting(allocator: std.mem.Allocator, pre: *const Program, post:
             malformed = true;
         }
     }
+    // Invocation-path delta — runner-measured, never handler-reported:
+    // the transform's semantic claim is checked against what the trees
+    // actually spell, not what the handler says it did.
+    var inv_add: []PathCount = &.{};
+    var inv_rm: []PathCount = &.{};
+    var pre_ms = invocationMultiset(allocator, pre) catch {
+        malformed = true;
+        return .{ .site_index = site_idx, .site_digest = site_digest, .rm = rm.toOwnedSlice(allocator) catch &.{}, .add = add.toOwnedSlice(allocator) catch &.{}, .inv_add = &.{}, .inv_rm = &.{}, .site_path = site_path, .malformed = malformed };
+    };
+    var post_ms = invocationMultiset(allocator, post) catch {
+        malformed = true;
+        return .{ .site_index = site_idx, .site_digest = site_digest, .rm = rm.toOwnedSlice(allocator) catch &.{}, .add = add.toOwnedSlice(allocator) catch &.{}, .inv_add = &.{}, .inv_rm = &.{}, .site_path = site_path, .malformed = malformed };
+    };
+    const delta = multisetDelta(allocator, &pre_ms, &post_ms) catch {
+        malformed = true;
+        return .{ .site_index = site_idx, .site_digest = site_digest, .rm = rm.toOwnedSlice(allocator) catch &.{}, .add = add.toOwnedSlice(allocator) catch &.{}, .inv_add = &.{}, .inv_rm = &.{}, .site_path = site_path, .malformed = malformed };
+    };
+    inv_add = delta.add;
+    inv_rm = delta.rm;
+
     return .{
         .site_index = site_idx,
         .site_digest = site_digest,
         .rm = rm.toOwnedSlice(allocator) catch &.{},
         .add = add.toOwnedSlice(allocator) catch &.{},
+        .inv_add = inv_add,
+        .inv_rm = inv_rm,
+        .site_path = site_path,
         .malformed = malformed,
     };
 }
@@ -1611,6 +1772,11 @@ fn emitTransformAppLine(allocator: std.mem.Allocator, pre: *const Program, trans
     } else {
         w.print("[witness] site transform-app {s} {s} {s} site=", .{ transform_name, site_path, verdict }) catch {};
         w.print("{x:0>16}", .{acc.site_digest.?}) catch {};
+        // The consumed call's canonical spelling — the site field above is
+        // bare segments; `consume-only` tests `inv- ⊆ {sitepath}`.
+        if (acc.site_path) |canon| {
+            w.print(";sitepath={s}", .{canon}) catch {};
+        }
         w.print(";preserves=", .{}) catch {};
         for (preserves, 0..) |k, i| {
             if (i > 0) w.print(",", .{}) catch {};
@@ -1635,6 +1801,16 @@ fn emitTransformAppLine(allocator: std.mem.Allocator, pre: *const Program, trans
         for (acc.add, 0..) |di, i| {
             if (i > 0) w.print(",", .{}) catch {};
             w.print("{s}", .{di.kind}) catch {};
+        }
+        w.print(";inv+=", .{}) catch {};
+        for (acc.inv_add, 0..) |pc, i| {
+            if (i > 0) w.print(",", .{}) catch {};
+            w.print("{s}*{d}", .{ pc.path, pc.count }) catch {};
+        }
+        w.print(";inv-=", .{}) catch {};
+        for (acc.inv_rm, 0..) |pc, i| {
+            if (i > 0) w.print(",", .{}) catch {};
+            w.print("{s}*{d}", .{ pc.path, pc.count }) catch {};
         }
         w.print(";obliges=", .{}) catch {};
         for (obligations, 0..) |o, i| {
@@ -1738,18 +1914,38 @@ fn checkObligations(allocator: std.mem.Allocator, acc: *const AppAccounting, tra
             }
         }
     }
+    if (obligeIsDeclared(transform, "consume-only")) {
+        // Every invocation path the write-back removed must be the path the
+        // transform fired on — the handler consumes its own call and may
+        // add calls freely, but silently deleting (or renaming away) some
+        // other call is collateral the path multiset catches.
+        for (acc.inv_rm) |pc| {
+            if (acc.site_path == null or !std.mem.eql(u8, pc.path, acc.site_path.?)) {
+                const loc = sr.holding.location;
+                std.debug.print(
+                    "error[KORU187]: transform '{s}' violated its declared `consume-only` obligation — the write-back removed {d} invocation(s) of '{s}', which is not the consumed call '{s}'\n" ++
+                        "  --> {s}:{d}:{d}\n" ++
+                        "  declared obligation: contract:obliges(\"consume-only\") — every removed invocation path is the transform's own consumed call; additions are free, removals may not touch another path\n" ++
+                        "  fix: keep collateral invocations spelling the same path, or drop the obligation if removing other calls is intended\n\n",
+                    .{ transform.name, pc.count, pc.path, acc.site_path orelse "?", loc.file, loc.line, loc.column },
+                );
+                return error.TransformObligationViolated;
+            }
+        }
+    }
 }
 
 /// Commit the decided obligations as witness lines — one per declared
 /// predicate, carrying the claim plus any evidence not already on the
 /// app line. Lines only ever carry verdict `ok`: a violation refuses
 /// before this point, so an `ok` claim the evidence does not support is
-/// a forgery. `kind-stable` carries NO fields — its whole evidence is
-/// the sibling transform-app line's site/rmk/addk commits, and emitting
-/// it twice from the same accounting would not check anything new;
-/// `matched-only` commits `justified=` — the digest set of collateral
-/// removals containing a matching invocation — which the app line does
-/// not carry and the oracle cannot re-derive without the AST.
+/// a forgery. `kind-stable` and `consume-only` carry NO fields — their
+/// whole evidence is the sibling transform-app line's commits
+/// (site/rmk/addk for kinds; sitepath/inv-= for removed call paths),
+/// and emitting it twice from the same accounting would not check
+/// anything new; `matched-only` commits `justified=` — the digest set
+/// of collateral removals containing a matching invocation — which the
+/// app line does not carry and the oracle cannot re-derive without the AST.
 fn emitObligeLines(allocator: std.mem.Allocator, pre: *const Program, transform: *const TransformEntry, acc: AppAccounting) void {
     if (!transform_app_witness_enabled) return;
     if (transform.obligations.len == 0) return;

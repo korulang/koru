@@ -1,7 +1,7 @@
 // PINS: kind-stable is a runtime-enforced obligation on whole-program
 // write-backs. strip-decl declares contract:obliges("kind-stable") — the site item
 // is licensed, but its write-back drops a collateral event_decl outright
-// (rm kinds != add kinds), so KORU182 refuses with the transform name,
+// (rm kinds != add kinds), so KORU187 refuses with the transform name,
 // the counts, and the declared obligation. Backend-phase refusal: the
 // obligation is decided when the transform runs inside the generated
 // backend, not at frontend parse.

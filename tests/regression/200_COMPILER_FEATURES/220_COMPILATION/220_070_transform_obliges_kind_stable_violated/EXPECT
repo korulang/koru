@@ -1,2 +1,2 @@
-CONTAINS error[KORU182]
+CONTAINS error[KORU187]
 CONTAINS violated its declared `kind-stable` obligation

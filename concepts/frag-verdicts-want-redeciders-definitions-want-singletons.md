@@ -175,6 +175,20 @@ again, with the disagreement hidden inside one file.
   evidence must commit per qualifying export, not per set insertion —
   a pub already impl-marked is still a root, and insertion-coupled
   evidence reports a lib's root count as zero.
+- The same independence rule reached the transform delta itself:
+  `program.ast.json` cannot carry a whole_program write-back's
+  pre-image (it predates the transform), and a handler that computed
+  its own `+added/-removed` would be self-certifying — the delta is
+  measured by the runner, the only party holding both trees, and
+  committed on the app line as `sitepath=`/`inv+=`/`inv-=`. The third
+  oblige atom `consume-only` re-decides `inv- ⊆ {sitepath}` against
+  it — the invocation-level analog of matched-only (kinds bound item
+  moves; this bounds which *call paths* vanished). Measuring before
+  declaring caught the honest shape: tap's real delta is only the
+  consumed call — the law `inv- ⊆ {site}` is what the corpus supports,
+  not the stronger `==`, because a transform that never removes its
+  call is still lawful. Same doctrine, one level down: evidence a
+  transform could compute about itself is not evidence.
 - There is a defensible middle: two mechanized semantics with a proved
   equivalence (a definitional and a denotational reading, as in textbook
   PL formalizations). That is one semantics stated twice and *proved*

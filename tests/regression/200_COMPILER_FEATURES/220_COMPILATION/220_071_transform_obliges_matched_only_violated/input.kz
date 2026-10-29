@@ -2,7 +2,7 @@
 // write-backs. strip-decl declares contract:obliges("matched-only") — a transform
 // consumes only items it was called on. Its write-back drops a collateral
 // event_decl — an item kind that can never contain a matching invocation —
-// so KORU182 refuses with the transform name, the item kind+digest, and
+// so KORU187 refuses with the transform name, the item kind+digest, and
 // the declared obligation. Backend-phase refusal.
 const std = @import("std");
 const ast = @import("ast");

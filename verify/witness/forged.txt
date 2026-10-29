@@ -42,7 +42,7 @@
 [witness] site transform-app tap tap bogus site=aaaabbbbccccdddd;rm=aaaabbbbccccdddd;add=
 [witness] site transform-app-census transform other count=1
 [witness] site transform-app-census transform transform count=banana
-[witness] site transform-app tap tap wp site=e471c4e610d684b1;preserves=event_decl;rm=e471c4e610d684b1,de23510294c3c951;rmk=flow,event_decl;add=f72f954df9fda90b;addk=flow
+[witness] site transform-app tap tap wp site=e471c4e610d684b1;sitepath=std.taps:tap;preserves=event_decl;rm=e471c4e610d684b1,de23510294c3c951;rmk=flow,event_decl;add=f72f954df9fda90b;addk=flow;inv+=;inv-=std.taps:tap*1
 [witness] site pass-graph-edge a runs b
 [witness] site pass-graph-edge a requires b,c
 [witness] site pass-graph-order main requires a
@@ -59,7 +59,11 @@
 [witness] site transform-oblige tap tap unknown-pred ok;site=aaaabbbbccccdddd
 [witness] site transform-oblige tap tap kind-stable fail;site=aaaabbbbccccdddd;rmk=flow;siterk=flow;addk=flow
 [witness] site transform-oblige tap tap kind-stable ok;rmk=flow;siterk=flow;addk=flow
-[witness] site transform-app tap tap wp site=aaaabbbbccccdddd;rm=aaaabbbbccccdddd;rmk=flow;add=;addk=;obliges=not-a-pred
+[witness] site transform-app tap tap wp site=aaaabbbbccccdddd;sitepath=a:b;rm=aaaabbbbccccdddd;rmk=flow;add=;addk=;inv+=;inv-=a:b*1;obliges=not-a-pred
+[witness] site transform-app tap tap wp site=aaaabbbbccccdddd;sitepath=a:b;rm=aaaabbbbccccdddd;rmk=flow;add=;addk=;inv+=;inv-=a:b*banana
+[witness] site transform-app tap tap wp site=aaaabbbbccccdddd;sitepath=a:b;rm=aaaabbbbccccdddd;rmk=flow;add=;addk=;inv-=a:b*1
+[witness] site transform-app tap tap gc site=aaaabbbbccccdddd;rm=aaaabbbbccccdddd;add=;inv+=;inv-=a:b*1
+[witness] site transform-oblige tap tap consume-only ok;justified=aaaabbbbccccdddd
 [witness] site transform-oblige tap tap matched-only ok
 [witness] site transform-oblige tap tap matched-only ok;justified=nothexdig
 [witness] site transform-oblige tap tap kind-stable ok;justified=aaaabbbbccccdddd

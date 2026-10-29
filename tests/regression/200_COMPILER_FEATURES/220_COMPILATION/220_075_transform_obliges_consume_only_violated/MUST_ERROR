@@ -1,0 +1,1 @@
+The transform's whole_program write-back removes a flow invoking `victim` — an invocation path the transform never consumed — so the declared `consume-only` obligation is violated and the backend refuses with KORU187.

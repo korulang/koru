@@ -38,14 +38,14 @@ const std = @import("std");
 // Everything else — event decls, procs, imports, host lines — is invariant.
 // KORU181 refuses a write-back that exceeds this, and the transform-app
 // witness commits the bound so the oracle can check containment itself.
-// The rewrite is item-for-item — contract:obliges("kind-stable") (KORU182
-// refuses a write-back that fabricates or deletes a top-level item kind).
+// The rewrite is item-for-item and call-honest — contract:obliges names
+// kind-stable plus consume-only; KORU187 refuses a violation of either.
 ~[
 - keyword
 - comptime
 - transform
 - contract:preserves("!flow","!module_decl")
-- contract:obliges("kind-stable")
+- contract:obliges("kind-stable","consume-only")
 ]pub tor tap {
     expr: Expression,
     invocation: *const Invocation,

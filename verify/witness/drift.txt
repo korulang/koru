@@ -1,8 +1,10 @@
-[witness] site transform-app tap tap wp site=e471c4e610d684b1;preserves=!flow,!module_decl;rm=e471c4e610d684b1;rmk=flow;add=96670b2959368485;addk=module_decl;obliges=kind-stable
+[witness] site transform-app tap tap wp site=e471c4e610d684b1;sitepath=std.taps:tap;preserves=!flow,!module_decl;rm=e471c4e610d684b1;rmk=flow;add=96670b2959368485;addk=module_decl;inv+=;inv-=std.taps:tap*1;obliges=kind-stable
 [witness] site transform-oblige tap tap kind-stable ok
-[witness] site transform-app relabel relabel wp site=aaaa1111bbbb2222;preserves=;rm=cccc3333dddd4444,aaaa1111bbbb2222;rmk=flow,flow;add=eeee5555ffff6666;addk=flow;obliges=matched-only
+[witness] site transform-app relabel relabel wp site=aaaa1111bbbb2222;sitepath=my.mod:relabel;preserves=;rm=cccc3333dddd4444,aaaa1111bbbb2222;rmk=flow,flow;add=eeee5555ffff6666;addk=flow;inv+=;inv-=my.mod:relabel*1;obliges=matched-only
 [witness] site transform-oblige relabel relabel matched-only ok;justified=dddd9999dddd9999
-[witness] site transform-app-census transform transform count=2 obliges=2
+[witness] site transform-app snip snip wp site=1111222233334444;sitepath=a.b:snip;preserves=!flow;rm=1111222233334444;rmk=flow;add=5555666677778888;addk=flow;inv+=;inv-=a.b:other*1;obliges=consume-only
+[witness] site transform-oblige snip snip consume-only ok
+[witness] site transform-app-census transform transform count=3 obliges=3
 [witness] site pass-graph-edge c requires r
 [witness] site pass-graph-order main runs c,r
 [witness] site pass-graph-tedge b requires a
