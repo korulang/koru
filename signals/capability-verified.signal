@@ -1,0 +1,6 @@
+name: capability-verified
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a capability claim that was run, not asserted — the check that could falsify it executed and confirmed (vs capability-added: shipped; vs capability-missing: absent)
