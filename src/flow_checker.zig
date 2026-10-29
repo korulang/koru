@@ -164,6 +164,26 @@ pub const FlowChecker = struct {
         // === FRONTEND CHECKS (syntactic, always run) ===
         // These run even for transformed flows
 
+        // KORU211: a `#label` anchor declares a fold's re-dispatch target —
+        // it wraps the anchored call's RUNTIME invocation. At flow-head
+        // position the parser lifts `#L` onto flow.pre_label, OFF the
+        // invocation the transform receives — so a keyword/comptime/transform
+        // head call is consumed at compile time with no way to carry the
+        // label into its rewrite. The anchor emits no `label:` block and
+        // every `@label` jump dangles into Zig as `continue :label` against
+        // a missing label (the jump's args are declared with the transform's
+        // AST-level parameter types — `Expression` does not exist at
+        // runtime). A label may only anchor a runtime tor invocation.
+        // Frontend only: the anchor and the invoked decl are both visible on
+        // the unexpanded AST — post-transform the site is consumed entirely.
+        // Mid-chain `|> #L inv` is NOT covered: there label+invocation travel
+        // together inside the transform's site, and a transform that honors
+        // the anchor re-emits it on its generated runtime call (ring.dequeue,
+        // supervised's labeled retry fold — pinned working shapes).
+        if (self.mode == .frontend) {
+            if (try self.checkLabelAnchorsRuntime(flow, location)) return;
+        }
+
         // KORU104: the expression-admission wall — calls are not expressions,
         // anywhere. Frontend mode only: it runs pre-transform, so every
         // expression text in the AST is user-authored surface syntax (post-
@@ -3010,6 +3030,50 @@ pub const FlowChecker = struct {
 
     fn isFoldJumpTarget(name: []const u8, label: []const u8, inners: *std.StringHashMap(void)) bool {
         return std.mem.eql(u8, name, label) or inners.contains(name);
+    }
+
+    /// KORU211 — a flow-head `#L` anchor may only wrap a call that exists at
+    /// runtime. `flow.pre_label` is the parser's lift of `#L` OFF the
+    /// invocation — a transform head can never carry it into its rewrite, so
+    /// the fold's re-dispatch target vanishes and every `@L` dangles into
+    /// emitted Zig. Returns true when the refusal fired (caller short-
+    /// circuits the flow's other judgments — one defect, one diagnostic).
+    fn checkLabelAnchorsRuntime(self: *FlowChecker, flow: *const ast.Flow, location: errors.SourceLocation) !bool {
+        const label = flow.pre_label orelse return false;
+        const hn = flow.body.node orelse return false;
+        if (hn != .invocation) return false;
+        if (!self.invocationIsCompileTimeOnly(&hn.invocation.path)) return false;
+        try self.refuseLabelOnCompileTimeCall(label, &hn.invocation.path, location);
+        return true;
+    }
+
+    /// True when the invocation resolves to a decl the compile-time pipeline
+    /// consumes — a transform rewrites the site, a keyword lowers, a
+    /// declaration acts at its site, a [norun]/[comptime] tor emits no
+    /// runtime call. A dual-mode decl ([comptime|runtime]) DOES materialize
+    /// a runtime invocation, so `runtime` stands the rule down.
+    fn invocationIsCompileTimeOnly(self: *FlowChecker, path: *const ast.DottedPath) bool {
+        const decl = self.findEventDecl(path) orelse return false;
+        const a = decl.annotations;
+        if (annotation_parser.hasPart(a, "runtime")) return false;
+        return annotation_parser.hasPart(a, "transform") or
+            annotation_parser.hasPart(a, "keyword") or
+            annotation_parser.hasPart(a, "declaration") or
+            annotation_parser.hasPart(a, "norun") or
+            annotation_parser.hasPart(a, "comptime");
+    }
+
+    fn refuseLabelOnCompileTimeCall(self: *FlowChecker, label: []const u8, path: *const ast.DottedPath, location: errors.SourceLocation) !void {
+        const callee = try path.qualifiedAlloc(self.allocator);
+        defer self.allocator.free(callee);
+        try self.reporter.addErrorAtLocationWithHint(
+            .KORU211,
+            location,
+            "label '#{s}' anchors '{s}' — a keyword/comptime/transform call is consumed at compile time, so there is no runtime invocation for '@{s}' to re-dispatch to",
+            .{ label, callee, label },
+            "a label may only anchor a call that exists at runtime — anchor '#{s}' on a runtime tor invocation instead",
+            .{label},
+        );
     }
 
     fn foldContsOutcome(self: *FlowChecker, conts: []const ast.Continuation, label: []const u8, inners: *std.StringHashMap(void)) FoldPathOutcome {
