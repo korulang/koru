@@ -13,6 +13,131 @@
 // site's plan — index routing decided by the transform's own fold (SPlan).
 
 // The site fold lives in `sites` (SX), the plan fold in `plan` (SPlan).
+//
+// Then it shows the work: the program is cloned, the real transform pass
+// runs over the clone, and the items the transforms minted print through
+// the canonical AST printer (src/ast_printer.zig). A store's truth is
+// `__`-prefixed -- `__store_apply_<s>` / `__store_write_<s>` /
+// `__store_qsweep_<s>` land in the program with no spelling the source
+// ever carried -- so the `elaborated` sections below cannot drift from
+// the transform: they ARE the transform's output.
+
+const ast_printer_store = @import("ast_printer");
+const errors_store_explain = @import("errors");
+
+// ---- elaborated-view helpers ------------------------------------------
+// An item's declared name -- last path segment for tors/procs, impl_of
+// for flows; null for items that carry none (inline_code, host_line, and
+// the site flows a transform rewrote in place).
+fn elabItemName(it: *const ast_find.Item) ?[]const u8 {
+    return switch (it.*) {
+        .event_decl => |*ed| if (ed.path.segments.len > 0) ed.path.segments[ed.path.segments.len - 1] else null,
+        .proc_decl => |*pd| if (pd.path.segments.len > 0) pd.path.segments[pd.path.segments.len - 1] else null,
+        .flow => |*f| if (f.impl_of) |io| (if (io.segments.len > 0) io.segments[io.segments.len - 1] else null) else null,
+        else => null,
+    };
+}
+
+fn elabCollectNames(items: []const ast_find.Item, out: *std.StringHashMap(void)) void {
+    for (items) |*it| {
+        switch (it.*) {
+            .module_decl => |*m| elabCollectNames(m.items, out),
+            else => if (elabItemName(it)) |n| {
+                out.put(n, {}) catch {};
+            },
+        }
+    }
+}
+
+// Does a minted name belong to `store`? Two segment-delimited shapes:
+// `__store_<verb>_<store>` (suffix) and `__store_<verb>_<store>_<digits>` /
+// `__store_q*_<store>_L<line>_<tag>` (infix, a numeric tail) -- plus the
+// pump participant units `<store>-step` / `<store>-live` / `<store>-wait`.
+// A store named `insert` must not claim another store's
+// `__store_insert_*` decls, so the name token matches at `_` boundaries.
+fn elabMintedFor(name: []const u8, store: []const u8) bool {
+    if (std.mem.startsWith(u8, name, "__store_")) {
+        if (name.len > store.len + 1 and std.mem.endsWith(u8, name, store) and
+            name[name.len - store.len - 1] == '_') return true;
+        var i: usize = 0;
+        while (i + store.len + 2 <= name.len) : (i += 1) {
+            if (name[i] == '_' and std.mem.eql(u8, name[i + 1 .. i + 1 + store.len], store) and
+                name[i + 1 + store.len] == '_')
+            {
+                const tail = name[i + 2 + store.len ..];
+                if (std.ascii.isDigit(tail[0]) or
+                    (tail.len > 1 and tail[0] == 'L' and std.ascii.isDigit(tail[1]))) return true;
+            }
+        }
+    }
+    if (name.len > store.len + 1 and std.mem.startsWith(u8, name, store) and name[store.len] == '-') {
+        const tail = name[store.len + 1 ..];
+        if (std.mem.eql(u8, tail, "step") or std.mem.eql(u8, tail, "live") or std.mem.eql(u8, tail, "wait")) return true;
+    }
+    return false;
+}
+
+fn elabFlatItems(alloc: std.mem.Allocator, items: []const ast_find.Item, out: *std.ArrayList(*const ast_find.Item)) void {
+    for (items) |*it| {
+        switch (it.*) {
+            .module_decl => |*m| elabFlatItems(alloc, m.items, out),
+            else => out.append(alloc, it) catch {},
+        }
+    }
+}
+
+fn elabAppendSourceLines(alloc: std.mem.Allocator, entries: *std.ArrayList(ast_find.ExplainReport.Entry), source: []const u8) void {
+    var it = std.mem.splitScalar(u8, source, '\n');
+    while (it.next()) |line| {
+        if (line.len == 0) continue;
+        entries.append(alloc, .{ .note = std.fmt.allocPrint(alloc, "  {s}", .{line}) catch unreachable }) catch unreachable;
+    }
+}
+
+// A guessed owner for a minted name no store claimed -- honest about
+// which transform ran in the same pass.
+fn elabOwner(name: []const u8) []const u8 {
+    if (std.mem.startsWith(u8, name, "__store_")) return "std/store (no store in this report claims it)";
+    if (std.mem.startsWith(u8, name, "__pump_")) return "std/pump";
+    if (std.mem.startsWith(u8, name, "__sup_")) return "std/supervisor";
+    return "another transform in the same pass";
+}
+
+// Which `std/store:<door>` a rewritten/dissolved item was -- its
+// location survives the pass, so the ORIGINAL program's site flow at the
+// same file:line names the door the site knocked on.
+fn elabSiteDoor(items: []const ast_find.Item, loc: errors_store_explain.SourceLocation) ?[]const u8 {
+    for (items) |*it| {
+        switch (it.*) {
+            .flow => |*fl| {
+                if (fl.location.line == loc.line and std.mem.eql(u8, fl.location.file, loc.file)) {
+                    if (fl.body.node) |*n| {
+                        if (n.* == .invocation) {
+                            if (SX.isStoreDoor(&n.invocation)) |d| return d;
+                        }
+                    }
+                }
+            },
+            .module_decl => |*m| if (elabSiteDoor(m.items, loc)) |d| return d,
+            else => {},
+        }
+    }
+    return null;
+}
+
+fn elabPrintItem(alloc: std.mem.Allocator, it: *const ast_find.Item, entries: *std.ArrayList(ast_find.ExplainReport.Entry)) void {
+    const src = ast_printer_store.printItemSource(alloc, it) catch |err| {
+        const tag = switch (it.*) {
+            .event_decl => "tor",
+            .proc_decl => "proc",
+            .flow => "flow",
+            else => "item",
+        };
+        entries.append(alloc, .{ .note = std.fmt.allocPrint(alloc, "{s} {s}: the printer cannot spell it ({s}) -- a shape the transform writes that the surface cannot carry", .{ tag, elabItemName(it) orelse "?", @errorName(err) }) catch unreachable }) catch unreachable;
+        return;
+    };
+    elabAppendSourceLines(alloc, entries, src);
+}
 
 // @retain: explain_store_event is referenced from generated code
 // (koruc's koru_explain_gather invokes every discovered [explainer]).
@@ -96,6 +221,166 @@
         }
         sections.append(allocator, .{ .heading = std.fmt.allocPrint(allocator, "{s}:{s}", .{ s.home, s.name }) catch unreachable, .entries = entries.toOwnedSlice(allocator) catch &.{} }) catch unreachable;
     }
+
+    // ---- The elaborated program ----------------------------------------
+    // Clone, run the real transform pass over the clone, print the items
+    // the transforms wrote. The rows below cannot drift from the pass --
+    // they ARE the pass's output.
+    var pre_names = std.StringHashMap(void).init(allocator);
+    elabCollectNames(program.items, &pre_names);
+
+    var elab_entries = std.ArrayList(Entry).initCapacity(allocator, 64) catch unreachable;
+    var cloned = ast_functional_store.cloneSourceFile(allocator, program) catch |err| {
+        elab_entries.append(allocator, .{ .note = std.fmt.allocPrint(allocator, "elaborated view unavailable -- program clone failed ({s})", .{@errorName(err)}) catch unreachable }) catch unreachable;
+        sections.append(allocator, .{ .heading = "elaborated", .entries = elab_entries.toOwnedSlice(allocator) catch &.{} }) catch unreachable;
+        return .{ .title = "std/store", .sections = sections.toOwnedSlice(allocator) catch &.{} };
+    };
+    const file_name = if (stores.items[0].new_flow) |nf| nf.location.file else "<program>";
+    var rep = errors_store_explain.ErrorReporter.init(allocator, file_name, "") catch unreachable;
+    var xctx = koru_std.koru_compiler.CompilerContext{
+        .ast = &cloned,
+        .original_ast = &cloned,
+        .allocator = allocator,
+        .errors = .{ .items = &.{}, .capacity = 0 },
+        .warnings = .{ .items = &.{}, .capacity = 0 },
+        .error_policy = .collect_all,
+        .current_pass = null,
+        .passes_completed = 0,
+        .tap_registry = null,
+        .reporter = &rep,
+    };
+    const elaborated = @import("root").process_all_transforms("transform", &cloned, allocator, @ptrCast(&xctx)) catch |err| blk: {
+        elab_entries.append(allocator, .{ .note = std.fmt.allocPrint(allocator, "the transform pass failed ({s}) -- `koruc` on this file prints the diagnostic", .{@errorName(err)}) catch unreachable }) catch unreachable;
+        break :blk null;
+    };
+    if (rep.hasErrors()) {
+        elab_entries.append(allocator, .{ .note = "the transform refuses this program -- `koruc` on this file prints the diagnostic" }) catch unreachable;
+    }
+    if (elaborated) |elab_prog| {
+        // Flatten the elaborated program, then claim each minted item for
+        // the store whose name it carries. Unclaimed mints are reported,
+        // not dropped -- another transform ran in the same pass.
+        var flat = std.ArrayList(*const ast_find.Item).initCapacity(allocator, 64) catch unreachable;
+        elabFlatItems(allocator, elab_prog.items, &flat);
+
+        var claimed = std.ArrayList(std.ArrayList(*const ast_find.Item)).initCapacity(allocator, stores.items.len) catch unreachable;
+        for (stores.items) |_| {
+            claimed.append(allocator, std.ArrayList(*const ast_find.Item).initCapacity(allocator, 16) catch unreachable) catch unreachable;
+        }
+        var leftovers = std.ArrayList(*const ast_find.Item).initCapacity(allocator, 8) catch unreachable;
+
+        for (flat.items) |it| {
+            if (elabItemName(it)) |nm| {
+                if (pre_names.contains(nm)) continue;
+                var hit = false;
+                for (stores.items, 0..) |*s, si| {
+                    if (elabMintedFor(nm, s.name)) {
+                        claimed.items[si].append(allocator, it) catch {};
+                        hit = true;
+                        break;
+                    }
+                }
+                if (!hit) leftovers.append(allocator, it) catch {};
+                continue;
+            }
+            // Unnamed residue: the rewritten site flow, the cell
+            // host_line, and the dissolved-marker/loop inline_code are
+            // attributable only by what they carry -- the call the site
+            // became, or the `__koru_store_<name>` cell it emits against.
+            switch (it.*) {
+                .flow => |*f| {
+                    // A rewritten site keeps no name of its own (impl_of is
+                    // null on a top-level statement) but its head calls
+                    // the minted tor -- the call the site became.
+                    if (f.body.node) |*n| {
+                        if (n.* == .invocation) {
+                            const inv = &n.invocation;
+                            if (inv.path.segments.len > 0) {
+                                const callee = inv.path.segments[inv.path.segments.len - 1];
+                                for (stores.items, 0..) |*s, si| {
+                                    if (elabMintedFor(callee, s.name)) {
+                                        claimed.items[si].append(allocator, it) catch {};
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                .host_line => |*h| {
+                    for (stores.items, 0..) |*s, si| {
+                        const mark = std.fmt.allocPrint(allocator, "__koru_store_{s}", .{s.name}) catch unreachable;
+                        if (std.mem.indexOf(u8, h.content, mark) != null) {
+                            claimed.items[si].append(allocator, it) catch {};
+                            break;
+                        }
+                    }
+                },
+                .inline_code => |*ic| {
+                    for (stores.items, 0..) |*s, si| {
+                        const mark = std.fmt.allocPrint(allocator, "'{s}'", .{s.name}) catch unreachable;
+                        const cell = std.fmt.allocPrint(allocator, "__koru_store_{s}", .{s.name}) catch unreachable;
+                        const named = std.mem.indexOf(u8, ic.code, "std/store:") != null and std.mem.indexOf(u8, ic.code, mark) != null;
+                        if (named or std.mem.indexOf(u8, ic.code, cell) != null) {
+                            claimed.items[si].append(allocator, it) catch {};
+                            break;
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+
+        for (stores.items, 0..) |*s, si| {
+            const items = claimed.items[si].items;
+            var per = std.ArrayList(Entry).initCapacity(allocator, items.len * 4 + 4) catch unreachable;
+            if (items.len == 0) {
+                per.append(allocator, .{ .note = "the pass minted nothing this store claims -- see the store section's refusal rows" }) catch unreachable;
+            } else {
+                per.append(allocator, .{ .note = std.fmt.allocPrint(allocator, "the pass left {d} item(s) the source never named:", .{items.len}) catch unreachable }) catch unreachable;
+            }
+            for (items) |it| {
+                switch (it.*) {
+                    .inline_code => |*ic| {
+                        // IR by design -- the site dissolves to a marker
+                        // or a raw loop. The printer cannot spell it; the
+                        // text itself is the evidence, so print its first
+                        // line verbatim.
+                        var first = std.mem.splitScalar(u8, ic.code, '\n');
+                        const line = first.next() orelse ic.code;
+                        const door = elabSiteDoor(program.items, ic.location) orelse "?";
+                        per.append(allocator, .{ .note = std.fmt.allocPrint(allocator, "site {s}:{d} -- `std/store:{s}` dissolved to emit-only IR (no surface spelling):", .{ ic.location.file, ic.location.line, door }) catch unreachable }) catch unreachable;
+                        per.append(allocator, .{ .note = std.fmt.allocPrint(allocator, "  {s}", .{line}) catch unreachable }) catch unreachable;
+                    },
+                    .host_line => {
+                        per.append(allocator, .{ .note = "the SoA cell the accessor procs write into:" }) catch unreachable;
+                        elabPrintItem(allocator, it, &per);
+                    },
+                    .flow => |*f| {
+                        if (f.impl_of == null) {
+                            // A rewritten site: the call the transform left
+                            // where the source's site stood.
+                            const door = elabSiteDoor(program.items, f.location) orelse "?";
+                            per.append(allocator, .{ .note = std.fmt.allocPrint(allocator, "site {s}:{d} -- `std/store:{s}` became:", .{ f.location.file, f.location.line, door }) catch unreachable }) catch unreachable;
+                        }
+                        elabPrintItem(allocator, it, &per);
+                    },
+                    else => elabPrintItem(allocator, it, &per),
+                }
+            }
+            sections.append(allocator, .{ .heading = std.fmt.allocPrint(allocator, "elaborated -- {s}:{s}", .{ s.home, s.name }) catch unreachable, .entries = per.toOwnedSlice(allocator) catch &.{} }) catch unreachable;
+        }
+        if (leftovers.items.len > 0) {
+            var lo = std.ArrayList(Entry).initCapacity(allocator, leftovers.items.len + 2) catch unreachable;
+            lo.append(allocator, .{ .note = "minted in the same pass, claimed by no store here:" }) catch unreachable;
+            for (leftovers.items) |it| {
+                const nm = elabItemName(it) orelse "?";
+                lo.append(allocator, .{ .note = std.fmt.allocPrint(allocator, "  {s} -- {s}", .{ nm, elabOwner(nm) }) catch unreachable }) catch unreachable;
+            }
+            sections.append(allocator, .{ .heading = "elaborated -- other transforms", .entries = lo.toOwnedSlice(allocator) catch &.{} }) catch unreachable;
+        }
+    }
+
 
     return .{
         .title = "std/store",
