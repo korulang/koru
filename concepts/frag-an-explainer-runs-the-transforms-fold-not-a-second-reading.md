@@ -122,3 +122,13 @@ witness is the `|> supervised` invocation's pointer. Generated names
 (`__sup_step_L<line>`) are mintable in the explainer from
 `site.location.line` — the transform derives them the same way, so the
 explainer can find its items in the elaborated clone by name.
+**2026-10-29 — the elaborated print is partial by design.** The second
+explainer to run the pass for real (`std/store`, 690_378) surfaced the
+boundary: `ast_printer.printItemSource` does not spell every item
+`process_all_transforms` emits. Items carrying transform-produced
+fields refuse — `std/store:new`'s site dissolves to `inline_code`
+("emit-only IR"), and the minted `__store_sweepbody_*` impl flow trips
+`flow inline_body (transform-produced)`. An elaborated section must
+catch `UnprintableNode` and report it — the unspellable item is the
+finding (a shape the compiler writes that the surface cannot carry),
+not a defect of the report.
