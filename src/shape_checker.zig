@@ -1154,6 +1154,15 @@ pub const ShapeChecker = struct {
     /// helper module, which is a separate change; recorded here rather than
     /// left for a reader to discover.
     fn declaredBranchNames(buf: []u8, branches: []const ast.Branch) []const u8 {
+        return nameListInto(buf, branches);
+    }
+
+    /// Same list, over a declared payload's field names.
+    fn declaredFieldNames(buf: []u8, fields: []const ast.Field) []const u8 {
+        return nameListInto(buf, fields);
+    }
+
+    fn nameListInto(buf: []u8, items: anytype) []const u8 {
         var fbs = std.io.fixedBufferStream(buf);
         const w = fbs.writer();
         var truncated = false;
@@ -1161,7 +1170,7 @@ pub const ShapeChecker = struct {
         // through the middle of a name (see the fallback below for the one case
         // where the buffer cannot hold it there).
         var last_complete: usize = 0;
-        for (branches, 0..) |b, i| {
+        for (items, 0..) |b, i| {
             const need = b.name.len + (if (i > 0) @as(usize, 2) else 0);
             if (fbs.pos + need > buf.len) {
                 truncated = true;
@@ -1760,16 +1769,18 @@ pub const ShapeChecker = struct {
                     if (!self.prototype_mode and !self.vouched_flow) {
                         if (self.current_impl_event) |impl_ev| {
                             const bc_name = step.branch_constructor.branch_name;
-                            if (bc_name.len > 0 and impl_ev.branches.len > 0 and
-                                resolveDeclaredBranch(impl_ev.branches, bc_name) == null)
-                            {
-                                const impl_name = if (impl_ev.path.segments.len > 0)
-                                    impl_ev.path.segments[impl_ev.path.segments.len - 1]
-                                else
-                                    "?";
-                                var names_buf: [512]u8 = undefined;
-                                try self.reporter.addErrorAtLocation(.KORU021, cont.location, "tor '{s}' has no branch '{s}' (declared branches are: {s})", .{ impl_name, bc_name, declaredBranchNames(&names_buf, impl_ev.branches) });
-                                has_errors = true;
+                            if (bc_name.len > 0 and impl_ev.branches.len > 0) {
+                                if (resolveDeclaredBranch(impl_ev.branches, bc_name)) |declared| {
+                                    if (try self.checkCtorFieldsMatchDecl(declared, &step.branch_constructor, cont.location)) has_errors = true;
+                                } else {
+                                    const impl_name = if (impl_ev.path.segments.len > 0)
+                                        impl_ev.path.segments[impl_ev.path.segments.len - 1]
+                                    else
+                                        "?";
+                                    var names_buf: [512]u8 = undefined;
+                                    try self.reporter.addErrorAtLocation(.KORU021, cont.location, "tor '{s}' has no branch '{s}' (declared branches are: {s})", .{ impl_name, bc_name, declaredBranchNames(&names_buf, impl_ev.branches) });
+                                    has_errors = true;
+                                }
                             }
                         }
                     }
@@ -2404,6 +2415,73 @@ pub const ShapeChecker = struct {
             }
             // TODO: verify constructor field names match declared field names.
         }
+    }
+
+    /// KORU030: a record-payload branch constructor supplies every declared
+    /// payload field and no field the payload does not declare — the
+    /// flow-step twin of flow_checker.checkCtorFieldsMatchDecl (immediate
+    /// impls); neither module may host the other's helper, same rule as the
+    /// KORU021 twin above. `| then => ok { c: 3, d: 4 }` against
+    /// `| ok { a: i64, b: i64 }` passed the branch-name wall — `ok` is real —
+    /// and the disagreement reached Zig as `no field named 'c'` /
+    /// `missing struct field` against output_emitted.zig (510_131).
+    ///
+    /// Same declared-shape silences as the twin: wildcard takes any
+    /// constructor; identity (`__type_ref`) and void take no `{ ... }` field
+    /// list at all — other walls own those mismatches. Record payloads have
+    /// 2+ named fields and no defaults, so the legal set is exactly the
+    /// declared names. Returns true when it reported.
+    fn checkCtorFieldsMatchDecl(
+        self: *ShapeChecker,
+        branch: *const ast.Branch,
+        ctor: *const ast.BranchConstructor,
+        location: errors.SourceLocation,
+    ) anyerror!bool {
+        if (ctor.plain_value != null) return false;
+        if (branch.payload.is_wildcard) return false;
+        const declared = branch.payload.fields;
+        if (declared.len == 0) return false;
+        if (declared.len == 1 and std.mem.eql(u8, declared[0].name, "__type_ref")) return false;
+
+        var reported = false;
+        var fnames_buf: [512]u8 = undefined;
+        for (ctor.fields) |cf| {
+            var found = false;
+            for (declared) |df| {
+                if (std.mem.eql(u8, df.name, cf.name)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                try self.reporter.addErrorAtLocation(
+                    .KORU030,
+                    location,
+                    "constructor field '{s}' is not a field of branch '{s}' (payload fields: {s})",
+                    .{ cf.name, branch.name, declaredFieldNames(&fnames_buf, declared) },
+                );
+                reported = true;
+            }
+        }
+        for (declared) |df| {
+            var found = false;
+            for (ctor.fields) |cf| {
+                if (std.mem.eql(u8, cf.name, df.name)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                try self.reporter.addErrorAtLocation(
+                    .KORU030,
+                    location,
+                    "branch '{s}' declares payload field '{s}' the constructor does not supply — every constructor supplies the field explicitly",
+                    .{ branch.name, df.name },
+                );
+                reported = true;
+            }
+        }
+        return reported;
     }
 
     fn validateBranchConstructor(

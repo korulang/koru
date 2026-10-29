@@ -575,8 +575,11 @@ pub const FlowChecker = struct {
             );
             return;
         }
-        for (decl.branches) |b| {
-            if (std.mem.eql(u8, b.name, ii.value.branch_name)) return;
+        for (decl.branches) |*b| {
+            if (std.mem.eql(u8, b.name, ii.value.branch_name)) {
+                try self.checkCtorFieldsMatchDecl(ii, b);
+                return;
+            }
             if (std.mem.eql(u8, b.name, "*")) return;
         }
         try self.reporter.addErrorAtLocationWithHint(
@@ -587,6 +590,73 @@ pub const FlowChecker = struct {
             "declared branches are: {s}",
             .{branchNameList(&names_buf, decl)},
         );
+    }
+
+    /// KORU030: a record-payload branch constructor supplies every declared
+    /// payload field and no field the payload does not declare. The
+    /// branch-name wall above passes `=> ok { c: 3, d: 4 }` against
+    /// `| ok { a: i64, b: i64 }` because `ok` is declared — the field set is
+    /// the same membership test one level down. Unchecked, the disagreement
+    /// reached Zig as `no field named 'c'` (or `missing struct field`)
+    /// against output_emitted.zig (510_130).
+    ///
+    /// Payload classes this says nothing about: wildcard (`| ok *`) takes any
+    /// constructor; identity (`| ok T`, one `__type_ref` field) and void
+    /// (`| ok`) take no `{ ... }` field list — those mismatches are the
+    /// plain/fields form walls' business, not this one's. A record payload
+    /// has 2+ named fields (single-field records refuse at declaration) and
+    /// no defaults (the decl-side wall rules "every constructor supplies the
+    /// field explicitly"), so the legal set is exactly the declared names.
+    fn checkCtorFieldsMatchDecl(
+        self: *FlowChecker,
+        ii: *const ast.ImmediateImpl,
+        branch: *const ast.Branch,
+    ) anyerror!void {
+        if (ii.value.plain_value != null) return;
+        if (branch.payload.is_wildcard) return;
+        const declared = branch.payload.fields;
+        if (declared.len == 0) return;
+        if (declared.len == 1 and std.mem.eql(u8, declared[0].name, "__type_ref")) return;
+
+        var fnames_buf: [512]u8 = undefined;
+        for (ii.value.fields) |cf| {
+            var found = false;
+            for (declared) |df| {
+                if (std.mem.eql(u8, df.name, cf.name)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                try self.reporter.addErrorAtLocationWithHint(
+                    .KORU030,
+                    ii.location,
+                    "constructor field '{s}' is not a field of branch '{s}' (payload fields: {s})",
+                    .{ cf.name, branch.name, fieldNameList(&fnames_buf, declared) },
+                    "a record-payload constructor supplies every declared field and no others",
+                    .{},
+                );
+            }
+        }
+        for (declared) |df| {
+            var found = false;
+            for (ii.value.fields) |cf| {
+                if (std.mem.eql(u8, cf.name, df.name)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                try self.reporter.addErrorAtLocationWithHint(
+                    .KORU030,
+                    ii.location,
+                    "branch '{s}' declares payload field '{s}' the constructor does not supply — every constructor supplies the field explicitly",
+                    .{ branch.name, df.name },
+                    "add '{s}: <value>' to the constructor",
+                    .{df.name},
+                );
+            }
+        }
     }
 
     /// KORU095 (610_007, ruled 2026-09-05): borrows flow down, never up. A
@@ -647,6 +717,15 @@ pub const FlowChecker = struct {
     /// refAllDecls pulls it in — measured 2026-09-17), so a test written here
     /// would not run.
     fn branchNameList(buf: []u8, decl: *const ast.EventDecl) []const u8 {
+        return nameListInto(buf, decl.branches);
+    }
+
+    /// Same list, over a declared payload's field names.
+    fn fieldNameList(buf: []u8, fields: []const ast.Field) []const u8 {
+        return nameListInto(buf, fields);
+    }
+
+    fn nameListInto(buf: []u8, items: anytype) []const u8 {
         var fbs = std.io.fixedBufferStream(buf);
         const w = fbs.writer();
         var truncated = false;
@@ -654,7 +733,7 @@ pub const FlowChecker = struct {
         // through the middle of a name (see the fallback below for the one case
         // where the buffer cannot hold it there).
         var last_complete: usize = 0;
-        for (decl.branches, 0..) |b, i| {
+        for (items, 0..) |b, i| {
             const need = b.name.len + (if (i > 0) @as(usize, 2) else 0);
             if (fbs.pos + need > buf.len) {
                 truncated = true;

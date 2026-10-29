@@ -262,3 +262,31 @@ non-void — loud in every optimize mode (`unreachable` would be UB under
 the ReleaseFast output build). Pinned at `248_label_fold_arm_exit_
 without_produce_panics`; found by the benchmark-revisit session, not by
 the suite.
+
+## Recurrence — the constructor half of the record-payload rule (2026-10-29)
+
+The record-payload rule has a bind side and a construct side. The bind side
+was real: KORU036 checks a destructure's names against the declared payload
+(210_147), dup-field and fused-field walls guard the constructor's field list
+as *text* (210_249, the 210_28x family), and the declaration wall bans
+payload defaults outright — its hint literally says "every constructor
+supplies the field explicitly." Every half of that sentence was enforced
+except the one it asserts.
+
+The construct side compared nothing against the declaration. `=> ok { c: 3,
+d: 4 }` against `| ok { a: i64, b: i64 }` sailed through frontend and backend
+to a Zig `no field named 'c'` in output_emitted.zig — twice over, because the
+branch-name wall had already been twinned across both lowering paths
+(checkImplMatchesDecl for immediate impls, the shape-checker's flow-step
+walk for `| then =>`) and the field check existed at neither. The wall family
+even knew the shape of the defect: 510_114's header pins the identical Zig
+leak for branch *names*, and shape_checker carried the TODO ("verify
+constructor field names match declared field names").
+
+Same lesson, third surface: a rule stated in a hint is exactly as real as its
+least-tested position. Fix: `checkCtorFieldsMatchDecl` at both walls —
+constructor names ⊆ declared, declared ⊆ constructor names — pinned at
+510_130/510_131 with the reorderable exact set as the legal sibling. The
+record surfaces that still compare nothing (a `-> { }` bare return's
+plain_value against `return_type` text, and record-typed invocation
+arguments) are the enumeration's remaining untested halves.
