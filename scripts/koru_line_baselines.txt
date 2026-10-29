@@ -76,7 +76,8 @@ koru_std/compiler.stages.kz	40
 koru_std/compiler.with.kz	313
 koru_std/compress.kz	1083
 koru_std/constructor.kz	305
-koru_std/control.capture.kz	352
+koru_std/control.capture.kz	300
+koru_std/control.capture-preamble.kz	126
 koru_std/control.kz	134
 koru_std/control.targets.kz	120
 koru_std/control.zip.kz	58

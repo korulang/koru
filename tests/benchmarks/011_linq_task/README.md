@@ -42,14 +42,15 @@ for (long __koru_item2 = 1; __koru_item2 < ((long)((n)) + 1); __koru_item2++) {
 KoruHost.total = total;
 ```
 
-## The approximation, disclosed
+## The accumulator is a real `capture` cell
 
-`acc` is `~proc acc|cs { total += v; }` writing a `KoruHost.total`
-static — standing in for `capture`, whose lowering needs `@typeInfo`
-and the cs emitter refuses it (KORU047, measured). The claim under test
-is the *iteration shape* — for + when + map + accumulate — not custody;
-the accumulator's residence is a named substitution, the same
-disclosure 010 makes for its store cell.
+`capture` now lowers on cs — the cell is a `ValueTuple` (named mutable
+fields, inferred types), so `capture { total: 0[i64] }` /
+`captured { total: … }` / `| captured res` all emit directly. `acc` is
+`~proc acc|cs { total = v; }` — once, at `| captured res`, copying the
+finished total out for the harness. Earlier revisions shimmed the
+accumulator with a module static and disclosed it; that substitution is
+gone.
 
 ## Comparator set (declared before running)
 

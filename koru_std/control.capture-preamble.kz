@@ -1,0 +1,126 @@
+// Koru Standard Library: the `capture-preamble` part of control.kz.
+// Joined via `~part capture-preamble` in control.kz; merged into the control
+// module at load. Parts compile in their own scope — `struct_literal` is
+// imported here, not inherited from the parent's file.
+//
+// This is the one region of the capture transform that cannot be
+// target-neutral: a capture cell is a mutable named-field record plus a
+// binding, and each host spells that differently. `cellPreamble` returns
+// the whole host-side declaration text for the cell — seed literal and
+// preamble line both — read `host_is_*` once in the caller, spell here.
+const sl = @import("struct_literal");
+
+fn cellPreamble(
+    allocator: std.mem.Allocator,
+    cell_name: []const u8,
+    cell_fields: []const sl.StructField,
+    is_existing_var: bool,
+    host_is_js: bool,
+    host_is_cs: bool,
+) []const u8 {
+    // --- The cell seed: `<init>`, built from the projector's fields. For
+    //     existing-var captures (`capture(myVar)`) the expr is not a struct
+    //     literal, so emit it verbatim. ---
+    const init_host = if (!is_existing_var) blk: {
+        var seed = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+        seed.appendSlice(allocator, if (host_is_js) "{ " else if (host_is_cs) "(" else ".{ ") catch unreachable;
+        for (cell_fields, 0..) |cf, i| {
+            if (i > 0) seed.appendSlice(allocator, ", ") catch unreachable;
+            if (cf.name.len > 0) {
+                if (!host_is_js and !host_is_cs) seed.append(allocator, '.') catch unreachable;
+                seed.appendSlice(allocator, cf.name) catch unreachable;
+                seed.appendSlice(allocator, if (host_is_js or host_is_cs) ": " else " = ") catch unreachable;
+            }
+            // Koru-native typed seed: `floor: 0[i32]` pins the cell field's
+            // type — the SAME annotation (and the same parser) as `const`'s
+            // `count: 42[i32]`. Zig pins with @as; untyped values paste
+            // verbatim (and a bare 0 stays comptime_int, which the runtime
+            // cell rejects — the annotation is how you say "this is data").
+            //
+            // JS has ONE number type and no comptime, so there is nothing to pin
+            // and nothing to rescue: the annotation is PEELED and the value pasted
+            // bare. Dropping it is not a loss of information on that target — it is
+            // the absence of the problem the annotation solves.
+            //
+            // C# has static typing but tuple field types are INFERRED from the
+            // seeds — the pin is a cast on the seed value. Unmapped types paste
+            // the annotation through, so an unknown one fails in csc, loud.
+            const peeled = sl.peelBaseType(cf.value);
+            if (peeled.type.len > 0 and host_is_cs) {
+                const cs_t = std.StaticStringMap([]const u8).initComptime(.{
+                    .{ "usize", "long" },   .{ "isize", "long" },
+                    .{ "i64", "long" },     .{ "u64", "ulong" },
+                    .{ "i32", "int" },      .{ "u32", "uint" },
+                    .{ "i16", "short" },    .{ "u16", "ushort" },
+                    .{ "i8", "sbyte" },     .{ "u8", "byte" },
+                    .{ "f64", "double" },   .{ "f32", "float" },
+                    .{ "bool", "bool" },    .{ "string", "string" },
+                }).get(peeled.type) orelse peeled.type;
+                seed.append(allocator, '(') catch unreachable;
+                seed.appendSlice(allocator, cs_t) catch unreachable;
+                seed.appendSlice(allocator, ") ") catch unreachable;
+                seed.appendSlice(allocator, peeled.value) catch unreachable;
+            } else if (peeled.type.len > 0 and !host_is_js) {
+                seed.appendSlice(allocator, "@as(") catch unreachable;
+                seed.appendSlice(allocator, peeled.type) catch unreachable;
+                seed.appendSlice(allocator, ", ") catch unreachable;
+                seed.appendSlice(allocator, peeled.value) catch unreachable;
+                seed.appendSlice(allocator, ")") catch unreachable;
+            } else if (peeled.type.len > 0) {
+                seed.appendSlice(allocator, peeled.value) catch unreachable;
+            } else {
+                seed.appendSlice(allocator, cf.value) catch unreachable;
+            }
+        }
+        // `(x)` is grouping, not a tuple — a one-field cell pads to arity two.
+        if (host_is_cs and cell_fields.len == 1) seed.appendSlice(allocator, ", __pad: 0") catch unreachable;
+        seed.appendSlice(allocator, if (host_is_cs) ")" else " }") catch unreachable;
+        break :blk seed.toOwnedSlice(allocator) catch unreachable;
+    } else cell_fields[0].value;
+
+    // JS: `let <cell> = <init>;` and that is the whole declaration. An object
+    // literal is already mutable and structurally typed, so the Zig type
+    // synthesis below has no twin to write; an unused binding is legal there, so
+    // `_ = &cell;` has none either (and does not parse).
+    //
+    // CS: `var <cell> = (<field>: <seed>, …);` — a ValueTuple is the target's
+    // mutable anonymous record: named fields, value type, inferred element
+    // types, zero allocation — the twin of JS's `let`, NOT of Zig's @typeInfo
+    // synthesis. No keepalive: unused `var` warns, not errors.
+    //
+    // An anonymous ZIG struct literal is comptime, so a bare `var cell = .{...}`
+    // is a comptime var and runtime field writes fail. Give the cell an explicit
+    // struct type built from the seed's fields (made non-comptime) so it is a
+    // runtime value. Existing-var captures already have a concrete type — seed
+    // verbatim.
+    return if (host_is_js)
+        std.fmt.allocPrint(allocator, "let {s} = {s};", .{ cell_name, init_host }) catch unreachable
+    else if (host_is_cs)
+        std.fmt.allocPrint(allocator, "var {s} = {s};", .{ cell_name, init_host }) catch unreachable
+    else if (!is_existing_var) blk2: {
+        const type_name = std.fmt.allocPrint(allocator, "__KoruCaptureT_{s}", .{cell_name}) catch unreachable;
+        var p = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+        p.appendSlice(allocator, "const ") catch unreachable;
+        p.appendSlice(allocator, type_name) catch unreachable;
+        p.appendSlice(allocator, " = comptime blk: {\n") catch unreachable;
+        p.appendSlice(allocator, "    const __info = @typeInfo(@TypeOf(") catch unreachable;
+        p.appendSlice(allocator, init_host) catch unreachable;
+        p.appendSlice(allocator, "));\n") catch unreachable;
+        p.appendSlice(allocator, "    var __fields: [__info.@\"struct\".fields.len]@import(\"std\").builtin.Type.StructField = undefined;\n") catch unreachable;
+        p.appendSlice(allocator, "    for (__info.@\"struct\".fields, 0..) |__f, __i| {\n") catch unreachable;
+        p.appendSlice(allocator, "        __fields[__i] = .{ .name = __f.name, .type = __f.type, .default_value_ptr = null, .is_comptime = false, .alignment = __f.alignment };\n") catch unreachable;
+        p.appendSlice(allocator, "    }\n") catch unreachable;
+        p.appendSlice(allocator, "    break :blk @Type(.{ .@\"struct\" = .{ .layout = .auto, .fields = &__fields, .decls = &.{}, .is_tuple = false } });\n") catch unreachable;
+        p.appendSlice(allocator, "};\n") catch unreachable;
+        p.appendSlice(allocator, "var ") catch unreachable;
+        p.appendSlice(allocator, cell_name) catch unreachable;
+        p.appendSlice(allocator, ": ") catch unreachable;
+        p.appendSlice(allocator, type_name) catch unreachable;
+        p.appendSlice(allocator, " = ") catch unreachable;
+        p.appendSlice(allocator, init_host) catch unreachable;
+        p.appendSlice(allocator, ";\n_ = &") catch unreachable;
+        p.appendSlice(allocator, cell_name) catch unreachable;
+        p.appendSlice(allocator, ";") catch unreachable;
+        break :blk2 p.toOwnedSlice(allocator) catch unreachable;
+    } else std.fmt.allocPrint(allocator, "var {s} = {s};\n_ = &{s};", .{ cell_name, init_host, cell_name }) catch unreachable;
+}
