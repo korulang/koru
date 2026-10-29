@@ -30,7 +30,7 @@ host — a verbatim passthrough into emitted code — and resolves it:
 
 ## Candidate sites (start here, then sweep)
 
-- `:d:N` width spec — RULED, implementation owed (620_005) — first exhibit.
+- `:d:N` width spec — DONE 2026-10-29 (`{f}` + `__koru_pad_i`, one `decimalPadWidth` predicate at all five Zig interpolation sites; 620_005 green, a95587991). CS/JS drop the spec outright — filed `030_fmt_spec_width_csjs`. `d:.N` precision still passes verbatim on Zig — unmeasured.
 - Signed runtime `/` — raw Zig error leaks (030_143, still parked — its
   ruling is the hoist vs refuse question itself).
 - Signed `%` — DONE 2026-09-17 (`@rem`), the shape to copy.
