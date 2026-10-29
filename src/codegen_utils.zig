@@ -240,6 +240,26 @@ pub fn colonInsideBrackets(text: []const u8) bool {
     return false;
 }
 
+/// `{{ v:d:N }}` — Koru owns the `d:<digits>` width semantic (ruled
+/// 2026-10-24, pinned by 620_005): space-pad left to N columns, sign only
+/// when negative — C's `%Nd`, the shape every external oracle (CLBG, PLB
+/// nsieve) expects. Zig 0.15's `{d:N}` prints an explicit '+' on positive
+/// signed integers, and the C#/JS emitters drop the width outright, so a
+/// spec passed verbatim lets one host's quirk become the surface. The
+/// emitters instead wrap the arg as `__koru_pad_i(N, <arg>)` under `{f}`.
+/// Returns the width digits (leading zeros stripped — `08` is not a Zig
+/// int literal) when `format_spec` is exactly `d:<digits>`, else null:
+/// `d:.N` (precision) and every other spec keep their existing path.
+pub fn decimalPadWidth(format_spec: []const u8) ?[]const u8 {
+    if (format_spec.len <= 2 or format_spec[0] != 'd' or format_spec[1] != ':') return null;
+    const digits = format_spec[2..];
+    for (digits) |c| {
+        if (c < '0' or c > '9') return null;
+    }
+    const trimmed = std.mem.trimLeft(u8, digits, "0");
+    return if (trimmed.len == 0) "0" else trimmed;
+}
+
 /// Decimal index scan for the `__koru_*_N` splice markers — returns the
 /// digits' value and advances `pos` past them, or null when no digit is
 /// there (`pos` untouched past the first non-digit).

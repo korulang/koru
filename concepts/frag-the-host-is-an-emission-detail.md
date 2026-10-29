@@ -22,5 +22,15 @@ always loses to one lowering owned by the language.
 
 The generator is challenge `029_the_host_leak_audit`: each run hoists or
 waives one passthrough, pinned either way. Signed `%` → `@rem`
-(2026-09-17) is the shape to copy; `:d:N` is the first exhibit;
-signed `/` (030_143) is the next.
+(2026-09-17) is the shape to copy.
+
+Landed 2026-10-29: `:d:N` hoisted — the interpolation emitters rewrite
+`d:<digits>` to `{f}` over `__koru_pad_i(N, arg)`, an emitted wrapper
+that owns the padding (space-pad, sign only when negative); the spec
+never reaches the host format string, and the check lives once in
+`decimalPadWidth` (src/codegen_utils.zig). Pin: 620_005, green.
+
+Measured the same sweep: the leak is wider than Zig's `+` — the C# and
+JS placeholder emitters drop `d:N` SILENTLY (no width at all), and
+`d:.N` (precision) still passes verbatim into `{d:.N}` on Zig. Signed
+`/` (030_143) remains the next named exhibit.

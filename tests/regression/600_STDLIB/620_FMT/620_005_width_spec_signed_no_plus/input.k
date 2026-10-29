@@ -1,13 +1,10 @@
 // Pins oracle-style width formatting of signed integers: {{ v:d:8 }} on a
-// positive runtime i64 must render space-padded digits ("   14683"), sign
-// only when negative — the shape every external benchmark oracle (CLBG,
-// PLB nsieve) expects. The interpolation spec currently passes verbatim
-// into Zig's format string, and Zig 0.15 prints an explicit '+' on
-// width-formatted positive signed integers. The parked :d:N ruling
-// (raw-Zig passthrough vs Koru-owned width semantic) decides the
-// MECHANISM; this pin holds the SURFACE — if the ruling keeps verbatim
-// passthrough, the oracle shape needs another spelling and this test
-// moves with it.
+// positive runtime i64 renders space-padded digits ("   14683"), sign only
+// when negative — the shape every external benchmark oracle (CLBG, PLB
+// nsieve) expects. `:d:N` is Koru-owned (ruled 2026-10-24): the spec never
+// reaches the host format string — emitters wrap the arg as
+// `__koru_pad_i(N, v)` under `{f}`, so Zig 0.15's '+' on width-formatted
+// positive signed ints cannot leak through.
 import std/io
 
 pub tor thru { n: i64 } -> i64
