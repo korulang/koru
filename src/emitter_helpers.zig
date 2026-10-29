@@ -1479,6 +1479,31 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool, needs_
     try emitter.write("    return @as(T, @intCast(x));\n");
     try emitter.write("}\n\n");
 
+    // `{{ v:d:N }}` — Koru owns the `d:<digits>` width semantic (ruled
+    // 2026-10-24, pinned by 620_005): space-pad left to N columns, sign
+    // only when negative — C's `%Nd`, the shape every external oracle
+    // (CLBG, PLB nsieve) expects. Zig 0.15's `{d:N}` prints an explicit
+    // '+' on positive signed integers, so the `ln`/`blk` transforms wrap
+    // the arg as `__koru_pad_i(N, <arg>)` under `{f}` and the padding is
+    // decided here, once, in Koru-owned code — not by whichever host the
+    // emission target happens to be.
+    try emitter.write("fn __KoruPadI(comptime T: type) type {\n");
+    try emitter.write("    const V = switch (@typeInfo(T)) { .comptime_int => i64, .comptime_float => f64, else => T };\n");
+    try emitter.write("    return struct {\n");
+    try emitter.write("        v: V,\n");
+    try emitter.write("        width: usize,\n");
+    try emitter.write("        pub fn format(self: @This(), w: *@import(\"std\").Io.Writer) @import(\"std\").Io.Writer.Error!void {\n");
+    try emitter.write("            const rendered = @import(\"std\").fmt.count(\"{d}\", .{self.v});\n");
+    try emitter.write("            const pad = self.width -| rendered;\n");
+    try emitter.write("            for (0..pad) |_| try w.writeByte(' ');\n");
+    try emitter.write("            try w.print(\"{d}\", .{self.v});\n");
+    try emitter.write("        }\n");
+    try emitter.write("    };\n");
+    try emitter.write("}\n");
+    try emitter.write("pub fn __koru_pad_i(width: usize, value: anytype) __KoruPadI(@TypeOf(value)) {\n");
+    try emitter.write("    return .{ .v = value, .width = width };\n");
+    try emitter.write("}\n\n");
+
     // THE LEAK CHECK IS A FUNCTION BECAUSE NOT EVERY PROGRAM HAS A `main`.
     //
     // It used to be written inline at the end of the emitted `main`, which is

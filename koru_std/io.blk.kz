@@ -308,15 +308,29 @@
                 }
 
                 // :f maps to {} in Zig (default float format — Zig has no {f})
-                const zig_fmt_spec_blk = if (std.mem.eql(u8, format_spec, "f")) "" else format_spec;
-                format_buf.append(allocator, '{') catch unreachable;
-                format_buf.appendSlice(allocator, zig_fmt_spec_blk) catch unreachable;
-                format_buf.append(allocator, '}') catch unreachable;
+                // `d:<digits>` is Koru-owned (ruled 2026-10-24, 620_005):
+                // space-pad to N, sign only when negative — emit `{f}` over
+                // the __koru_pad_i wrapper, never the spec verbatim.
+                const dec_width = codegen_utils_io.decimalPadWidth(format_spec);
+                if (dec_width != null) {
+                    format_buf.appendSlice(allocator, "{f}") catch unreachable;
+                } else {
+                    const zig_fmt_spec_blk = if (std.mem.eql(u8, format_spec, "f")) "" else format_spec;
+                    format_buf.append(allocator, '{') catch unreachable;
+                    format_buf.appendSlice(allocator, zig_fmt_spec_blk) catch unreachable;
+                    format_buf.append(allocator, '}') catch unreachable;
+                }
 
                 if (!first_arg) {
                     args_buf.appendSlice(allocator, ", ") catch unreachable;
                 }
+                if (dec_width) |width| {
+                    args_buf.appendSlice(allocator, "__koru_pad_i(") catch unreachable;
+                    args_buf.appendSlice(allocator, width) catch unreachable;
+                    args_buf.appendSlice(allocator, ", ") catch unreachable;
+                }
                 appendEscapedPath(&args_buf, allocator, var_name);
+                if (dec_width != null) args_buf.append(allocator, ')') catch unreachable;
                 first_arg = false;
 
                 i = j + 2;
@@ -714,15 +728,29 @@
                     missing_spec = placeholder;
                 }
 
-                const zig_fmt_spec_blk = if (std.mem.eql(u8, format_spec, "f")) "" else format_spec;
-                format_buf.append(allocator, '{') catch unreachable;
-                format_buf.appendSlice(allocator, zig_fmt_spec_blk) catch unreachable;
-                format_buf.append(allocator, '}') catch unreachable;
+                // `d:<digits>` is Koru-owned (ruled 2026-10-24, 620_005):
+                // space-pad to N, sign only when negative — emit `{f}` over
+                // the __koru_pad_i wrapper, never the spec verbatim.
+                const dec_width = codegen_utils_io.decimalPadWidth(format_spec);
+                if (dec_width != null) {
+                    format_buf.appendSlice(allocator, "{f}") catch unreachable;
+                } else {
+                    const zig_fmt_spec_blk = if (std.mem.eql(u8, format_spec, "f")) "" else format_spec;
+                    format_buf.append(allocator, '{') catch unreachable;
+                    format_buf.appendSlice(allocator, zig_fmt_spec_blk) catch unreachable;
+                    format_buf.append(allocator, '}') catch unreachable;
+                }
 
                 if (!first_arg) {
                     args_buf.appendSlice(allocator, ", ") catch unreachable;
                 }
+                if (dec_width) |width| {
+                    args_buf.appendSlice(allocator, "__koru_pad_i(") catch unreachable;
+                    args_buf.appendSlice(allocator, width) catch unreachable;
+                    args_buf.appendSlice(allocator, ", ") catch unreachable;
+                }
                 appendEscapedPath(&args_buf, allocator, var_name);
+                if (dec_width != null) args_buf.append(allocator, ')') catch unreachable;
                 first_arg = false;
 
                 // Anything other than :d or :s requires std.fmt — fall back.
