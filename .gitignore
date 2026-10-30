@@ -358,6 +358,9 @@ examples/**/generated/
 **/program.ast.json
 !verify/strip_ast/fixtures/**/program.ast.json
 !verify/claims_ast/fixtures/**/program.ast.json
+# Pipeline-boundary snapshots (witness-enforced compiles): program.pre-claims/
+# program.pre-strip trees, lane-namespaced for non-zig targets.
+**/program.*.ast.json
 **/program_ast.zig
 # Ward runtime state — the host writes setup.ini on POST /api/setup
 examples/ward/setup.ini

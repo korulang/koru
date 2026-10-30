@@ -11,14 +11,17 @@ pre-image to match the artifact's own derivation, line for line.
 
 The port is faithful, not approximate: the same refusal reasons, the same
 DNF clause order, the same candidate order, the same discharge loop, the
-same verdict detail strings. Where the artifact cannot decide — a claim
-whose region a post-serialization transform rewrote — the mismatch fails
-loud rather than being papered over; such drift is the named boundary of
-this leg (the artifact precedes `run-pre-transforms` inside `elaborate`,
-and `pass-claims-check` reads `mutable_ctx.ast` after it).
+same verdict detail strings. The source boundary is split, not trusted:
+`program.ast.json` precedes `run-pre-transforms` inside `elaborate` while
+`pass-claims-check` reads `mutable_ctx.ast` after it. With
+`--premises <program.pre-claims.ast.json>` (the boundary snapshot the
+analysis chain writes under witness enforcement — the pass's real input),
+premise rows derive from that tree. Claim SITES always come from
+`program.ast.json`: the `std.spec:claim` flow is consumed before the
+claims pass runs, so only the frontend artifact still carries it.
 
 Usage:
-    claims_ast_check.py <program.ast.json> <backend.err>
+    claims_ast_check.py <program.ast.json> <backend.err> [--premises snap.json]
     claims_ast_check.py --selfcheck <dir-with-fixture-pair> [...]
 
 Exit 0 = every committed claim line re-derived from the artifact.
@@ -1364,9 +1367,19 @@ def parse_ledger(text):
     return checks, evidences, census
 
 
-def check(ast_path, corpus_path, verbose=False):
+def check(ast_path, corpus_path, verbose=False, premises_path=None):
     with open(ast_path, "r", encoding="utf-8") as fh:
         program = json.load(fh)
+    # Premise boundary: when the pipeline wrote a snapshot of the tree the
+    # claims pass actually read (program.pre-claims.ast.json), derive the
+    # premise rows from THAT tree — the pass's real input, not the
+    # pre-transform artifact. Claim sites always come from program.ast.json:
+    # the std.spec:claim flow is consumed by the pipeline, so only the
+    # frontend artifact still carries the site spellings.
+    premises = program
+    if premises_path:
+        with open(premises_path, "r", encoding="utf-8") as fh:
+            premises = json.load(fh)
     with open(corpus_path, "r", encoding="utf-8") as fh:
         corpus = fh.read()
 
@@ -1396,7 +1409,7 @@ def check(ast_path, corpus_path, verbose=False):
     for i, c in enumerate(claims):
         site_key = f"{c['file']}:{c['line']}"
         check_line = checks[i] if i < len(checks) else None
-        res = derive_claim(program, c)
+        res = derive_claim(premises, c)
         if res[0] == "refused":
             # A claim the pass would have refused emits no [claim-check];
             # an armed (successful) compile cannot carry one.
@@ -1509,10 +1522,15 @@ def main():
     args = sys.argv[1:]
     if args and args[0] == "--selfcheck":
         return selfcheck(args[1:])
+    premises_path = None
+    if "--premises" in args:
+        i = args.index("--premises")
+        premises_path = args[i + 1]
+        del args[i:i + 2]
     if len(args) != 2:
         print(__doc__)
         return 2
-    return check(args[0], args[1])
+    return check(args[0], args[1], premises_path=premises_path)
 
 
 if __name__ == "__main__":

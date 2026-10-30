@@ -1,0 +1,69 @@
+// Koru Standard Library: the `snapshot` part of compiler.kz.
+// Joined via `~part snapshot` in compiler.kz; merged into the compiler
+// module at load.
+
+// Pipeline snapshot: serialize ctx.ast to program.<flag>.ast.json at a
+// pipeline boundary, under std/witness:enforce only. This is boundary
+// evidence — the pipeline writes what a checked pass will actually see,
+// so an artifact oracle can re-derive the pass's real input instead of
+// trusting the pass's committed description of it. Not to be confused
+// with ast-dump/dump-ast, which are stderr debug introspection, not a
+// verification channel.
+//
+// Fidelity of the write itself is already refused loud: the backend
+// driver rejects program.ast.json bytes that do not round-trip through
+// the codec (error.AstCodecDrift), and these snapshots ride the same
+// serializer.
+
+// snapshot-pre-claims rides the ~analysis chain's desugar pyramid, so
+// its Output must carry the failed arm the chain dispatches on.
+~pub tor snapshot-pre-claims { ctx: CompilerContext }
+| ctx CompilerContext
+| failed { ctx: CompilerContext, message: string }
+
+~proc snapshot-pre-claims|zig {
+    const eh = @import("emitter_helpers");
+    eh.snapshotProgramAst(ctx.allocator, ctx.ast, "pre-claims") catch unreachable;
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+    return .{ .ctx = updated_ctx };
+}
+
+// snapshot-pre-strip rides the ~emission chain, which threads raw
+// Outputs — plain -> CompilerContext, no union arms.
+~pub tor snapshot-pre-strip { ctx: CompilerContext } -> CompilerContext
+
+~proc snapshot-pre-strip|zig {
+    const eh = @import("emitter_helpers");
+    eh.snapshotProgramAst(ctx.allocator, ctx.ast, "pre-strip") catch unreachable;
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+    return updated_ctx;
+}
+
+// pass-dead-strip's |zig impl lives here with the boundary stages: this
+// proc is the consumer of the tree snapshot-pre-strip serializes — the
+// strip oracle re-derives its filter decisions from that artifact. The
+// ~pub tor declaration stays in compiler.kz (same decl/impl split as
+// inject-ccp in compiler.ccp.kz).
+~proc pass-dead-strip|zig {
+    var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "dead_strip";
+
+    const dead_strip = @import("dead_strip");
+
+    var pass = dead_strip.DeadStripPass.init(ctx.allocator);
+    defer pass.deinit();
+    // A library keeps its exports; a program keeps what it calls. The flag
+    // rides CompilerEnv for the same reason `lang` does — this pass runs
+    // across the metacircular boundary and sees per-user state only there.
+    pass.library_roots = CompilerEnv.library;
+
+    const new_ast = pass.run(mutable_ctx.ast, mutable_ctx.original_ast) catch {
+        return mutable_ctx;
+    };
+
+    mutable_ctx.ast = new_ast;
+    mutable_ctx.passes_completed += 1;
+    return mutable_ctx;
+}

@@ -45,4 +45,13 @@ fi
 [ -f "$1" ] || { echo "strip-ast gate: no program.ast.json at $1" >&2; exit 1; }
 [ -f "$2" ] || { echo "strip-ast gate: no backend.err at $2" >&2; exit 1; }
 
-python3 "$CK" "$1" "$2" ${3:-}
+# Boundary snapshot: when the pipeline wrote program.pre-strip.ast.json
+# (the tree pass-dead-strip actually filtered), decls/pubs/cargo re-derive
+# from it and PHANTOM-RM becomes strict — the transform-introduced-decl
+# boundary the frontend artifact could never close.
+SNAP="$(dirname "$1")/program.pre-strip.ast.json"
+if [ -f "$SNAP" ]; then
+    python3 "$CK" "$1" "$2" --input "$SNAP" ${3:-}
+else
+    python3 "$CK" "$1" "$2" ${3:-}
+fi

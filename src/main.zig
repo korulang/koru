@@ -2478,6 +2478,16 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\        const ast_json_bytes = try ast_file.readToEndAlloc(compile_allocator, 256 * 1024 * 1024);
             \\        const p = try compile_allocator.create(Program);
             \\        p.* = try ast_json_mod.deserialize(compile_allocator, ast_json_bytes);
+            \\        // Codec fidelity, refused loud at the boundary: the deserialized
+            \\        // tree must re-serialize to the exact input bytes. The codec is
+            \\        // one reflective pair (src/ast_json.zig), so a divergence can
+            \\        // only mean the decoder dropped or mangled a field — the
+            \\        // passes would then run on a tree the artifact never wrote.
+            \\        const round_trip = try ast_json_mod.serialize(compile_allocator, p);
+            \\        if (!__koru_std.mem.eql(u8, round_trip, ast_json_bytes)) {
+            \\            __koru_std.debug.print("❌ Backend: program.ast.json codec drift — deserialize(serialize(tree)) does not round-trip; the AST the passes would see differs from the artifact\n", .{});
+            \\            return error.AstCodecDrift;
+            \\        }
             \\        break :blk p;
             \\    };
             \\

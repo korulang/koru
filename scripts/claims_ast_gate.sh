@@ -8,11 +8,14 @@
 # [claim-head]/[claim-edge]/[claim-census] ledger to equal the artifact's
 # own derivation, line for line. The pass's pre-image is never trusted.
 #
-# The boundary is named: program.ast.json precedes `run-pre-transforms`
-# inside `elaborate`, while pass-claims-check reads `mutable_ctx.ast`
-# after it — a transform that rewrites a claim's subject region makes the
-# committed rows underivable, and the oracle fails loud rather than
-# paper over the seam.
+# The boundary is split, not trusted: program.ast.json precedes
+# `run-pre-transforms` inside `elaborate`, while pass-claims-check reads
+# `mutable_ctx.ast` after it. When the pipeline wrote
+# program.pre-claims.ast.json (witness-enforced compiles), premise rows
+# re-derive from that snapshot — the pass's real input. Claim SITES still
+# come from program.ast.json alone: the std.spec:claim flow is consumed
+# before pass-claims-check runs, so the frontend artifact is the only
+# tree that still carries it.
 #
 # Usage:
 #   claims_ast_gate.sh <program.ast.json> <backend.err>
@@ -41,4 +44,13 @@ fi
 [ -f "$1" ] || { echo "claims-ast gate: no program.ast.json at $1" >&2; exit 1; }
 [ -f "$2" ] || { echo "claims-ast gate: no backend.err at $2" >&2; exit 1; }
 
-python3 "$CK" "$1" "$2"
+# Boundary snapshot: when the pipeline wrote program.pre-claims.ast.json
+# (the tree pass-claims-check actually read), premise rows re-derive from
+# it; sites still come from program.ast.json — the std.spec:claim flow is
+# consumed by the pipeline and only the frontend artifact carries it.
+SNAP="$(dirname "$1")/program.pre-claims.ast.json"
+if [ -f "$SNAP" ]; then
+    python3 "$CK" "$1" "$2" --premises "$SNAP"
+else
+    python3 "$CK" "$1" "$2"
+fi

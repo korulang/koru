@@ -18,6 +18,7 @@
 ~part materialize
 ~part materialize-build
 ~part materialize-csbuild
+~part snapshot
 // Compiler system dependencies
 ~std/deps:requires.system {
     "name": "zig",
@@ -403,6 +404,7 @@ const Allocator = std.mem.Allocator;
         .optimize = optimize,
     });
     emitter_helpers_module.addImport("ast", ast_module);
+    emitter_helpers_module.addImport("ast_json", ast_json_module);
     emitter_helpers_module.addImport("errors", errors_module);
     emitter_helpers_module.addImport("log", log_module);
     emitter_helpers_module.addImport("compiler_config", compiler_config_module);
@@ -410,6 +412,7 @@ const Allocator = std.mem.Allocator;
     emitter_helpers_module.addImport("codegen_utils", codegen_utils_module);
     emitter_helpers_module.addImport("annotation_parser", annotation_parser_module);
     emitter_helpers_module.addImport("struct_literal", struct_literal_module);
+    emitter_helpers_module.addImport("compiler_env", compiler_env_module);
     parser_module.addImport("struct_literal", struct_literal_module);
     flow_checker_module.addImport("struct_literal", struct_literal_module);
 
@@ -991,6 +994,7 @@ const Allocator = std.mem.Allocator;
   |> check-phantom-args
   |> pass-auto-discharge
   |> pass-witness-check
+  |> snapshot-pre-claims
   |> pass-claims-check
   |> check-flow
   |> check-phantom-semantic
@@ -1530,7 +1534,7 @@ const emitFlowWithMocks = struct {
 // decision, overridable like any other step, not an if-chain inside one proc.
 ~[comptime|abstract] pub tor emission { ctx: CompilerContext } -> { ctx: CompilerContext, code: string }
 
-~emission = inject-ccp(ctx): c1 |> pass-dead-strip(ctx: c1): c2 |> target-of(ctx: c2)
+~emission = inject-ccp(ctx): c1 |> snapshot-pre-strip(ctx: c1): c1s |> pass-dead-strip(ctx: c1s): c2 |> target-of(ctx: c2)
 | zig |> emit-zig-artifact(ctx: c2): e -> e
 | js |> emit-js-artifact(ctx: c2): e -> e
 | cs |> emit-cs-artifact(ctx: c2): e -> e
@@ -2638,26 +2642,7 @@ const emitFlowWithMocks = struct {
 // Dead Strip Pass
 // Removes unreachable tors and flows from the AST
 // Walks from entry points (top-level flows), marks reachable tors, prunes the rest
-~proc pass-dead-strip|zig {
-    var mutable_ctx = ctx;
-    mutable_ctx.current_pass = "dead_strip";
-
-    const dead_strip = @import("dead_strip");
-
-    var pass = dead_strip.DeadStripPass.init(ctx.allocator);
-    defer pass.deinit();
-    // A library keeps its exports; a program keeps what it calls. The flag
-    // rides CompilerEnv for the same reason `lang` does — this pass runs
-    // across the metacircular boundary and sees per-user state only there.
-    pass.library_roots = CompilerEnv.library;
-
-    const new_ast = pass.run(mutable_ctx.ast, mutable_ctx.original_ast) catch {
-        return mutable_ctx;
-    };
-
-    mutable_ctx.ast = new_ast;
-    mutable_ctx.passes_completed += 1;
-    return mutable_ctx;
-}
+// ~proc pass-dead-strip|zig lives in compiler.snapshot.kz — the boundary
+// part: snapshot-pre-strip serializes the very ctx.ast this proc filters.
 
 ~part ccp

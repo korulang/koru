@@ -285,17 +285,52 @@ substitution in order (`EVID-DIFF`/`EVID-MISS`/`EVID-STRAY`), and the
 census cross-counted against both the ledger and the derived verdicts
 (`CENSUS`/`CENSUS-ART`). A claim whose committed `proven` cannot be
 re-derived fails — the verdict is now artifact-decided, not
-pass-asserted. Same named boundary as the strip leg: `program.ast.json`
-precedes `run-pre-transforms` inside `elaborate` while
-`pass-claims-check` reads `mutable_ctx.ast` after it — a transform that
-rewrites a claim's subject region makes the committed rows underivable
-and the oracle fails loud; none is observed on the armed corpus
-(12/12 live shapes re-derive: declared + inferred rank, honors
-base+step, `&`-typed fields and payloads, conj/disj/mixed guards,
-cond dispatch with binding rename and prior-arm negation, nested
-if/cond). The `CLAIMS_AST_CHECK` marker arms it under `KORU_WITNESS=1`
-on the five claims-ledger tests; `verify/claims_ast/fixtures/` carries
-a minimal honest pair plus a forged-premise pair the selfcheck gates.
+pass-asserted. The `CLAIMS_AST_CHECK` marker arms it under
+`KORU_WITNESS=1` on the five claims-ledger tests;
+`verify/claims_ast/fixtures/` carries a minimal honest pair plus a
+forged-premise pair the selfcheck gates.
+
+**Codec fidelity + boundary snapshots landed (2026-10-30) — the
+channel's two remaining seams.** First, artifact-follows-source: the
+backend driver re-serializes the deserialized `program.ast.json` tree
+and refuses `error.AstCodecDrift` on any byte difference — a
+decoded-but-unfaithful artifact (e.g. a stray key the struct decoder
+ignores) can no longer silently give the passes a different tree than
+the oracle walks. Unconditional: codec drift is corruption, not an
+opt-in evidence policy. Second, the post-transform gap both legs
+named: `ctx.ast` is rewritten at ~8 sites between deserialize and the
+checked passes, so `program.ast.json` was never the tree the pass
+filtered. Under witness enforcement, the pipeline now writes boundary
+snapshots — `program.pre-claims.ast.json` ahead of
+`pass-claims-check`, `program.pre-strip.ast.json` ahead of
+`pass-dead-strip` — emitted by the chain stage that owns `ctx.ast`,
+never by the pass describing its own input. The claims oracle then
+splits sources deliberately: *sites* from `program.ast.json` (the
+`std.spec:claim` flow is consumed before the claims pass runs — only
+the frontend artifact still carries it), *premises* from the snapshot.
+The strip oracle derives decls/pubs/cargo/removal-identity from the
+snapshot and unions the use set across snapshot + original artifact,
+matching `dead_strip`'s own two-tree walk (generated inline-body refs
+live in `original_ast` — 350_021). `non-artifact-rms` is gone: a
+committed removal naming no decl in the filter-input tree is
+`PHANTOM-RM`, strict — `690_380`'s 14 transform-introduced removals
+now re-decide, they no longer sit in a reported-only class.
+
+The snapshots are **lane-namespaced**, and the bug that forced it is
+worth keeping on record: the regression harness compiles each
+`LANGUAGES: c` test twice — the zig baseline (which produces
+`backend.err`, the ledger every gate consumes) and the `--lang=c`
+c-oracle run. An unsuffixed `program.pre-strip.ast.json` let the C
+compile overwrite the zig lane's snapshot, and because `store.new.kz`
+mints a different decl set under `host_is_c` (no
+`__store_peek/clear/stripe`), the strip oracle caught six-to-ten
+`PHANTOM-RM`s that were real — in the *wrong lane's* tree. Measured on
+`690_378/380/382`. Now `zig` owns the plain name; every other
+`--lang` writes `program.<flag>.<lang>.ast.json`, preserving the
+evidence a future lane-specific oracle would consume. The doctrine it
+sharpens: *a boundary artifact must name which pipeline produced it* —
+"the boundary that owns the tree writes the evidence" extends to
+identity, not just position.
 
 ---
 

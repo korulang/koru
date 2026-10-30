@@ -184,10 +184,11 @@ again, with the disagreement hidden inside one file.
   ledger merely moves the trust from verdict to ledger. The artifact,
   not the pass, is the channel. Two boundaries it measured open
   rather than assumed: the pass filters the post-transform tree, so
-  transform-introduced decls (`690_380` shows 14) are uncheckable from
-  this channel — and the same artifact carries the arm premises K3
-  claims commit, so the pattern generalizes but only the strip side
-  is wired. A second correction first contact surfaced: root-seeding
+  transform-introduced decls (`690_380` showed 14) were uncheckable from
+  this channel — closed later by the boundary snapshots (next
+  bullet) — and the same artifact carries the arm premises K3
+  claims commit, so the pattern generalizes (it did — the claims
+  leg landed). A second correction first contact surfaced: root-seeding
   evidence must commit per qualifying export, not per set insertion —
   a pub already impl-marked is still a root, and insertion-coupled
   evidence reports a lib's root count as zero.
@@ -205,6 +206,34 @@ again, with the disagreement hidden inside one file.
   not the stronger `==`, because a transform that never removes its
   call is still lawful. Same doctrine, one level down: evidence a
   transform could compute about itself is not evidence.
+- The "measured open" post-transform boundary then closed the same
+  way the delta did — by moving the artifact write to the boundary
+  that owns the tree: under `std/witness:enforce` the pipeline
+  serializes `ctx.ast` itself — `program.pre-claims.ast.json` before
+  `pass-claims-check`, `program.pre-strip.ast.json` before
+  `pass-dead-strip` — written by the chain stage, never by the pass
+  describing its own input. Claims split sources *deliberately*:
+  sites from `program.ast.json` (the `std.spec:claim` flow is
+  consumed before the pass runs, so only the frontend artifact still
+  carries it), premises from the snapshot; strip derives
+  decls/pubs/cargo from the snapshot and unions uses across snapshot
+  + `original_ast`, because the pass genuinely reads both (generated
+  inline-body refs — 350_021). `non-artifact-rms` is gone — a
+  committed removal naming no decl in the filter-input tree is
+  `PHANTOM-RM`, strict. The upstream seam refused alongside: the
+  backend driver re-serializes the deserialized artifact and rejects
+  `error.AstCodecDrift` on any byte divergence — codec drift is
+  corruption, not opt-in policy, so the check is unconditional. And
+  first contact taught the third clause: **a boundary artifact must
+  name which pipeline produced it.** The harness compiles
+  `LANGUAGES: c` tests twice; the `--lang=c` run overwrote
+  `program.pre-strip.ast.json` with the C lane's tree — which mints
+  a different decl set under `host_is_c` — and the strip oracle
+  caught real `PHANTOM-RM`s in the *wrong lane's* tree
+  (`690_378`/`380`/`382`). "The boundary that owns the tree writes
+  the evidence" turned out to need an identity field of its own:
+  snapshots are now `program.<flag>.<lang>.ast.json`, `zig` owning
+  the plain name the gates consume.
 - There is a defensible middle: two mechanized semantics with a proved
   equivalence (a definitional and a denotational reading, as in textbook
   PL formalizations). That is one semantics stated twice and *proved*

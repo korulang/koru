@@ -19,6 +19,17 @@ the same rules the pass documents:
   event_decl      -> path marked when a `retain` annotation is present
   host_line       -> comment-cargo digest
 
+With --input <program.pre-strip.ast.json> (the pipeline-boundary snapshot
+the emission chain writes under witness enforcement — the tree dead_strip
+actually filtered), decls/pubs/cargo/removal-identity derive from that
+snapshot instead of the frontend artifact; the use set still unions both
+trees, matching the pass's own collectUsedPaths(ctx.ast) ∪
+collectUsedPaths(original_ast). Transform-introduced decls are then
+first-class and a committed removal naming none is strict:
+
+  PHANTOM-RM       a committed strip-rm names no decl in the filter-input
+                   tree — fabricated, not transform-introduced.
+
 Strict checks (violations):
   UNSPELLED        an artifact-derived use key is missing from the committed
                    strip-use ledger — the pass under-committed the set it
@@ -220,6 +231,10 @@ def main():
         return 2
     ast_path, err_path = sys.argv[1], sys.argv[2]
     library = "--library" in sys.argv[3:]
+    input_path = None
+    if "--input" in sys.argv:
+        i = sys.argv.index("--input")
+        input_path = sys.argv[i + 1]
 
     with open(ast_path, encoding="utf-8") as f:
         prog = json.load(f)
@@ -228,6 +243,21 @@ def main():
     w = ArtifactWalk()
     w.walk_items(prog.get("items"), main_module, None, main_module, True)
 
+    # Filter-input boundary: when the pipeline wrote a snapshot of the tree
+    # dead_strip actually filtered (program.pre-strip.ast.json), decls/pubs/
+    # cargo come from THAT tree — transform-introduced decls are then
+    # first-class, and a removal naming none is PHANTOM-RM, strict. The
+    # pass's used set unions collectUsedPaths(ctx.ast) with
+    # collectUsedPaths(original_ast) (inline_body scrapes for generated
+    # handler refs — 350_021), so the oracle walks both trees for uses too.
+    iw = w
+    if input_path:
+        with open(input_path, encoding="utf-8") as f:
+            iprog = json.load(f)
+        iw = ArtifactWalk()
+        iw.walk_items(iprog.get("items"), iprog.get("main_module_name") or "",
+                      None, iprog.get("main_module_name") or "", True)
+
     uses, roots, rms, cargo, census = parse_ledger(err_path)
     if census is None:
         print("BAD: no [witness] site strip-census line — ledger absent", file=sys.stderr)
@@ -235,41 +265,47 @@ def main():
 
     violations = []
 
-    # Under-commitment: every key the artifact spells must be committed.
-    for k in sorted(w.used - uses):
+    derived_uses = w.used | iw.used
+
+    # Under-commitment: every key the derivation spells must be committed.
+    for k in sorted(derived_uses - uses):
         violations.append(f"UNSPELLED {k} — artifact spells it, ledger never committed it")
 
-    # The removal law, re-decided against the artifact's own reachability.
+    # The removal law, re-decided against the derived reachability.
     for canon, alt in rms:
-        if canon in w.used:
-            violations.append(f"UNLAWFUL-RM {canon} — artifact-derived use set spells it")
-        if alt != "-" and alt in w.used:
-            violations.append(f"UNLAWFUL-RM {alt} — artifact-derived use set spells it")
+        if canon in derived_uses:
+            violations.append(f"UNLAWFUL-RM {canon} — derived use set spells it")
+        if alt != "-" and alt in derived_uses:
+            violations.append(f"UNLAWFUL-RM {alt} — derived use set spells it")
 
-    # Removal identity: which rms name an artifact decl (strict) vs a
-    # transform-introduced one (named boundary — reported, not failed).
-    # Multiplicity is strict either way: a decl pair can't be removed more
-    # times than the artifact declares it.
-    decl_count = Counter(w.decls)
+    # Removal identity: which rms name a decl in the filter input. With
+    # --input the input is the pass's real tree — a rm naming no decl in it
+    # is fabricated (PHANTOM-RM, strict). Without it, transform-introduced
+    # decls can't be re-decided from the frontend artifact — reported, the
+    # named boundary the snapshot exists to close.
+    decl_count = Counter(iw.decls)
     rm_count = Counter(rms)
     non_artifact_rms = [p for p in rms if p not in decl_count]
+    if input_path:
+        for p in non_artifact_rms:
+            violations.append(f"PHANTOM-RM {p[0]} — removed decl absent from the filter-input artifact")
     for pair, n in rm_count.items():
         if pair in decl_count and n > decl_count[pair]:
-            violations.append(f"RM-OVERCOUNT {pair[0]} — removed {n}x, artifact declares {decl_count[pair]}x")
+            violations.append(f"RM-OVERCOUNT {pair[0]} — removed {n}x, input declares {decl_count[pair]}x")
 
     # Roots.
     if library:
-        for p in sorted(w.pubs - roots):
+        for p in sorted(iw.pubs - roots):
             violations.append(f"ROOT-MISSING {p} — pub entry-module decl never seeded")
-        for r in sorted(roots - w.pubs):
+        for r in sorted(roots - iw.pubs):
             violations.append(f"ROOT-STRAY {r} — committed root is not a pub entry-module decl")
     else:
         for r in sorted(roots):
             violations.append(f"ROOT-PROGRAM {r} — root line in a non-library compile")
 
-    # Cargo: artifact-derived digest multiset must be covered by the ledger.
-    for digest, count in (w.cargo - cargo).items():
-        violations.append(f"CARGO-MISS {digest:016x} x{count} — artifact cargo the ledger never committed")
+    # Cargo: input-derived digest multiset must be covered by the ledger.
+    for digest, count in (iw.cargo - cargo).items():
+        violations.append(f"CARGO-MISS {digest:016x} x{count} — input cargo the ledger never committed")
 
     # Census honesty against the committed ledger itself.
     if census.get("uses") != len(uses):
@@ -284,10 +320,10 @@ def main():
     for v in violations:
         print(f"BAD {v}", file=sys.stderr)
 
-    print(f"strip-ast: uses={len(w.used)}/{len(uses)} committed "
-          f"rms={len(rms)} decls={len(w.decls)} "
+    print(f"strip-ast: uses={len(derived_uses)}/{len(uses)} committed "
+          f"rms={len(rms)} decls={len(iw.decls)} "
           f"non-artifact-rms={len(non_artifact_rms)} "
-          f"cargo={sum(w.cargo.values())}/{sum(cargo.values())} "
+          f"cargo={sum(iw.cargo.values())}/{sum(cargo.values())} "
           f"{'LIBRARY ' if library else ''}"
           f"{'— ' + str(len(violations)) + ' violations' if violations else '— clean'}",
           file=sys.stderr if violations else sys.stdout)

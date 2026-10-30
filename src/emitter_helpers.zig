@@ -62,6 +62,35 @@ pub var variant_count: usize = 0;
 /// setting a bool twice is fine.
 pub var witness_enforced: bool = false;
 
+/// Write a pipeline-boundary AST snapshot (`program.<flag>.ast.json`) beside
+/// program.ast.json, under witness enforcement. Boundary evidence: the
+/// pipeline stage serializes the ctx.ast a checked pass will actually see,
+/// so an artifact oracle can re-derive the pass's real input rather than
+/// trusting the pass's committed description of it. Codec fidelity is
+/// refused separately (error.AstCodecDrift in the backend driver).
+///
+/// Lane-namespaced: the oracles consume the zig lane's ledger (backend.err),
+/// so `zig` owns the plain `program.<flag>.ast.json` name and every other
+/// `--lang` writes `program.<flag>.<lang>.ast.json`. The C lane mints a
+/// different decl set (store.new.kz's host_is_c path); an unsuffixed write
+/// let the c-oracle compile overwrite the very tree the strip oracle was
+/// re-deriving (690_378/380/382 measured it: PHANTOM-RM on decls that only
+/// exist in the zig lane's mint set).
+pub fn snapshotProgramAst(allocator: std.mem.Allocator, program: *const ast.Program, flag: []const u8) !void {
+    if (!witness_enforced) return;
+    const ast_json = @import("ast_json");
+    const CompilerEnv = @import("compiler_env").CompilerEnv;
+    const bytes = try ast_json.serialize(allocator, program);
+    const path = if (std.mem.eql(u8, CompilerEnv.lang, "zig"))
+        try std.fmt.allocPrint(allocator, "program.{s}.ast.json", .{flag})
+    else
+        try std.fmt.allocPrint(allocator, "program.{s}.{s}.ast.json", .{ flag, CompilerEnv.lang });
+    defer allocator.free(path);
+    const f = try std.fs.cwd().createFile(path, .{});
+    defer f.close();
+    try f.writeAll(bytes);
+}
+
 /// Register a variant mapping (called by build:variants or other mechanisms)
 pub fn registerVariant(event_name: []const u8, variant_name: []const u8) bool {
     if (variant_count >= variant_mappings.len) {
