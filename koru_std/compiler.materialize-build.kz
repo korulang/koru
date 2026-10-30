@@ -28,6 +28,9 @@
 
     // Check for cross-compilation target from build:config
     const build_target = emitter_helpers.getBuildConfig("target");
+    // Silicon profile ("cpu" key, e.g. "generic_rv32+m+c" = ESP32-C3's
+    // rv32imc/ilp32); without it the arch default picks an ABI the chip lacks.
+    const build_cpu = emitter_helpers.getBuildConfig("cpu");
 
     var zig_lib_buf: [4096]u8 = undefined;
     const zig_lib_overlay = emitter_helpers.ensureZigLibOverlay(allocator, CompilerEnv.koru_home, &zig_lib_buf);
@@ -69,6 +72,11 @@
             bo_argv[bo_argc] = std.fmt.bufPrint(&dt_buf, "-Dtarget={s}", .{t}) catch "-Dtarget=native";
             bo_argc += 1;
         }
+        var dc_buf: [128]u8 = undefined;
+        if (build_cpu) |c| {
+            bo_argv[bo_argc] = std.fmt.bufPrint(&dc_buf, "-Dcpu={s}", .{c}) catch "-Dcpu=baseline";
+            bo_argc += 1;
+        }
         const result = std.process.Child.run(.{
             .allocator = allocator,
             .argv = bo_argv[0..bo_argc],
@@ -82,61 +90,31 @@
         defer allocator.free(result.stderr);
 
         var buf2: [512]u8 = undefined;
-        // Full Term union — a bare `.Exited` access panics when the zig
-        // build was signal-killed (OOM killer under memory pressure),
-        // and that panic reads as a compiler crash.
-        switch (result.term) {
-            .Exited => |exit_code| if (exit_code == 0) {
-                // Copy from zig-out/bin/output to the requested output name.
-                //
-                // Zig names a wasm executable `output.wasm`; every other
-                // target produces a bare `output`. Looking only for the bare
-                // name made a SUCCESSFUL cross-compile report failure —
-                // "Failed to copy output: error.FileNotFound" with a perfectly
-                // good .wasm sitting in zig-out/bin the whole time.
-                //
-                // Only the SOURCE name varies. The destination stays exactly
-                // what was asked for: a wasm host is handed the bytes, and
-                // neither WebAssembly.compile nor the test harness cares what
-                // the file on disk is called.
-                const is_wasm = if (build_target) |t| std.mem.indexOf(u8, t, "wasm") != null else false;
-                const zig_artifact = if (is_wasm) "zig-out/bin/output.wasm" else "zig-out/bin/output";
-                std.fs.cwd().copyFile(zig_artifact, std.fs.cwd(), output_exe, .{}) catch |copy_err| {
-                    const msg2 = std.fmt.bufPrint(&buf2, "✗ Failed to copy output: {}\n", .{copy_err}) catch "✗ Failed to copy output\n";
-                    stderr.writeAll(msg2) catch {};
-                    std.process.exit(1);
-                };
-                // The mode rides the success line — a silent Debug
-                // default is how a benchmark ends up timing a
-                // bounds-checked binary without knowing it.
-                const msg2 = std.fmt.bufPrint(&buf2, "✓ Compiled to {s} ({s})\n", .{ output_exe, out_opt }) catch return .{ .ctx = ctx, .code = code };
-                stdout.writeAll(msg2) catch {};
-            } else {
-                const msg2 = std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{}) catch "✗ Compilation failed\n";
-                stdout.writeAll(msg2) catch {};
-                if (result.stderr.len > 0) {
-                    stderr.writeAll("Error: ") catch {};
-                    stderr.writeAll(result.stderr) catch {};
-                    stderr.writeAll("\n") catch {};
-                }
-                std.process.exit(1);
-            },
-            .Signal => |sig| {
-                const msg2 = std.fmt.bufPrint(&buf2, "✗ zig build was killed by signal {d} — ended from outside, before it could finish. This usually means the machine ran out of memory, or something killed it externally. Check memory and load, then rerun. The source program was never judged.\n", .{sig}) catch "✗ zig build killed\n";
-                stderr.writeAll(msg2) catch {};
-                std.process.exit(1);
-            },
-            .Stopped => |sig| {
-                const msg2 = std.fmt.bufPrint(&buf2, "✗ zig build was stopped by signal {d} and never resumed — resume or kill it, then rerun\n", .{sig}) catch "✗ zig build stopped\n";
-                stderr.writeAll(msg2) catch {};
-                std.process.exit(1);
-            },
-            .Unknown => |status| {
-                const msg2 = std.fmt.bufPrint(&buf2, "✗ zig build ended in an unknown state (status {d}) — rerun; if it repeats, the machine is the suspect\n", .{status}) catch "✗ zig build failed\n";
-                stderr.writeAll(msg2) catch {};
-                std.process.exit(1);
-            },
-        }
+        zigChildTermOrExit(result.term, result.stderr, "zig build", stdout, stderr);
+        // Copy from zig-out/bin/output to the requested output name.
+        //
+        // Zig names a wasm executable `output.wasm`; every other
+        // target produces a bare `output`. Looking only for the bare
+        // name made a SUCCESSFUL cross-compile report failure —
+        // "Failed to copy output: error.FileNotFound" with a perfectly
+        // good .wasm sitting in zig-out/bin the whole time.
+        //
+        // Only the SOURCE name varies. The destination stays exactly
+        // what was asked for: a wasm host is handed the bytes, and
+        // neither WebAssembly.compile nor the test harness cares what
+        // the file on disk is called.
+        const is_wasm = if (build_target) |t| std.mem.indexOf(u8, t, "wasm") != null else false;
+        const zig_artifact = if (is_wasm) "zig-out/bin/output.wasm" else "zig-out/bin/output";
+        std.fs.cwd().copyFile(zig_artifact, std.fs.cwd(), output_exe, .{}) catch |copy_err| {
+            const msg2 = std.fmt.bufPrint(&buf2, "✗ Failed to copy output: {}\n", .{copy_err}) catch "✗ Failed to copy output\n";
+            stderr.writeAll(msg2) catch {};
+            std.process.exit(1);
+        };
+        // The mode rides the success line — a silent Debug
+        // default is how a benchmark ends up timing a
+        // bounds-checked binary without knowing it.
+        const msg2 = std.fmt.bufPrint(&buf2, "✓ Compiled to {s} ({s})\n", .{ output_exe, out_opt }) catch return .{ .ctx = ctx, .code = code };
+        stdout.writeAll(msg2) catch {};
     } else {
         // Fall back to direct zig build-exe (no user dependencies)
         var emit_path_buf: [256]u8 = undefined;
@@ -163,6 +141,10 @@
         if (build_target) |t| {
             exe_argv[exe_argc] = "-target"; exe_argc += 1;
             exe_argv[exe_argc] = t; exe_argc += 1;
+        }
+        if (build_cpu) |c| {
+            exe_argv[exe_argc] = "-mcpu"; exe_argc += 1;
+            exe_argv[exe_argc] = c; exe_argc += 1;
         }
         exe_argv[exe_argc] = "-O"; exe_argc += 1;
         // The OUTPUT binary defaults to Debug: safety checks (bounds,
@@ -214,39 +196,48 @@
         defer allocator.free(result.stderr);
 
         var buf2: [512]u8 = undefined;
-        // Full Term union — same contract as the build-file path above.
-        switch (result.term) {
-            .Exited => |exit_code| if (exit_code == 0) {
-                const msg2 = std.fmt.bufPrint(&buf2, "✓ Compiled to {s} ({s})\n", .{ output_exe, exe_opt }) catch return .{ .ctx = ctx, .code = code };
-                stdout.writeAll(msg2) catch {};
-            } else {
-                const msg2 = std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{}) catch "✗ Compilation failed\n";
-                stdout.writeAll(msg2) catch {};
-                if (result.stderr.len > 0) {
-                    stderr.writeAll("Error: ") catch {};
-                    stderr.writeAll(result.stderr) catch {};
-                    stderr.writeAll("\n") catch {};
-                }
-                std.process.exit(1);
-            },
-            .Signal => |sig| {
-                const msg2 = std.fmt.bufPrint(&buf2, "✗ zig build-exe was killed by signal {d} — ended from outside, before it could finish. This usually means the machine ran out of memory, or something killed it externally. Check memory and load, then rerun. The source program was never judged.\n", .{sig}) catch "✗ zig build-exe killed\n";
-                stderr.writeAll(msg2) catch {};
-                std.process.exit(1);
-            },
-            .Stopped => |sig| {
-                const msg2 = std.fmt.bufPrint(&buf2, "✗ zig build-exe was stopped by signal {d} and never resumed — resume or kill it, then rerun\n", .{sig}) catch "✗ zig build stopped\n";
-                stderr.writeAll(msg2) catch {};
-                std.process.exit(1);
-            },
-            .Unknown => |status| {
-                const msg2 = std.fmt.bufPrint(&buf2, "✗ zig build-exe ended in an unknown state (status {d}) — rerun; if it repeats, the machine is the suspect\n", .{status}) catch "✗ zig build failed\n";
-                stderr.writeAll(msg2) catch {};
-                std.process.exit(1);
-            },
-        }
+        zigChildTermOrExit(result.term, result.stderr, "zig build-exe", stdout, stderr);
+        const msg2 = std.fmt.bufPrint(&buf2, "✓ Compiled to {s} ({s})\n", .{ output_exe, exe_opt }) catch return .{ .ctx = ctx, .code = code };
+        stdout.writeAll(msg2) catch {};
     }
 
     return .{ .ctx = ctx, .code = code };
+}
+
+// Non-success Term handling shared by the zig build / zig build-exe
+// drivers above — the two paths used to spell this switch verbatim.
+// Full Term union: a bare `.Exited` access panics when the build was
+// signal-killed (OOM killer under memory pressure), and that panic reads
+// as a compiler crash. Returns on exit 0; every other termination
+// reports and exits the process.
+fn zigChildTermOrExit(term: std.process.Child.Term, run_stderr: []const u8, tool: []const u8, stdout: std.fs.File, stderr: std.fs.File) void {
+    var buf2: [512]u8 = undefined;
+    switch (term) {
+        .Exited => |exit_code| {
+            if (exit_code == 0) return;
+            stdout.writeAll("✗ Compilation failed\n") catch {};
+            if (run_stderr.len > 0) {
+                stderr.writeAll("Error: ") catch {};
+                stderr.writeAll(run_stderr) catch {};
+                stderr.writeAll("\n") catch {};
+            }
+            std.process.exit(1);
+        },
+        .Signal => |sig| {
+            const msg = std.fmt.bufPrint(&buf2, "✗ {s} was killed by signal {d} — ended from outside, before it could finish. This usually means the machine ran out of memory, or something killed it externally. Check memory and load, then rerun. The source program was never judged.\n", .{ tool, sig }) catch "✗ build killed\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        },
+        .Stopped => |sig| {
+            const msg = std.fmt.bufPrint(&buf2, "✗ {s} was stopped by signal {d} and never resumed — resume or kill it, then rerun\n", .{ tool, sig }) catch "✗ build stopped\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        },
+        .Unknown => |status| {
+            const msg = std.fmt.bufPrint(&buf2, "✗ {s} ended in an unknown state (status {d}) — rerun; if it repeats, the machine is the suspect\n", .{ tool, status }) catch "✗ build failed\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        },
+    }
 }
 

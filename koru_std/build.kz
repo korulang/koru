@@ -214,7 +214,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //   }
 //
 // The compiler is agnostic to the keys — it just passes them through.
-// Currently the backend recognizes "target" for zig cross-compilation.
+// Recognized: "target" and "cpu" (-mcpu, e.g. "generic_rv32+m+c" = ESP32-C3).
 
 ~[comptime]pub tor config { meta: InvocationMeta, source: Source }
 | configured usize

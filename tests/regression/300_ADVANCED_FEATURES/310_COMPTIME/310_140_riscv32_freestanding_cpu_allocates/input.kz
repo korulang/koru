@@ -1,0 +1,100 @@
+// Pins that a Koru program which ASKS FOR MEMORY builds for a bare rv32
+// machine — no operating system, no libc — on the RIGHT silicon profile,
+// and that the build:config "cpu" key actually reaches codegen.
+//
+// 310_122 pins the allocator spine for x86_64-freestanding; this is the
+// same journey for riscv32, plus the hole that target alone cannot see:
+// `riscv32-freestanding` with no -mcpu resolves Zig's arch DEFAULT cpu,
+// which selects the double-float ABI — FP instructions bound for a chip
+// like ESP32-C3 (rv32imc, ilp32) that has no FPU at all. The ELF builds,
+// links, and traps on first float. The thumb blinky documented the same
+// class of lie for cortex_m4; "cpu" is the key that closes it, and this
+// test is the first to send it.
+//
+// ESP32-C3's profile is exactly rv32imc/ilp32: generic_rv32+m+c — M for
+// mul/div, C for compressed, and NO d/f. Asserting `.d` is ABSENT is what
+// distinguishes a build that heard "cpu" from one that silently kept the
+// default: the default reports a double-float ABI, so the check fails if
+// the key never reached the backend.
+//
+// The allocator stand-in mirrors 310_122: freestanding has nothing to link
+// against, so this file exports posix_memalign/free itself — a bump over a
+// static arena, enough for the spine to BIND, deliberately not enough to
+// allocate well. On a real ESP-IDF link these resolve inside the image's
+// libc instead.
+//
+// COMPILE_ONLY: a freestanding rv32 image has no host to run on. Compiling
+// and linking IS the assertion.
+
+const std = @import("std");
+
+~import std/build
+
+~std/build:config {
+    "target": "riscv32-freestanding",
+    "cpu": "generic_rv32+m+c"
+}
+
+~std/build:requires {
+    exe.root_module.link_libc = false;
+}
+
+// Same entry contract as 310_122: something must be first, and it must
+// REACH the allocator itself or Zig never analyzes the spine and the pin
+// passes with the fix reverted.
+export fn _start() callconv(.c) noreturn {
+    const a = koru_allocator();
+    const block = a.alloc(u8, 16) catch @trap();
+    a.free(block);
+    @trap();
+}
+
+var __test_arena: [4096]u8 align(16) = undefined;
+var __test_used: usize = 0;
+
+export fn posix_memalign(memptr: *?*anyopaque, alignment: usize, size: usize) c_int {
+    const base = (__test_used + alignment - 1) & ~(alignment - 1);
+    if (base + size > __test_arena.len) return 12;
+    __test_used = base + size;
+    memptr.* = @ptrCast(&__test_arena[base]);
+    return 0;
+}
+
+export fn free(ptr: ?*anyopaque) void {
+    _ = ptr;
+}
+
+~pub tor assert-bare-rv32 { }
+
+~proc assert-bare-rv32|zig {
+    const builtin = @import("builtin");
+    const target_std = @import("std").Target;
+    if (builtin.cpu.arch != .riscv32)
+        @compileError("build:config target did not reach the backend: compiled for " ++ @tagName(builtin.cpu.arch) ++ ", expected riscv32");
+    if (builtin.os.tag != .freestanding)
+        @compileError("build:config target did not reach the backend: compiled for " ++ @tagName(builtin.os.tag) ++ ", expected freestanding");
+    if (builtin.link_libc)
+        @compileError("this pin is only meaningful without a libc; link_libc is on");
+
+    // The cpu-key assertions. M+C present is the ESP32-C3 profile spelled
+    // as a feature set; D absent is the part that proves the string was
+    // HEARD — the arch default carries a double-float ABI, so a cpu that
+    // never reached codegen still builds, with the wrong silicon profile.
+    if (!target_std.riscv.featureSetHas(builtin.cpu.features, .m))
+        @compileError("build:config cpu did not reach codegen: feature 'm' missing — expected generic_rv32+m+c");
+    if (!target_std.riscv.featureSetHas(builtin.cpu.features, .c))
+        @compileError("build:config cpu did not reach codegen: feature 'c' missing — expected generic_rv32+m+c");
+    if (target_std.riscv.featureSetHas(builtin.cpu.features, .d))
+        @compileError("build:config cpu did not reach codegen: feature 'd' present — default ABI leaked through on a chip with no FPU");
+
+    // REACHING the spine is the whole point — an unreferenced allocator
+    // compiles on any target because Zig never looks inside it.
+    const a = koru_allocator();
+    const block = a.alloc(u8, 16) catch return;
+    a.free(block);
+}
+
+const fire = true;
+
+~if(fire)
+| then |> assert-bare-rv32()
