@@ -1,0 +1,541 @@
+// std/num — arbitrary-precision decimal numbers, taint-sourced.
+//
+// Koru has no numeric tower: bare literals are raw expression text handed to
+// the host. This module is the tower. A `num` is a CANONICAL decimal string
+// — `[-]d[.ddd]e[-]E`, one nonzero leading digit, no trailing zeros, zero is
+// `0e0` — so value-equivalence is string equality (`num:equiv` is the honest
+// form of that law: `314e0` ≡ `3.14e2` ≡ `0.314e3`).
+//
+// Taint (the 330_089 mechanism applied to numbers — "tainted for real"):
+//   <external!>  issued by `ingest`/`ingest-owned` on outside text. Marks the
+//                value as unvalidated input; nothing but `parse` may consume
+//                it. `ingest-owned` additionally discharges <allocated!> —
+//                the buffer becomes num-owned.
+//   <exact!>     issued by `parse`/`lit` and every op. A REAL obligation:
+//                ops consume <!exact> linearly (each operand dies into the
+//                result — `dup` is the lawful fork), `free` discharges by
+//                deallocating, `render` swaps it to <allocated!> for print.
+//                A bare `string` cannot reach `add` — it must pass the gate.
+//
+//   The marks are phantoms: zero runtime cost, all checking at compile time.
+//   At runtime a num is just a []const u8 the module owns; every num-owned
+//   buffer is allocator-freed exactly once, at consume time.
+//
+// Arithmetic: mantissa is an arbitrary-precision integer (std.math.big), the
+// exponent is decimal. Exact for +,-,*,pow; `div`/`sqrt` take an explicit
+// significant-digit `prec` because a decimal expansion need not terminate.
+//
+// Port source: isa-physics `plex/lib/symbolic/arbitrary_precision.py`
+// (sign + decimal-position + digit nibbles) and the ISAR QuantityKernel
+// MetricExpr exact-rational layer; the quantity/dimension half lives in
+// std/quantity.
+
+~import std/io
+
+const std = @import("std");
+const big = std.math.big;
+const BI = std.math.big.int.Managed;
+
+// ============================================================================
+// Canonical decimal: value = (neg ? -1 : 1) * m * 10^e, m >= 0, no trailing
+// zeros in m unless m == 0. Canon strings: "0e0" | "[-]D[.DDD]e[-]E".
+// ============================================================================
+
+const Dec = struct {
+    neg: bool,
+    m: BI,
+    e: i64,
+};
+
+fn decInit(alloc: std.mem.Allocator, m_val: i64, e: i64) !Dec {
+    const m = try BI.initSet(alloc, m_val);
+    return .{ .neg = m_val < 0, .m = m, .e = e };
+}
+
+fn decDeinit(d: *Dec) void {
+    d.m.deinit();
+}
+
+// Parse "[-]DDD[.DDD][eE[-]DDD]" into a Dec. Caller owns the result.
+fn decParse(alloc: std.mem.Allocator, s: []const u8) !Dec {
+    var t = std.mem.trim(u8, s, " \t\r\n");
+    if (t.len == 0) return error.BadNumber;
+
+    var neg = false;
+    if (t[0] == '+' or t[0] == '-') {
+        neg = t[0] == '-';
+        t = t[1..];
+    }
+    if (t.len == 0) return error.BadNumber;
+
+    var sci: i64 = 0;
+    if (std.mem.indexOfAny(u8, t, "eE")) |ei| {
+        const es = t[ei + 1 ..];
+        t = t[0..ei];
+        if (es.len == 0) return error.BadNumber;
+        sci = std.fmt.parseInt(i64, es, 10) catch return error.BadNumber;
+    }
+
+    var frac_len: i64 = 0;
+    var digits = std.ArrayList(u8).initCapacity(alloc, t.len) catch return error.OutOfMemory;
+    defer digits.deinit(alloc);
+
+    var seen_dot = false;
+    var seen_digit = false;
+    for (t) |c| {
+        if (c == '.') {
+            if (seen_dot) return error.BadNumber;
+            seen_dot = true;
+            continue;
+        }
+        if (!std.ascii.isDigit(c)) return error.BadNumber;
+        try digits.append(alloc, c);
+        seen_digit = true;
+        if (seen_dot) frac_len += 1;
+    }
+    if (!seen_digit) return error.BadNumber;
+
+    return decFromDigits(alloc, digits.items, sci - frac_len, neg);
+}
+
+// Build canonical Dec from a raw digit string and base-10 exponent.
+// Strips leading zeros (exp unaffected) and trailing zeros (exp += count).
+fn decFromDigits(alloc: std.mem.Allocator, raw: []const u8, e: i64, neg: bool) !Dec {
+    var start: usize = 0;
+    while (start < raw.len and raw[start] == '0') start += 1;
+    var end: usize = raw.len;
+    while (end > start and raw[end - 1] == '0') end -= 1;
+
+    if (start == end) {
+        // canonical zero
+        const m = try BI.initSet(alloc, 0);
+        return .{ .neg = false, .m = m, .e = 0 };
+    }
+
+    const stripped_trailing = raw.len - end;
+    var m = try BI.initSet(alloc, 0);
+    errdefer m.deinit();
+    try m.setString(10, raw[start..end]);
+    return .{ .neg = neg, .m = m, .e = e + @as(i64, @intCast(stripped_trailing)) };
+}
+
+// Render a Dec to canonical text. Caller owns the returned slice.
+fn decToString(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
+    if (d.m.eqlZero()) return alloc.dupe(u8, "0e0");
+
+    const ds = try d.m.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+
+    // adjusted exponent: value = ds[0].ds[1..] * 10^adj
+    const adj: i64 = d.e + @as(i64, @intCast(ds.len)) - 1;
+
+    var out = std.ArrayList(u8).initCapacity(alloc, ds.len + 24) catch return error.OutOfMemory;
+    errdefer out.deinit(alloc);
+    if (d.neg) try out.append(alloc, '-');
+    try out.append(alloc, ds[0]);
+    if (ds.len > 1) {
+        try out.append(alloc, '.');
+        try out.appendSlice(alloc, ds[1..]);
+    }
+    try out.append(alloc, 'e');
+    var buf: [24]u8 = undefined;
+    const es = std.fmt.bufPrint(&buf, "{d}", .{adj}) catch unreachable;
+    try out.appendSlice(alloc, es);
+    return out.toOwnedSlice(alloc);
+}
+
+// r = a * 10^k (k >= 0), into a fresh Managed.
+fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
+    var r = try BI.initSet(alloc, 1);
+    errdefer r.deinit();
+    var ten = try BI.initSet(alloc, 10);
+    defer ten.deinit();
+    var i: i64 = 0;
+    while (i < k) : (i += 1) {
+        try r.mul(&r, &ten);
+    }
+    return r;
+}
+
+// r = a + b. Caller owns result.
+fn decAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
+    const e_min = @min(a.e, b.e);
+    var am = try a.m.clone();
+    defer am.deinit();
+    var bm = try b.m.clone();
+    defer bm.deinit();
+    if (a.e > e_min) {
+        var p = try pow10(alloc, a.e - e_min);
+        defer p.deinit();
+        try am.mul(&am, &p);
+    }
+    if (b.e > e_min) {
+        var p = try pow10(alloc, b.e - e_min);
+        defer p.deinit();
+        try bm.mul(&bm, &p);
+    }
+    if (a.neg) am.negate();
+    if (b.neg) bm.negate();
+    var r = try BI.init(alloc);
+    defer r.deinit();
+    try r.add(&am, &bm);
+
+    const rneg = !r.isPositive();
+    var m_abs = try r.clone();
+    m_abs.abs();
+    defer m_abs.deinit();
+    const ds = try m_abs.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return decFromDigits(alloc, ds, e_min, rneg);
+}
+
+fn decMul(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
+    var r = try BI.init(alloc);
+    defer r.deinit();
+    try r.mul(&a.m, &b.m);
+    const ds = try r.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return decFromDigits(alloc, ds, a.e + b.e, a.neg != b.neg);
+}
+
+// a / b to `prec` significant digits (floor-magnitude, then renorm).
+fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !Dec {
+    if (b.m.eqlZero()) return error.DivZero;
+    if (a.m.eqlZero()) return decInit(alloc, 0, 0);
+
+    // result digits: len(A) - len(B) + 1 magnitudes; scale A so the quotient
+    // carries `prec` significant digits.
+    const la = try a.m.toString(alloc, 10, .lower);
+    defer alloc.free(la);
+    const lb = try b.m.toString(alloc, 10, .lower);
+    defer alloc.free(lb);
+    const rough: i64 = @as(i64, @intCast(la.len)) - @as(i64, @intCast(lb.len)) + 1;
+    var k: i64 = prec - rough;
+    if (k < 0) k = 0;
+
+    var num = try a.m.clone();
+    defer num.deinit();
+    var p = try pow10(alloc, k);
+    defer p.deinit();
+    try num.mul(&num, &p);
+
+    var q = try BI.init(alloc);
+    defer q.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try q.divTrunc(&rem, &num, &b.m);
+
+    const qs = try q.toString(alloc, 10, .lower);
+    defer alloc.free(qs);
+    return decFromDigits(alloc, qs, a.e - b.e - k, a.neg != b.neg);
+}
+
+// sqrt(a) to `prec` significant digits. a < 0 refuses at the tor level.
+fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
+    if (a.m.eqlZero()) return decInit(alloc, 0, 0);
+
+    // Want r = sqrt(A * 10^E). Compute s = isqrt(A * 10^k) with even k chosen
+    // so s has ~prec digits; result = s * 10^((E - k)/2).
+    const la = try a.m.toString(alloc, 10, .lower);
+    defer alloc.free(la);
+    const rough_mag: i64 = @divFloor(a.e + @as(i64, @intCast(la.len)), 2);
+    var k: i64 = 2 * (prec - rough_mag + a.e) - a.e;
+    if (k < 0) k = 0;
+    if (@mod(k, 2) != 0) k += 1;
+
+    var x = try a.m.clone();
+    defer x.deinit();
+    var p = try pow10(alloc, k);
+    defer p.deinit();
+    try x.mul(&x, &p);
+
+    var s = try BI.init(alloc);
+    defer s.deinit();
+    try s.sqrt(&x);
+
+    const ss = try s.toString(alloc, 10, .lower);
+    defer alloc.free(ss);
+    return decFromDigits(alloc, ss, @divFloor(a.e - k, 2), false);
+}
+
+// |a|, |b| compare by absolute value: -1, 0, 1.
+fn decCmpAbs(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !i8 {
+    const e_min = @min(a.e, b.e);
+    var am = try a.m.clone();
+    defer am.deinit();
+    var bm = try b.m.clone();
+    defer bm.deinit();
+    if (a.e > e_min) {
+        var p = try pow10(alloc, a.e - e_min);
+        defer p.deinit();
+        try am.mul(&am, &p);
+    }
+    if (b.e > e_min) {
+        var p = try pow10(alloc, b.e - e_min);
+        defer p.deinit();
+        try bm.mul(&bm, &p);
+    }
+    return switch (am.order(bm)) {
+        .lt => -1,
+        .eq => 0,
+        .gt => 1,
+    };
+}
+
+fn ownedCopy(s: []const u8) []u8 {
+    return koru_allocator().dupe(u8, s) catch @panic("std/num: out of memory");
+}
+
+fn numFree(s: []const u8) void {
+    koru_allocator().free(s);
+}
+
+// ============================================================================
+// Boundary: mark outside text as <external!>.
+// ============================================================================
+
+// Mark outside text as unvalidated input. Copies into a num-owned buffer so
+// `parse` may free it unconditionally at consume time.
+~pub tor ingest { s: string } -> string<external!>
+
+~proc ingest|zig {
+    return ownedCopy(s);
+}
+
+// Mark outside text that arrives under an <allocated!> obligation — the
+// buffer is consumed and becomes num-owned; the allocated obligation is
+// discharged by taking ownership (the buffer is returned, marked external).
+~pub tor ingest-owned { s: string<!allocated> } -> string<external!>
+
+~proc ingest-owned|zig {
+    return s;
+}
+
+// ============================================================================
+// The gate: text -> canonical num (<exact!>).
+// ============================================================================
+
+// Parse and normalize external text. Consumes <external!>: the input buffer
+// is freed. Malformed text lands on |bad with the offending slice.
+~pub tor parse { s: string<!external> }
+| exact string<exact!>
+| bad string
+
+~proc parse|zig {
+    var d = decParse(koru_allocator(), s) catch |err| switch (err) {
+        error.OutOfMemory => @panic("std/num: out of memory"),
+        else => return .{ .bad = s },
+    };
+    defer decDeinit(&d);
+    numFree(s);
+    const canon = decToString(koru_allocator(), &d) catch @panic("std/num: out of memory");
+    return .{ .exact = canon };
+}
+
+// Parse trusted in-program text — a literal. Same gate, no taint to consume.
+// `bad` returns the offending slice.
+~pub tor lit { s: string }
+| exact string<exact!>
+| bad string
+
+~proc lit|zig {
+    var d = decParse(koru_allocator(), s) catch |err| switch (err) {
+        error.OutOfMemory => @panic("std/num: out of memory"),
+        else => return .{ .bad = s },
+    };
+    defer decDeinit(&d);
+    const canon = decToString(koru_allocator(), &d) catch @panic("std/num: out of memory");
+    return .{ .exact = canon };
+}
+
+// ============================================================================
+// Arithmetic — linear: operands are consumed (<!exact>) into the result.
+// ============================================================================
+
+~pub tor add { a: string<!exact>, b: string<!exact> } -> string<exact!>
+
+~proc add|zig {
+    defer numFree(a);
+    defer numFree(b);
+    var da = decParse(koru_allocator(), a) catch @panic("std/num:add: malformed operand");
+    defer decDeinit(&da);
+    var db = decParse(koru_allocator(), b) catch @panic("std/num:add: malformed operand");
+    defer decDeinit(&db);
+    var r = decAdd(koru_allocator(), &da, &db) catch @panic("std/num:add: out of memory");
+    defer decDeinit(&r);
+    return decToString(koru_allocator(), &r) catch @panic("std/num:add: out of memory");
+}
+
+~pub tor sub { a: string<!exact>, b: string<!exact> } -> string<exact!>
+
+~proc sub|zig {
+    defer numFree(a);
+    defer numFree(b);
+    var da = decParse(koru_allocator(), a) catch @panic("std/num:sub: malformed operand");
+    defer decDeinit(&da);
+    var db = decParse(koru_allocator(), b) catch @panic("std/num:sub: malformed operand");
+    defer decDeinit(&db);
+    db.neg = !db.neg;
+    if (db.m.eqlZero()) db.neg = false;
+    var r = decAdd(koru_allocator(), &da, &db) catch @panic("std/num:sub: out of memory");
+    defer decDeinit(&r);
+    return decToString(koru_allocator(), &r) catch @panic("std/num:sub: out of memory");
+}
+
+~pub tor mul { a: string<!exact>, b: string<!exact> } -> string<exact!>
+
+~proc mul|zig {
+    defer numFree(a);
+    defer numFree(b);
+    var da = decParse(koru_allocator(), a) catch @panic("std/num:mul: malformed operand");
+    defer decDeinit(&da);
+    var db = decParse(koru_allocator(), b) catch @panic("std/num:mul: malformed operand");
+    defer decDeinit(&db);
+    var r = decMul(koru_allocator(), &da, &db) catch @panic("std/num:mul: out of memory");
+    defer decDeinit(&r);
+    return decToString(koru_allocator(), &r) catch @panic("std/num:mul: out of memory");
+}
+
+// a / b to `prec` significant digits. Division by zero lands on |div-zero
+// (operands are still consumed — the marks are discharged before the branch).
+~pub tor div { a: string<!exact>, b: string<!exact>, prec: i64 }
+| exact string<exact!>
+| div-zero
+
+~proc div|zig {
+    defer numFree(a);
+    defer numFree(b);
+    var da = decParse(koru_allocator(), a) catch @panic("std/num:div: malformed operand");
+    defer decDeinit(&da);
+    var db = decParse(koru_allocator(), b) catch @panic("std/num:div: malformed operand");
+    defer decDeinit(&db);
+    var r = decDiv(koru_allocator(), &da, &db, prec) catch |err| switch (err) {
+        error.DivZero => return .{ .div_zero = .{} },
+        else => @panic("std/num:div: out of memory"),
+    };
+    defer decDeinit(&r);
+    return .{ .exact = decToString(koru_allocator(), &r) catch @panic("std/num:div: out of memory") };
+}
+
+~pub tor neg { a: string<!exact> } -> string<exact!>
+
+~proc neg|zig {
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:neg: malformed operand");
+    defer decDeinit(&d);
+    numFree(a);
+    if (!d.m.eqlZero()) d.neg = !d.neg;
+    return decToString(koru_allocator(), &d) catch @panic("std/num:neg: out of memory");
+}
+
+~pub tor abs { a: string<!exact> } -> string<exact!>
+
+~proc abs|zig {
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:abs: malformed operand");
+    defer decDeinit(&d);
+    numFree(a);
+    d.neg = false;
+    return decToString(koru_allocator(), &d) catch @panic("std/num:abs: out of memory");
+}
+
+// a^n for n >= 0. A negative exponent is not a num op (it is div(1, pow))
+// and lands on |neg-exp.
+~pub tor pow { a: string<!exact>, n: i64 }
+| exact string<exact!>
+| neg-exp
+
+~proc pow|zig {
+    defer numFree(a);
+    if (n < 0) return .{ .neg_exp = .{} };
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:pow: malformed operand");
+    defer decDeinit(&d);
+    // mantissa^n, e*n — then renorm through the digit string.
+    var r = BI.initSet(koru_allocator(), 1) catch @panic("std/num:pow: out of memory");
+    defer r.deinit();
+    if (n > std.math.maxInt(u32)) @panic("std/num:pow: exponent too large");
+    r.pow(&d.m, @intCast(n)) catch @panic("std/num:pow: out of memory");
+    const ds = r.toString(koru_allocator(), 10, .lower) catch @panic("std/num:pow: out of memory");
+    defer koru_allocator().free(ds);
+    var out = decFromDigits(koru_allocator(), ds, d.e * n, d.neg and @mod(n, 2) != 0) catch @panic("std/num:pow: out of memory");
+    defer decDeinit(&out);
+    return .{ .exact = decToString(koru_allocator(), &out) catch @panic("std/num:pow: out of memory") };
+}
+
+// isqrt to `prec` significant digits. Negative input lands on |negative.
+~pub tor sqrt { a: string<!exact>, prec: i64 }
+| exact string<exact!>
+| negative
+
+~proc sqrt|zig {
+    defer numFree(a);
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:sqrt: malformed operand");
+    defer decDeinit(&d);
+    if (d.neg) return .{ .negative = .{} };
+    var r = decSqrt(koru_allocator(), &d, prec) catch @panic("std/num:sqrt: out of memory");
+    defer decDeinit(&r);
+    return .{ .exact = decToString(koru_allocator(), &r) catch @panic("std/num:sqrt: out of memory") };
+}
+
+// ============================================================================
+// Predicates and equivalents — borrowing: operands keep their <exact> mark.
+// ============================================================================
+
+// Total order: | lt | eq | gt. The equivalence law — canonical form makes
+// value-equality and string-equality coincide, so | eq is *the* lawful eq.
+~pub tor cmp { a: string<exact>, b: string<exact> }
+| lt
+| eq
+| gt
+
+~proc cmp|zig {
+    var da = decParse(koru_allocator(), a) catch @panic("std/num:cmp: malformed operand");
+    defer decDeinit(&da);
+    var db = decParse(koru_allocator(), b) catch @panic("std/num:cmp: malformed operand");
+    defer decDeinit(&db);
+    if (da.neg and !db.neg) return .{ .lt = .{} };
+    if (!da.neg and db.neg) return .{ .gt = .{} };
+    const c = decCmpAbs(koru_allocator(), &da, &db) catch @panic("std/num:cmp: out of memory");
+    const s: i8 = if (da.neg) -c else c;
+    if (s < 0) return .{ .lt = .{} };
+    if (s > 0) return .{ .gt = .{} };
+    return .{ .eq = .{} };
+}
+
+// equiv: the equivalence law. Canonical nums are string-equal iff equal.
+~pub tor equiv { a: string<exact>, b: string<exact> }
+| same
+| diff
+
+~proc equiv|zig {
+    if (std.mem.eql(u8, a, b)) return .{ .same = .{} };
+    return .{ .diff = .{} };
+}
+
+// ============================================================================
+// Linearity management
+// ============================================================================
+
+// Fork one num into two (the lawful copy — a num is a linear resource).
+~pub tor dup { n: string<!exact> }
+| a string<exact!>
+| b string<exact!>
+
+~proc dup|zig {
+    const cp = ownedCopy(n);
+    return .{ .a = n, .b = cp };
+}
+
+// Discharge <exact!>: the buffer is freed, the number is gone.
+~pub tor free { n: string<!exact> }
+
+~proc free|zig {
+    numFree(n);
+}
+
+// Swap <exact!> to <allocated!>: hands the canonical text out for printing
+// or formatting. The buffer stays allocator-owned — discharge with
+// `std/io:free` (the `allocated` state is io's vocabulary, issued qualified).
+~pub tor render { n: string<!exact> } -> string<std/io:allocated!>
+
+~proc render|zig {
+    return n;
+}

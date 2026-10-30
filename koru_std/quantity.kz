@@ -1,0 +1,831 @@
+// std/quantity — quantity calculus over arbitrary-precision decimals,
+// taint-sourced like std/num.
+//
+// Port source: isa-physics `plex/lib/structural_arithmetic/tensor_quantity.py`
+// (Q = dimension + magnitude + uncertainty) and the isar-proofs
+// `ISAR/QuantityKernel.lean` (DimExpr free abelian group over the 7 SI bases,
+// MetricExpr exact-rational layer, propagateVarAdd/Mul linearized variance
+// laws — the covariance term is not modeled: independent uncertainties only,
+// same rung as the Python).
+//
+// A `qty` is ONE canonical marked string:
+//     "<num>|<dim>|<unc>"
+//   <num>:  std/num canonical decimal          e.g. "9.81e0"
+//   <dim>:  all 7 SI exps, fixed order         "m^1 s^-2 kg^0 A^0 K^0 mol^0 cd^0"
+//   <unc>:  num canon or "-"                    e.g. "1e-1"
+// Canonical => quantity equivalence is string equality (`qty:equiv`).
+//
+// Taint: same shape as std/num — `ingest`/`ingest-owned` issue <external!>,
+// `parse`/`lit` discharge it into <exact!>, ops consume <!exact> linearly,
+// `dup` forks, `free` deallocates, `render` swaps to <std/io:allocated!>.
+// `qty:mag` unwraps the magnitude INTO the number tower as <std/num:exact!>
+// — the one lawful crossing between the two marks.
+//
+// NOTE: the decimal core below is duplicated from std/num — koru_std modules
+// cannot share Zig helpers (a `std` zig-include seam is the real fix, queued).
+// Keep the two copies identical; drift here is a defect.
+
+~import std/io
+~import std/num
+
+const std = @import("std");
+const BI = std.math.big.int.Managed;
+
+// ============================================================================
+// Decimal core — DUPLICATED from std/num (see note above).
+// ============================================================================
+
+const Dec = struct {
+    neg: bool,
+    m: BI,
+    e: i64,
+};
+
+fn decInit(alloc: std.mem.Allocator, m_val: i64, e: i64) !Dec {
+    const m = try BI.initSet(alloc, m_val);
+    return .{ .neg = m_val < 0, .m = m, .e = e };
+}
+
+fn decDeinit(d: *Dec) void {
+    d.m.deinit();
+}
+
+fn decParse(alloc: std.mem.Allocator, s: []const u8) !Dec {
+    var t = std.mem.trim(u8, s, " \t\r\n");
+    if (t.len == 0) return error.BadNumber;
+
+    var neg = false;
+    if (t[0] == '+' or t[0] == '-') {
+        neg = t[0] == '-';
+        t = t[1..];
+    }
+    if (t.len == 0) return error.BadNumber;
+
+    var sci: i64 = 0;
+    if (std.mem.indexOfAny(u8, t, "eE")) |ei| {
+        const es = t[ei + 1 ..];
+        t = t[0..ei];
+        if (es.len == 0) return error.BadNumber;
+        sci = std.fmt.parseInt(i64, es, 10) catch return error.BadNumber;
+    }
+
+    var frac_len: i64 = 0;
+    var digits = std.ArrayList(u8).initCapacity(alloc, t.len) catch return error.OutOfMemory;
+    defer digits.deinit(alloc);
+
+    var seen_dot = false;
+    var seen_digit = false;
+    for (t) |c| {
+        if (c == '.') {
+            if (seen_dot) return error.BadNumber;
+            seen_dot = true;
+            continue;
+        }
+        if (!std.ascii.isDigit(c)) return error.BadNumber;
+        try digits.append(alloc, c);
+        seen_digit = true;
+        if (seen_dot) frac_len += 1;
+    }
+    if (!seen_digit) return error.BadNumber;
+
+    return decFromDigits(alloc, digits.items, sci - frac_len, neg);
+}
+
+fn decFromDigits(alloc: std.mem.Allocator, raw: []const u8, e: i64, neg: bool) !Dec {
+    var start: usize = 0;
+    while (start < raw.len and raw[start] == '0') start += 1;
+    var end: usize = raw.len;
+    while (end > start and raw[end - 1] == '0') end -= 1;
+
+    if (start == end) {
+        const m = try BI.initSet(alloc, 0);
+        return .{ .neg = false, .m = m, .e = 0 };
+    }
+
+    const stripped_trailing = raw.len - end;
+    var m = try BI.initSet(alloc, 0);
+    errdefer m.deinit();
+    try m.setString(10, raw[start..end]);
+    return .{ .neg = neg, .m = m, .e = e + @as(i64, @intCast(stripped_trailing)) };
+}
+
+fn decToString(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
+    if (d.m.eqlZero()) return alloc.dupe(u8, "0e0");
+
+    const ds = try d.m.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+
+    const adj: i64 = d.e + @as(i64, @intCast(ds.len)) - 1;
+
+    var out = std.ArrayList(u8).initCapacity(alloc, ds.len + 24) catch return error.OutOfMemory;
+    errdefer out.deinit(alloc);
+    if (d.neg) try out.append(alloc, '-');
+    try out.append(alloc, ds[0]);
+    if (ds.len > 1) {
+        try out.append(alloc, '.');
+        try out.appendSlice(alloc, ds[1..]);
+    }
+    try out.append(alloc, 'e');
+    var buf: [24]u8 = undefined;
+    const es = std.fmt.bufPrint(&buf, "{d}", .{adj}) catch unreachable;
+    try out.appendSlice(alloc, es);
+    return out.toOwnedSlice(alloc);
+}
+
+fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
+    var r = try BI.initSet(alloc, 1);
+    errdefer r.deinit();
+    var ten = try BI.initSet(alloc, 10);
+    defer ten.deinit();
+    var i: i64 = 0;
+    while (i < k) : (i += 1) {
+        try r.mul(&r, &ten);
+    }
+    return r;
+}
+
+fn decAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
+    const e_min = @min(a.e, b.e);
+    var am = try a.m.clone();
+    defer am.deinit();
+    var bm = try b.m.clone();
+    defer bm.deinit();
+    if (a.e > e_min) {
+        var p = try pow10(alloc, a.e - e_min);
+        defer p.deinit();
+        try am.mul(&am, &p);
+    }
+    if (b.e > e_min) {
+        var p = try pow10(alloc, b.e - e_min);
+        defer p.deinit();
+        try bm.mul(&bm, &p);
+    }
+    if (a.neg) am.negate();
+    if (b.neg) bm.negate();
+    var r = try BI.init(alloc);
+    defer r.deinit();
+    try r.add(&am, &bm);
+
+    const rneg = !r.isPositive();
+    var m_abs = try r.clone();
+    m_abs.abs();
+    defer m_abs.deinit();
+    const ds = try m_abs.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return decFromDigits(alloc, ds, e_min, rneg);
+}
+
+fn decMul(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
+    var r = try BI.init(alloc);
+    defer r.deinit();
+    try r.mul(&a.m, &b.m);
+    const ds = try r.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return decFromDigits(alloc, ds, a.e + b.e, a.neg != b.neg);
+}
+
+fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !Dec {
+    if (b.m.eqlZero()) return error.DivZero;
+    if (a.m.eqlZero()) return decInit(alloc, 0, 0);
+
+    const la = try a.m.toString(alloc, 10, .lower);
+    defer alloc.free(la);
+    const lb = try b.m.toString(alloc, 10, .lower);
+    defer alloc.free(lb);
+    const rough: i64 = @as(i64, @intCast(la.len)) - @as(i64, @intCast(lb.len)) + 1;
+    var k: i64 = prec - rough;
+    if (k < 0) k = 0;
+
+    var num = try a.m.clone();
+    defer num.deinit();
+    var p = try pow10(alloc, k);
+    defer p.deinit();
+    try num.mul(&num, &p);
+
+    var q = try BI.init(alloc);
+    defer q.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try q.divTrunc(&rem, &num, &b.m);
+
+    const qs = try q.toString(alloc, 10, .lower);
+    defer alloc.free(qs);
+    return decFromDigits(alloc, qs, a.e - b.e - k, a.neg != b.neg);
+}
+
+fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
+    if (a.m.eqlZero()) return decInit(alloc, 0, 0);
+
+    const la = try a.m.toString(alloc, 10, .lower);
+    defer alloc.free(la);
+    const rough_mag: i64 = @divFloor(a.e + @as(i64, @intCast(la.len)), 2);
+    var k: i64 = 2 * (prec - rough_mag + a.e) - a.e;
+    if (k < 0) k = 0;
+    if (@mod(k, 2) != 0) k += 1;
+
+    var x = try a.m.clone();
+    defer x.deinit();
+    var p = try pow10(alloc, k);
+    defer p.deinit();
+    try x.mul(&x, &p);
+
+    var s = try BI.init(alloc);
+    defer s.deinit();
+    try s.sqrt(&x);
+
+    const ss = try s.toString(alloc, 10, .lower);
+    defer alloc.free(ss);
+    return decFromDigits(alloc, ss, @divFloor(a.e - k, 2), false);
+}
+
+fn ownedCopy(s: []const u8) []u8 {
+    return koru_allocator().dupe(u8, s) catch @panic("std/quantity: out of memory");
+}
+
+fn qtyFree(s: []const u8) void {
+    koru_allocator().free(s);
+}
+
+// ============================================================================
+// Dimensions — the free abelian group over 7 SI bases, index order
+// (m, s, kg, A, K, mol, cd). Canon: "m^1 s^-2 kg^0 A^0 K^0 mol^0 cd^0".
+// ============================================================================
+
+const Dim = [7]i32;
+const DIM_ZERO: Dim = .{ 0, 0, 0, 0, 0, 0, 0 };
+const DIM_NAMES = [7][]const u8{ "m", "s", "kg", "A", "K", "mol", "cd" };
+
+const UNC_PREC: i64 = 15;
+
+fn dimCanon(alloc: std.mem.Allocator, d: Dim) ![]u8 {
+    var out = std.ArrayList(u8).initCapacity(alloc, 48) catch return error.OutOfMemory;
+    errdefer out.deinit(alloc);
+    var buf: [16]u8 = undefined;
+    for (DIM_NAMES, 0..) |name, i| {
+        if (i > 0) try out.append(alloc, ' ');
+        try out.appendSlice(alloc, name);
+        try out.append(alloc, '^');
+        const es = std.fmt.bufPrint(&buf, "{d}", .{d[i]}) catch unreachable;
+        try out.appendSlice(alloc, es);
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+fn dimParse(s: []const u8, d: *Dim) bool {
+    var it = std.mem.tokenizeScalar(u8, s, ' ');
+    var i: usize = 0;
+    while (it.next()) |tok| {
+        if (i >= 7) return false;
+        const caret = std.mem.indexOfScalar(u8, tok, '^') orelse return false;
+        if (!std.mem.eql(u8, tok[0..caret], DIM_NAMES[i])) return false;
+        d[i] = std.fmt.parseInt(i32, tok[caret + 1 ..], 10) catch return false;
+        i += 1;
+    }
+    return i == 7;
+}
+
+// Unit-name -> (dim, value scale). `g` scales by 1e-3 — the plex source mapped
+// g to raw MASS without scaling; that is a preserved bug, not a law. Scale it.
+const UnitDef = struct { dim: Dim, scale: f64 };
+
+fn unitLookup(name: []const u8) ?UnitDef {
+    const M = Dim{ 0, 0, 1, 0, 0, 0, 0 };
+    const table = .{
+        .{ "m", UnitDef{ .dim = .{ 1, 0, 0, 0, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "s", UnitDef{ .dim = .{ 0, 1, 0, 0, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "kg", UnitDef{ .dim = M, .scale = 1.0 } },
+        .{ "g", UnitDef{ .dim = M, .scale = 1e-3 } },
+        .{ "A", UnitDef{ .dim = .{ 0, 0, 0, 1, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "K", UnitDef{ .dim = .{ 0, 0, 0, 0, 1, 0, 0 }, .scale = 1.0 } },
+        .{ "mol", UnitDef{ .dim = .{ 0, 0, 0, 0, 0, 1, 0 }, .scale = 1.0 } },
+        .{ "cd", UnitDef{ .dim = .{ 0, 0, 0, 0, 0, 0, 1 }, .scale = 1.0 } },
+        .{ "Hz", UnitDef{ .dim = .{ 0, -1, 0, 0, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "N", UnitDef{ .dim = .{ 1, -2, 1, 0, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "J", UnitDef{ .dim = .{ 2, -2, 1, 0, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "W", UnitDef{ .dim = .{ 2, -3, 1, 0, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "Pa", UnitDef{ .dim = .{ -1, -2, 1, 0, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "V", UnitDef{ .dim = .{ 2, -3, 1, -1, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "C", UnitDef{ .dim = .{ 0, 1, 0, 1, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "F", UnitDef{ .dim = .{ -2, 4, -1, 2, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "Ohm", UnitDef{ .dim = .{ 2, -3, 1, -2, 0, 0, 0 }, .scale = 1.0 } },
+    };
+    inline for (table) |entry| {
+        if (std.mem.eql(u8, name, entry[0])) return entry[1];
+    }
+    return null;
+}
+
+// Parse a unit expression into a Dim: "kg", "m/s", "m/s^2", "kg·m·s^-2",
+// "m²", "m·s⁻¹". Factors left of '/' contribute +exp, right of '/' -exp.
+// UTF-8 superscripts are normalized to ASCII first.
+fn unitScan(alloc: std.mem.Allocator, expr_in: []const u8, d: *Dim, scale: *f64) bool {
+    d.* = DIM_ZERO;
+    scale.* = 1.0;
+    const expr = std.mem.trim(u8, expr_in, " \t");
+    if (expr.len == 0) return true;
+
+    var buf = std.ArrayList(u8).initCapacity(alloc, expr.len + 8) catch return false;
+    defer buf.deinit(alloc);
+    var i: usize = 0;
+    while (i < expr.len) {
+        var advanced = false;
+        if (i + 1 < expr.len and expr[i] == 0xC2) {
+            const c1 = expr[i + 1];
+            const rep: []const u8 = switch (c1) {
+                0xB2 => "^2", // ²
+                0xB3 => "^3", // ³
+                0xB7 => "*", // ·
+                else => "",
+            };
+            if (rep.len > 0) {
+                buf.appendSlice(alloc, rep) catch return false;
+                i += 2;
+                advanced = true;
+            }
+        }
+        if (!advanced and i + 4 < expr.len and expr[i] == 0xE2 and expr[i + 1] == 0x81 and expr[i + 2] == 0xBB and expr[i + 3] == 0xC2) {
+            const rep: []const u8 = switch (expr[i + 4]) {
+                0xB9 => "^-1",
+                0xB2 => "^-2",
+                0xB3 => "^-3",
+                else => "",
+            };
+            if (rep.len > 0) {
+                buf.appendSlice(alloc, rep) catch return false;
+                i += 5;
+                advanced = true;
+            }
+        }
+        if (!advanced) {
+            buf.append(alloc, expr[i]) catch return false;
+            i += 1;
+        }
+    }
+
+    // Split into numerator zone and denominator zone at '/'.
+    const slash = std.mem.indexOfScalar(u8, buf.items, '/');
+    const zones = [2][]const u8{
+        if (slash) |p| buf.items[0..p] else buf.items,
+        if (slash) |p| buf.items[p + 1 ..] else "",
+    };
+    for (zones, 0..) |zone, zi| {
+        const neg = zi == 1;
+        var it = std.mem.tokenizeAny(u8, zone, " *");
+        while (it.next()) |tok| {
+            var name = tok;
+            var exp: i32 = 1;
+            if (std.mem.indexOfScalar(u8, tok, '^')) |caret| {
+                name = tok[0..caret];
+                exp = std.fmt.parseInt(i32, tok[caret + 1 ..], 10) catch return false;
+            }
+            const ud = unitLookup(name) orelse return false;
+            const signed_exp: i32 = if (neg) -exp else exp;
+            for (0..7) |k| {
+                d[k] += signed_exp * ud.dim[k];
+            }
+            var j: i32 = 0;
+            const ae: i32 = if (exp < 0) -exp else exp;
+            while (j < ae) : (j += 1) {
+                scale.* *= if (neg) 1.0 / ud.scale else ud.scale;
+            }
+        }
+    }
+    return true;
+}
+
+// ============================================================================
+// Quantity pack: "<num>|<dim>|<unc>"
+// ============================================================================
+
+const Qty = struct {
+    mag: []const u8, // num canon
+    dim: Dim,
+    unc: ?[]const u8, // num canon or null
+};
+
+fn qtyUnpack(alloc: std.mem.Allocator, s: []const u8, q: *Qty) bool {
+    _ = alloc;
+    const p1 = std.mem.indexOfScalar(u8, s, '|') orelse return false;
+    const p2 = std.mem.indexOfScalarPos(u8, s, p1 + 1, '|') orelse return false;
+    q.mag = s[0..p1];
+    if (!dimParse(s[p1 + 1 .. p2], &q.dim)) return false;
+    const u = s[p2 + 1 ..];
+    q.unc = if (std.mem.eql(u8, u, "-")) null else u;
+    return true;
+}
+
+fn qtyPack(alloc: std.mem.Allocator, q: Qty) ![]u8 {
+    const ds = try dimCanon(alloc, q.dim);
+    defer alloc.free(ds);
+    var out = std.ArrayList(u8).initCapacity(alloc, q.mag.len + ds.len + 4 + (if (q.unc) |u| u.len else 1)) catch return error.OutOfMemory;
+    errdefer out.deinit(alloc);
+    try out.appendSlice(alloc, q.mag);
+    try out.append(alloc, '|');
+    try out.appendSlice(alloc, ds);
+    try out.append(alloc, '|');
+    try out.appendSlice(alloc, if (q.unc) |u| u else "-");
+    return out.toOwnedSlice(alloc);
+}
+
+// Uncertainty propagation, independent sources only (the plex rung):
+//   add:        sigma = sqrt(u1^2 + u2^2)
+//   mul/div:    sigma = |mag| * sqrt((u1/m1)^2 + (u2/m2)^2)
+//   pow(n):     sigma = |n * mag^(n-1)| * u1        (single-sided)
+// A quantity with no uncertainty contributes zero variance. Result carries
+// uncertainty iff at least one operand does.
+fn uncAdd(alloc: std.mem.Allocator, ua: ?[]const u8, ub: ?[]const u8) !?[]u8 {
+    if (ua == null and ub == null) return null;
+    var sum = try decInit(alloc, 0, 0);
+    defer decDeinit(&sum);
+    for ([_]?[]const u8{ ua, ub }) |uopt| {
+        if (uopt) |u| {
+            var du = decParse(alloc, u) catch return error.BadNumber;
+            defer decDeinit(&du);
+            var sq = decMul(alloc, &du, &du) catch return error.OutOfMemory;
+            defer decDeinit(&sq);
+            const nsum = decAdd(alloc, &sum, &sq) catch return error.OutOfMemory;
+            decDeinit(&sum);
+            sum = nsum;
+        }
+    }
+    var r = decSqrt(alloc, &sum, UNC_PREC) catch return error.OutOfMemory;
+    defer decDeinit(&r);
+    return try decToString(alloc, &r);
+}
+
+fn uncMul(alloc: std.mem.Allocator, m1: []const u8, ua: ?[]const u8, m2: []const u8, ub: ?[]const u8, new_mag: []const u8) !?[]u8 {
+    if (ua == null and ub == null) return null;
+    var rel_sq = try decInit(alloc, 0, 0);
+    defer decDeinit(&rel_sq);
+    const mags = [_][]const u8{ m1, m2 };
+    const uncs = [_]?[]const u8{ ua, ub };
+    for (0..2) |i| {
+        if (uncs[i]) |u| {
+            var dm = decParse(alloc, mags[i]) catch return error.BadNumber;
+            defer decDeinit(&dm);
+            var du = decParse(alloc, u) catch return error.BadNumber;
+            defer decDeinit(&du);
+            var rel = decDiv(alloc, &du, &dm, UNC_PREC) catch return error.OutOfMemory;
+            defer decDeinit(&rel);
+            var sq = decMul(alloc, &rel, &rel) catch return error.OutOfMemory;
+            defer decDeinit(&sq);
+            const nrel = decAdd(alloc, &rel_sq, &sq) catch return error.OutOfMemory;
+            decDeinit(&rel_sq);
+            rel_sq = nrel;
+        }
+    }
+    var rel = decSqrt(alloc, &rel_sq, UNC_PREC) catch return error.OutOfMemory;
+    defer decDeinit(&rel);
+    var dnm = decParse(alloc, new_mag) catch return error.BadNumber;
+    defer decDeinit(&dnm);
+    var r = decMul(alloc, &dnm, &rel) catch return error.OutOfMemory;
+    defer decDeinit(&r);
+    return try decToString(alloc, &r);
+}
+
+fn uncPow(alloc: std.mem.Allocator, m: []const u8, u: ?[]const u8, n: i64, new_mag: []const u8) !?[]u8 {
+    if (u == null) return null;
+    var dm = decParse(alloc, m) catch return error.BadNumber;
+    defer decDeinit(&dm);
+    var du = decParse(alloc, u.?) catch return error.BadNumber;
+    defer decDeinit(&du);
+    var rel = decDiv(alloc, &du, &dm, UNC_PREC) catch return error.OutOfMemory;
+    defer decDeinit(&rel);
+    var dn = decInit(alloc, if (n < 0) -n else n, 0) catch return error.OutOfMemory;
+    defer decDeinit(&dn);
+    var rel_n = decMul(alloc, &dn, &rel) catch return error.OutOfMemory;
+    defer decDeinit(&rel_n);
+    var dnm = decParse(alloc, new_mag) catch return error.BadNumber;
+    defer decDeinit(&dnm);
+    var r = decMul(alloc, &dnm, &rel_n) catch return error.OutOfMemory;
+    defer decDeinit(&r);
+    return try decToString(alloc, &r);
+}
+
+fn magOp(alloc: std.mem.Allocator, comptime op: enum { add, sub, mul }, m1: []const u8, m2: []const u8) ![]u8 {
+    var da = decParse(alloc, m1) catch return error.BadNumber;
+    defer decDeinit(&da);
+    var db = decParse(alloc, m2) catch return error.BadNumber;
+    defer decDeinit(&db);
+    if (op == .sub) {
+        if (!db.m.eqlZero()) db.neg = !db.neg;
+    }
+    var r = switch (op) {
+        .mul => decMul(alloc, &da, &db) catch return error.OutOfMemory,
+        else => decAdd(alloc, &da, &db) catch return error.OutOfMemory,
+    };
+    defer decDeinit(&r);
+    return decToString(alloc, &r);
+}
+
+// ============================================================================
+// Parse: "2.0±0.1 kg" / "2.0+-0.1 kg" / "3.0 m/s" / "π m" / "1e10 m/s^2"
+// ============================================================================
+
+const PI_DIGITS = "3.14159265358979323846264338327950288";
+const PHI_DIGITS = "1.61803398874989484820458683436563811";
+const E_DIGITS = "2.71828182845904523536028747135266249";
+
+fn qtyParse(alloc: std.mem.Allocator, s_in: []const u8) ![]u8 {
+    const s = std.mem.trim(u8, s_in, " \t\r\n");
+    if (s.len == 0) return error.BadQuantity;
+
+    var value_str: []const u8 = s;
+    var unc_str: ?[]const u8 = null;
+    var unit_str: []const u8 = "";
+
+    // split on ± (U+00B1: C2 B1) or "+-"
+    if (std.mem.indexOf(u8, s, "\xc2\xb1")) |pm| {
+        value_str = std.mem.trim(u8, s[0..pm], " \t");
+        const rest = std.mem.trim(u8, s[pm + 2 ..], " \t");
+        const sp = std.mem.indexOfAny(u8, rest, " \t") orelse rest.len;
+        unc_str = std.mem.trim(u8, rest[0..sp], " \t");
+        unit_str = std.mem.trim(u8, rest[sp..], " \t");
+    } else if (std.mem.indexOf(u8, s, "+-")) |pm| {
+        value_str = std.mem.trim(u8, s[0..pm], " \t");
+        const rest = std.mem.trim(u8, s[pm + 2 ..], " \t");
+        const sp = std.mem.indexOfAny(u8, rest, " \t") orelse rest.len;
+        unc_str = std.mem.trim(u8, rest[0..sp], " \t");
+        unit_str = std.mem.trim(u8, rest[sp..], " \t");
+    } else {
+        const sp = std.mem.indexOfAny(u8, s, " \t") orelse s.len;
+        value_str = std.mem.trim(u8, s[0..sp], " \t");
+        unit_str = std.mem.trim(u8, s[sp..], " \t");
+    }
+
+    // magnitude: literal, or a named constant
+    var mag_str: []const u8 = value_str;
+    if (std.mem.eql(u8, value_str, "π") or std.mem.eql(u8, value_str, "pi")) {
+        mag_str = PI_DIGITS;
+    } else if (std.mem.eql(u8, value_str, "φ") or std.mem.eql(u8, value_str, "phi")) {
+        mag_str = PHI_DIGITS;
+    } else if (std.mem.eql(u8, value_str, "e")) {
+        mag_str = E_DIGITS;
+    }
+
+    var mag = decParse(alloc, mag_str) catch return error.BadQuantity;
+    defer decDeinit(&mag);
+
+    var dim: Dim = DIM_ZERO;
+    var scale: f64 = 1.0;
+    if (!unitScan(alloc, unit_str, &dim, &scale)) return error.BadQuantity;
+
+    // apply unit scale (e.g. g -> 1e-3 kg)
+    if (scale != 1.0) {
+        var digits_buf: [40]u8 = undefined;
+        const fstr = std.fmt.bufPrint(&digits_buf, "{d}", .{scale}) catch return error.BadQuantity;
+        var scd = decParse(alloc, fstr) catch return error.BadQuantity;
+        defer decDeinit(&scd);
+        var raw = decParse(alloc, mag_str) catch return error.BadQuantity;
+        defer decDeinit(&raw);
+        decDeinit(&mag);
+        mag = decMul(alloc, &raw, &scd) catch return error.OutOfMemory;
+    }
+
+    const mag_canon = try decToString(alloc, &mag);
+    defer alloc.free(mag_canon);
+
+    var unc_canon: ?[]u8 = null;
+    if (unc_str) |u| {
+        var du = decParse(alloc, u) catch return error.BadQuantity;
+        defer decDeinit(&du);
+        // scale the uncertainty by the same unit factor (absolute value)
+        if (scale != 1.0) {
+            var digits_buf: [40]u8 = undefined;
+            const fstr = std.fmt.bufPrint(&digits_buf, "{d}", .{@abs(scale)}) catch return error.BadQuantity;
+            var scd = decParse(alloc, fstr) catch return error.BadQuantity;
+            defer decDeinit(&scd);
+            const u_scaled = decMul(alloc, &du, &scd) catch return error.OutOfMemory;
+            decDeinit(&du);
+            du = u_scaled;
+        }
+        unc_canon = try decToString(alloc, &du);
+    }
+    defer if (unc_canon) |u| alloc.free(u);
+
+    return qtyPack(alloc, .{ .mag = mag_canon, .dim = dim, .unc = unc_canon });
+}
+
+// ============================================================================
+// Boundary
+// ============================================================================
+
+~pub tor ingest { s: string } -> string<external!>
+
+~proc ingest|zig {
+    return ownedCopy(s);
+}
+
+~pub tor ingest-owned { s: string<!allocated> } -> string<external!>
+
+~proc ingest-owned|zig {
+    return s;
+}
+
+~pub tor parse { s: string<!external> }
+| exact string<exact!>
+| bad string
+
+~proc parse|zig {
+    const canon = qtyParse(koru_allocator(), s) catch |err| switch (err) {
+        error.OutOfMemory => @panic("std/quantity: out of memory"),
+        else => return .{ .bad = s },
+    };
+    qtyFree(s);
+    return .{ .exact = canon };
+}
+
+~pub tor lit { s: string }
+| exact string<exact!>
+| bad string
+
+~proc lit|zig {
+    const canon = qtyParse(koru_allocator(), s) catch |err| switch (err) {
+        error.OutOfMemory => @panic("std/quantity: out of memory"),
+        else => return .{ .bad = s },
+    };
+    return .{ .exact = canon };
+}
+
+// ============================================================================
+// Arithmetic
+// ============================================================================
+
+// add requires equal dimensions — the free-abelian-group law: | dim-mismatch
+// is a lawful outcome, not an error path.
+~pub tor add { a: string<!exact>, b: string<!exact> }
+| exact string<exact!>
+| dim-mismatch
+
+~proc add|zig {
+    defer qtyFree(a);
+    defer qtyFree(b);
+    var qa: Qty = undefined;
+    var qb: Qty = undefined;
+    if (!qtyUnpack(koru_allocator(), a, &qa)) @panic("std/quantity:add: malformed operand");
+    if (!qtyUnpack(koru_allocator(), b, &qb)) @panic("std/quantity:add: malformed operand");
+    for (0..7) |i| {
+        if (qa.dim[i] != qb.dim[i]) return .{ .dim_mismatch = .{} };
+    }
+    const mag = magOp(koru_allocator(), .add, qa.mag, qb.mag) catch @panic("std/quantity:add: out of memory");
+    defer koru_allocator().free(mag);
+    const unc = uncAdd(koru_allocator(), qa.unc, qb.unc) catch @panic("std/quantity:add: out of memory");
+    defer if (unc) |u| koru_allocator().free(u);
+    return .{ .exact = qtyPack(koru_allocator(), .{ .mag = mag, .dim = qa.dim, .unc = unc }) catch @panic("std/quantity:add: out of memory") };
+}
+
+// Dimensions compose under multiplication (free abelian add).
+~pub tor mul { a: string<!exact>, b: string<!exact> } -> string<exact!>
+
+~proc mul|zig {
+    defer qtyFree(a);
+    defer qtyFree(b);
+    var qa: Qty = undefined;
+    var qb: Qty = undefined;
+    if (!qtyUnpack(koru_allocator(), a, &qa)) @panic("std/quantity:mul: malformed operand");
+    if (!qtyUnpack(koru_allocator(), b, &qb)) @panic("std/quantity:mul: malformed operand");
+    const mag = magOp(koru_allocator(), .mul, qa.mag, qb.mag) catch @panic("std/quantity:mul: out of memory");
+    defer koru_allocator().free(mag);
+    var d: Dim = DIM_ZERO;
+    for (0..7) |i| d[i] = qa.dim[i] + qb.dim[i];
+    const unc = uncMul(koru_allocator(), qa.mag, qa.unc, qb.mag, qb.unc, mag) catch @panic("std/quantity:mul: out of memory");
+    defer if (unc) |u| koru_allocator().free(u);
+    return qtyPack(koru_allocator(), .{ .mag = mag, .dim = d, .unc = unc }) catch @panic("std/quantity:mul: out of memory");
+}
+
+~pub tor div { a: string<!exact>, b: string<!exact>, prec: i64 }
+| exact string<exact!>
+| div-zero
+
+~proc div|zig {
+    defer qtyFree(a);
+    defer qtyFree(b);
+    var qa: Qty = undefined;
+    var qb: Qty = undefined;
+    if (!qtyUnpack(koru_allocator(), a, &qa)) @panic("std/quantity:div: malformed operand");
+    if (!qtyUnpack(koru_allocator(), b, &qb)) @panic("std/quantity:div: malformed operand");
+    var da = decParse(koru_allocator(), qa.mag) catch @panic("std/quantity:div: malformed mag");
+    defer decDeinit(&da);
+    var db = decParse(koru_allocator(), qb.mag) catch @panic("std/quantity:div: malformed mag");
+    defer decDeinit(&db);
+    var r = decDiv(koru_allocator(), &da, &db, prec) catch |err| switch (err) {
+        error.DivZero => return .{ .div_zero = .{} },
+        else => @panic("std/quantity:div: out of memory"),
+    };
+    defer decDeinit(&r);
+    const mag = decToString(koru_allocator(), &r) catch @panic("std/quantity:div: out of memory");
+    defer koru_allocator().free(mag);
+    var d: Dim = DIM_ZERO;
+    for (0..7) |i| d[i] = qa.dim[i] - qb.dim[i];
+    const unc = uncMul(koru_allocator(), qa.mag, qa.unc, qb.mag, qb.unc, mag) catch @panic("std/quantity:div: out of memory");
+    defer if (unc) |u| koru_allocator().free(u);
+    return .{ .exact = qtyPack(koru_allocator(), .{ .mag = mag, .dim = d, .unc = unc }) catch @panic("std/quantity:div: out of memory") };
+}
+
+// q^n for integer n (negative allowed: dims negate, magnitude reciprocates).
+~pub tor pow { a: string<!exact>, n: i64 } -> string<exact!>
+
+~proc pow|zig {
+    defer qtyFree(a);
+    var qa: Qty = undefined;
+    if (!qtyUnpack(koru_allocator(), a, &qa)) @panic("std/quantity:pow: malformed operand");
+    const an: i64 = if (n < 0) -n else n;
+    var mag: []const u8 = undefined;
+    if (an == 0) {
+        mag = ownedCopy("1e0");
+    } else {
+        var d = decParse(koru_allocator(), qa.mag) catch @panic("std/quantity:pow: malformed mag");
+        defer decDeinit(&d);
+        var acc = BI.initSet(koru_allocator(), 1) catch @panic("std/quantity:pow: out of memory");
+        defer acc.deinit();
+        if (an > std.math.maxInt(u32)) @panic("std/quantity:pow: exponent too large");
+        acc.pow(&d.m, @intCast(an)) catch @panic("std/quantity:pow: out of memory");
+        const ds = acc.toString(koru_allocator(), 10, .lower) catch @panic("std/quantity:pow: out of memory");
+        defer koru_allocator().free(ds);
+        var p = decFromDigits(koru_allocator(), ds, d.e * an, d.neg and @mod(an, 2) != 0) catch @panic("std/quantity:pow: out of memory");
+        defer decDeinit(&p);
+        if (n < 0) {
+            var one = decInit(koru_allocator(), 1, 0) catch @panic("std/quantity:pow: out of memory");
+            defer decDeinit(&one);
+            const q2 = decDiv(koru_allocator(), &one, &p, UNC_PREC) catch @panic("std/quantity:pow: out of memory");
+            decDeinit(&p);
+            p = q2;
+        }
+        mag = decToString(koru_allocator(), &p) catch @panic("std/quantity:pow: out of memory");
+    }
+    defer koru_allocator().free(mag);
+    var d: Dim = DIM_ZERO;
+    for (0..7) |i| d[i] = qa.dim[i] * @as(i32, @intCast(n));
+    const unc = uncPow(koru_allocator(), qa.mag, qa.unc, n, mag) catch @panic("std/quantity:pow: out of memory");
+    defer if (unc) |u| koru_allocator().free(u);
+    return qtyPack(koru_allocator(), .{ .mag = mag, .dim = d, .unc = unc }) catch @panic("std/quantity:pow: out of memory");
+}
+
+// The equivalence law: canonical quantities are string-equal iff equal —
+// 1000 g ≡ 1 kg because parse scales to SI bases.
+~pub tor equiv { a: string<exact>, b: string<exact> }
+| same
+| diff
+
+~proc equiv|zig {
+    if (std.mem.eql(u8, a, b)) return .{ .same = .{} };
+    return .{ .diff = .{} };
+}
+
+// ============================================================================
+// Accessors and linearity
+// ============================================================================
+
+// Unwrap the magnitude into the number tower: consumes the quantity and
+// produces its magnitude as <std/num:exact!> — feedable to num ops.
+~pub tor mag { q: string<!exact> } -> string<std/num:exact!>
+
+~proc mag|zig {
+    var qa: Qty = undefined;
+    if (!qtyUnpack(koru_allocator(), q, &qa)) @panic("std/quantity:mag: malformed operand");
+    defer qtyFree(q);
+    return ownedCopy(qa.mag);
+}
+
+// The dimension vector as canonical text — for diagnostics and print.
+~pub tor dim { q: string<!exact> } -> string<std/io:allocated!>
+
+~proc dim|zig {
+    var qa: Qty = undefined;
+    if (!qtyUnpack(koru_allocator(), q, &qa)) @panic("std/quantity:dim: malformed operand");
+    defer qtyFree(q);
+    return dimCanon(koru_allocator(), qa.dim) catch @panic("std/quantity:dim: out of memory");
+}
+
+// The uncertainty as allocated text ("-" when absent).
+~pub tor unc { q: string<!exact> } -> string<std/io:allocated!>
+
+~proc unc|zig {
+    var qa: Qty = undefined;
+    if (!qtyUnpack(koru_allocator(), q, &qa)) @panic("std/quantity:unc: malformed operand");
+    defer qtyFree(q);
+    return ownedCopy(if (qa.unc) |u| u else "-");
+}
+
+~pub tor dup { n: string<!exact> }
+| a string<exact!>
+| b string<exact!>
+
+~proc dup|zig {
+    const cp = ownedCopy(n);
+    return .{ .a = n, .b = cp };
+}
+
+~pub tor free { n: string<!exact> }
+
+~proc free|zig {
+    qtyFree(n);
+}
+
+// Render as allocated text — the canonical pack IS the rendered form.
+// Discharge with `std/io:free`.
+~pub tor render { n: string<!exact> } -> string<std/io:allocated!>
+
+~proc render|zig {
+    return n;
+}
