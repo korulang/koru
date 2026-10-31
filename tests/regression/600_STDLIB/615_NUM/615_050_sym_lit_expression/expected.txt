@@ -2,5 +2,5 @@ inv((1e0+(-1e0*x)))
 (π+√(2e0))
 (inv((1e0+(-1e0*x)))*inv((1e0+(-1e0*x))))
 (inv((1e0+(-1e0*x)))*inv((1e0+(-1e0*x))))
-bad-lit-malformed
+bad-literal-malformed
 (2e0*π)
