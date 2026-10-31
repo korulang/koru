@@ -1,0 +1,5 @@
+rec(k=1,d=1,via=bridge,det=1)|p0=[-1]|p1=[1,1]
+rec(k=2,d=1,via=bridge,det=1)|p0=[0]|p1=[2,1]|p2=[-2,-1]
+rec(k=2,d=1,via=bridge,det=1)|p0=[0]|p1=[1,2]|p2=[4,2]
+rec(k=1,d=1,via=bridge,det=0)|p0=[0]|p1=[2,1]
+malformed-cert

@@ -432,3 +432,34 @@ P-recursive bridge + shiftBound (HolonomicBridge.lean), then the non-SI
 extension surface design (currency etc. — carrier/group laws + canon +
 conversion policy behind a seam; design only, low priority).
 
+## Landed 2026-11-01 — cert-bridge (the P-recursive projection)
+
+`cert-bridge` in sym.certcomp.kz projects an `ode(...)` cert to a
+`rec(...)` object — the D-finite to P-recursive translation of
+HolonomicBridge.lean. Coeffs become polys in the index n:
+`p'_k(X) = sum_i q_{i,i-k+S} * (X+k) descPoch i`, `S = shiftBound =
+max deg`, order `R = K + S`. `det` is the Lean `h0` packaging flag:
+`q_{K,0} != 0` makes the leading recurrence coeff
+`q_{K,0} * (n+K+S) descPoch K` nonzero for every n >= 0, so the
+sequence is determined by its first R terms
+(toPRecursiveCertificate / leading_ne). A vanishing leading bridge
+poly is dropped and det=0 reports it — the packaging hypothesis
+failed, honestly flagged.
+
+Honest boundary kept: `verified=N` is a finite residual witness, not
+a theorem. `dfiniteResidual_eq_bridge` (N >= S) is the translation
+identity — residual(N) = rec-sum at n = N-S — so `rec` is an exact
+projection of what `ode` claims, no overclaim. The missing half for
+finite-to-forall: a sequence PRODUCED by the rec from checked
+initials satisfies residuals everywhere — that direction wants a
+certified-series lane (series emitted together with their rec cert),
+not more witness terms. Verified live: exp -> -a_n + (n+1)a_{n+1} = 0;
+1/(1-x) -> a_{n+2} = a_{n+1}; sqrt(1+x) discovered cert ->
+(2n+1)a_{n+1} + (2n+4)a_{n+2} = 0 reproducing a_2 = -1/8, a_3 = 1/16.
+
+Remaining scheduled rungs: certified-series (emit series+rec cert
+together so finite witnesses become forall statements), then the
+non-SI extension surface design (currency etc. — carrier/group laws +
+canon + conversion policy behind a seam; design only, low priority),
+then decide_integral / Risch-lite decision tower.
+
