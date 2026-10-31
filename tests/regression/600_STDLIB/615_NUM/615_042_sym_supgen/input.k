@@ -8,7 +8,7 @@ import std/io
 import std/sym
 
 // series of 1/(1-x) — geometric coefficients
-std/sym:lit(s: "inv((1e0+(-1e0*x)))")
+std/sym:lit(expr: inv((1e0+(-1e0*x))))
 | exact a1 |> std/sym:series(a: a1, terms: 8)
     | exact s |> std/io:print.ln("{{ s:s }}") |> std/io:free(content: s)
     | non-analytic |> std/io:print.ln("non-analytic")
@@ -17,7 +17,7 @@ std/sym:lit(s: "inv((1e0+(-1e0*x)))")
 | bad |> std/io:print.ln("bad-lit")
 
 // derive-ode of 1/(1-x): f = (1-x) f'
-std/sym:lit(s: "inv((1e0+(-1e0*x)))")
+std/sym:lit(expr: inv((1e0+(-1e0*x))))
 | exact a2 |> std/sym:derive-ode(a: a2, max-order: 2, max-deg: 2)
     | exact c |> std/io:print.ln("{{ c:s }}") |> std/io:free(content: c)
     | not-found |> std/io:print.ln("not-found")
@@ -27,7 +27,7 @@ std/sym:lit(s: "inv((1e0+(-1e0*x)))")
 | bad |> std/io:print.ln("bad-lit")
 
 // series of sqrt(1+x) — binomial coefficients
-std/sym:lit(s: "√((1e0+x))")
+std/sym:lit(expr: √((1e0+x)))
 | exact a3 |> std/sym:series(a: a3, terms: 8)
     | exact s |> std/io:print.ln("{{ s:s }}") |> std/io:free(content: s)
     | non-analytic |> std/io:print.ln("non-analytic")
@@ -36,7 +36,7 @@ std/sym:lit(s: "√((1e0+x))")
 | bad |> std/io:print.ln("bad-lit")
 
 // derive-ode of sqrt(1+x): 2(1+x) f' = f
-std/sym:lit(s: "√((1e0+x))")
+std/sym:lit(expr: √((1e0+x)))
 | exact a4 |> std/sym:derive-ode(a: a4, max-order: 2, max-deg: 2)
     | exact c |> std/io:print.ln("{{ c:s }}") |> std/io:free(content: c)
     | not-found |> std/io:print.ln("not-found")
@@ -46,7 +46,7 @@ std/sym:lit(s: "√((1e0+x))")
 | bad |> std/io:print.ln("bad-lit")
 
 // derive-ode of 1/(1+x^2): (1+x^2) f' + 2x f = 0
-std/sym:lit(s: "inv((1e0+x*x))")
+std/sym:lit(expr: inv((1e0+x*x)))
 | exact a5 |> std/sym:derive-ode(a: a5, max-order: 2, max-deg: 3)
     | exact c |> std/io:print.ln("{{ c:s }}") |> std/io:free(content: c)
     | not-found |> std/io:print.ln("not-found")
@@ -56,7 +56,7 @@ std/sym:lit(s: "inv((1e0+x*x))")
 | bad |> std/io:print.ln("bad-lit")
 
 // pi is not a rational constant — series refuses | non-rational
-std/sym:lit(s: "π")
+std/sym:lit(expr: π)
 | exact a6 |> std/sym:series(a: a6, terms: 4)
     | exact s |> std/io:print.ln("{{ s:s }}") |> std/io:free(content: s)
     | non-analytic |> std/io:print.ln("non-analytic")
@@ -65,7 +65,7 @@ std/sym:lit(s: "π")
 | bad |> std/io:print.ln("bad-lit")
 
 // inv(x) has a pole at 0 — series refuses | non-analytic
-std/sym:lit(s: "inv(x)")
+std/sym:lit(expr: inv(x))
 | exact a7 |> std/sym:series(a: a7, terms: 4)
     | exact s |> std/io:print.ln("{{ s:s }}") |> std/io:free(content: s)
     | non-analytic |> std/io:print.ln("non-analytic")
@@ -74,7 +74,7 @@ std/sym:lit(s: "inv(x)")
 | bad |> std/io:print.ln("bad-lit")
 
 // order-0 bound on sqrt(1+x) finds nothing — | not-found within bounds
-std/sym:lit(s: "√((1e0+x))")
+std/sym:lit(expr: √((1e0+x)))
 | exact a8 |> std/sym:derive-ode(a: a8, max-order: 0, max-deg: 3)
     | exact c |> std/io:print.ln("{{ c:s }}") |> std/io:free(content: c)
     | not-found |> std/io:print.ln("not-found")

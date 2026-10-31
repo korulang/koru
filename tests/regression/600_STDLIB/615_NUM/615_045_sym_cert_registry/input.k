@@ -8,7 +8,7 @@ std/sym:cert-reg-new(): r0
     | exact r1 |> std/sym:cert-reg-shift(reg: r1, key: "G1")
         | exact r2 |> std/sym:cert-reg-sum(reg: r2, a: "G1", b: "G1")
             | exact r3 |> std/sym:cert-reg-prod(reg: r3, a: "G1", b: "G1")
-                | exact r4 |> std/sym:lit(s: "√((1e0+x))")
+                | exact r4 |> std/sym:lit(expr: √((1e0+x)))
                     | exact e |> std/sym:cert-reg-derive(reg: r4, a: e, max-order: 2, max-deg: 2)
                         | exact r5 |> std/sym:cert-reg-get(reg: r5, key: "G5")
                             | exact c |> std/io:print.ln("{{ c:s }}") |> std/io:free(content: c)

@@ -16,7 +16,7 @@ std/sym:cert-seed(body: "p0=[1,0]|p1=[-1,1]")
 | bad-cert m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
 
 // sqrt(1+x) discovered -> bridged: (2n+1)a_{n+1} + (2n+4)a_{n+2} = 0
-std/sym:lit(s: "√((1e0+x))")
+std/sym:lit(expr: √((1e0+x)))
 | exact a |> std/sym:derive-ode(a, max-order: 2, max-deg: 2)
     | exact c |> std/sym:cert-bridge(c)
         | exact r |> std/io:print.ln("{{ r:s }}") |> std/io:free(content: r)

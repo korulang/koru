@@ -9,7 +9,7 @@ std/sym:cert-seed(body: "p0=[-1]|p1=[1]")
 | bad-cert m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
 
 // Derived certs shift too: integral of sqrt(1+x), matching HolonomicCertificate.integralShift.
-std/sym:lit(s: "√((1e0+x))")
+std/sym:lit(expr: √((1e0+x)))
 | exact a |> std/sym:derive-ode(a, max-order: 2, max-deg: 2)
     | exact c1 |> std/sym:cert-shift(c: c1)
         | exact s |> std/io:print.ln("{{ s:s }}") |> std/io:free(content: s)
