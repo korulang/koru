@@ -42,6 +42,7 @@
 ~part supgen
 ~part certcomp
 ~part certreg
+~part certgen
 
 const std = @import("std");
 const BI = std.math.big.int.Managed;

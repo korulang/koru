@@ -645,6 +645,10 @@ fn fracsToIntPolys(alloc: std.mem.Allocator, coeffs: []const Frac) ![][]BI {
             alloc.free(ip);
         }
         while (ii < tl) : (ii += 1) {
+            if (ii >= p.len) {
+                ip[ii] = try BI.initSet(alloc, 0);
+                continue;
+            }
             const r = &p[ii];
             var q = try BI.init(alloc);
             var rr = try BI.init(alloc);
