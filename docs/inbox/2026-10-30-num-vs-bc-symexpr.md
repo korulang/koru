@@ -617,3 +617,27 @@ same boundary the cert layer draws). Generator application g(name, arg)
 needs subst-X machinery — band 2. Nonlinear jet relations / full
 differential algebra — honest refusal territory, same posture as
 cert-compose.
+
+## independent oracle — sympy 1.14 + mpmath 1.4 via nix (landed)
+
+pip never existed on this box; nix supplied python3.14 + sympy + mpmath from
+store paths. `tests/benchmarks/016_num_precision_race/sympy_oracle.py` +
+`run_oracle.sh` — a checker sharing no code with koru/bc/decimal.
+
+- digits: every emitted digit of every workload matches mpmath mp.dps=3100
+  references — w1/w2/w9 exact to all digits (3999, 47713, 997); w3–w7, w10
+  all emitted digits correct; w8 Machin off in its last 4 of 2023 (the
+  documented boundary accumulation).
+- certs: sympy verifies all 12 recorded ODE certificates annihilate their
+  functions (residual symbolically 0), all 3 recurrences hold on true series
+  coefficients, the cser tail for sqrt(1+x) equals sympy's series term for
+  term, and D(sin^2+cos^2) reduces to 0 under sympy's own differentiation.
+- decide-ode sanity: sympy dsolve(y''=xy) returns Airy — consistent with
+  koru's non-Liouvillian classification.
+- speed honesty: mpmath does all five transcendentals in ~8ms total
+  (AGM-class, not Taylor). That gap is algorithmic — the next ceiling after
+  Newton-division.
+- gotchas recorded: python3.11+ int-str limit (set_int_max_str_digits) for
+  the 5000-digit operand; mpf can't hold 4000-digit exact products — exact
+  ops must compare digit strings, not float diffs.
+- SageMath not run; sympy+mpmath covered the comparison surface.

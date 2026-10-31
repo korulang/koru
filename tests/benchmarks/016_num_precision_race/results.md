@@ -61,6 +61,46 @@ Debug and ReleaseFast outputs are byte-identical.
   against `Managed.mul` on 2800 randomized operand shapes, digit
   agreement unchanged (all 47713 of 3^100000, all 3001 of sqrt2).
 
+## Independent oracle — SymPy 1.14 + mpmath 1.4 (via nix)
+
+`run_oracle.sh` runs `sympy_oracle.py`, a checker that shares no code with
+koru, bc, or decimal. Two layers, measured 2026-10-31 on `koru.out`:
+
+**Layer A — digits.** mpmath at mp.dps=3100 recomputes every workload;
+koru's emitted digits are compared as strings (exact ops against exact
+integer references, no float proxy):
+
+| # | result |
+|---|--------|
+| w1 | 3999/3999 digits — exact |
+| w2 | 47713/47713 digits — exact |
+| w3 | 2998/2998 emitted digits correct |
+| w4 | 3001/3001 emitted digits correct |
+| w5–w7, w10 | all emitted digits correct (2000/2000, 1998/1998) |
+| w8 | 2019/2023 — last 4 digits differ (Machin rounding accumulation at the boundary, consistent with the bc/decimal comparison) |
+| w9 | 997/997 digits — exact |
+
+Speed note, stated because it is true: mpmath computes all five
+transcendentals in ~8 ms total — AGM-class algorithms, not Taylor series.
+That gap is algorithmic and is the next ceiling after Newton-division.
+
+**Layer B — certificates.** SymPy independently verifies what koru emits:
+
+- All 12 recorded ODE certificates annihilate their functions — residual
+  symbolically 0 (exp self-law, shifted integral forms, sqrt/quartic
+  algebraic laws, inv, sum/product closures, `xf'−f=0` for x).
+- All 3 recorded recurrences hold on true series coefficients (exp,
+  sqrt(1+x), 1/(1−x)).
+- The `cser` coefficient tail for √(1+x) matches sympy's series exactly:
+  `[1, 1/2, -1/8, 1/16, -5/128, 7/256]`.
+- The rel-layer conservation check `D(sin²+cos²)` reduces to 0 under
+  sympy's own differentiation.
+- `dsolve(y''=xy)` returns Airy functions — consistent with koru's
+  `non-Liouvillian` classification, not a contradiction of it.
+
+SageMath was not run; SymPy+mpmath covered the comparison surface.
+
 ## Reproduce
 
     ./run.sh            # needs bc, python3, koruc, zig on PATH
+    ./run_oracle.sh     # needs sympy+mpmath (nix store paths self-discovered)

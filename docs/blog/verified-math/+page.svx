@@ -77,6 +77,8 @@ std/sym:lit(s: "inv((1e0+(-1e0*x)))")
   ]}
 />
 
+None of this is self-graded. An independent oracle (`tests/benchmarks/016_num_precision_race/sympy_oracle.py`, run under SymPy 1.14 + mpmath 1.4 via nix) checks both halves: every emitted digit of every benchmark workload matches mpmath's 3100-digit references (the sole exception being Machin π's last four digits — documented rounding accumulation at the boundary), and SymPy confirms all twelve recorded ODE certificates actually annihilate their functions, the recurrences hold on true series coefficients, and the `cser` tail equals its own series expansion of √(1+x). `dsolve` on Airy's equation returns Airy functions — agreeing with the tower's `non-Liouvillian` rather than contradicting it.
+
 ## sym.rel — relationships declared, not discovered
 
 The newest band generalizes "ODE law on a generator" to *declared relationships in general*. A `rel:v1` registry names generators and attaches derivative laws in a second phase — `rel-seed` declares the name, `rel-law` attaches `D(g)` as an expression over x and other generators, so cyclic pairs resolve:
