@@ -5,238 +5,45 @@
 // (Q = dimension + magnitude + uncertainty) and the isar-proofs
 // `ISAR/QuantityKernel.lean` (DimExpr free abelian group over the 7 SI bases,
 // MetricExpr exact-rational layer, propagateVarAdd/Mul linearized variance
-// laws — the covariance term is not modeled: independent uncertainties only,
-// same rung as the Python).
+// laws plus the shared-source covariance term).
 //
 // A `qty` is ONE canonical marked string:
-//     "<num>|<dim>|<unc>"
-//   <num>:  std/num canonical decimal          e.g. "9.81e0"
-//   <dim>:  all 7 SI exps, fixed order         "m^1 s^-2 kg^0 A^0 K^0 mol^0 cd^0"
-//   <unc>:  num canon or "-"                    e.g. "1e-1"
+//     "<num>|<dim>|<unc>[@<cov>]"
+//   <num>:  std/num canonical decimal           e.g. "9.81e0"
+//   <dim>:  all 7 SI exps, fixed order          "m^1 s^-2 kg^0 A^0 K^0 mol^0 cd^0"
+//   <unc>:  num canon or "-"                    e.g. "1e-1" / "1e-1@bias"
+//   <cov>:  shared-source tag; absent           "-"
 // Canonical => quantity equivalence is string equality (`qty:equiv`).
+// A "-" uncertainty is "0e0" internally: no uncertainty contributes zero
+// variance, and pack writes "-" back out.
+//
+// Covariance model (linearized, GUM-adjacent): `unc@<group>` asserts the
+// whole sigma stems from shared source <group>. A leading '-' on the tag
+// marks a negated instance (what qty:neg produces): same group opposite
+// sign is a FULLY ANTI-CORRELATED source, and the covariance term flips
+// sign — a−b sharing a bias cancels it. Same group + sign adds 2·u_a·u_b;
+// different groups => | mixed-cov — the correlation is unknowable, so the
+// op refuses the axis instead of silently assuming independence. One-sided
+// tags propagate conservatively: independent sigma, tag carried forward.
 //
 // Taint: same shape as std/num — `ingest`/`ingest-owned` issue <external!>,
 // `parse`/`lit` discharge it into <exact!>, ops consume <!exact> linearly,
 // `dup` forks, `free` deallocates, `render` swaps to <std/io:allocated!>.
 // `qty:mag` unwraps the magnitude INTO the number tower as <std/num:exact!>
-// — the one lawful crossing between the two marks.
+// — the lawful crossing between the two marks; `qty:unpack` decomposes the
+// pack into marked fields, `qty:pack` reassembles it.
 //
-// NOTE: the decimal core below is duplicated from std/num — koru_std modules
-// cannot share Zig helpers (a `std` zig-include seam is the real fix, queued).
-// Keep the two copies identical; drift here is a defect.
+// Boundary vs impl: the zig procs below are ONLY mark-boundary machinery —
+// ingest/split/pack/unpack issue and consume marks, dim-* compose the
+// canonical dim vector, cov-* carry the shared-source policy. Every
+// arithmetic law is a Koru impl (`~name = ...`) calling std/num tors —
+// the decimal core lives in ONE place (num.kz) and ops compose through the
+// tor mechanism: data crosses boundaries, logic does not.
 
 ~import std/io
 ~import std/num
 
 const std = @import("std");
-const BI = std.math.big.int.Managed;
-
-// ============================================================================
-// Decimal core — DUPLICATED from std/num (see note above).
-// ============================================================================
-
-const Dec = struct {
-    neg: bool,
-    m: BI,
-    e: i64,
-};
-
-fn decInit(alloc: std.mem.Allocator, m_val: i64, e: i64) !Dec {
-    const m = try BI.initSet(alloc, m_val);
-    return .{ .neg = m_val < 0, .m = m, .e = e };
-}
-
-fn decDeinit(d: *Dec) void {
-    d.m.deinit();
-}
-
-fn decParse(alloc: std.mem.Allocator, s: []const u8) !Dec {
-    var t = std.mem.trim(u8, s, " \t\r\n");
-    if (t.len == 0) return error.BadNumber;
-
-    var neg = false;
-    if (t[0] == '+' or t[0] == '-') {
-        neg = t[0] == '-';
-        t = t[1..];
-    }
-    if (t.len == 0) return error.BadNumber;
-
-    var sci: i64 = 0;
-    if (std.mem.indexOfAny(u8, t, "eE")) |ei| {
-        const es = t[ei + 1 ..];
-        t = t[0..ei];
-        if (es.len == 0) return error.BadNumber;
-        sci = std.fmt.parseInt(i64, es, 10) catch return error.BadNumber;
-    }
-
-    var frac_len: i64 = 0;
-    var digits = std.ArrayList(u8).initCapacity(alloc, t.len) catch return error.OutOfMemory;
-    defer digits.deinit(alloc);
-
-    var seen_dot = false;
-    var seen_digit = false;
-    for (t) |c| {
-        if (c == '.') {
-            if (seen_dot) return error.BadNumber;
-            seen_dot = true;
-            continue;
-        }
-        if (!std.ascii.isDigit(c)) return error.BadNumber;
-        try digits.append(alloc, c);
-        seen_digit = true;
-        if (seen_dot) frac_len += 1;
-    }
-    if (!seen_digit) return error.BadNumber;
-
-    return decFromDigits(alloc, digits.items, sci - frac_len, neg);
-}
-
-fn decFromDigits(alloc: std.mem.Allocator, raw: []const u8, e: i64, neg: bool) !Dec {
-    var start: usize = 0;
-    while (start < raw.len and raw[start] == '0') start += 1;
-    var end: usize = raw.len;
-    while (end > start and raw[end - 1] == '0') end -= 1;
-
-    if (start == end) {
-        const m = try BI.initSet(alloc, 0);
-        return .{ .neg = false, .m = m, .e = 0 };
-    }
-
-    const stripped_trailing = raw.len - end;
-    var m = try BI.initSet(alloc, 0);
-    errdefer m.deinit();
-    try m.setString(10, raw[start..end]);
-    return .{ .neg = neg, .m = m, .e = e + @as(i64, @intCast(stripped_trailing)) };
-}
-
-fn decToString(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
-    if (d.m.eqlZero()) return alloc.dupe(u8, "0e0");
-
-    const ds = try d.m.toString(alloc, 10, .lower);
-    defer alloc.free(ds);
-
-    const adj: i64 = d.e + @as(i64, @intCast(ds.len)) - 1;
-
-    var out = std.ArrayList(u8).initCapacity(alloc, ds.len + 24) catch return error.OutOfMemory;
-    errdefer out.deinit(alloc);
-    if (d.neg) try out.append(alloc, '-');
-    try out.append(alloc, ds[0]);
-    if (ds.len > 1) {
-        try out.append(alloc, '.');
-        try out.appendSlice(alloc, ds[1..]);
-    }
-    try out.append(alloc, 'e');
-    var buf: [24]u8 = undefined;
-    const es = std.fmt.bufPrint(&buf, "{d}", .{adj}) catch unreachable;
-    try out.appendSlice(alloc, es);
-    return out.toOwnedSlice(alloc);
-}
-
-fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
-    var r = try BI.initSet(alloc, 1);
-    errdefer r.deinit();
-    var ten = try BI.initSet(alloc, 10);
-    defer ten.deinit();
-    var i: i64 = 0;
-    while (i < k) : (i += 1) {
-        try r.mul(&r, &ten);
-    }
-    return r;
-}
-
-fn decAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
-    const e_min = @min(a.e, b.e);
-    var am = try a.m.clone();
-    defer am.deinit();
-    var bm = try b.m.clone();
-    defer bm.deinit();
-    if (a.e > e_min) {
-        var p = try pow10(alloc, a.e - e_min);
-        defer p.deinit();
-        try am.mul(&am, &p);
-    }
-    if (b.e > e_min) {
-        var p = try pow10(alloc, b.e - e_min);
-        defer p.deinit();
-        try bm.mul(&bm, &p);
-    }
-    if (a.neg) am.negate();
-    if (b.neg) bm.negate();
-    var r = try BI.init(alloc);
-    defer r.deinit();
-    try r.add(&am, &bm);
-
-    const rneg = !r.isPositive();
-    var m_abs = try r.clone();
-    m_abs.abs();
-    defer m_abs.deinit();
-    const ds = try m_abs.toString(alloc, 10, .lower);
-    defer alloc.free(ds);
-    return decFromDigits(alloc, ds, e_min, rneg);
-}
-
-fn decMul(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
-    var r = try BI.init(alloc);
-    defer r.deinit();
-    try r.mul(&a.m, &b.m);
-    const ds = try r.toString(alloc, 10, .lower);
-    defer alloc.free(ds);
-    return decFromDigits(alloc, ds, a.e + b.e, a.neg != b.neg);
-}
-
-fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !Dec {
-    if (b.m.eqlZero()) return error.DivZero;
-    if (a.m.eqlZero()) return decInit(alloc, 0, 0);
-
-    const la = try a.m.toString(alloc, 10, .lower);
-    defer alloc.free(la);
-    const lb = try b.m.toString(alloc, 10, .lower);
-    defer alloc.free(lb);
-    const rough: i64 = @as(i64, @intCast(la.len)) - @as(i64, @intCast(lb.len)) + 1;
-    var k: i64 = prec - rough;
-    if (k < 0) k = 0;
-
-    var num = try a.m.clone();
-    defer num.deinit();
-    var p = try pow10(alloc, k);
-    defer p.deinit();
-    try num.mul(&num, &p);
-
-    var q = try BI.init(alloc);
-    defer q.deinit();
-    var rem = try BI.init(alloc);
-    defer rem.deinit();
-    try q.divTrunc(&rem, &num, &b.m);
-
-    const qs = try q.toString(alloc, 10, .lower);
-    defer alloc.free(qs);
-    return decFromDigits(alloc, qs, a.e - b.e - k, a.neg != b.neg);
-}
-
-fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
-    if (a.m.eqlZero()) return decInit(alloc, 0, 0);
-
-    const la = try a.m.toString(alloc, 10, .lower);
-    defer alloc.free(la);
-    const rough_mag: i64 = @divFloor(a.e + @as(i64, @intCast(la.len)), 2);
-    var k: i64 = 2 * (prec - rough_mag + a.e) - a.e;
-    if (k < 0) k = 0;
-    if (@mod(k, 2) != 0) k += 1;
-
-    var x = try a.m.clone();
-    defer x.deinit();
-    var p = try pow10(alloc, k);
-    defer p.deinit();
-    try x.mul(&x, &p);
-
-    var s = try BI.init(alloc);
-    defer s.deinit();
-    try s.sqrt(&x);
-
-    const ss = try s.toString(alloc, 10, .lower);
-    defer alloc.free(ss);
-    return decFromDigits(alloc, ss, @divFloor(a.e - k, 2), false);
-}
 
 fn ownedCopy(s: []const u8) []u8 {
     return koru_allocator().dupe(u8, s) catch @panic("std/quantity: out of memory");
@@ -254,8 +61,6 @@ fn qtyFree(s: []const u8) void {
 const Dim = [7]i32;
 const DIM_ZERO: Dim = .{ 0, 0, 0, 0, 0, 0, 0 };
 const DIM_NAMES = [7][]const u8{ "m", "s", "kg", "A", "K", "mol", "cd" };
-
-const UNC_PREC: i64 = 15;
 
 fn dimCanon(alloc: std.mem.Allocator, d: Dim) ![]u8 {
     var out = std.ArrayList(u8).initCapacity(alloc, 48) catch return error.OutOfMemory;
@@ -394,166 +199,86 @@ fn unitScan(alloc: std.mem.Allocator, expr_in: []const u8, d: *Dim, scale: *f64)
 }
 
 // ============================================================================
-// Quantity pack: "<num>|<dim>|<unc>"
+// Pack: "<num>|<dim>|<unc>[@<cov>]"
 // ============================================================================
 
-const Qty = struct {
-    mag: []const u8, // num canon
-    dim: Dim,
-    unc: ?[]const u8, // num canon or null
-};
-
-fn qtyUnpack(alloc: std.mem.Allocator, s: []const u8, q: *Qty) bool {
-    _ = alloc;
-    const p1 = std.mem.indexOfScalar(u8, s, '|') orelse return false;
-    const p2 = std.mem.indexOfScalarPos(u8, s, p1 + 1, '|') orelse return false;
-    q.mag = s[0..p1];
-    if (!dimParse(s[p1 + 1 .. p2], &q.dim)) return false;
-    const u = s[p2 + 1 ..];
-    q.unc = if (std.mem.eql(u8, u, "-")) null else u;
-    return true;
-}
-
-fn qtyPack(alloc: std.mem.Allocator, q: Qty) ![]u8 {
-    const ds = try dimCanon(alloc, q.dim);
-    defer alloc.free(ds);
-    var out = std.ArrayList(u8).initCapacity(alloc, q.mag.len + ds.len + 4 + (if (q.unc) |u| u.len else 1)) catch return error.OutOfMemory;
+// Join canonical fields. "0e0" unc renders "-" (no sigma, and any cov tag is
+// dropped — a shared source with no sigma is a contradiction).
+fn qtyJoin(alloc: std.mem.Allocator, mag: []const u8, dim_txt: []const u8, unc: []const u8, cov: []const u8) ![]u8 {
+    const sure = std.mem.eql(u8, unc, "0e0");
+    var out = std.ArrayList(u8).initCapacity(alloc, mag.len + dim_txt.len + unc.len + cov.len + 4) catch return error.OutOfMemory;
     errdefer out.deinit(alloc);
-    try out.appendSlice(alloc, q.mag);
+    try out.appendSlice(alloc, mag);
     try out.append(alloc, '|');
-    try out.appendSlice(alloc, ds);
+    try out.appendSlice(alloc, dim_txt);
     try out.append(alloc, '|');
-    try out.appendSlice(alloc, if (q.unc) |u| u else "-");
+    if (sure) {
+        try out.append(alloc, '-');
+    } else {
+        try out.appendSlice(alloc, unc);
+        if (!std.mem.eql(u8, cov, "-")) {
+            try out.append(alloc, '@');
+            try out.appendSlice(alloc, cov);
+        }
+    }
     return out.toOwnedSlice(alloc);
 }
 
-// Uncertainty propagation, independent sources only (the plex rung):
-//   add:        sigma = sqrt(u1^2 + u2^2)
-//   mul/div:    sigma = |mag| * sqrt((u1/m1)^2 + (u2/m2)^2)
-//   pow(n):     sigma = |n * mag^(n-1)| * u1        (single-sided)
-// A quantity with no uncertainty contributes zero variance. Result carries
-// uncertainty iff at least one operand does.
-fn uncAdd(alloc: std.mem.Allocator, ua: ?[]const u8, ub: ?[]const u8) !?[]u8 {
-    if (ua == null and ub == null) return null;
-    var sum = try decInit(alloc, 0, 0);
-    defer decDeinit(&sum);
-    for ([_]?[]const u8{ ua, ub }) |uopt| {
-        if (uopt) |u| {
-            var du = decParse(alloc, u) catch return error.BadNumber;
-            defer decDeinit(&du);
-            var sq = decMul(alloc, &du, &du) catch return error.OutOfMemory;
-            defer decDeinit(&sq);
-            const nsum = decAdd(alloc, &sum, &sq) catch return error.OutOfMemory;
-            decDeinit(&sum);
-            sum = nsum;
-        }
-    }
-    var r = decSqrt(alloc, &sum, UNC_PREC) catch return error.OutOfMemory;
-    defer decDeinit(&r);
-    return try decToString(alloc, &r);
-}
-
-fn uncMul(alloc: std.mem.Allocator, m1: []const u8, ua: ?[]const u8, m2: []const u8, ub: ?[]const u8, new_mag: []const u8) !?[]u8 {
-    if (ua == null and ub == null) return null;
-    var rel_sq = try decInit(alloc, 0, 0);
-    defer decDeinit(&rel_sq);
-    const mags = [_][]const u8{ m1, m2 };
-    const uncs = [_]?[]const u8{ ua, ub };
-    for (0..2) |i| {
-        if (uncs[i]) |u| {
-            var dm = decParse(alloc, mags[i]) catch return error.BadNumber;
-            defer decDeinit(&dm);
-            var du = decParse(alloc, u) catch return error.BadNumber;
-            defer decDeinit(&du);
-            var rel = decDiv(alloc, &du, &dm, UNC_PREC) catch return error.OutOfMemory;
-            defer decDeinit(&rel);
-            var sq = decMul(alloc, &rel, &rel) catch return error.OutOfMemory;
-            defer decDeinit(&sq);
-            const nrel = decAdd(alloc, &rel_sq, &sq) catch return error.OutOfMemory;
-            decDeinit(&rel_sq);
-            rel_sq = nrel;
-        }
-    }
-    var rel = decSqrt(alloc, &rel_sq, UNC_PREC) catch return error.OutOfMemory;
-    defer decDeinit(&rel);
-    var dnm = decParse(alloc, new_mag) catch return error.BadNumber;
-    defer decDeinit(&dnm);
-    var r = decMul(alloc, &dnm, &rel) catch return error.OutOfMemory;
-    defer decDeinit(&r);
-    return try decToString(alloc, &r);
-}
-
-fn uncPow(alloc: std.mem.Allocator, m: []const u8, u: ?[]const u8, n: i64, new_mag: []const u8) !?[]u8 {
-    if (u == null) return null;
-    var dm = decParse(alloc, m) catch return error.BadNumber;
-    defer decDeinit(&dm);
-    var du = decParse(alloc, u.?) catch return error.BadNumber;
-    defer decDeinit(&du);
-    var rel = decDiv(alloc, &du, &dm, UNC_PREC) catch return error.OutOfMemory;
-    defer decDeinit(&rel);
-    var dn = decInit(alloc, if (n < 0) -n else n, 0) catch return error.OutOfMemory;
-    defer decDeinit(&dn);
-    var rel_n = decMul(alloc, &dn, &rel) catch return error.OutOfMemory;
-    defer decDeinit(&rel_n);
-    var dnm = decParse(alloc, new_mag) catch return error.BadNumber;
-    defer decDeinit(&dnm);
-    var r = decMul(alloc, &dnm, &rel_n) catch return error.OutOfMemory;
-    defer decDeinit(&r);
-    return try decToString(alloc, &r);
-}
-
-fn magOp(alloc: std.mem.Allocator, comptime op: enum { add, sub, mul }, m1: []const u8, m2: []const u8) ![]u8 {
-    var da = decParse(alloc, m1) catch return error.BadNumber;
-    defer decDeinit(&da);
-    var db = decParse(alloc, m2) catch return error.BadNumber;
-    defer decDeinit(&db);
-    if (op == .sub) {
-        if (!db.m.eqlZero()) db.neg = !db.neg;
-    }
-    var r = switch (op) {
-        .mul => decMul(alloc, &da, &db) catch return error.OutOfMemory,
-        else => decAdd(alloc, &da, &db) catch return error.OutOfMemory,
-    };
-    defer decDeinit(&r);
-    return decToString(alloc, &r);
-}
-
 // ============================================================================
-// Parse: "2.0±0.1 kg" / "2.0+-0.1 kg" / "3.0 m/s" / "π m" / "1e10 m/s^2"
+// Split: "2.0+-0.1@bias kg" / "3.0 m/s" / "π m" -> raw field text.
+// Fields are RAW strings — num:parse canonicalizes them in `canon`.
 // ============================================================================
 
 const PI_DIGITS = "3.14159265358979323846264338327950288";
 const PHI_DIGITS = "1.61803398874989484820458683436563811";
 const E_DIGITS = "2.71828182845904523536028747135266249";
 
-fn qtyParse(alloc: std.mem.Allocator, s_in: []const u8) ![]u8 {
+const SplitFields = struct {
+    mag: []const u8,
+    unc: []const u8,
+    scale: []const u8,
+    dim: []u8, // owned canon
+    cov: []const u8,
+};
+
+fn qtySplitText(alloc: std.mem.Allocator, s_in: []const u8, out: *SplitFields) !void {
     const s = std.mem.trim(u8, s_in, " \t\r\n");
     if (s.len == 0) return error.BadQuantity;
 
     var value_str: []const u8 = s;
-    var unc_str: ?[]const u8 = null;
+    var unc_str: []const u8 = "0e0";
     var unit_str: []const u8 = "";
+    var cov_str: []const u8 = "-";
 
     // split on ± (U+00B1: C2 B1) or "+-"
-    if (std.mem.indexOf(u8, s, "\xc2\xb1")) |pm| {
-        value_str = std.mem.trim(u8, s[0..pm], " \t");
-        const rest = std.mem.trim(u8, s[pm + 2 ..], " \t");
+    var pm: ?usize = null;
+    var pmw: usize = 0;
+    if (std.mem.indexOf(u8, s, "\xc2\xb1")) |p| {
+        pm = p;
+        pmw = 2;
+    } else if (std.mem.indexOf(u8, s, "+-")) |p| {
+        pm = p;
+        pmw = 2;
+    }
+    if (pm) |p| {
+        value_str = std.mem.trim(u8, s[0..p], " \t");
+        const rest = std.mem.trim(u8, s[p + pmw ..], " \t");
         const sp = std.mem.indexOfAny(u8, rest, " \t") orelse rest.len;
-        unc_str = std.mem.trim(u8, rest[0..sp], " \t");
+        var u = std.mem.trim(u8, rest[0..sp], " \t");
         unit_str = std.mem.trim(u8, rest[sp..], " \t");
-    } else if (std.mem.indexOf(u8, s, "+-")) |pm| {
-        value_str = std.mem.trim(u8, s[0..pm], " \t");
-        const rest = std.mem.trim(u8, s[pm + 2 ..], " \t");
-        const sp = std.mem.indexOfAny(u8, rest, " \t") orelse rest.len;
-        unc_str = std.mem.trim(u8, rest[0..sp], " \t");
-        unit_str = std.mem.trim(u8, rest[sp..], " \t");
+        if (std.mem.indexOfScalar(u8, u, '@')) |at| {
+            cov_str = std.mem.trim(u8, u[at + 1 ..], " \t");
+            u = u[0..at];
+            if (cov_str.len == 0) return error.BadQuantity;
+        }
+        unc_str = u;
     } else {
         const sp = std.mem.indexOfAny(u8, s, " \t") orelse s.len;
         value_str = std.mem.trim(u8, s[0..sp], " \t");
         unit_str = std.mem.trim(u8, s[sp..], " \t");
     }
 
-    // magnitude: literal, or a named constant
+    // magnitude: literal, or a named constant folded to digits at the boundary
     var mag_str: []const u8 = value_str;
     if (std.mem.eql(u8, value_str, "π") or std.mem.eql(u8, value_str, "pi")) {
         mag_str = PI_DIGITS;
@@ -563,51 +288,24 @@ fn qtyParse(alloc: std.mem.Allocator, s_in: []const u8) ![]u8 {
         mag_str = E_DIGITS;
     }
 
-    var mag = decParse(alloc, mag_str) catch return error.BadQuantity;
-    defer decDeinit(&mag);
-
     var dim: Dim = DIM_ZERO;
     var scale: f64 = 1.0;
     if (!unitScan(alloc, unit_str, &dim, &scale)) return error.BadQuantity;
 
-    // apply unit scale (e.g. g -> 1e-3 kg)
-    if (scale != 1.0) {
-        var digits_buf: [40]u8 = undefined;
-        const fstr = std.fmt.bufPrint(&digits_buf, "{d}", .{scale}) catch return error.BadQuantity;
-        var scd = decParse(alloc, fstr) catch return error.BadQuantity;
-        defer decDeinit(&scd);
-        var raw = decParse(alloc, mag_str) catch return error.BadQuantity;
-        defer decDeinit(&raw);
-        decDeinit(&mag);
-        mag = decMul(alloc, &raw, &scd) catch return error.OutOfMemory;
-    }
+    var sbuf: [40]u8 = undefined;
+    const scale_str = std.fmt.bufPrint(&sbuf, "{d}", .{scale}) catch return error.BadQuantity;
 
-    const mag_canon = try decToString(alloc, &mag);
-    defer alloc.free(mag_canon);
-
-    var unc_canon: ?[]u8 = null;
-    if (unc_str) |u| {
-        var du = decParse(alloc, u) catch return error.BadQuantity;
-        defer decDeinit(&du);
-        // scale the uncertainty by the same unit factor (absolute value)
-        if (scale != 1.0) {
-            var digits_buf: [40]u8 = undefined;
-            const fstr = std.fmt.bufPrint(&digits_buf, "{d}", .{@abs(scale)}) catch return error.BadQuantity;
-            var scd = decParse(alloc, fstr) catch return error.BadQuantity;
-            defer decDeinit(&scd);
-            const u_scaled = decMul(alloc, &du, &scd) catch return error.OutOfMemory;
-            decDeinit(&du);
-            du = u_scaled;
-        }
-        unc_canon = try decToString(alloc, &du);
-    }
-    defer if (unc_canon) |u| alloc.free(u);
-
-    return qtyPack(alloc, .{ .mag = mag_canon, .dim = dim, .unc = unc_canon });
+    out.* = .{
+        .mag = try alloc.dupe(u8, mag_str),
+        .unc = try alloc.dupe(u8, unc_str),
+        .scale = try alloc.dupe(u8, scale_str),
+        .dim = try dimCanon(alloc, dim),
+        .cov = try alloc.dupe(u8, cov_str),
+    };
 }
 
 // ============================================================================
-// Boundary
+// Boundary — mark machinery only
 // ============================================================================
 
 ~pub tor ingest { s: string } -> string<external!>
@@ -622,147 +320,388 @@ fn qtyParse(alloc: std.mem.Allocator, s_in: []const u8) ![]u8 {
     return s;
 }
 
+// The parse boundary: splits "mag+-unc@cov unit" into RAW field strings and
+// issues <std/num:external!> on the numeric fields — num:parse discharges
+// them in `canon`. dim/cov come out owned (<std/io:allocated!>).
+~pub tor split { s: string<!external> }
+| fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!> }
+| bad string
+
+~proc split|zig {
+    var f: SplitFields = undefined;
+    qtySplitText(koru_allocator(), s, &f) catch |err| switch (err) {
+        error.OutOfMemory => @panic("std/quantity: out of memory"),
+        else => return .{ .bad = s },
+    };
+    defer qtyFree(s);
+    return .{ .fields = .{
+        .mag = f.mag,
+        .unc = f.unc,
+        .scale = f.scale,
+        .dim = f.dim,
+        .cov = f.cov,
+    } };
+}
+
+// The canonicalizer: external field text -> canonical pack. num:parse does
+// the decimal work; the unit scale multiplies through magnitude AND
+// uncertainty (2 g ± 0.1 g -> 2e-3 kg ± 1e-4).
+~tor canon { mag: string<std/num:!external>, unc: string<std/num:!external>, scale: string<std/num:!external>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated> }
+| exact string<exact!>
+| bad string
+
+~canon = std/num:parse(s: mag)
+| bad e |> std/num:drop(s: unc) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
+| exact pm |> std/num:parse(s: unc)
+    | bad e |> std/num:free(n: pm) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
+    | exact pu |> std/num:parse(s: scale)
+        | bad e |> std/num:free(n: pm) |> std/num:free(n: pu) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
+        | exact ps |> std/num:dup(n: ps): sd |> std/num:mul(a: pm, b: sd.a): ms |> std/num:mul(a: pu, sd.b): us |> pack(mag: ms, unc: us, dim, cov): q => exact q
+
 ~pub tor parse { s: string<!external> }
 | exact string<exact!>
 | bad string
 
-~proc parse|zig {
-    const canon = qtyParse(koru_allocator(), s) catch |err| switch (err) {
-        error.OutOfMemory => @panic("std/quantity: out of memory"),
-        else => return .{ .bad = s },
-    };
-    qtyFree(s);
-    return .{ .exact = canon };
-}
+~parse = split(s)
+| fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov)
+    | exact q => exact q
+    | bad e => bad e
+| bad m => bad m
 
+// Trusted literal: same boundary, issued <external!> because the fields still
+// have to be validated — the mark means "unparsed", and parse is the only
+// discharge that canonicalizes.
 ~pub tor lit { s: string }
 | exact string<exact!>
 | bad string
 
-~proc lit|zig {
-    const canon = qtyParse(koru_allocator(), s) catch |err| switch (err) {
-        error.OutOfMemory => @panic("std/quantity: out of memory"),
-        else => return .{ .bad = s },
-    };
-    return .{ .exact = canon };
+~lit = ingest(s): ext |> split(s: ext)
+| fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov)
+    | exact q => exact q
+    | bad e => bad e
+| bad m => bad m
+
+// Pack canonical fields into the qty string. Consumes all four inputs —
+// dim/cov are discharged by the pack itself (their bytes land in the pack).
+// dim must be canonical: a malformed dim is an internal defect, panicked.
+~pub tor pack { mag: string<std/num:!exact>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated> } -> string<exact!>
+
+~proc pack|zig {
+    var d: Dim = undefined;
+    if (!dimParse(dim, &d)) @panic("std/quantity:pack: malformed dim operand");
+    defer qtyFree(dim);
+    defer qtyFree(cov);
+    const dc = dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
+    defer koru_allocator().free(dc);
+    const joined = qtyJoin(koru_allocator(), mag, dc, unc, cov) catch @panic("std/quantity: out of memory");
+    qtyFree(mag);
+    qtyFree(unc);
+    return joined;
+}
+
+// Decompose a qty into marked fields. The pack is consumed; the fields come
+// out owned: mag/unc as <std/num:exact!> (the number tower), dim/cov as
+// <std/io:allocated!> (owned text — discharge with io:free or a consuming op).
+// "-" uncertainty unpacks as canonical "0e0"; absent cov unpacks as "-".
+~pub tor unpack { n: string<!exact> } -> { mag: string<std/num:exact!>, unc: string<std/num:exact!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!> }
+
+~proc unpack|zig {
+    const p1 = std.mem.indexOfScalar(u8, n, '|') orelse @panic("std/quantity:unpack: malformed operand");
+    const p2 = std.mem.indexOfScalarPos(u8, n, p1 + 1, '|') orelse @panic("std/quantity:unpack: malformed operand");
+    const mag = ownedCopy(n[0..p1]);
+    const dim = ownedCopy(n[p1 + 1 .. p2]);
+    var u = n[p2 + 1 ..];
+    var cov: []const u8 = "-";
+    if (std.mem.indexOfScalar(u8, u, '@')) |at| {
+        cov = u[at + 1 ..];
+        u = u[0..at];
+    }
+    const unc = ownedCopy(if (std.mem.eql(u8, u, "-")) "0e0" else u);
+    const covs = ownedCopy(cov);
+    defer qtyFree(n);
+    return .{ .mag = mag, .dim = dim, .unc = unc, .cov = covs };
 }
 
 // ============================================================================
-// Arithmetic
+// Dim algebra — borrowed canonical dim text in, owned canonical text out.
+// The free abelian group: compose adds, invert negates, scale multiplies.
 // ============================================================================
 
-// add requires equal dimensions — the free-abelian-group law: | dim-mismatch
-// is a lawful outcome, not an error path.
+~pub tor dim-compose { a: string<std/io:allocated>, b: string<std/io:allocated> } -> string<std/io:allocated!>
+
+~proc dim-compose|zig {
+    var da: Dim = undefined;
+    var db: Dim = undefined;
+    if (!dimParse(a, &da)) @panic("std/quantity:dim-compose: malformed dim");
+    if (!dimParse(b, &db)) @panic("std/quantity:dim-compose: malformed dim");
+    var d: Dim = DIM_ZERO;
+    for (0..7) |i| d[i] = da[i] + db[i];
+    return dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
+}
+
+~pub tor dim-invert { a: string<std/io:allocated> } -> string<std/io:allocated!>
+
+~proc dim-invert|zig {
+    var da: Dim = undefined;
+    if (!dimParse(a, &da)) @panic("std/quantity:dim-invert: malformed dim");
+    var d: Dim = DIM_ZERO;
+    for (0..7) |i| d[i] = -da[i];
+    return dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
+}
+
+~pub tor dim-scale { a: string<std/io:allocated>, n: i64 } -> string<std/io:allocated!>
+
+~proc dim-scale|zig {
+    var da: Dim = undefined;
+    if (!dimParse(a, &da)) @panic("std/quantity:dim-scale: malformed dim");
+    var d: Dim = DIM_ZERO;
+    for (0..7) |i| d[i] = da[i] * @as(i32, @intCast(n));
+    return dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
+}
+
+~pub tor dim-eq { a: string<std/io:allocated>, b: string<std/io:allocated> }
+| same
+| diff
+
+~proc dim-eq|zig {
+    if (std.mem.eql(u8, a, b)) return .{ .same = .{} };
+    return .{ .diff = .{} };
+}
+
+// The covariance-join policy, in one place. Tags: "-", "g", "-g" (negated
+// instance of shared source g — what qty:neg emits).
+//   "-" + "-"      -> | indep "-"     (both independent)
+//   "-" + t        -> | indep t       (one-sided: independent sigma, tag kept)
+//   g   + g        -> | same g        (positive full correlation)
+//   g   + "-g"     -> | opp g         (negated instance: anti-correlated)
+//   g1  + g2       -> | mixed         (correlation unknowable — refuse)
+~pub tor cov-join { a: string<std/io:allocated>, b: string<std/io:allocated> }
+| indep string<std/io:allocated!>
+| same string<std/io:allocated!>
+| opp string<std/io:allocated!>
+| mixed
+
+~proc cov-join|zig {
+    const Cov = struct { group: []const u8, inv: bool };
+    const parse = struct {
+        fn go(t: []const u8) ?Cov {
+            if (std.mem.eql(u8, t, "-")) return null;
+            if (t.len > 1 and t[0] == '-') return .{ .group = t[1..], .inv = true };
+            return .{ .group = t, .inv = false };
+        }
+    }.go;
+    const ca = parse(a);
+    const cb = parse(b);
+    if (ca == null and cb == null) return .{ .indep = ownedCopy("-") };
+    if (ca == null) return .{ .indep = ownedCopy(b) };
+    if (cb == null) return .{ .indep = ownedCopy(a) };
+    if (!std.mem.eql(u8, ca.?.group, cb.?.group)) return .{ .mixed = .{} };
+    if (ca.?.inv == cb.?.inv) return .{ .same = ownedCopy(ca.?.group) };
+    return .{ .opp = ownedCopy(ca.?.group) };
+}
+
+// Flip a cov tag's instance sign — the tag negation qty:neg applies.
+// "-" stays "-" (no source to flip).
+~pub tor cov-flip { c: string<std/io:allocated> } -> string<std/io:allocated!>
+
+~proc cov-flip|zig {
+    if (std.mem.eql(u8, c, "-")) return ownedCopy("-");
+    if (c.len > 1 and c[0] == '-') return ownedCopy(c[1..]);
+    return std.mem.concat(koru_allocator(), u8, &.{ "-", c }) catch @panic("std/quantity: out of memory");
+}
+
+// The defect sink: declared string<exact!> so an impossible arm can produce
+// it and satisfy the checker — it panics if ever reached.
+~tor unreachable { } -> string<exact!>
+
+~proc unreachable|zig {
+    @panic("std/quantity: unreachable arm reached");
+}
+
+
+// ============================================================================
+// Arithmetic — Koru impls. The laws are declared data: every step is a
+// std/num call, and the uncertainty formula is spelled in the open.
+// ============================================================================
+
+// Free every field of two unpacked quantities — the dim-mismatch/mixed-cov
+// discharge path.
+~tor free-fields { am: string<std/num:!exact>, au: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bm: string<std/num:!exact>, bu: string<std/num:!exact>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated> }
+
+~free-fields = std/num:free(n: am) |> std/num:free(n: au) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/num:free(n: bm) |> std/num:free(n: bu) |> std/io:free(content: bd) |> std/io:free(content: bc)
+
+// add requires equal dimensions — | dim-mismatch is a lawful outcome, not an
+// error path. Sigma law, all four cov cases:
+//   indep: σ² = u_a² + u_b²           (quadrature)
+//   same:  σ  = u_a + u_b             (fully correlated — cov = +u_a·u_b)
+//   opp:   σ  = |u_a − u_b|           (anti-correlated — bias cancels)
+~tor add-finish { sig: string<std/num:!exact>, am: string<std/num:!exact>, bm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
+
+~add-finish = std/num:add(a: am, b: bm): rm |> pack(mag: rm, unc: sig, dim: ad, cov: g): q |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+
 ~pub tor add { a: string<!exact>, b: string<!exact> }
 | exact string<exact!>
 | dim-mismatch
+| mixed-cov
 
-~proc add|zig {
-    defer qtyFree(a);
-    defer qtyFree(b);
-    var qa: Qty = undefined;
-    var qb: Qty = undefined;
-    if (!qtyUnpack(koru_allocator(), a, &qa)) @panic("std/quantity:add: malformed operand");
-    if (!qtyUnpack(koru_allocator(), b, &qb)) @panic("std/quantity:add: malformed operand");
-    for (0..7) |i| {
-        if (qa.dim[i] != qb.dim[i]) return .{ .dim_mismatch = .{} };
-    }
-    const mag = magOp(koru_allocator(), .add, qa.mag, qb.mag) catch @panic("std/quantity:add: out of memory");
-    defer koru_allocator().free(mag);
-    const unc = uncAdd(koru_allocator(), qa.unc, qb.unc) catch @panic("std/quantity:add: out of memory");
-    defer if (unc) |u| koru_allocator().free(u);
-    return .{ .exact = qtyPack(koru_allocator(), .{ .mag = mag, .dim = qa.dim, .unc = unc }) catch @panic("std/quantity:add: out of memory") };
-}
+~add = unpack(n: a): fa |> unpack(n: b): fb |> dim-eq(a: fa.dim, b: fb.dim)
+| diff |> free-fields(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov) => dim-mismatch
+| same |> cov-join(a: fa.cov, b: fb.cov)
+    | mixed |> free-fields(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov) => mixed-cov
+    | indep g |> std/num:qadd(a: fa.unc, b: fb.unc, prec: 15): sig |> add-finish(sig, am: fa.mag, bm: fb.mag, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+    | same g |> std/num:add(a: fa.unc, b: fb.unc): sig |> add-finish(sig, am: fa.mag, bm: fb.mag, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+    | opp g |> std/num:sub(a: fa.unc, b: fb.unc): sd |> std/num:abs(a: sd): sig |> add-finish(sig, am: fa.mag, bm: fb.mag, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
 
-// Dimensions compose under multiplication (free abelian add).
-~pub tor mul { a: string<!exact>, b: string<!exact> } -> string<exact!>
+// Negation: magnitude flips, sigma keeps its size, the cov tag flips sign —
+// "-g" is the same shared source seen through a negated instance, which is
+// what makes bias cancellation in `sub` lawful.
+~pub tor neg { n: string<!exact> } -> string<exact!>
 
-~proc mul|zig {
-    defer qtyFree(a);
-    defer qtyFree(b);
-    var qa: Qty = undefined;
-    var qb: Qty = undefined;
-    if (!qtyUnpack(koru_allocator(), a, &qa)) @panic("std/quantity:mul: malformed operand");
-    if (!qtyUnpack(koru_allocator(), b, &qb)) @panic("std/quantity:mul: malformed operand");
-    const mag = magOp(koru_allocator(), .mul, qa.mag, qb.mag) catch @panic("std/quantity:mul: out of memory");
-    defer koru_allocator().free(mag);
-    var d: Dim = DIM_ZERO;
-    for (0..7) |i| d[i] = qa.dim[i] + qb.dim[i];
-    const unc = uncMul(koru_allocator(), qa.mag, qa.unc, qb.mag, qb.unc, mag) catch @panic("std/quantity:mul: out of memory");
-    defer if (unc) |u| koru_allocator().free(u);
-    return qtyPack(koru_allocator(), .{ .mag = mag, .dim = d, .unc = unc }) catch @panic("std/quantity:mul: out of memory");
-}
+~neg = unpack(n): f |> cov-flip(c: f.cov): nc |> std/num:neg(a: f.mag): nm |> pack(mag: nm, f.unc, f.dim, cov: nc): q |> std/io:free(content: f.cov) -> q
 
+~pub tor sub { a: string<!exact>, b: string<!exact> }
+| exact string<exact!>
+| dim-mismatch
+| mixed-cov
+
+~sub = neg(n: b): nb |> add(a, b: nb)
+| exact q => exact q
+| dim-mismatch => dim-mismatch
+| mixed-cov => mixed-cov
+
+// rel-term: u / |m| — a factor's relative sigma. u == "0e0" contributes zero
+// even at |m| == 0 (the 0·∞ case resolves to the zero limit); only a nonzero
+// sigma over a zero magnitude lands on | undef.
+~tor rel-term { u: string<std/num:!exact>, m: string<std/num:!exact> }
+| ok string<std/num:exact!>
+| undef
+
+~rel-term = std/num:dup(n: u): du |> std/num:is-zero(n: du.a)
+| zero |> std/num:free(n: du.a) |> std/num:free(n: m) => ok du.b
+| nonzero |> std/num:free(n: du.a) |> std/num:abs(a: m): am |> std/num:div(a: du.b, b: am, prec: 15)
+    | exact r => ok r
+    | div-zero => undef
+
+// mul/div shared prep: result magnitude + both relative sigmas.
+~tor mul-prep { am: string<std/num:!exact>, au: string<std/num:!exact>, bm: string<std/num:!exact>, bu: string<std/num:!exact> }
+| ok { rm: string<std/num:exact!>, ra: string<std/num:exact!>, rb: string<std/num:exact!> }
+| undef
+
+~mul-prep = std/num:dup(n: am): da |> std/num:dup(n: bm): db |> std/num:mul(da.a, b: db.a): rm |> rel-term(u: au, m: da.b)
+| undef |> std/num:free(n: rm) |> std/num:free(n: db.b) |> std/num:free(n: bu) => undef
+| ok ra |> rel-term(u: bu, m: db.b)
+    | undef |> std/num:free(n: rm) |> std/num:free(n: ra) => undef
+    | ok rb => ok { rm, ra, rb }
+
+~tor mul-finish { rel: string<std/num:!exact>, rm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
+
+~mul-finish = dim-compose(a: ad, b: bd): rd |> std/num:dup(n: rm): dr |> std/num:abs(dr.a): ar |> std/num:mul(a: ar, b: rel): sig |> pack(mag: dr.b, unc: sig, dim: rd, cov: g): q |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+
+// Dimensions compose under multiplication (the free abelian group adds).
+// Sigma law on the RELATIVE uncertainties — same four cov cases as add:
+//   indep -> quadrature, same -> sum, opp -> |difference|; then σ=|mag|·σ_rel.
+~pub tor mul { a: string<!exact>, b: string<!exact> }
+| exact string<exact!>
+| mixed-cov
+| bad string
+
+~mul = unpack(n: a): fa |> unpack(n: b): fb |> cov-join(a: fa.cov, b: fb.cov)
+| mixed |> free-fields(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov) => mixed-cov
+| indep g |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc)
+    | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:mul: relative uncertainty undefined at zero magnitude"
+    | ok p |> std/num:qadd(a: p.ra, b: p.rb, prec: 15): rel |> mul-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+| same g |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc)
+    | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:mul: relative uncertainty undefined at zero magnitude"
+    | ok p |> std/num:add(a: p.ra, b: p.rb): rel |> mul-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+| opp g |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc)
+    | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:mul: relative uncertainty undefined at zero magnitude"
+    | ok p |> std/num:sub(a: p.ra, b: p.rb): sd |> std/num:abs(a: sd): rel |> mul-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+
+~tor div-prep { am: string<std/num:!exact>, au: string<std/num:!exact>, bm: string<std/num:!exact>, bu: string<std/num:!exact>, prec: i64 }
+| ok { rm: string<std/num:exact!>, ra: string<std/num:exact!>, rb: string<std/num:exact!> }
+| undef
+| div-zero
+
+~div-prep = std/num:dup(n: am): da |> std/num:dup(n: bm): db |> std/num:div(da.a, b: db.a, prec)
+| div-zero |> std/num:free(n: da.b) |> std/num:free(n: db.b) |> std/num:free(n: au) |> std/num:free(n: bu) => div-zero
+| exact rm |> rel-term(u: au, m: da.b)
+    | undef |> std/num:free(n: rm) |> std/num:free(n: db.b) |> std/num:free(n: bu) => undef
+    | ok ra |> rel-term(u: bu, m: db.b)
+        | undef |> std/num:free(n: rm) |> std/num:free(n: ra) => undef
+        | ok rb => ok { rm, ra, rb }
+
+~tor div-finish { rel: string<std/num:!exact>, rm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
+
+~div-finish = dim-invert(a: bd): ibd |> dim-compose(a: ad, b: ibd): rd |> std/io:free(content: ibd) |> std/num:dup(n: rm): dr |> std/num:abs(dr.a): ar |> std/num:mul(a: ar, b: rel): sig |> pack(mag: dr.b, unc: sig, dim: rd, cov: g): q |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+
+// Dimensions subtract under division (compose with the inverse). Same
+// relative-sigma law as mul.
 ~pub tor div { a: string<!exact>, b: string<!exact>, prec: i64 }
 | exact string<exact!>
 | div-zero
+| mixed-cov
+| bad string
 
-~proc div|zig {
-    defer qtyFree(a);
-    defer qtyFree(b);
-    var qa: Qty = undefined;
-    var qb: Qty = undefined;
-    if (!qtyUnpack(koru_allocator(), a, &qa)) @panic("std/quantity:div: malformed operand");
-    if (!qtyUnpack(koru_allocator(), b, &qb)) @panic("std/quantity:div: malformed operand");
-    var da = decParse(koru_allocator(), qa.mag) catch @panic("std/quantity:div: malformed mag");
-    defer decDeinit(&da);
-    var db = decParse(koru_allocator(), qb.mag) catch @panic("std/quantity:div: malformed mag");
-    defer decDeinit(&db);
-    var r = decDiv(koru_allocator(), &da, &db, prec) catch |err| switch (err) {
-        error.DivZero => return .{ .div_zero = .{} },
-        else => @panic("std/quantity:div: out of memory"),
-    };
-    defer decDeinit(&r);
-    const mag = decToString(koru_allocator(), &r) catch @panic("std/quantity:div: out of memory");
-    defer koru_allocator().free(mag);
-    var d: Dim = DIM_ZERO;
-    for (0..7) |i| d[i] = qa.dim[i] - qb.dim[i];
-    const unc = uncMul(koru_allocator(), qa.mag, qa.unc, qb.mag, qb.unc, mag) catch @panic("std/quantity:div: out of memory");
-    defer if (unc) |u| koru_allocator().free(u);
-    return .{ .exact = qtyPack(koru_allocator(), .{ .mag = mag, .dim = d, .unc = unc }) catch @panic("std/quantity:div: out of memory") };
-}
+~div = unpack(n: a): fa |> unpack(n: b): fb |> cov-join(a: fa.cov, b: fb.cov)
+| mixed |> free-fields(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov) => mixed-cov
+| indep g |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec)
+    | div-zero |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => div-zero
+    | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:div: relative uncertainty undefined at zero magnitude"
+    | ok p |> std/num:qadd(a: p.ra, b: p.rb, prec: 15): rel |> div-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+| same g |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec)
+    | div-zero |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => div-zero
+    | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:div: relative uncertainty undefined at zero magnitude"
+    | ok p |> std/num:add(a: p.ra, b: p.rb): rel |> div-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+| opp g |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec)
+    | div-zero |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => div-zero
+    | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:div: relative uncertainty undefined at zero magnitude"
+    | ok p |> std/num:sub(a: p.ra, b: p.rb): sd |> std/num:abs(a: sd): rel |> div-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
 
-// q^n for integer n (negative allowed: dims negate, magnitude reciprocates).
-~pub tor pow { a: string<!exact>, n: i64 } -> string<exact!>
+// q^n for integer n. n = 0 -> dimensionless 1 (sigma 0); n < 0 -> reciprocal,
+// dims negate. Sigma law: σ = |n|·|mag|^(n-1)·u  (n > 0),
+//                     σ = |n|·u / |mag|^(|n|+1)  (n < 0).
+// The neg-exp arms below are unreachable by construction — e > 0 in both
+// helpers — and route to the defect sink, loudly.
+~tor pow-pos { mag: string<std/num:!exact>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated>, e: i64 } -> string<exact!>
 
-~proc pow|zig {
-    defer qtyFree(a);
-    var qa: Qty = undefined;
-    if (!qtyUnpack(koru_allocator(), a, &qa)) @panic("std/quantity:pow: malformed operand");
-    const an: i64 = if (n < 0) -n else n;
-    var mag: []const u8 = undefined;
-    if (an == 0) {
-        mag = ownedCopy("1e0");
-    } else {
-        var d = decParse(koru_allocator(), qa.mag) catch @panic("std/quantity:pow: malformed mag");
-        defer decDeinit(&d);
-        var acc = BI.initSet(koru_allocator(), 1) catch @panic("std/quantity:pow: out of memory");
-        defer acc.deinit();
-        if (an > std.math.maxInt(u32)) @panic("std/quantity:pow: exponent too large");
-        acc.pow(&d.m, @intCast(an)) catch @panic("std/quantity:pow: out of memory");
-        const ds = acc.toString(koru_allocator(), 10, .lower) catch @panic("std/quantity:pow: out of memory");
-        defer koru_allocator().free(ds);
-        var p = decFromDigits(koru_allocator(), ds, d.e * an, d.neg and @mod(an, 2) != 0) catch @panic("std/quantity:pow: out of memory");
-        defer decDeinit(&p);
-        if (n < 0) {
-            var one = decInit(koru_allocator(), 1, 0) catch @panic("std/quantity:pow: out of memory");
-            defer decDeinit(&one);
-            const q2 = decDiv(koru_allocator(), &one, &p, UNC_PREC) catch @panic("std/quantity:pow: out of memory");
-            decDeinit(&p);
-            p = q2;
-        }
-        mag = decToString(koru_allocator(), &p) catch @panic("std/quantity:pow: out of memory");
-    }
-    defer koru_allocator().free(mag);
-    var d: Dim = DIM_ZERO;
-    for (0..7) |i| d[i] = qa.dim[i] * @as(i32, @intCast(n));
-    const unc = uncPow(koru_allocator(), qa.mag, qa.unc, n, mag) catch @panic("std/quantity:pow: out of memory");
-    defer if (unc) |u| koru_allocator().free(u);
-    return qtyPack(koru_allocator(), .{ .mag = mag, .dim = d, .unc = unc }) catch @panic("std/quantity:pow: out of memory");
-}
+~pow-pos = std/num:dup(n: mag): dm |> std/num:abs(a: dm.b): am |> std/num:pow(a: am, n: e - 1)
+| neg-exp |> std/num:free(n: dm.a) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r -> r
+| exact p1 |> std/num:from-int(i: e): en |> std/num:mul(a: en, b: unc): t |> std/num:mul(a: t, b: p1): sig |> std/num:pow(dm.a, n: e)
+    | neg-exp |> std/num:free(n: sig) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r -> r
+    | exact rm |> dim-scale(a: dim, n: e): rd |> std/io:free(content: dim) |> pack(mag: rm, unc: sig, dim: rd, cov): q -> q
 
-// The equivalence law: canonical quantities are string-equal iff equal —
-// 1000 g ≡ 1 kg because parse scales to SI bases.
+~tor pow-neg { mag: string<std/num:!exact>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated>, e: i64 }
+| exact string<exact!>
+| div-zero
+
+~pow-neg = std/num:dup(n: mag): dm |> std/num:abs(a: dm.b): am |> std/num:dup(n: am): da |> std/num:pow(dm.a, n: e)
+| neg-exp |> std/num:free(n: da.a) |> std/num:free(n: da.b) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
+| exact pfull |> std/num:pow(da.a, n: e)
+    | neg-exp |> std/num:free(n: pfull) |> std/num:free(n: da.b) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
+    | exact pe |> std/num:mul(a: pe, da.b): den |> std/num:from-int(i: e): en |> std/num:mul(a: en, b: unc): t |> std/num:div(a: t, b: den, prec: 15)
+        | div-zero |> std/num:free(n: pfull) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
+        | exact sig |> std/num:from-int(i: 1): one |> std/num:div(a: one, b: pfull, prec: 15)
+            | div-zero |> std/num:free(n: sig) |> std/io:free(content: dim) |> std/io:free(content: cov) => div-zero
+            | exact rm |> dim-scale(a: dim, n: 0 - e): rd |> std/io:free(content: dim) |> pack(mag: rm, unc: sig, dim: rd, cov): q => exact q
+
+~pub tor pow { a: string<!exact>, n: i64 }
+| exact string<exact!>
+| div-zero
+
+~pow = unpack(n: a): f |> if(n == 0)
+| then |> dim-scale(a: f.dim, n: 0): rd |> std/num:free(n: f.mag) |> std/num:free(n: f.unc) |> std/io:free(content: f.dim) |> std/num:from-int(i: 1): one |> std/num:from-int(i: 0): z |> pack(mag: one, unc: z, dim: rd, f.cov): q => exact q
+| else |> if(n < 0)
+    | then |> pow-neg(f.mag, f.unc, f.dim, f.cov, e: 0 - n)
+        | exact q => exact q
+        | div-zero => div-zero
+    | else |> pow-pos(f.mag, f.unc, f.dim, f.cov, e: n): q => exact q
+
+// ============================================================================
+// Accessors and linearity
+// ============================================================================
+
+// equiv: the equivalence law. Canonical packs are string-equal iff equal —
+// dims are normalized at pack time, so m/s·s == m is a string comparison.
 ~pub tor equiv { a: string<exact>, b: string<exact> }
 | same
 | diff
@@ -772,44 +711,28 @@ fn qtyParse(alloc: std.mem.Allocator, s_in: []const u8) ![]u8 {
     return .{ .diff = .{} };
 }
 
-// ============================================================================
-// Accessors and linearity
-// ============================================================================
-
 // Unwrap the magnitude into the number tower: consumes the quantity and
 // produces its magnitude as <std/num:exact!> — feedable to num ops.
 ~pub tor mag { q: string<!exact> } -> string<std/num:exact!>
 
-~proc mag|zig {
-    var qa: Qty = undefined;
-    if (!qtyUnpack(koru_allocator(), q, &qa)) @panic("std/quantity:mag: malformed operand");
-    defer qtyFree(q);
-    return ownedCopy(qa.mag);
-}
+~mag = dup(n: q): d |> unpack(n: d.b): f |> std/num:free(n: f.unc) |> std/io:free(content: f.dim) |> std/io:free(content: f.cov) |> free(n: d.a) -> f.mag
 
 // The dimension vector as canonical text — for diagnostics and print.
 ~pub tor dim { q: string<!exact> } -> string<std/io:allocated!>
 
-~proc dim|zig {
-    var qa: Qty = undefined;
-    if (!qtyUnpack(koru_allocator(), q, &qa)) @panic("std/quantity:dim: malformed operand");
-    defer qtyFree(q);
-    return dimCanon(koru_allocator(), qa.dim) catch @panic("std/quantity:dim: out of memory");
-}
+~dim = dup(n: q): d |> unpack(n: d.b): f |> std/num:free(n: f.mag) |> std/num:free(n: f.unc) |> std/io:free(content: f.cov) |> free(n: d.a) -> f.dim
 
-// The uncertainty as allocated text ("-" when absent).
+// The sigma as canonical decimal text ("0e0" when the quantity is certain).
 ~pub tor unc { q: string<!exact> } -> string<std/io:allocated!>
 
-~proc unc|zig {
-    var qa: Qty = undefined;
-    if (!qtyUnpack(koru_allocator(), q, &qa)) @panic("std/quantity:unc: malformed operand");
-    defer qtyFree(q);
-    return ownedCopy(if (qa.unc) |u| u else "-");
-}
+~unc = dup(n: q): d |> unpack(n: d.b): f |> std/num:free(n: f.mag) |> std/io:free(content: f.dim) |> std/io:free(content: f.cov) |> std/num:render(n: f.unc): t |> free(n: d.a) -> t
 
-~pub tor dup { n: string<!exact> }
-| a string<exact!>
-| b string<exact!>
+// The shared-source tag ("-" when independent).
+~pub tor cov { q: string<!exact> } -> string<std/io:allocated!>
+
+~cov = dup(n: q): d |> unpack(n: d.b): f |> std/num:free(n: f.mag) |> std/num:free(n: f.unc) |> std/io:free(content: f.dim) |> free(n: d.a) -> f.cov
+
+~pub tor dup { n: string<!exact> } -> { a: string<exact!>, b: string<exact!> }
 
 ~proc dup|zig {
     const cp = ownedCopy(n);
@@ -822,8 +745,7 @@ fn qtyParse(alloc: std.mem.Allocator, s_in: []const u8) ![]u8 {
     qtyFree(n);
 }
 
-// Render as allocated text — the canonical pack IS the rendered form.
-// Discharge with `std/io:free`.
+// Render: the canonical pack text, handed to the io tower as <allocated!>.
 ~pub tor render { n: string<!exact> } -> string<std/io:allocated!>
 
 ~proc render|zig {
