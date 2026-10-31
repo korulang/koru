@@ -1,0 +1,691 @@
+// Koru Standard Library: the `supgen` part of sym.kz — SupGen:
+// certificate-producing structural synthesis over the Dec/sym tower.
+// Joined via `~part supgen` in sym.kz; merged into the module at load.
+//
+// Power-series arithmetic over exact rationals (Rat = n/d over big ints)
+// and bounded ODE discovery: enumerate (order, degree) candidates, build
+// the series residual, solve for the relation kernel exactly, verify the
+// residual on terms NOT used in the solve, emit a certificate string —
+// or refuse `| not-found` (never claims nonexistence; bounds are named).
+//
+// Series of any expression in the sym grammar (dec/x/+/*/inv/sqrt) has
+// RATIONAL coefficients — every construct here is D-finite. Constant
+// atoms pi/e/phi are not rational, so series over them refuse
+// | non-rational; poles and zero-constant sqrt/inverses refuse
+// | non-analytic.
+
+const Rat = struct { n: BI, d: BI }; // d > 0, gcd(|n|, d) = 1; zero is 0/1
+
+fn ratNorm(alloc: std.mem.Allocator, num: BI, den: BI) !Rat {
+    var num2 = num;
+    var den2 = den;
+    if (num2.eqlZero()) {
+        num2.deinit();
+        den2.deinit();
+        return .{ .n = try BI.initSet(alloc, 0), .d = try BI.initSet(alloc, 1) };
+    }
+    errdefer num2.deinit();
+    errdefer den2.deinit();
+    if (den2.toConst().orderAgainstScalar(@as(i64, 0)) == .lt) {
+        num2.negate();
+        den2.negate();
+    }
+    var g = try biGcd(alloc, &num2, &den2);
+    defer g.deinit();
+    if (g.toConst().orderAgainstScalar(@as(u64, 1)) != .eq) {
+        var q = try BI.init(alloc);
+        var r = try BI.init(alloc);
+        defer r.deinit();
+        try q.divTrunc(&r, &num2, &g);
+        num2.deinit();
+        num2 = q;
+        var q2 = try BI.init(alloc);
+        errdefer q2.deinit();
+        var r2 = try BI.init(alloc);
+        defer r2.deinit();
+        try q2.divTrunc(&r2, &den2, &g);
+        den2.deinit();
+        den2 = q2;
+    }
+    return .{ .n = num2, .d = den2 };
+}
+
+fn ratDeinit(r: *Rat) void {
+    r.n.deinit();
+    r.d.deinit();
+}
+
+fn ratClone(r: *const Rat) !Rat {
+    return .{ .n = try r.n.clone(), .d = try r.d.clone() };
+}
+
+fn ratIsZero(r: *const Rat) bool {
+    return r.n.eqlZero();
+}
+
+fn ratAdd(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var t1 = try BI.init(alloc);
+    errdefer t1.deinit();
+    try t1.mul(&a.n, &b.d);
+    var t2 = try BI.init(alloc);
+    errdefer t2.deinit();
+    try t2.mul(&b.n, &a.d);
+    try t1.add(&t1, &t2);
+    t2.deinit();
+    var dd = try BI.init(alloc);
+    errdefer dd.deinit();
+    try dd.mul(&a.d, &b.d);
+    return ratNorm(alloc, t1, dd);
+}
+
+fn ratMul(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var n1 = try BI.init(alloc);
+    errdefer n1.deinit();
+    try n1.mul(&a.n, &b.n);
+    var d1 = try BI.init(alloc);
+    errdefer d1.deinit();
+    try d1.mul(&a.d, &b.d);
+    return ratNorm(alloc, n1, d1);
+}
+
+fn ratNeg(a: *const Rat) !Rat {
+    var n2 = try a.n.clone();
+    errdefer n2.deinit();
+    n2.negate();
+    const d2 = try a.d.clone();
+    return .{ .n = n2, .d = d2 };
+}
+
+fn ratInv(alloc: std.mem.Allocator, a: *const Rat) !Rat {
+    if (a.n.eqlZero()) return error.DivZero;
+    var n2 = try a.d.clone();
+    errdefer n2.deinit();
+    var d2 = try a.n.clone();
+    errdefer d2.deinit();
+    return ratNorm(alloc, n2, d2);
+}
+
+fn ratSub(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var nb = try ratNeg(b);
+    defer ratDeinit(&nb);
+    return ratAdd(alloc, a, &nb);
+}
+
+fn ratDiv(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var ib = try ratInv(alloc, b);
+    defer ratDeinit(&ib);
+    return ratMul(alloc, a, &ib);
+}
+
+fn ratMulInt(alloc: std.mem.Allocator, a: *const Rat, v: i64) !Rat {
+    var iv = try BI.initSet(alloc, v);
+    defer iv.deinit();
+    var n1 = try BI.init(alloc);
+    errdefer n1.deinit();
+    try n1.mul(&a.n, &iv);
+    const d1 = try a.d.clone();
+    return ratNorm(alloc, n1, d1);
+}
+
+fn ratFromInt(alloc: std.mem.Allocator, v: i64) !Rat {
+    return .{ .n = try BI.initSet(alloc, v), .d = try BI.initSet(alloc, 1) };
+}
+
+fn ratFromDec(alloc: std.mem.Allocator, d: *const Dec) !Rat {
+    var num = try d.m.clone();
+    errdefer num.deinit();
+    if (d.neg) num.negate();
+    var den = try BI.initSet(alloc, 1);
+    errdefer den.deinit();
+    if (d.e >= 0) {
+        var p = try pow10(alloc, d.e);
+        defer p.deinit();
+        try num.mul(&num, &p);
+    } else {
+        den.deinit();
+        den = try pow10(alloc, -d.e);
+    }
+    return ratNorm(alloc, num, den);
+}
+
+fn ratToString(alloc: std.mem.Allocator, r: *const Rat) ![]u8 {
+    const ns = try r.n.toString(alloc, 10, .lower);
+    defer alloc.free(ns);
+    const v = denIsOne(r);
+    if (v) return alloc.dupe(u8, ns);
+    const ds = try r.d.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return std.fmt.allocPrint(alloc, "{s}/{s}", .{ ns, ds });
+}
+
+fn denIsOne(r: *const Rat) bool {
+    return r.d.toConst().orderAgainstScalar(@as(u64, 1)) == .eq;
+}
+
+// ============================================================================
+// Power series over Rat, truncated at length L (coeffs of x^0..x^(L-1)).
+// ============================================================================
+
+fn serZero(alloc: std.mem.Allocator, L: usize) ![]Rat {
+    const s = try alloc.alloc(Rat, L);
+    var i: usize = 0;
+    errdefer {
+        for (s[0..i]) |*c| ratDeinit(c);
+        alloc.free(s);
+    }
+    while (i < L) : (i += 1) {
+        s[i] = .{ .n = try BI.initSet(alloc, 0), .d = try BI.initSet(alloc, 1) };
+    }
+    return s;
+}
+
+fn serFree(alloc: std.mem.Allocator, s: []Rat) void {
+    for (s) |*c| ratDeinit(c);
+    alloc.free(s);
+}
+
+fn serAdd(alloc: std.mem.Allocator, a: []const Rat, b: []const Rat) ![]Rat {
+    const L = a.len;
+    const s = try alloc.alloc(Rat, L);
+    var i: usize = 0;
+    errdefer {
+        for (s[0..i]) |*c| ratDeinit(c);
+        alloc.free(s);
+    }
+    while (i < L) : (i += 1) s[i] = try ratAdd(alloc, &a[i], &b[i]);
+    return s;
+}
+
+fn serMul(alloc: std.mem.Allocator, a: []const Rat, b: []const Rat) ![]Rat {
+    const L = a.len;
+    const s = try alloc.alloc(Rat, L);
+    var i: usize = 0;
+    errdefer {
+        for (s[0..i]) |*c| ratDeinit(c);
+        alloc.free(s);
+    }
+    while (i < L) : (i += 1) {
+        var acc = try ratFromInt(alloc, 0);
+        var j: usize = 0;
+        while (j <= i) : (j += 1) {
+            var t = try ratMul(alloc, &a[j], &b[i - j]);
+            defer ratDeinit(&t);
+            const acc2 = try ratAdd(alloc, &acc, &t);
+            ratDeinit(&acc);
+            acc = acc2;
+        }
+        s[i] = acc;
+    }
+    return s;
+}
+
+fn serInv(alloc: std.mem.Allocator, c: []const Rat) ![]Rat {
+    if (c[0].n.eqlZero()) return error.NonAnalytic;
+    const L = c.len;
+    const s = try alloc.alloc(Rat, L);
+    var i: usize = 0;
+    errdefer {
+        for (s[0..i]) |*x| ratDeinit(x);
+        alloc.free(s);
+    }
+    var c0i = try ratInv(alloc, &c[0]);
+    defer ratDeinit(&c0i);
+    s[0] = try ratInv(alloc, &c[0]);
+    i = 1;
+    while (i < L) : (i += 1) {
+        var acc = try ratFromInt(alloc, 0);
+        var j: usize = 1;
+        while (j <= i) : (j += 1) {
+            var t = try ratMul(alloc, &c[j], &s[i - j]);
+            defer ratDeinit(&t);
+            const acc2 = try ratAdd(alloc, &acc, &t);
+            ratDeinit(&acc);
+            acc = acc2;
+        }
+        defer ratDeinit(&acc);
+        var out = try ratMul(alloc, &c0i, &acc);
+        defer ratDeinit(&out);
+        s[i] = try ratNeg(&out);
+    }
+    return s;
+}
+
+fn biIsSquare(alloc: std.mem.Allocator, v: *const BI) !?BI {
+    var r = try BI.init(alloc);
+    errdefer r.deinit();
+    try r.sqrt(v);
+    var q = try BI.init(alloc);
+    defer q.deinit();
+    try q.mul(&r, &r);
+    if (q.eql(v.*)) return r;
+    r.deinit();
+    return null;
+}
+
+fn serSqrt(alloc: std.mem.Allocator, c: []const Rat) ![]Rat {
+    // s0 = sqrt(c0) must be rational; then s_n = (c_n - sum s_i s_{n-i})/(2 s0)
+    if (c[0].n.eqlZero()) return error.NonAnalytic;
+    const ns = (try biIsSquare(alloc, &c[0].n)) orelse return error.NonRational;
+    var ns2 = ns;
+    const ds = (try biIsSquare(alloc, &c[0].d)) orelse {
+        ns2.deinit();
+        return error.NonRational;
+    };
+    var ds2 = ds;
+    if (c[0].n.toConst().orderAgainstScalar(@as(i64, 0)) == .lt) {
+        ns2.deinit();
+        ds2.deinit();
+        return error.NonRational;
+    }
+    const L = c.len;
+    const s = try alloc.alloc(Rat, L);
+    var i: usize = 0;
+    errdefer {
+        for (s[0..i]) |*x| ratDeinit(x);
+        alloc.free(s);
+    }
+    s[0] = try ratNorm(alloc, ns2, ds2);
+    i = 1;
+    var two_s0 = try ratMulInt(alloc, &s[0], 2);
+    defer ratDeinit(&two_s0);
+    while (i < L) : (i += 1) {
+        var acc = try ratClone(&c[i]);
+        var j: usize = 1;
+        while (j < i) : (j += 1) {
+            var t = try ratMul(alloc, &s[j], &s[i - j]);
+            defer ratDeinit(&t);
+            const acc2 = try ratSub(alloc, &acc, &t);
+            ratDeinit(&acc);
+            acc = acc2;
+        }
+        defer ratDeinit(&acc);
+        s[i] = try ratDiv(alloc, &acc, &two_s0);
+    }
+    return s;
+}
+
+fn serFromNode(alloc: std.mem.Allocator, n: *const SNode, L: usize) anyerror![]Rat {
+    switch (n.kind) {
+        .dec => {
+            const s = try serZero(alloc, L);
+            errdefer serFree(alloc, s);
+            const c0 = try ratFromDec(alloc, &n.dec);
+            ratDeinit(&s[0]);
+            s[0] = c0;
+            return s;
+        },
+        .atom => {
+            if (n.atom != 3) return error.NonRational;
+            const s = try serZero(alloc, L);
+            errdefer serFree(alloc, s);
+            if (L > 1) {
+                const c1 = try ratFromInt(alloc, 1);
+                ratDeinit(&s[1]);
+                s[1] = c1;
+            }
+            return s;
+        },
+        .add => {
+            var acc = try serZero(alloc, L);
+            errdefer serFree(alloc, acc);
+            for (n.kids) |k| {
+                const ks = try serFromNode(alloc, k, L);
+                defer serFree(alloc, ks);
+                const acc2 = try serAdd(alloc, acc, ks);
+                serFree(alloc, acc);
+                acc = acc2;
+            }
+            return acc;
+        },
+        .mul => {
+            var acc = try serFromNode(alloc, n.kids[0], L);
+            errdefer serFree(alloc, acc);
+            for (n.kids[1..]) |k| {
+                const ks = try serFromNode(alloc, k, L);
+                defer serFree(alloc, ks);
+                const acc2 = try serMul(alloc, acc, ks);
+                serFree(alloc, acc);
+                acc = acc2;
+            }
+            return acc;
+        },
+        .inv => {
+            const inner = try serFromNode(alloc, n.kid, L);
+            defer serFree(alloc, inner);
+            return serInv(alloc, inner);
+        },
+        .sq => {
+            const inner = try serFromNode(alloc, n.kid, L);
+            defer serFree(alloc, inner);
+            return serSqrt(alloc, inner);
+        },
+    }
+}
+
+fn ratJoinCsv(alloc: std.mem.Allocator, s: []const Rat) ![]u8 {
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    const hdr = std.fmt.allocPrint(alloc, "terms={d}:", .{s.len}) catch return error.OutOfMemory;
+    defer alloc.free(hdr);
+    try out.appendSlice(alloc, hdr);
+    for (s, 0..) |*c, i| {
+        if (i > 0) try out.append(alloc, ',');
+        const cs = try ratToString(alloc, c);
+        defer alloc.free(cs);
+        try out.appendSlice(alloc, cs);
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+// ============================================================================
+// Bounded ODE discovery (SupGen derive): find p_k(x) of degree <= D with
+//   sum_k p_k(x) f^(k)(x) = 0   (k = 0..K)
+// by solving the series-residual linear system over Q, then verifying the
+// residual on terms NOT used by the solve.
+// ============================================================================
+
+fn rrefNullVec(alloc: std.mem.Allocator, rows: [][]Rat, ncols: usize) !?[]Rat {
+    const M = rows.len;
+    var piv_of_col = try alloc.alloc(isize, ncols);
+    defer alloc.free(piv_of_col);
+    for (piv_of_col) |*x| x.* = -1;
+    var r: usize = 0;
+    var c: usize = 0;
+    while (c < ncols and r < M) : (c += 1) {
+        var piv: ?usize = null;
+        var i = r;
+        while (i < M) : (i += 1) {
+            if (!ratIsZero(&rows[i][c])) { piv = i; break; }
+        }
+        if (piv == null) continue;
+        if (piv.? != r) {
+            const tmp = rows[r];
+            rows[r] = rows[piv.?];
+            rows[piv.?] = tmp;
+        }
+        var inv = try ratInv(alloc, &rows[r][c]);
+        defer ratDeinit(&inv);
+        for (0..ncols) |j| {
+            if (ratIsZero(&rows[r][j])) continue;
+            const v = try ratMul(alloc, &rows[r][j], &inv);
+            rows[r][j].n.deinit();
+            rows[r][j].d.deinit();
+            rows[r][j] = v;
+        }
+        for (0..M) |ri| {
+            if (ri == r or ratIsZero(&rows[ri][c])) continue;
+            var f = try ratClone(&rows[ri][c]);
+            defer ratDeinit(&f);
+            for (0..ncols) |j| {
+                if (ratIsZero(&rows[r][j])) continue;
+                var tm = try ratMul(alloc, &f, &rows[r][j]);
+                defer ratDeinit(&tm);
+                const v = try ratSub(alloc, &rows[ri][j], &tm);
+                rows[ri][j].n.deinit();
+                rows[ri][j].d.deinit();
+                rows[ri][j] = v;
+            }
+        }
+        piv_of_col[c] = @intCast(r);
+        r += 1;
+    }
+    if (r == ncols) return null;
+    // pick the last free column, set it to 1
+    var freecol: usize = 0;
+    var c2: usize = ncols;
+    while (c2 > 0) {
+        c2 -= 1;
+        if (piv_of_col[c2] == -1) { freecol = c2; break; }
+    }
+    const x = try alloc.alloc(Rat, ncols);
+    errdefer alloc.free(x);
+    var i: usize = 0;
+    errdefer for (x[0..i]) |*v| ratDeinit(v);
+    while (i < ncols) : (i += 1) {
+        if (piv_of_col[i] == -1) {
+            x[i] = try ratFromInt(alloc, if (i == freecol) 1 else 0);
+        } else {
+            const pr: usize = @intCast(piv_of_col[i]);
+            x[i] = try ratNeg(&rows[pr][freecol]);
+        }
+    }
+    return x;
+}
+
+fn symDeriveOde(alloc: std.mem.Allocator, a: []const u8, max_order: i64, max_deg: i64) !?[]u8 {
+    const t = try parseTree(alloc, a);
+    defer nodeFree(alloc, t);
+    const nt = try norm(alloc, t);
+    defer nodeFree(alloc, nt);
+    const K = @as(usize, @intCast(max_order));
+    const D = @as(usize, @intCast(max_deg));
+    const U_max = (K + 1) * (D + 1);
+    const L: usize = U_max + 8 + 8 + 5 + K + 2;
+    const ser = try serFromNode(alloc, nt, L);
+    defer serFree(alloc, ser);
+    // derivative series: fder[k][n] = ser[n+k] * prod_{i=1..k}(n+i)
+    var fder = try alloc.alloc([]Rat, K + 1);
+    var fdn: usize = 0;
+    errdefer {
+        for (fder[0..fdn]) |row| serFree(alloc, row);
+        alloc.free(fder);
+    }
+    defer alloc.free(fder);
+    for (0..K + 1) |k| {
+        fder[k] = try alloc.alloc(Rat, L);
+        var nn: usize = 0;
+        errdefer {
+            for (fder[k][0..nn]) |*c| ratDeinit(c);
+            alloc.free(fder[k]);
+        }
+        while (nn < L) : (nn += 1) {
+            if (nn + k >= L) {
+                fder[k][nn] = try ratFromInt(alloc, 0);
+            } else {
+                var rf: i64 = 1;
+                var m: i64 = 1;
+                while (m <= @as(i64, @intCast(k))) : (m += 1) rf *= @as(i64, @intCast(nn)) + m;
+                fder[k][nn] = try ratMulInt(alloc, &ser[nn + k], rf);
+            }
+        }
+        fdn += 1;
+    }
+    defer for (fder[0 .. K + 1]) |row| serFree(alloc, row);
+
+    // f identically zero -> no useful certificate
+    var any = false;
+    for (ser) |*c| {
+        if (!ratIsZero(c)) { any = true; break; }
+    }
+    if (!any) return null;
+
+    var Kcur: usize = 0;
+    while (Kcur <= K) : (Kcur += 1) {
+        var Dcur: usize = 0;
+        while (Dcur <= D) : (Dcur += 1) {
+            const U = (Kcur + 1) * (Dcur + 1);
+            const M = U + 8;
+            const V: usize = 13; // 8 unused-by-solve rows + 5 beyond the block
+            if (M + V + Kcur > L) continue;
+            // rows for n = 0..M+V-1; solve uses first M, all M+V verified after
+            const R = M + V;
+            var rows = try alloc.alloc([]Rat, R);
+            var rn: usize = 0;
+            errdefer {
+                for (rows[0..rn]) |row| {
+                    for (row) |*c| ratDeinit(c);
+                    alloc.free(row);
+                }
+                alloc.free(rows);
+            }
+            while (rn < R) : (rn += 1) {
+                rows[rn] = try alloc.alloc(Rat, U);
+                var uu: usize = 0;
+                errdefer {
+                    for (rows[rn][0..uu]) |*c| ratDeinit(c);
+                    alloc.free(rows[rn]);
+                }
+                while (uu < U) : (uu += 1) {
+                    const kk = uu / (Dcur + 1);
+                    const jj = uu % (Dcur + 1);
+                    const idx = @as(i64, @intCast(rn)) - @as(i64, @intCast(jj));
+                    if (idx < 0) {
+                        rows[rn][uu] = try ratFromInt(alloc, 0);
+                    } else {
+                        rows[rn][uu] = try ratClone(&fder[kk][@intCast(idx)]);
+                    }
+                }
+            }
+            defer {
+                for (rows[0..R]) |row| {
+                    for (row) |*c| ratDeinit(c);
+                    alloc.free(row);
+                }
+                alloc.free(rows);
+            }
+            // solve on first M rows
+            const x = (try rrefNullVec(alloc, rows[0..M], U)) orelse continue;
+            defer {
+                for (x) |*v| ratDeinit(v);
+                alloc.free(x);
+            }
+            // verify residual on ALL M+V rows (V rows never entered the solve)
+            var ok = true;
+            for (rows[0..R]) |row| {
+                var acc = try ratFromInt(alloc, 0);
+                defer ratDeinit(&acc);
+                for (0..U) |uu| {
+                    if (ratIsZero(&x[uu]) or ratIsZero(&row[uu])) continue;
+                    var tm = try ratMul(alloc, &x[uu], &row[uu]);
+                    defer ratDeinit(&tm);
+                    const acc2 = try ratAdd(alloc, &acc, &tm);
+                    ratDeinit(&acc);
+                    acc = acc2;
+                }
+                if (!ratIsZero(&acc)) { ok = false; break; }
+            }
+            if (!ok) continue;
+            // integerize: lcm of denominators, then divide by content gcd
+            var l = try BI.initSet(alloc, 1);
+            defer l.deinit();
+            for (x) |*v| {
+                var g = try biGcd(alloc, &l, &v.d);
+                defer g.deinit();
+                var q = try BI.init(alloc);
+                var r2 = try BI.init(alloc);
+                try q.divTrunc(&r2, &v.d, &g);
+                r2.deinit();
+                var nl = try BI.init(alloc);
+                try nl.mul(&l, &q);
+                q.deinit();
+                l.deinit();
+                l = nl;
+            }
+            var ints = try alloc.alloc(BI, U);
+            var nint: usize = 0;
+            defer {
+                for (ints[0..nint]) |*v| v.deinit();
+                alloc.free(ints);
+            }
+            while (nint < U) : (nint += 1) {
+                var q = try BI.init(alloc);
+                var r2 = try BI.init(alloc);
+                try q.divTrunc(&r2, &l, &x[nint].d);
+                r2.deinit();
+                ints[nint] = try BI.init(alloc);
+                try ints[nint].mul(&x[nint].n, &q);
+                q.deinit();
+            }
+            var cg = try ints[0].clone();
+            defer cg.deinit();
+            cg.abs();
+            for (ints[1..]) |*v| {
+                var va = try v.clone();
+                defer va.deinit();
+                va.abs();
+                const g2 = try biGcd(alloc, &cg, &va);
+                cg.deinit();
+                cg = g2;
+            }
+            if (!cg.eqlZero() and cg.toConst().orderAgainstScalar(@as(u64, 1)) != .eq) {
+                for (ints) |*v| {
+                    var q = try BI.init(alloc);
+                    var r2 = try BI.init(alloc);
+                    try q.divTrunc(&r2, v, &cg);
+                    r2.deinit();
+                    v.deinit();
+                    v.* = q;
+                }
+            }
+            var out = std.ArrayList(u8){};
+            errdefer out.deinit(alloc);
+            const hdr = std.fmt.allocPrint(alloc, "ode(k={d},d={d},verified={d})", .{ Kcur, Dcur, R }) catch return error.OutOfMemory;
+            defer alloc.free(hdr);
+            try out.appendSlice(alloc, hdr);
+            var k2: usize = 0;
+            while (k2 <= Kcur) : (k2 += 1) {
+                const tag = std.fmt.allocPrint(alloc, "|p{d}=[", .{k2}) catch return error.OutOfMemory;
+                defer alloc.free(tag);
+                try out.appendSlice(alloc, tag);
+                var j2: usize = 0;
+                while (j2 <= Dcur) : (j2 += 1) {
+                    if (j2 > 0) try out.append(alloc, ',');
+                    const cs = try ints[k2 * (Dcur + 1) + j2].toString(alloc, 10, .lower);
+                    defer alloc.free(cs);
+                    try out.appendSlice(alloc, cs);
+                }
+                try out.append(alloc, ']');
+            }
+            return try out.toOwnedSlice(alloc);
+        }
+    }
+    return null;
+}
+
+// Series of a canonical sexpr at x=0 — `terms` coefficients as
+// `terms=L:c0,c1,...` over exact rationals.
+~pub tor series { a: string<!sexpr>, terms: i64 }
+| exact string<std/io:allocated!>
+| non-analytic
+| non-rational
+| bad
+
+~proc series|zig {
+    defer symFree(a);
+    if (terms < 1 or terms > 512) return .{ .bad = .{} };
+    const t = parseTree(koru_allocator(), a) catch @panic("std/sym:series: malformed operand");
+    defer nodeFree(koru_allocator(), t);
+    const s = serFromNode(koru_allocator(), t, @intCast(terms)) catch |err| switch (err) {
+        error.NonAnalytic => return .{ .non_analytic = .{} },
+        error.NonRational => return .{ .non_rational = .{} },
+        error.Bad => return .{ .bad = .{} },
+        else => @panic("std/sym:series"),
+    };
+    defer serFree(koru_allocator(), s);
+    const csv = ratJoinCsv(koru_allocator(), s) catch @panic("std/sym:series");
+    return .{ .exact = csv };
+}
+
+// SupGen derive: bounded holonomic ODE discovery. Enumerates
+// (order, degree) up to the declared bounds, solves the series-residual
+// linear system exactly, verifies the residual on terms the solve never
+// used, and emits a certificate — or | not-found (within bounds).
+~pub tor derive-ode { a: string<!sexpr>, max-order: i64, max-deg: i64 }
+| exact string<std/io:allocated!>
+| not-found
+| non-analytic
+| non-rational
+| bad
+
+~proc derive-ode|zig {
+    defer symFree(a);
+    if (max_order < 0 or max_order > 8 or max_deg < 0 or max_deg > 12) return .{ .bad = .{} };
+    const r = symDeriveOde(koru_allocator(), a, max_order, max_deg) catch |err| switch (err) {
+        error.NonAnalytic => return .{ .non_analytic = .{} },
+        error.NonRational => return .{ .non_rational = .{} },
+        error.Bad => return .{ .bad = .{} },
+        else => @panic("std/sym:derive-ode"),
+    };
+    if (r) |cert| return .{ .exact = cert };
+    return .{ .not_found = .{} };
+}

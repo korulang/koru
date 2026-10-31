@@ -36,4 +36,13 @@ The pattern generalizes past bigints: any "reset the moved slot" idiom
 assumes the reset value is cheap and inert. If constructing the inert value
 allocates, the reset is a leak wearing a fix's clothes.
 
+The converse ruling (supgen rung, 2026-10-31): **assigning into an
+initialized slot is a move — deinit the old value first.** `serZero`
+pre-fills every coefficient with a live `0/1` Rat, so `s[i] = f(...)` on top
+of it silently leaks the zero. Same shape, opposite direction: the slot was
+already owned. Either allocate the buffer *undefined* and fill, or
+`ratDeinit(&s[i])` before every overwrite. Both directions of the trap live
+in the same file now: the dummy-reset leaked what it pretended to prevent;
+the pre-fill leaked what it pretended to initialize.
+
 Parents: frag-a-returned-managed-wants-errdefer-never-defer
