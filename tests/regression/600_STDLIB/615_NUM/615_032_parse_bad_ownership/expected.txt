@@ -1,0 +1,2 @@
+bad num: not-a-number
+bad qty: 5 furlongs per fortnight!!
