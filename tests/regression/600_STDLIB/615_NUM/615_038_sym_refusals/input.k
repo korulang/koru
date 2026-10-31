@@ -6,32 +6,32 @@ import std/sym
 
 std/sym:ingest(s: "π*e"): x |> std/sym:parse(s: x)
     | exact r |> std/io:print.ln("{{ r:s }}") |> std/sym:free(n: r)
-    | bad b
+    | bad b |> std/io:free(content: b)
 
 std/sym:ingest(s: "not-an-expr!!"): x |> std/sym:parse(s: x)
     | exact r |> std/io:print.ln("{{ r:s }}") |> std/sym:free(n: r)
-    | bad b |> std/io:print.ln("sym:parse bad")
+    | bad b |> std/io:print.ln("sym:parse bad") |> std/io:free(content: b)
 
-std/sym:lit(5)
-| exact a |> std/sym:lit(0)
+std/sym:lit(s: "5")
+| exact a |> std/sym:lit(s: "0")
     | exact b |> std/sym:div(a, b)
         | exact r |> std/io:print.ln("{{ r:s }}") |> std/sym:free(n: r)
         | div-zero |> std/io:print.ln("sym:div-zero")
     | bad |> std/io:print.ln("bad2") |> std/sym:free(n: a)
 | bad |> std/io:print.ln("bad")
 
-std/sym:lit(-4)
+std/sym:lit(s: "-4")
 | exact a |> std/sym:sqrt(a)
     | exact r |> std/io:print.ln("{{ r:s }}") |> std/sym:free(n: r)
     | neg-root |> std/io:print.ln("sym:neg-root")
 | bad |> std/io:print.ln("bad")
 
-std/sym:lit(4)
+std/sym:lit(s: "4")
 | exact a |> std/sym:sqrt(a)
     | exact r |> std/io:print.ln("{{ r:s }}") |> std/sym:free(n: r)
     | neg-root |> std/io:print.ln("nr")
 | bad |> std/io:print.ln("bad")
 
-std/sym:lit(√(2))
+std/sym:lit(s: "√(2)")
 | exact a |> std/sym:neg(a): r |> std/io:print.ln("{{ r:s }}") |> std/sym:free(n: r)
 | bad |> std/io:print.ln("bad")
