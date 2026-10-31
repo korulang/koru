@@ -703,10 +703,9 @@ var metatype_global_counter: usize = 0;
                 rewritten_step = ast.Step{ .label_with_invocation = marked_lwi };
             }
 
-            // Add @scope annotation to mark this as a scope boundary for obligation tracking.
-            // Tap code runs in its own scope - it can observe but cannot satisfy outer obligations.
-            const scope_marks = alloc.alloc([]const u8, 1) catch unreachable;
-            scope_marks[0] = alloc.dupe(u8, "@scope") catch unreachable;
+            // The @scope mark below is appended to the handler's own marks in
+            // the final return — tap code runs in its own scope; it can observe
+            // but cannot satisfy outer obligations.
 
             // For metatype taps, insert a metatype_binding step before the tap step
             var actual_step = rewritten_step;
@@ -765,19 +764,29 @@ var metatype_global_counter: usize = 0;
                 }
             }
 
-            // Return wrapped continuation
-            // Use the TAP's when clause condition (rewritten to use effective binding)
-            return ast.Continuation{
-                .branch = original.branch,
-                .binding = effective_binding,
-                .binding_type = original.binding_type,
-                .binding_marks = scope_marks,
-                .node = actual_step,
-                .continuations = actual_conts,
-                .indent = original.indent,
-                .condition = rewritten_condition,
-                .condition_expr = tap_condition_expr,  // TODO: Rewrite expression tree too
-            };
+            // Return wrapped continuation. The wrap is transparent to how the
+            // handler binds its branch — kind (`|`/`!`), produce, destructure,
+            // catchall flags, binding annotations and location all carry over
+            // from `original`; dropping kind here turned a `! each` handler
+            // terminal and the shape checker refused it (KORU025). Only the
+            // step, its continuations, the effective binding, and the TAP's
+            // when clause condition (rewritten to use effective binding) change.
+            var wrapped = original.*;
+            wrapped.binding = effective_binding;
+            wrapped.node = actual_step;
+            wrapped.continuations = actual_conts;
+            wrapped.condition = rewritten_condition;
+            wrapped.condition_expr = tap_condition_expr;  // TODO: Rewrite expression tree too
+            var has_scope = false;
+            for (original.binding_marks) |mark| {
+                if (std.mem.eql(u8, mark, "@scope")) has_scope = true;
+            }
+            const marks_len = original.binding_marks.len + @intFromBool(!has_scope);
+            const new_marks = try alloc.alloc([]const u8, marks_len);
+            @memcpy(new_marks[0..original.binding_marks.len], original.binding_marks);
+            if (!has_scope) new_marks[marks_len - 1] = alloc.dupe(u8, "@scope") catch unreachable;
+            wrapped.binding_marks = new_marks;
+            return wrapped;
         }
 
         /// Build canonical tor name from DottedPath (e.g., "input:hello" or "module:path.to.tor")

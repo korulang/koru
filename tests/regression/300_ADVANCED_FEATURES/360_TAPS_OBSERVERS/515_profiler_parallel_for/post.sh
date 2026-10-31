@@ -1,0 +1,52 @@
+#!/bin/bash
+# Validates Chrome trace: the parallel fold's loop and fold-cell transitions
+# are captured end to end and the profiler stays invisible to itself.
+if [ -f "koru_profile.snapshot.json" ]; then
+    PROFILE_FILE="koru_profile.snapshot.json"
+else
+    PROFILE_FILE="/tmp/koru_profile.json"
+fi
+
+if [ ! -f "$PROFILE_FILE" ]; then
+    echo "ERROR: no trace at $PROFILE_FILE"
+    exit 1
+fi
+
+if ! grep -q '"traceEvents"' "$PROFILE_FILE"; then
+    echo "ERROR: missing traceEvents"
+    cat "$PROFILE_FILE"
+    exit 1
+fi
+
+if ! grep -q '"std.control:for"' "$PROFILE_FILE"; then
+    echo "ERROR: std.control:for transition missing"
+    cat "$PROFILE_FILE"
+    exit 1
+fi
+
+if ! grep -q '"input:captured"' "$PROFILE_FILE"; then
+    echo "ERROR: input:captured transition missing"
+    cat "$PROFILE_FILE"
+    exit 1
+fi
+
+if ! grep -q '"std.io:print.ln"' "$PROFILE_FILE"; then
+    echo "ERROR: std.io:print.ln transition missing"
+    cat "$PROFILE_FILE"
+    exit 1
+fi
+
+if ! grep -q '^]}$' "$PROFILE_FILE"; then
+    echo "ERROR: JSON not closed"
+    cat "$PROFILE_FILE"
+    exit 1
+fi
+
+if grep -qE 'write-event|write-header|write-footer' "$PROFILE_FILE"; then
+    echo "ERROR: profiler observed itself"
+    cat "$PROFILE_FILE"
+    exit 1
+fi
+
+echo "trace valid"
+exit 0

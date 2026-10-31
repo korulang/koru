@@ -173,3 +173,33 @@ tap transform, not just other opaque taps. Fix: skip opaque-marked continuations
 only when the tap being applied is itself `[opaque]`. Pin:
 `514_profiler_comptime_event_taps`. Oracle:
 `./scripts/bettermaker_profiler_oracle.sh` (8 controls, `--parallel 1`).
+
+## The weave may not rewrite the handler it observes (2026-10-29)
+
+The sections above teach consumers to LOOK PAST tap instrumentation — skip the
+void branches, peel the wrappers. The 515 join exposes the dual rule on the
+producer side: when the weave rebuilds a branch-handler continuation to wedge
+the tap in, it must be **transparent to the handler's own contract** —
+`kind` (`|`/`!`), `produce`, `destructure`, catchall flags, binding
+annotations, `is_transformed_subtree`, `location`.
+
+Measured: `wrapContinuation` rebuilt the handler from a field subset and
+dropped `kind`, so every `! each` handler came back terminal and the shape
+checker refused it — `KORU025: branch 'each' is declared as effect '!' but
+the handler uses terminal '|'` on any `for`/`[parallel]for` under
+`--profile`. The wall did exactly its job: it caught a transform mutating a
+handler's kind, the same violation it guards in author code. The silent
+drops it could not catch were worse shapes of the same omission —
+a `produce` literal or a `when`-free catchall would have been silently
+deleted rather than refused.
+
+Fix: the wrap starts from `original.*` and overrides only what the weave
+owns — the step, its continuations, the effective binding, the tap's `when`,
+and an appended `@scope` mark (appended, never replacing the handler's own
+marks). Everything else is the handler's, not the weave's.
+
+Pin: `515_profiler_parallel_for` (profiler x [parallel]for, additive fold
+under instrumentation). Oracle: `./scripts/bettermaker_profiler_oracle.sh`
+(9 controls). The parked `when`-composition question stands: if both the
+handler and the tap carry guards, the wrap still keeps only the tap's —
+unmeasured, unfixed.

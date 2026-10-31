@@ -67,6 +67,8 @@ Avoid combining pins, stale comments, and “when it goes green” into a single
 
 ## Build, Test, and Development Commands
 - `zig build` — compile the compiler; output `zig-out/bin/koruc`.
+- Ubuntu 20.04 hosts (glibc 2.31): export `KORU_BACKEND_TARGET=x86_64-linux-gnu.2.31` before any `koruc` run or regression suite — zig-0.15.1's unspecified-native backend build emits `__libc_start_main@GLIBC_2.34` and the binary won't exec. Emitted `build.zig` files honor it as the default target (a bare `zig build` inside a test dir produces a runnable binary); `-Dtarget` still overrides. The shared `~/.cache/koru-backend-cache` can hold foreign-glibc entries; `objdump -T` them and delete ones needing > 2.31.
+- Same hosts: an explicit `-Dtarget` disables zig's host library discovery, so `build:requires` tests that `linkSystemLibrary` need dev `.so` symlinks reachable via `KORU_BACKEND_LIBPATH` (path-list dirs, added as `-L` by emitted `build.zig`). A user-level symlink farm works when the dev packages aren't installed.
 - `zig build test` — run Zig unit/integration tests in `build.zig`.
 - `./run_regression.sh [range|--no-rebuild|--ignore-leaks|--run-units]` — full regression suite; snapshots in `test-results/`.
 - `node scripts/generate-status.js --format=cli` or `npm run status` — report regression markers without a full run.

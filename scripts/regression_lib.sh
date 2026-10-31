@@ -348,7 +348,7 @@ regression_check_js_equivalence() {
     [ -f "$test_dir/EXPECT_TRAP" ] && return 0
 
     local flags=""
-    [ -f "$test_dir/COMPILER_FLAGS" ] && flags=$(tr '\n' ' ' < "$test_dir/COMPILER_FLAGS")
+    [ -f "$test_dir/COMPILER_FLAGS" ] && flags=$(tr '\r\n' ' ' < "$test_dir/COMPILER_FLAGS")
 
     # Durable per-target record. The collapse into SUCCESS/FAILURE below is for
     # suite accounting; TARGETS.json is the granular truth the website reads to
@@ -470,7 +470,7 @@ regression_check_cs_equivalence() {
     [ -f "$test_dir/EXPECT_TRAP" ] && return 0
 
     local flags=""
-    [ -f "$test_dir/COMPILER_FLAGS" ] && flags=$(tr '\n' ' ' < "$test_dir/COMPILER_FLAGS")
+    [ -f "$test_dir/COMPILER_FLAGS" ] && flags=$(tr '\r\n' ' ' < "$test_dir/COMPILER_FLAGS")
 
     # Upsert one row into TARGETS.json: read the existing array (the js check
     # may have already written zig+js this run), drop any prior cs/zig rows,
@@ -891,7 +891,7 @@ regression_run_one_test() {
     # Check for COMPILER_FLAGS file to pass additional flags
     COMPILER_FLAGS=""
     if [ -f "$test_dir/COMPILER_FLAGS" ]; then
-        COMPILER_FLAGS=$(cat "$test_dir/COMPILER_FLAGS" | tr '\n' ' ')
+        COMPILER_FLAGS=$(cat "$test_dir/COMPILER_FLAGS" | tr '\r\n' ' ')
     fi
 
     # PARSER_TEST: AST validation tests - check BEFORE attempting full compilation
@@ -1665,16 +1665,24 @@ EOF
         fi
         # Optional STDIN file: piped to the binary (else /dev/null) — the
         # interactive/pipe vertical, parallel to ARGS.
+        # Profiler pins write their Chrome trace to one global path
+        # (/tmp/koru_profile.json); parallel workers overwrite each other before
+        # post.sh can read it. KORU_PROFILE_PATH gives every run its own trace —
+        # the profiler honors it (koru_std/profiler.kz), and the cp below stays
+        # as the fallback for a binary built without the env read.
+        local -a PROF_ENV=()
+        if [ -f "$test_dir/post.sh" ]; then
+            rm -f "$test_dir/koru_profile.snapshot.json" /tmp/koru_profile.json
+            PROF_ENV=(env "KORU_PROFILE_PATH=$test_dir/koru_profile.snapshot.json")
+        fi
         if [ -f "$test_dir/STDIN" ]; then
-            timeout "$TEST_TIMEOUT" "$test_dir/output" "${RUN_ARGS[@]}" < "$test_dir/STDIN" > "$test_dir/actual.txt" 2>&1
+            timeout "$TEST_TIMEOUT" "${PROF_ENV[@]}" "$test_dir/output" "${RUN_ARGS[@]}" < "$test_dir/STDIN" > "$test_dir/actual.txt" 2>&1
         else
-            timeout "$TEST_TIMEOUT" "$test_dir/output" "${RUN_ARGS[@]}" < /dev/null > "$test_dir/actual.txt" 2>&1
+            timeout "$TEST_TIMEOUT" "${PROF_ENV[@]}" "$test_dir/output" "${RUN_ARGS[@]}" < /dev/null > "$test_dir/actual.txt" 2>&1
         fi
         RUN_EXIT=$?
 
-        # Profiler pins all write /tmp/koru_profile.json; parallel workers race on
-        # it before post.sh runs. Snapshot immediately into the test dir.
-        if [ -f "$test_dir/post.sh" ] && [ -f /tmp/koru_profile.json ]; then
+        if [ -f "$test_dir/post.sh" ] && [ -f /tmp/koru_profile.json ] && [ ! -f "$test_dir/koru_profile.snapshot.json" ]; then
             cp /tmp/koru_profile.json "$test_dir/koru_profile.snapshot.json"
         fi
 

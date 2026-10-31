@@ -28,3 +28,26 @@ parallelism. `./scripts/bettermaker_profiler_oracle.sh` no longer forces
 
 Still open: per-test profile output path in `koru_std/profiler.kz` (env var) —
 would remove the global entirely; snapshot is sufficient for regression honesty.
+
+## The snapshot narrowed the window; it never closed it (2026-10-29)
+
+Measured on a seventh profiler pin joining the path: under parallel-8, **all
+six** pre-existing profiler controls failed post-validation at once — every
+snapshot held the same foreign trace (the run's newest pin, whose binary wrote
+last). `cp` after `./output` shrinks the race to "between exit and copy", which
+is exactly the window another worker's trace write owns. The belief above said
+"snapshot is sufficient" — at seven writers it measurably is not.
+
+The open item is now the fix that landed: `KORU_PROFILE_PATH` read by
+`koru_std/profiler.kz` (falls back to `/tmp/koru_profile.json` unset), set
+per-test by the harness to `$test_dir/koru_profile.snapshot.json` before exec,
+with the `/tmp` cp kept only as the fallback for an env-blind binary. The global
+is bypassed, not coordinated — the honest shape, because no ordering protocol
+over a shared path can pin "which program wrote this".
+
+Same run's second measurement, one organ over: `COMPILER_FLAGS` read via
+`tr '\n' ' '` leaves `\r` inside the flag token on a CRLF checkout, so
+`--profile` arrived as flag `profile\r` and the import gate excluded
+`std/profiler` on every flagged test — seven controls red for a byte, zero
+compiler defect. The flag read is now line-ending agnostic (`tr '\r\n' ' '`),
+matching the normalization `expected.txt` already had.
