@@ -1,0 +1,6 @@
+name: surface-spelling
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: folded into `design` — declare that name. (orphan drained 2026-10-31)
