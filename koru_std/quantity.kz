@@ -325,7 +325,7 @@ fn qtySplitText(alloc: std.mem.Allocator, s_in: []const u8, out: *SplitFields) !
 // them in `canon`. dim/cov come out owned (<std/io:allocated!>).
 ~pub tor split { s: string<!external> }
 | fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!> }
-| bad string
+| bad string<std/io:allocated!>
 
 ~proc split|zig {
     var f: SplitFields = undefined;
@@ -348,7 +348,7 @@ fn qtySplitText(alloc: std.mem.Allocator, s_in: []const u8, out: *SplitFields) !
 // uncertainty (2 g ± 0.1 g -> 2e-3 kg ± 1e-4).
 ~tor canon { mag: string<std/num:!external>, unc: string<std/num:!external>, scale: string<std/num:!external>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated> }
 | exact string<exact!>
-| bad string
+| bad string<std/io:allocated!>
 
 ~canon = std/num:parse(s: mag)
 | bad e |> std/num:drop(s: unc) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
@@ -360,7 +360,7 @@ fn qtySplitText(alloc: std.mem.Allocator, s_in: []const u8, out: *SplitFields) !
 
 ~pub tor parse { s: string<!external> }
 | exact string<exact!>
-| bad string
+| bad string<std/io:allocated!>
 
 ~parse = split(s)
 | fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov)
@@ -370,7 +370,9 @@ fn qtySplitText(alloc: std.mem.Allocator, s_in: []const u8, out: *SplitFields) !
 
 // Trusted literal: same boundary, issued <external!> because the fields still
 // have to be validated — the mark means "unparsed", and parse is the only
-// discharge that canonicalizes.
+// discharge that canonicalizes. `bad` stays an unmarked message: the caller
+// wrote s themselves; the owned buffers are freed here rather than pushed
+// onto the caller as an obligation.
 ~pub tor lit { s: string }
 | exact string<exact!>
 | bad string
@@ -378,8 +380,8 @@ fn qtySplitText(alloc: std.mem.Allocator, s_in: []const u8, out: *SplitFields) !
 ~lit = ingest(s): ext |> split(s: ext)
 | fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov)
     | exact q => exact q
-    | bad e => bad e
-| bad m => bad m
+    | bad e |> std/io:free(content: e) => bad "malformed quantity"
+| bad m |> std/io:free(content: m) => bad "malformed quantity"
 
 // Pack canonical fields into the qty string. Consumes all four inputs —
 // dim/cov are discharged by the pack itself (their bytes land in the pack).

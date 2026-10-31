@@ -315,11 +315,13 @@ fn numFree(s: []const u8) void {
 // The gate: text -> canonical num (<exact!>).
 // ============================================================================
 
-// Parse and normalize external text. Consumes <external!>: the input buffer
-// is freed. Malformed text lands on |bad with the offending slice.
+// Parse and normalize external text. Consumes <external!>: on success the
+// input buffer is freed. Malformed text lands on |bad with the offending
+// buffer itself — ownership transfers to the receiver under <allocated!>,
+// disposed via std/io:free.
 ~pub tor parse { s: string<!external> }
 | exact string<exact!>
-| bad string
+| bad string<std/io:allocated!>
 
 ~proc parse|zig {
     var d = decParse(koru_allocator(), s) catch |err| switch (err) {
