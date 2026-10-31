@@ -788,6 +788,136 @@ fn certClosure(alloc: std.mem.Allocator, ca: *const OdeCert, cb: *const OdeCert,
 }
 
 // ============================================================================
+// D-finite -> P-recursive bridge (HolonomicBridge.lean):
+// residual(N) for N >= S == sum_k p'_k(N-S) a_{N-S+k}, where
+//   S = shiftBound = max_i deg q_i,   order R = K + S
+//   p'_k(X) = sum_i zcoeff(q_i, i - k + S) * (X + k) descPoch i
+// The leading coeff is q_{K,0} * (X + K + S) descPoch K — nonzero for
+// every n >= 0 iff q_{K,0} != 0 (Lean's h0 packaging hypothesis). det=1
+// marks that: the recurrence then determines a_{n+R} uniquely — a
+// sequence agreeing through the first R terms IS the sequence.
+// ============================================================================
+
+// (X + c) descPoch i = prod_{t=0}^{i-1} (X + c - t) — integer poly.
+fn descPochPoly(alloc: std.mem.Allocator, c: i64, i: usize) ![]Rat {
+    var acc = try polyOne(alloc);
+    errdefer polyFree(alloc, acc);
+    var t: usize = 0;
+    while (t < i) : (t += 1) {
+        const f = try alloc.alloc(Rat, 2);
+        errdefer alloc.free(f);
+        f[0] = try ratFromInt(alloc, c - @as(i64, @intCast(t)));
+        f[1] = try ratFromInt(alloc, 1);
+        const na = try polyMul(alloc, acc, f);
+        polyFree(alloc, acc);
+        polyFree(alloc, f);
+        acc = na;
+    }
+    return acc;
+}
+
+// Rat -> BI, requiring an integral value (bridge coeffs are integer by
+// construction; anything else is a defect, not data).
+fn ratToInt(r: *const Rat) !BI {
+    if (!denIsOne(r)) return error.NonInt;
+    return r.n.clone();
+}
+
+// Trimmed integer view of a Rat poly (zero -> [0]).
+fn polyToInts(alloc: std.mem.Allocator, p: []const Rat) ![]BI {
+    var tl: usize = 1;
+    if (!polyIsZero(p)) tl = polyDegIdx(p) + 1;
+    const out = try alloc.alloc(BI, tl);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*b| b.deinit();
+        alloc.free(out);
+    }
+    while (i < tl) : (i += 1) out[i] = if (i < p.len) try ratToInt(&p[i]) else try BI.initSet(alloc, 0);
+    return out;
+}
+
+// The translated P-recursive certificate: order R = K + S, coeffs
+// p'_k over n. Trailing zero polys are dropped (when q_{K,0} = 0 the
+// leading p'_R vanishes — the recurrence's real order is then < R and
+// the det flag reports the determinism hypothesis failed).
+fn certBridge(alloc: std.mem.Allocator, c: *const OdeCert) !OdeCert {
+    const K = c.order;
+    const S = c.deg;
+    const R = K + S;
+    const polys = try alloc.alloc([]BI, R + 1);
+    var np: usize = 0;
+    errdefer {
+        for (polys[0..np]) |p| {
+            for (p) |*b| b.deinit();
+            alloc.free(p);
+        }
+        alloc.free(polys);
+    }
+    var k: usize = 0;
+    while (k <= R) : (k += 1) {
+        var acc = try polyEmpty(alloc);
+        errdefer polyFree(alloc, acc);
+        var i: usize = 0;
+        while (i <= K) : (i += 1) {
+            const j: i64 = @as(i64, @intCast(i)) - @as(i64, @intCast(k)) + @as(i64, @intCast(S));
+            if (j < 0 or j >= c.polys[i].len) continue;
+            if (c.polys[i][@intCast(j)].eqlZero()) continue;
+            const d1 = try BI.initSet(alloc, 1);
+            var cf = Rat{ .n = try c.polys[i][@intCast(j)].clone(), .d = d1 };
+            defer ratDeinit(&cf);
+            const ff = try descPochPoly(alloc, @intCast(k), i);
+            defer polyFree(alloc, ff);
+            const term = try polyScal(alloc, ff, &cf);
+            defer polyFree(alloc, term);
+            const na = try polyAdd(alloc, acc, term);
+            polyFree(alloc, acc);
+            acc = na;
+        }
+        polys[np] = try polyToInts(alloc, acc);
+        polyFree(alloc, acc);
+        np += 1;
+    }
+    // drop trailing all-zero polys (lower real order than R)
+    while (np > 1 and certPolyZero(polys[np - 1])) {
+        np -= 1;
+        const p = polys[np];
+        for (p) |*b| b.deinit();
+        alloc.free(p);
+    }
+    const shrunk = try alloc.alloc([]BI, np);
+    @memcpy(shrunk, polys[0..np]);
+    alloc.free(polys);
+    var deg: usize = 0;
+    for (shrunk) |p| {
+        if (p.len > deg + 1) deg = p.len - 1;
+    }
+    return .{ .order = np - 1, .deg = deg, .polys = shrunk };
+}
+
+// rec(k=R,d=D,via=bridge,det=0|1)|p0=[...]|p1=[...]
+fn recWrite(alloc: std.mem.Allocator, order: usize, deg: usize, via: []const u8, det: bool, polys: []const []BI) ![]u8 {
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    const hdr = std.fmt.allocPrint(alloc, "rec(k={d},d={d},via={s},det={d})", .{ order, deg, via, @intFromBool(det) }) catch return error.OutOfMemory;
+    defer alloc.free(hdr);
+    try out.appendSlice(alloc, hdr);
+    for (polys, 0..) |p, kk| {
+        const tag = std.fmt.allocPrint(alloc, "|p{d}=[", .{kk}) catch return error.OutOfMemory;
+        defer alloc.free(tag);
+        try out.appendSlice(alloc, tag);
+        for (p, 0..) |*b, j| {
+            if (j > 0) try out.append(alloc, ',');
+            const bs = try b.toString(alloc, 10, .lower);
+            defer alloc.free(bs);
+            try out.appendSlice(alloc, bs);
+        }
+        try out.append(alloc, ']');
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+// ============================================================================
 // Tors.
 // ============================================================================
 
@@ -854,4 +984,31 @@ fn certClosure(alloc: std.mem.Allocator, ca: *const OdeCert, cb: *const OdeCert,
     var cb = certParse(alloc, inner) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
     defer certFree(alloc, &cb);
     return .{ .not_holonomic = ownedCopy("not-generally-holonomic:exp(exp(x))-obstruction") };
+}
+
+
+// D-finite -> P-recursive projection (HolonomicBridge.lean): emits a
+// rec(...) object — coefficients are polynomials in the index n, not x.
+// det=1 marks q_{K,0} != 0: the recurrence's leading coefficient then
+// never vanishes for n >= 0, so the coefficient sequence is determined
+// by its first k terms — Lean's toPRecursiveCertificate packaging
+// condition. A projection of a cert, not a search.
+~pub tor cert-bridge { c: string<std/io:!allocated> }
+| exact string<std/io:allocated!>
+| bad-cert string<std/io:allocated!>
+
+~proc cert-bridge|zig {
+    defer symFree(c);
+    const alloc = koru_allocator();
+    var cert = certParse(alloc, c) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
+    defer certFree(alloc, &cert);
+    if (certPolyZero(cert.polys[cert.order])) return .{ .bad_cert = ownedCopy("degenerate-leading") };
+    const det = !cert.polys[cert.order][0].eqlZero();
+    var rec = certBridge(alloc, &cert) catch |e| switch (e) {
+        error.NonInt => return .{ .bad_cert = ownedCopy("non-integer-bridge") },
+        else => @panic("std/sym:cert-bridge"),
+    };
+    defer certFree(alloc, &rec);
+    const s = recWrite(alloc, rec.order, rec.deg, "bridge", det, rec.polys) catch @panic("std/sym:cert-bridge");
+    return .{ .exact = s };
 }
