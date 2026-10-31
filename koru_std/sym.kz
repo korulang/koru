@@ -1411,16 +1411,16 @@ fn ownedCopy(s: []const u8) []u8 {
 // Tors. Canon strings ride <sexpr!>; ops consume linearly.
 // ============================================================================
 
-// Literal / trusted parse: "π", "e", "2*π", "√(2)", "(π+e)", "1/3"...
-// expr: captures the arg's source text verbatim, so lit(inv((1e0+(-1e0*x))))
-// or bare lit(2*π) quotes instead of evaluating — same trusted literal.
-~pub tor lit { s: ?string, expr: ?Expression }
+// Literal / trusted parse: lit(π), lit(e*π), lit(√(2)), lit(1/3)...
+// expr: captures the arg's source text verbatim — authored math quotes
+// instead of evaluating. Runtime text goes through ingest/parse, not lit.
+~pub tor lit { expr: Expression }
 | exact string<sexpr!>
 | bad
 
 ~proc lit|zig {
-    var src = expr orelse (s orelse return .{ .bad = .{} });
-    // an unlabeled string literal also lands on expr, captured verbatim —
+    var src = expr;
+    // an unlabeled string literal lands on expr too, captured verbatim —
     // quotes included. Unquoting recovers the string the caller spelled.
     if (src.len >= 2 and src[0] == '"' and src[src.len - 1] == '"') src = src[1 .. src.len - 1];
     const c = normCanon(koru_allocator(), src) catch return .{ .bad = .{} };
