@@ -1,0 +1,9 @@
+(2e0*π)|m^1 s^0 kg^0 A^0 K^0 mol^0 cd^0|-
+(2e0+π)|m^1 s^0 kg^0 A^0 K^0 mol^0 cd^0|-
+(2e0*π)|m^1 s^1 kg^0 A^0 K^0 mol^0 cd^0|-
+1e0|m^1 s^0 kg^0 A^0 K^0 mol^0 cd^0|-
+1e0|m^1 s^-1 kg^0 A^0 K^0 mol^0 cd^0|-
+(-1e0*π)|m^1 s^0 kg^0 A^0 K^0 mol^0 cd^0|-
+(π*π)|m^2 s^0 kg^0 A^0 K^0 mol^0 cd^0|-
+(2e0*π)|m^1 s^0 kg^0 A^0 K^0 mol^0 cd^0|2e-1@x
+π
