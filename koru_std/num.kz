@@ -282,6 +282,508 @@ fn decCmpAbs(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !i8 {
     };
 }
 
+// ============================================================================
+// Fixed-point layer for the transcendentals. An FX value is a signed bigint X
+// standing for X * 10^-w with the width w ambient per call. Series loops
+// terminate because terms eventually truncate to zero. GUARD digits absorb
+// the per-step truncation; results truncate (floor-magnitude) like div/sqrt.
+// ============================================================================
+
+const GUARD: i64 = 12;
+// exp cap: refuse when the result would exceed ~10^4 decimal digits — honest
+// |overflow, not a silent multi-minute Debug-mode multiply.
+const EXP_DIGCAP: i64 = 4;
+
+fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !BI {
+    const k = d.e + w;
+    var x = try d.m.clone();
+    errdefer x.deinit();
+    if (k >= 0) {
+        var p = try pow10(alloc, k);
+        defer p.deinit();
+        try x.mul(&x, &p);
+    } else {
+        var p = try pow10(alloc, -k);
+        defer p.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        var q = try BI.init(alloc);
+        try q.divTrunc(&rem, &x, &p);
+        x.deinit();
+        x = q;
+    }
+    if (d.neg) x.negate();
+    return x;
+}
+
+// X * 10^-w -> canonical Dec at `prec` significant digits (truncated).
+fn fxToDec(alloc: std.mem.Allocator, x: *const BI, w: i64, prec: i64) !Dec {
+    var xa = try x.clone();
+    defer xa.deinit();
+    const neg = !xa.isPositive() and !xa.eqlZero();
+    xa.abs();
+    const ds = try xa.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    const L: i64 = @intCast(ds.len);
+    var keep = ds;
+    var e_adj: i64 = 0;
+    if (L > prec) {
+        keep = ds[0..@intCast(prec)];
+        e_adj = L - prec;
+    }
+    return decFromDigits(alloc, keep, -w + e_adj, neg);
+}
+
+// a * b / 10^w
+fn fxMul(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
+    var p = try BI.init(alloc);
+    defer p.deinit();
+    try p.mul(a, b);
+    var d = try pow10(alloc, w);
+    defer d.deinit();
+    var q = try BI.init(alloc);
+    errdefer q.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try q.divTrunc(&rem, &p, &d);
+    return q;
+}
+
+// a / b in FX: a * 10^w / b (truncated).
+fn fxDiv(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
+    var n = try a.clone();
+    defer n.deinit();
+    var p = try pow10(alloc, w);
+    defer p.deinit();
+    try n.mul(&n, &p);
+    var q = try BI.init(alloc);
+    errdefer q.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try q.divTrunc(&rem, &n, b);
+    return q;
+}
+
+// sqrt(X * 10^-w) = isqrt(X * 10^w)
+fn fxSqrt(alloc: std.mem.Allocator, x: *const BI, w: i64) !BI {
+    var n = try x.clone();
+    defer n.deinit();
+    var p = try pow10(alloc, w);
+    defer p.deinit();
+    try n.mul(&n, &p);
+    var s = try BI.init(alloc);
+    errdefer s.deinit();
+    try s.sqrt(&n);
+    return s;
+}
+
+fn fxConst(alloc: std.mem.Allocator, v: i64, w: i64) !BI {
+    var r = try BI.initSet(alloc, v);
+    errdefer r.deinit();
+    var p = try pow10(alloc, w);
+    defer p.deinit();
+    try r.mul(&r, &p);
+    return r;
+}
+
+// atan(1/k) * SCALE via the alternating series sum (-1)^j / ((2j+1) k^(2j+1)).
+// Plain-bigint terms: term_j = SCALE / (k^(2j+1) * (2j+1)), stops at zero.
+fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !BI {
+    var sum = try BI.init(alloc);
+    var kk = try BI.initSet(alloc, k * k);
+    defer kk.deinit();
+    var pk = try BI.initSet(alloc, k);
+    defer pk.deinit();
+    var unit = try pow10(alloc, w);
+    defer unit.deinit();
+    var j: i64 = 0;
+    var neg = false;
+    while (true) : (j += 1) {
+        var den = try pk.clone();
+        defer den.deinit();
+        var dj = try BI.initSet(alloc, 2 * j + 1);
+        defer dj.deinit();
+        try den.mul(&den, &dj);
+        var q = try BI.init(alloc);
+        defer q.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try q.divTrunc(&rem, &unit, &den);
+        if (q.eqlZero()) break;
+        if (neg) q.negate();
+        try sum.add(&sum, &q);
+        neg = !neg;
+        try pk.mul(&pk, &kk);
+    }
+    return sum;
+}
+
+// pi * SCALE via Machin: pi = 16 atan(1/5) - 4 atan(1/239).
+fn fxPi(alloc: std.mem.Allocator, w: i64) !BI {
+    var a5 = try fxAtanInv(alloc, 5, w);
+    defer a5.deinit();
+    var a239 = try fxAtanInv(alloc, 239, w);
+    defer a239.deinit();
+    var c16 = try BI.initSet(alloc, 16);
+    defer c16.deinit();
+    var c4 = try BI.initSet(alloc, 4);
+    defer c4.deinit();
+    try a5.mul(&a5, &c16);
+    try a239.mul(&a239, &c4);
+    var r = try BI.init(alloc);
+    errdefer r.deinit();
+    try r.sub(&a5, &a239);
+    return r;
+}
+
+// exp(r) * SCALE for |r| <= 1/16 by Taylor; terms truncate to zero to stop.
+fn fxExpSmall(alloc: std.mem.Allocator, r: *const BI, w: i64) !BI {
+    var sum = try pow10(alloc, w);
+    var term = try pow10(alloc, w);
+    defer term.deinit();
+    var n: i64 = 1;
+    while (!term.eqlZero()) : (n += 1) {
+        var t = try fxMul(alloc, &term, r, w);
+        defer t.deinit();
+        var dn = try BI.initSet(alloc, n);
+        defer dn.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        term.deinit();
+        term = try BI.init(alloc);
+        try term.divTrunc(&rem, &t, &dn);
+        try sum.add(&sum, &term);
+    }
+    return sum;
+}
+
+fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
+    if (a.m.eqlZero()) return decFromDigits(alloc, "1", 0, false);
+    // Overflow gate: result digits ~ x * log10(e); cap at 10^EXP_DIGCAP digits.
+    if (!a.neg) {
+        var le = try decParse(alloc, "4.3429448190325182765e-1");
+        defer decDeinit(&le);
+        var prod = try decMul(alloc, a, &le);
+        defer decDeinit(&prod);
+        const ps = try prod.m.toString(alloc, 10, .lower);
+        defer alloc.free(ps);
+        if (prod.e + @as(i64, @intCast(ps.len)) > EXP_DIGCAP) return error.Overflow;
+    }
+    const w = prec + GUARD + @max(@as(i64, 0), a.e) + 8;
+    var x = try fxFromDec(alloc, a, w);
+    defer x.deinit();
+    // k = smallest halving count with |x| / 2^k <= SCALE/16
+    var k: usize = 0;
+    {
+        var bound = try pow10(alloc, w);
+        defer bound.deinit();
+        var c16 = try BI.initSet(alloc, 16);
+        defer c16.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try bound.divTrunc(&rem, &bound, &c16);
+        var ax = try x.clone();
+        defer ax.deinit();
+        ax.abs();
+        while (ax.order(bound) == .gt) : (k += 1) {
+            var two = try BI.initSet(alloc, 2);
+            defer two.deinit();
+            try bound.mul(&bound, &two);
+        }
+    }
+    var p2 = try BI.initSet(alloc, 1);
+    defer p2.deinit();
+    {
+        var i: usize = 0;
+        var two = try BI.initSet(alloc, 2);
+        defer two.deinit();
+        while (i < k) : (i += 1) try p2.mul(&p2, &two);
+    }
+    var r = try BI.init(alloc);
+    defer r.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try r.divTrunc(&rem, &x, &p2);
+    var e = try fxExpSmall(alloc, &r, w);
+    defer e.deinit();
+    var i: usize = 0;
+    while (i < k) : (i += 1) {
+        const e2 = try fxMul(alloc, &e, &e, w);
+        e.deinit();
+        e = e2;
+    }
+    return fxToDec(alloc, &e, w, prec);
+}
+
+// ln(f) * SCALE for f in [1,10): 3 sqrt-reductions then 2*atanh(u).
+fn fxLnF(alloc: std.mem.Allocator, f: *const BI, w: i64) !BI {
+    var g = try f.clone();
+    defer g.deinit();
+    var unit = try pow10(alloc, w);
+    defer unit.deinit();
+    var i: usize = 0;
+    while (i < 3) : (i += 1) {
+        const g2 = try fxSqrt(alloc, &g, w);
+        g.deinit();
+        g = g2;
+    }
+    var num = try BI.init(alloc);
+    defer num.deinit();
+    try num.sub(&g, &unit);
+    var den = try BI.init(alloc);
+    defer den.deinit();
+    try den.add(&g, &unit);
+    var u = try fxDiv(alloc, &num, &den, w);
+    defer u.deinit();
+    var usq = try fxMul(alloc, &u, &u, w);
+    defer usq.deinit();
+    var term = try u.clone();
+    defer term.deinit();
+    var sum = try BI.init(alloc);
+    defer sum.deinit();
+    var n: i64 = 1;
+    while (!term.eqlZero()) : (n += 1) {
+        var dn = try BI.initSet(alloc, 2 * n - 1);
+        defer dn.deinit();
+        var q = try BI.init(alloc);
+        defer q.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try q.divTrunc(&rem, &term, &dn);
+        try sum.add(&sum, &q);
+        const t2 = try fxMul(alloc, &term, &usq, w);
+        term.deinit();
+        term = t2;
+    }
+    var c16 = try BI.initSet(alloc, 16);
+    defer c16.deinit();
+    var res = try BI.init(alloc);
+    errdefer res.deinit();
+    try res.mul(&sum, &c16);
+    return res;
+}
+
+fn fxLnTen(alloc: std.mem.Allocator, w: i64) !BI {
+    var ten = try fxConst(alloc, 10, w);
+    defer ten.deinit();
+    return fxLnF(alloc, &ten, w);
+}
+
+// ln(a) for a > 0. a = f * 10^t with f in [1,10): ln = ln(f) + t*ln(10).
+fn decLn(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
+    const w = prec + GUARD + 8;
+    const ms = try a.m.toString(alloc, 10, .lower);
+    defer alloc.free(ms);
+    const L: i64 = @intCast(ms.len);
+    var fdec = Dec{ .neg = false, .m = try a.m.clone(), .e = 1 - L };
+    defer fdec.m.deinit();
+    var f = try fxFromDec(alloc, &fdec, w);
+    defer f.deinit();
+    var lnf = try fxLnF(alloc, &f, w);
+    defer lnf.deinit();
+    var ln10 = try fxLnTen(alloc, w);
+    defer ln10.deinit();
+    var tt = try BI.initSet(alloc, a.e + L - 1);
+    defer tt.deinit();
+    var tterm = try fxMul(alloc, &tt, &ln10, w);
+    defer tterm.deinit();
+    var res = try BI.init(alloc);
+    defer res.deinit();
+    try res.add(&lnf, &tterm);
+    return fxToDec(alloc, &res, w, prec);
+}
+
+// sin(u) * SCALE by Taylor on the folded argument u in [0, pi/2].
+fn fxSinSmall(alloc: std.mem.Allocator, u: *const BI, w: i64) !BI {
+    var usq = try fxMul(alloc, u, u, w);
+    defer usq.deinit();
+    var term = try u.clone();
+    defer term.deinit();
+    var sum = try u.clone();
+    errdefer sum.deinit();
+    var n: i64 = 1;
+    while (!term.eqlZero()) : (n += 1) {
+        var t = try fxMul(alloc, &term, &usq, w);
+        defer t.deinit();
+        var dn = try BI.initSet(alloc, (2 * n) * (2 * n + 1));
+        defer dn.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        term.deinit();
+        term = try BI.init(alloc);
+        try term.divTrunc(&rem, &t, &dn);
+        term.negate();
+        try sum.add(&sum, &term);
+    }
+    return sum;
+}
+
+// cos(u) * SCALE by Taylor on u in [0, pi/2].
+fn fxCosSmall(alloc: std.mem.Allocator, u: *const BI, w: i64) !BI {
+    var usq = try fxMul(alloc, u, u, w);
+    defer usq.deinit();
+    var term = try pow10(alloc, w);
+    defer term.deinit();
+    var sum = try term.clone();
+    errdefer sum.deinit();
+    var n: i64 = 1;
+    while (!term.eqlZero()) : (n += 1) {
+        var t = try fxMul(alloc, &term, &usq, w);
+        defer t.deinit();
+        var dn = try BI.initSet(alloc, (2 * n - 1) * (2 * n));
+        defer dn.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        term.deinit();
+        term = try BI.init(alloc);
+        try term.divTrunc(&rem, &t, &dn);
+        term.negate();
+        try sum.add(&sum, &term);
+    }
+    return sum;
+}
+
+// Reduce x mod 2pi and fold to u in [0, pi/2]; reports the sin sign and the
+// cos flip that the fold implies.
+fn decTrig(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool) !Dec {
+    const w = prec + GUARD + @max(@as(i64, 0), a.e) + 8;
+    var pi = try fxPi(alloc, w);
+    defer pi.deinit();
+    var two_pi = try BI.init(alloc);
+    defer two_pi.deinit();
+    var two = try BI.initSet(alloc, 2);
+    defer two.deinit();
+    try two_pi.mul(&pi, &two);
+    var half_pi = try BI.init(alloc);
+    defer half_pi.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try half_pi.divTrunc(&rem, &pi, &two);
+    var x = try fxFromDec(alloc, a, w);
+    defer x.deinit();
+    // q = round(x / 2pi), r = x - q*2pi in [-pi, pi]
+    var qf = try fxDiv(alloc, &x, &two_pi, w);
+    defer qf.deinit();
+    {
+        var half = try pow10(alloc, w);
+        defer half.deinit();
+        try half.divTrunc(&rem, &half, &two);
+        if (qf.isPositive()) {
+            try qf.add(&qf, &half);
+        } else {
+            try qf.sub(&qf, &half);
+        }
+    }
+    var unit = try pow10(alloc, w);
+    defer unit.deinit();
+    var qi = try BI.init(alloc);
+    defer qi.deinit();
+    try qi.divTrunc(&rem, &qf, &unit);
+    var qt = try BI.init(alloc);
+    defer qt.deinit();
+    try qt.mul(&qi, &two_pi);
+    var r = try BI.init(alloc);
+    defer r.deinit();
+    try r.sub(&x, &qt);
+    // fold to [0, pi/2]
+    var u = try r.clone();
+    defer u.deinit();
+    const neg_r = !u.isPositive() and !u.eqlZero();
+    u.abs();
+    var flip_cos = false;
+    if (u.order(half_pi) == .gt) {
+        var usq = try BI.init(alloc);
+        defer usq.deinit();
+        try usq.sub(&pi, &u);
+        u.deinit();
+        u = try usq.clone();
+        flip_cos = true;
+    }
+    var res = if (want_sin)
+        try fxSinSmall(alloc, &u, w)
+    else
+        try fxCosSmall(alloc, &u, w);
+    defer res.deinit();
+    if ((want_sin and neg_r) or (!want_sin and flip_cos)) res.negate();
+    return fxToDec(alloc, &res, w, prec);
+}
+
+// atan(a) * SCALE->Dec: reduce to |x| <= 1 (atan x = pi/2 - atan(1/x)),
+// then 3 argument halvings atan x = 2 atan(x/(1+sqrt(1+x^2))), then Taylor.
+fn decAtan(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
+    const w = prec + GUARD + @max(@as(i64, 0), a.e) + 8;
+    var x = try fxFromDec(alloc, a, w);
+    defer x.deinit();
+    const neg = !x.isPositive() and !x.eqlZero();
+    x.abs();
+    var unit = try pow10(alloc, w);
+    defer unit.deinit();
+    var inv = false;
+    if (x.order(unit) == .gt) {
+        const xi = try fxDiv(alloc, &unit, &x, w);
+        x.deinit();
+        x = xi;
+        inv = true;
+    }
+    var i: usize = 0;
+    while (i < 3) : (i += 1) {
+        var x2 = try fxMul(alloc, &x, &x, w);
+        defer x2.deinit();
+        var s = try BI.init(alloc);
+        defer s.deinit();
+        try s.add(&x2, &unit);
+        var sq = try fxSqrt(alloc, &s, w);
+        defer sq.deinit();
+        var den = try BI.init(alloc);
+        defer den.deinit();
+        try den.add(&sq, &unit);
+        const nx = try fxDiv(alloc, &x, &den, w);
+        x.deinit();
+        x = nx;
+    }
+    // Taylor atan x = x - x^3/3 + x^5/5 - ...
+    var x2 = try fxMul(alloc, &x, &x, w);
+    defer x2.deinit();
+    var term = try x.clone();
+    defer term.deinit();
+    var sum = try x.clone();
+    defer sum.deinit();
+    var n: i64 = 1;
+    while (!term.eqlZero()) : (n += 1) {
+        var t = try fxMul(alloc, &term, &x2, w);
+        defer t.deinit();
+        var dn = try BI.initSet(alloc, 2 * n + 1);
+        defer dn.deinit();
+        var num2 = try BI.initSet(alloc, 2 * n - 1);
+        defer num2.deinit();
+        try t.mul(&t, &num2);
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        term.deinit();
+        term = try BI.init(alloc);
+        try term.divTrunc(&rem, &t, &dn);
+        term.negate();
+        try sum.add(&sum, &term);
+    }
+    var c8 = try BI.initSet(alloc, 8);
+    defer c8.deinit();
+    try sum.mul(&sum, &c8);
+    if (inv) {
+        var pi = try fxPi(alloc, w);
+        defer pi.deinit();
+        var two = try BI.initSet(alloc, 2);
+        defer two.deinit();
+        var hp = try BI.init(alloc);
+        defer hp.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try hp.divTrunc(&rem, &pi, &two);
+        try sum.sub(&hp, &sum);
+    }
+    if (neg) sum.negate();
+    return fxToDec(alloc, &sum, w, prec);
+}
+
 fn ownedCopy(s: []const u8) []u8 {
     return koru_allocator().dupe(u8, s) catch @panic("std/num: out of memory");
 }
@@ -592,4 +1094,139 @@ fn numFree(s: []const u8) void {
 
 ~proc render|zig {
     return n;
+}
+
+// ============================================================================
+// Transcendentals — fixed-point series over the Dec core (rung: bc -l parity).
+// exp/ln/sin/cos/atan take  significant digits and refuse on named axes:
+// huge results overflow, non-positive ln arguments are non-pos, huge trig
+// arguments overflow. powf is x^e for real e via exp(e*ln x): x<0 is
+// |neg-base (complex, out of scope), x<=0 with e<=0 is |non-pos.
+// ============================================================================
+
+~pub tor exp { a: string<!exact>, prec: i64 }
+| exact string<exact!>
+| overflow
+
+~proc exp|zig {
+    defer numFree(a);
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:exp: malformed operand");
+    defer decDeinit(&d);
+    var r = decExp(koru_allocator(), &d, prec) catch |err| switch (err) {
+        error.Overflow => return .{ .overflow = .{} },
+        else => @panic("std/num:exp: out of memory"),
+    };
+    defer decDeinit(&r);
+    return .{ .exact = decToString(koru_allocator(), &r) catch @panic("std/num: out of memory") };
+}
+
+~pub tor ln { a: string<!exact>, prec: i64 }
+| exact string<exact!>
+| non-pos
+
+~proc ln|zig {
+    defer numFree(a);
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:ln: malformed operand");
+    defer decDeinit(&d);
+    if (d.neg or d.m.eqlZero()) return .{ .non_pos = .{} };
+    var r = decLn(koru_allocator(), &d, prec) catch @panic("std/num:ln: out of memory");
+    defer decDeinit(&r);
+    return .{ .exact = decToString(koru_allocator(), &r) catch @panic("std/num: out of memory") };
+}
+
+~pub tor sin { a: string<!exact>, prec: i64 }
+| exact string<exact!>
+| overflow
+
+~proc sin|zig {
+    defer numFree(a);
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:sin: malformed operand");
+    defer decDeinit(&d);
+    const ms = d.m.toString(koru_allocator(), 10, .lower) catch @panic("std/num: out of memory");
+    defer koru_allocator().free(ms);
+    if (d.e + @as(i64, @intCast(ms.len)) > 500) return .{ .overflow = .{} };
+    var r = decTrig(koru_allocator(), &d, prec, true) catch @panic("std/num:sin: out of memory");
+    defer decDeinit(&r);
+    return .{ .exact = decToString(koru_allocator(), &r) catch @panic("std/num: out of memory") };
+}
+
+~pub tor cos { a: string<!exact>, prec: i64 }
+| exact string<exact!>
+| overflow
+
+~proc cos|zig {
+    defer numFree(a);
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:cos: malformed operand");
+    defer decDeinit(&d);
+    const ms = d.m.toString(koru_allocator(), 10, .lower) catch @panic("std/num: out of memory");
+    defer koru_allocator().free(ms);
+    if (d.e + @as(i64, @intCast(ms.len)) > 500) return .{ .overflow = .{} };
+    var r = decTrig(koru_allocator(), &d, prec, false) catch @panic("std/num:cos: out of memory");
+    defer decDeinit(&r);
+    return .{ .exact = decToString(koru_allocator(), &r) catch @panic("std/num: out of memory") };
+}
+
+~pub tor atan { a: string<!exact>, prec: i64 } -> string<exact!>
+
+~proc atan|zig {
+    defer numFree(a);
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:atan: malformed operand");
+    defer decDeinit(&d);
+    var r = decAtan(koru_allocator(), &d, prec) catch @panic("std/num:atan: out of memory");
+    defer decDeinit(&r);
+    return decToString(koru_allocator(), &r) catch @panic("std/num: out of memory");
+}
+
+// a^e for real e: exp(e * ln a). a < 0 -> |neg-base (complex plane is out of
+// scope); a == 0 -> e>0 gives exact 0, e<=0 lands on |non-pos.
+~pub tor powf { a: string<!exact>, e: string<!exact>, prec: i64 }
+| exact string<exact!>
+| neg-base
+| non-pos
+| overflow
+
+~proc powf|zig {
+    defer numFree(a);
+    defer numFree(e);
+    var da = decParse(koru_allocator(), a) catch @panic("std/num:powf: malformed base");
+    defer decDeinit(&da);
+    var de = decParse(koru_allocator(), e) catch @panic("std/num:powf: malformed exponent");
+    defer decDeinit(&de);
+    if (da.neg) return .{ .neg_base = .{} };
+    if (da.m.eqlZero()) {
+        if (de.neg or de.m.eqlZero()) return .{ .non_pos = .{} };
+        return .{ .exact = ownedCopy("0e0") };
+    }
+    // Integral non-negative exponents take the exact pow path; the log route
+    // would only truncate what pow computes exactly.
+    if (de.e >= 0 and !de.neg) {
+        var en = de.m.clone() catch @panic("std/num:powf: out of memory");
+        defer en.deinit();
+        var ten = BI.initSet(koru_allocator(), 10) catch @panic("std/num:powf: out of memory");
+        defer ten.deinit();
+        var i: i64 = 0;
+        while (i < de.e) : (i += 1) {
+            en.mul(&en, &ten) catch @panic("std/num:powf: out of memory");
+        }
+        const n64 = en.toConst().toInt(i64) catch -1;
+        if (n64 < 0 or n64 > std.math.maxInt(u32)) return .{ .overflow = .{} };
+        var r = BI.initSet(koru_allocator(), 1) catch @panic("std/num:powf: out of memory");
+        defer r.deinit();
+        r.pow(&da.m, @intCast(n64)) catch @panic("std/num:powf: out of memory");
+        const ds = r.toString(koru_allocator(), 10, .lower) catch @panic("std/num:powf: out of memory");
+        defer koru_allocator().free(ds);
+        var out = decFromDigits(koru_allocator(), ds, da.e * n64, false) catch @panic("std/num:powf: out of memory");
+        defer decDeinit(&out);
+        return .{ .exact = decToString(koru_allocator(), &out) catch @panic("std/num:powf: out of memory") };
+    }
+    var la = decLn(koru_allocator(), &da, prec + GUARD) catch @panic("std/num:powf: out of memory");
+    defer decDeinit(&la);
+    var t = decMul(koru_allocator(), &la, &de) catch @panic("std/num:powf: out of memory");
+    defer decDeinit(&t);
+    var r = decExp(koru_allocator(), &t, prec) catch |err| switch (err) {
+        error.Overflow => return .{ .overflow = .{} },
+        else => @panic("std/num:powf: out of memory"),
+    };
+    defer decDeinit(&r);
+    return .{ .exact = decToString(koru_allocator(), &r) catch @panic("std/num: out of memory") };
 }

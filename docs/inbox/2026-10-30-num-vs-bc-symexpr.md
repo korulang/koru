@@ -168,3 +168,35 @@ constructors. That maps cleanly:
 3. SymExpr: symbolic `<mag>` lane + NF + `lit-sym`; equiv unchanged.
 4. `sym:deriv` table; integral/factor tables with named refusals.
 5. Series-from-laws + corpus mining — the actual "discovery" rung.
+
+## Rung 1 landed (2026-10-31)
+
+All six tors shipped in `num.kz` over a fixed-point FX layer (signed bigint
+X meaning X*10^-w, width `w = prec + GUARD + max(0, a.e) + 8`, series loops
+stop when terms truncate to zero):
+
+- `exp` — Taylor after `e^x = e^k * e^r` split (r folded into [-1/16, 1/16]
+  via 4 sqrt-folds of e); `|overflow` when result digits would exceed 10^4.
+- `ln` — `ln(f*10^t) = ln(f) + t*ln10`, `ln f = 16*artanh((g-1)/(g+1))` with
+  `g = f^(1/16)` via 4 fixed-point sqrts; `|non-pos` for x <= 0.
+- `sin`/`cos` — mod-2pi round, fold to [0, pi/2] with sign/flip tracking,
+  Taylor. pi via Machin `16*atan(1/5) - 4*atan(1/239)`.
+- `atan` — invert to |x|<=1, three argument halvings, Taylor; bare return.
+- `powf` — `a^e = exp(e*ln a)`: `|neg-base` for a<0, `a==0 && e<=0` lands on
+  `|non-pos`, integral non-negative e takes the exact BI.pow path (so
+  `powf(4,2) = 1.6e1` exactly, `powf(4,0.5)` is the inexact `1.9999...`).
+
+Measured correct: `exp(1)` = e to 29 digits; `sin(0.5)`, `atan(0.5)`,
+`atan(1)` = pi/4, `powf(2,0.5)` = sqrt(2) — all to printed precision.
+Fractional pow is no longer a truncation (bc) or a refusal (prior koru).
+
+Two bugs found by the harness, not by reading: `defer sum.deinit()` on a
+*returned* Managed in fxSinSmall/fxCosSmall (dangling limbs -> garbage digits
+-> double-free; frag-a-returned-managed-wants-errdefer-never-defer), and the
+atan Taylor recurrence missing the `(2n-1)` factor plus sign propagation
+through the term (needed unconditional `negate`, not a toggling flag —
+x^5/15 instead of x^5/5 and the wrong sign).
+
+Tests: 615_033 (exp/ln + refusal arms), 615_034 (trig), 615_035 (powf +
+integral fast path + refusal arms). 615 cluster 27/27, 610 control 19/19,
+leak checker on.
