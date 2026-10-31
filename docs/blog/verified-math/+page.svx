@@ -1,0 +1,130 @@
+---
+title: "Verified Math: Exact Decimals, Certified Series, and Declared Laws"
+subject: "Verified Math"
+date: 2026-11-01
+excerpt: "std/num, std/quantity, and std/sym give Koru arbitrary-precision arithmetic that is exact or honestly external, dimensional quantities with covariance, and a holonomic lane whose semantics come from Lean — plus the rel registry, where generators declare their own laws."
+readTime: 8 min read
+tags: [koru, verification, numerics, symbolic computation]
+ai_authored: mostly
+draft: true
+---
+
+<script>
+  import RegressionTestLink from '$lib/components/RegressionTestLink.svelte';
+</script>
+
+Koru has numbers now — not machine floats with better marketing, but a surface where "number" means something a proof can hold onto. Four modules carry it: `std/num` (arbitrary-precision decimals, exact or externally tainted), `std/quantity` (SI dimensions and uncertainty with covariance), `std/sym` (canonical symbolic expressions), and the certificate lane on top of it — whose semantics are the same ones `isar-proofs` verifies in Lean. The newest surface, `sym.rel`, is where relationships between abstract generators live.
+
+## std/num — exact means exact
+
+A `std/num` value is an arbitrary-precision decimal — mantissa as a big integer plus a base-10 exponent — and it knows whether it is *exact* or *external*. A literal is exact; text ingested from the outside world is tainted until `ingest` discharges it, and arithmetic on tainted values refuses rather than laundering provenance:
+
+```koru
+import std/io
+import std/num
+
+std/num:lit(s: "123456789012345678901234567890")
+| exact a |> std/num:lit(s: "987654321098765432109876543210")
+    | exact b |> std/num:add(a, b): r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
+    | bad x |> std/io:print.ln("bad")
+| bad y |> std/io:print.ln("bad")
+```
+
+<RegressionTestLink
+  tests={[
+    { name: "615_002 arbitrary-precision add", directory: "615_002_num_add_arbitrary_precision", categorySlug: "600_STDLIB/615_NUM", description: "Two 30-digit operands, well past i64/f64 range, exact." },
+    { name: "615_008 ingest taint", directory: "615_008_num_ingest_taint", categorySlug: "600_STDLIB/615_NUM", description: "External text enters tainted; the obligation gates arithmetic." },
+    { name: "615_011 untainted operand refusal", directory: "615_011_reject_untainted_operand", categorySlug: "600_STDLIB/615_NUM", description: "Arithmetic on an undischargeable operand refuses by name." }
+  ]}
+/>
+
+The operation surface is the one a calculator wants — `add`/`sub`/`mul`/`div`, `pow`, `sqrt`, `exp`, `ln`, `sin`/`cos`/`atan`, `powf`, `mod`, base conversion — with fixed decimal precision requested per call, never machine precision smuggled in. The multiplication underneath is Koru's own limb-level Karatsuba: the race against `bc` and Python's `decimal` (`tests/benchmarks/016_num_precision_race`, replayable) showed Zig's stock schoolbook `mul` was the bottleneck, so the limb layer got owned — transcendentals dropped roughly an order of magnitude, and ReleaseFast beats `bc` on eight of ten workloads. The C bigint implementations still win the pure exact-op races; the honest remaining gap is there in the results table, not smoothed over.
+
+## std/quantity — dimensions are a group, not a string
+
+`std/quantity` packs a magnitude, a canonical `Dim`, and optional uncertainty-with-covariance into one linear string. `Dim` is `[7]i32` — the free abelian group on the seven SI base generators, the same object `QuantityKernel.lean` proves things about — so `m/s · s → m` is group law, not string surgery, and a unit mismatch on `add` refuses `dim-mismatch` while `equiv` still compares canonical text. Uncertainty propagates through the covariance-carrying lanes; lanes the sigma math can't honestly cover refuse `sym-unc` rather than approximate silently.
+
+## The holonomic lane — certificates, not witnesses
+
+`std/sym` gives canonical symbolic expressions; the certificate parts on top are where the semantics get heavy. A holonomic function is one annihilated by a linear ODE with polynomial coefficients — and that annihilating ODE is a *certificate*: finite data that proves a property of an infinite object.
+
+- `cert-seed(body)` registers a declared law for an opaque generator — `p0=[-1]|p1=[1]` is `f' − f = 0`, exp's law, given as truth.
+- `derive-ode(expr, max-order, max-deg)` *discovers* a certificate by elimination over the truncated series — witness-grade, `verified=N` honestly.
+- `cert-sum`/`cert-prod` compose certificates through companion-basis elimination over ℚ(x) — theorem-grade, since `HolonomicClosure.lean` proves the closure. `cert-compose` refuses by name (`not-generally-holonomic`) because the Lean source says composition isn't, in general.
+- `cert-bridge` projects an ODE certificate into its P-recursive recurrence — `HolonomicBridge.lean` verbatim, with `det=1` flagging exactly the `h0` packaging hypothesis that makes the recurrence determine the sequence.
+- `cert-of`/`cert-series` are the theorem upgrade: derive the ODE *structurally*, then let the recurrence *generate* the tail — every coefficient forced by the annihilating equation rather than merely witnessed.
+- `decide-integral`/`decide-ode`/`decide-field` are the decision tower — polynomial integrands get constructed antiderivatives, holonomic integrands get shifted certificates, Airy's equation classifies `non-Liouvillian`, and what the tower can't reach says `unresolved` with its search bounds named.
+
+```koru
+std/sym:lit(s: "inv((1e0+(-1e0*x)))")
+| exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 3)
+    | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
+    | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
+    | unresolved m |> std/io:print.ln("un:{{ m:s }}") |> std/io:free(content: m)
+    | not-holonomic m |> std/io:print.ln("nh:{{ m:s }}") |> std/io:free(content: m)
+    | non-rational |> std/io:print.ln("nr")
+    | non-analytic |> std/io:print.ln("na")
+    | bad |> std/io:print.ln("bad")
+| bad |> std/io:print.ln("bad-lit")
+```
+
+<RegressionTestLink
+  tests={[
+    { name: "615_044 closure algebra", directory: "615_044_sym_cert_closure", categorySlug: "600_STDLIB/615_NUM", description: "cert-sum/cert-prod through companion-basis elimination; cert-compose's named obstruction." },
+    { name: "615_046 the P-recursive bridge", directory: "615_046_sym_cert_bridge", categorySlug: "600_STDLIB/615_NUM", description: "ODE to recurrence with the det flag carrying Lean's packaging hypothesis." },
+    { name: "615_047 certified series", directory: "615_047_sym_cert_series", categorySlug: "600_STDLIB/615_NUM", description: "cert-of derives the ODE structurally; the recurrence generates a certified tail." },
+    { name: "615_048 the decision tower", directory: "615_048_sym_decide_integral", categorySlug: "600_STDLIB/615_NUM", description: "Elementary, holonomic-special, witness-fallback, and honest unresolved paths." }
+  ]}
+/>
+
+## sym.rel — relationships declared, not discovered
+
+The newest band generalizes "ODE law on a generator" to *declared relationships in general*. A `rel:v1` registry names generators and attaches derivative laws in a second phase — `rel-seed` declares the name, `rel-law` attaches `D(g)` as an expression over x and other generators, so cyclic pairs resolve:
+
+```koru
+import std/io
+import std/sym
+
+// condensed from 615_049: cyclic laws, then the conservation check.
+std/sym:rel-new(): r0
+|> std/sym:rel-seed(reg: r0, name: "sin")
+    | exact r1 |> std/sym:rel-seed(reg: r1, name: "cos")
+        | exact r2 |> std/sym:rel-law(reg: r2, name: "sin", law: "g(cos)")
+            | exact r3 |> std/sym:rel-law(reg: r3, name: "cos", law: "(-1e0*g(sin))")
+                | exact r4 |> std/sym:rel-derive(reg: r4, a: "g(sin)*g(sin)+g(cos)*g(cos)")
+                    | exact d |> std/io:print.ln("{{ d:s }}") |> std/io:free(content: d)
+                        |> std/io:free(content: r4)
+                    | unknown-generator |> std/io:print.ln("ug") |> std/io:free(content: r4)
+                    | lawless |> std/io:print.ln("ll") |> std/io:free(content: r4)
+                    | bad |> std/io:print.ln("bad-d") |> std/io:free(content: r4)
+                | unknown-generator |> std/io:print.ln("ug-l")
+                | bad |> std/io:print.ln("bad-l")
+            | unknown-generator |> std/io:print.ln("ug-l1")
+            | bad |> std/io:print.ln("bad-l1")
+        | dup |> std/io:print.ln("dup")
+        | full |> std/io:print.ln("full")
+        | bad |> std/io:print.ln("bad-s")
+    | dup |> std/io:print.ln("dup1")
+    | full |> std/io:print.ln("full1")
+    | bad |> std/io:print.ln("bad-s1")
+```
+
+`rel-derive` prints `0e0` — the conservation of `sin² + cos²` proven mechanically, since every rewrite step is a derivative rule or a declared-law substitution. `rel-norm` canonicalizes for caller-side equality checks. Generator references form their own expression universe — `g(name)` parses only under a registry, so `<sexpr!>` values can't leak in and rel text can't leak out into `sym:add`; undeclared names refuse `unknown-generator`, deriving a lawless generator refuses `lawless`.
+
+<RegressionTestLink
+  test={{ name: "615_049 the rel registry", directory: "615_049_sym_rel_registry", categorySlug: "600_STDLIB/615_NUM", description: "sin/cos cyclic laws, the sin²+cos² conservation, exp's self-law, and all refusal arms." }}
+/>
+
+## What refuses, on purpose
+
+The surface's shape is defined by its edges as much as its operations. `cert-compose` refuses because composition isn't generally holonomic. `decide-ode` says `non-Liouvillian` rather than pretending. `cert-series` on `x` says `under-determined` — its recurrence genuinely leaves a seed free. Tainted operands, undeclared axes, lawless generators, dim mismatches, malformed external certificates — each is a named refusal, not a silent path. Discovery is witness-grade; declaration and derivation are theorem-grade; and the line between them is drawn where the Lean proofs draw it.
+
+Open rungs, honestly: `g(name, arg)` application (composition and addition theorems like `exp(x+y)=exp(x)exp(y)`) needs substitution machinery — band 2. Nonlinear jet relations are honest-refusal territory. And the exact-op multiplication gap versus the C bigint implementations narrows, not closes, with Karatsuba.
+
+<RegressionTestLink
+  tests={[
+    { name: "615_045 the cert registry", directory: "615_045_sym_cert_registry", categorySlug: "600_STDLIB/615_NUM", description: "Threaded registry values carrying certs with provenance in via= fields." },
+    { name: "615_020 SI dims compose", directory: "615_020_quantity_si_dims", categorySlug: "600_STDLIB/615_NUM", description: "The seven-generator Dim group law over packed quantity text." },
+    { name: "615_041 symbolic differentiation", directory: "615_041_sym_deriv", categorySlug: "600_STDLIB/615_NUM", description: "Canonical derivatives over the closed sym grammar." }
+  ]}
+/>
