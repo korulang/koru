@@ -1,0 +1,4 @@
+ode(k=2,d=0,via=shift)|p0=[0]|p1=[-1]|p2=[1]
+ode(k=2,d=1,via=shift)|p0=[0]|p1=[-1,0]|p2=[2,2]
+malformed-cert
+malformed-cert-body

@@ -344,3 +344,44 @@ emit `ode(k=K,d=D,verified=N)|p0=[...]|p1=[...]` — or `| not-found`
 Verified live: `1/(1-x) -> f = (1-x)f'`; `sqrt(1+x) -> 2(1+x)f' = f`;
 `1/(1+x^2) -> (1+x^2)f' + 2x f = 0`. Every function in the current grammar
 is D-finite, so a certificate always exists at sufficient bounds.
+
+## Landed 2026-10-31 — certificate algebra (SupGen rung 2, first half)
+
+The second half of the Python/Lean artifact begins: certificates as
+first-class parsed data, not just emitted text. certParse validates
+ode(k=K,d=D,V)|p0=[..]|... — header shape, ordered p-segments, integer
+coefficients, poly count == order+1, leading poly nonzero. Two tors:
+
+- cert-seed(body: string) — the abstract-term entry point. A declared
+  cert body "p0=[-1]|p1=[1]" registers a law (e.g. exp: f-f=0 for exp)
+  for a generator that may never be expanded — truth given, discovery
+  optional.
+- cert-shift(c: string<!allocated>) — HolonomicCertificate.integralShift
+  verbatim: if h = deriv g and g satisfies sum p_k g^(k) = 0, then h
+  satisfies the cert with a zero-order coefficient prepended. Integral
+  from usage: the antiderivative certificate is derived, not looked up.
+
+The via field in the header records provenance and witness strength:
+verified=N (finite residual check — strong witness, not a for-all-n
+theorem), seed (declared), shift (theorem application —
+integral_closure_shift is proven in Lean, so shift output needs no
+re-verification). Refusals: | bad-cert with malformed-cert /
+malformed-cert-body.
+
+Scheduled next rungs on this lane, in order:
+
+- cert compose: sum/product closure (certs combine without re-expansion —
+  the Python artifacts product/sum ops; HolonomicClosure.lean proves
+  them). General composition stays refused — exp_exp_not_holonomic is a
+  named obstruction, not a gap.
+- A cert registry keyed on sym-canon expression identity, so discovered
+  and declared laws accumulate and lookup precedes re-derivation.
+- Theorem upgrade for derived certs: if the leading polynomial has no
+  integer zeros past the residual bound, the D-finite to P-recursive
+  bridge (HolonomicBridge.lean, shiftBound) propagates residual=0 to all
+  n — turning verified=N into a real theorem.
+- Then, and only then, an extension surface for non-SI measures
+  (currency etc.): the SI kernel stays the 7-dim free abelian group;
+  extensions would declare their own carrier/group laws + canon +
+  conversion policy behind a seam. Design only — low priority.
+
