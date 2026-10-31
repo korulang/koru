@@ -1,0 +1,12 @@
+2e0
+-2e0
+1.5e0
+mod:div-zero
+len=4
+sc=8
+ff
+-11111111
+to-base:non-int
+2.55e2
+from-base:bad-digit
+-1e1
