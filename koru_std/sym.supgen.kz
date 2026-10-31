@@ -13,6 +13,12 @@
 // atoms pi/e/phi are not rational, so series over them refuse
 // | non-rational; poles and zero-constant sqrt/inverses refuse
 // | non-analytic.
+//
+// Certificate algebra (second half of the SupGen artifact, mirroring
+// isar-proofs HolonomicCertificate): cert-seed registers a declared
+// law body p0=[..]|p1=[..] for an abstract/opaque generator;
+// cert-shift is integralShift — if g satisfies cert c and
+// deriv h = g, h satisfies shift(c): order+1, p0 := [0], pk := c.p(k-1).
 
 const Rat = struct { n: BI, d: BI }; // d > 0, gcd(|n|, d) = 1; zero is 0/1
 
@@ -688,4 +694,230 @@ fn symDeriveOde(alloc: std.mem.Allocator, a: []const u8, max_order: i64, max_deg
     };
     if (r) |cert| return .{ .exact = cert };
     return .{ .not_found = .{} };
+}
+
+// ============================================================================
+// ODE certificates — the level-up lane, matching isar-proofs
+// (src/ISAR/Holonomic.lean + HolonomicClosure.lean).
+//
+// A cert string is DATA:
+//   ode(k=K,d=D,via=V)|p0=[i,...]|p1=[...]|...
+// polys carry INTEGER coefficients (integerized at discovery); `via`
+// records provenance: verified=N (finite residual witness), seed
+// (declared, truth given), shift (theorem application — no search).
+//
+// cert-shift is HolonomicCertificate.integralShift: prepend a zero-order
+// coefficient. If h' = g and g satisfies Σ p_i g^(i) = 0, then h
+// satisfies Σ p_{i-1} h^(i) = 0 — integral_closure_shift is a theorem in
+// Lean, so the shifted cert is *structural*, not a finite witness.
+// cert-seed is the abstract-term entry point: a declared cert body,
+// truth given — seeds are data, discovery is optional.
+// ============================================================================
+
+const OdeCert = struct {
+    order: usize,
+    deg: usize,
+    polys: [][]BI, // polys[k][j] = integer coeff of x^j in p_k
+};
+
+fn certFree(alloc: std.mem.Allocator, c: *OdeCert) void {
+    for (c.polys) |p| {
+        for (p) |*b| b.deinit();
+        alloc.free(p);
+    }
+    alloc.free(c.polys);
+}
+
+fn certPolyZero(p: []const BI) bool {
+    for (p) |*b| {
+        if (!b.eqlZero()) return false;
+    }
+    return true;
+}
+
+fn scanUint(s: []const u8, i: *usize) !usize {
+    var v: usize = 0;
+    var any = false;
+    while (i.* < s.len and s[i.*] >= '0' and s[i.*] <= '9') : (i.* += 1) {
+        v = v * 10 + (s[i.*] - '0');
+        any = true;
+    }
+    if (!any) return error.Bad;
+    return v;
+}
+
+fn parseIntBI(alloc: std.mem.Allocator, tok: []const u8) !BI {
+    var b = try BI.init(alloc);
+    errdefer b.deinit();
+    try b.setString(10, tok);
+    return b;
+}
+
+// Parse `p0=[csv]|p1=[csv]|...` segments (indices must run 0..K in order).
+fn certParseSegs(alloc: std.mem.Allocator, segs: []const u8, out: *std.ArrayList([]BI)) !void {
+    var it = std.mem.splitScalar(u8, segs, '|');
+    var idx: usize = 0;
+    while (it.next()) |seg| {
+        if (seg.len == 0) continue;
+        if (seg[0] != 'p') return error.Bad;
+        var i: usize = 1;
+        const want = try scanUint(seg, &i);
+        if (want != idx) return error.Bad;
+        if (i + 1 >= seg.len or seg[i] != '=' or seg[i + 1] != '[' or seg[seg.len - 1] != ']') return error.Bad;
+        const csv = seg[i + 2 .. seg.len - 1];
+        var n: usize = 1;
+        for (csv) |ch| {
+            if (ch == ',') n += 1;
+        }
+        const poly = try alloc.alloc(BI, n);
+        var filled: usize = 0;
+        errdefer {
+            for (poly[0..filled]) |*b| b.deinit();
+            alloc.free(poly);
+        }
+        var cit = std.mem.splitScalar(u8, csv, ',');
+        while (cit.next()) |tok| {
+            if (tok.len == 0) return error.Bad;
+            poly[filled] = try parseIntBI(alloc, tok);
+            filled += 1;
+        }
+        try out.append(alloc, poly);
+        idx += 1;
+    }
+}
+
+fn certFreePolys(alloc: std.mem.Allocator, polys: [][]BI) void {
+    for (polys) |p| {
+        for (p) |*b| b.deinit();
+        alloc.free(p);
+    }
+    alloc.free(polys);
+}
+
+const CertErr = error{ Bad, BadBar, BadPre, BadK, BadD, BadVia, OutOfMemory };
+
+fn certParse(alloc: std.mem.Allocator, text: []const u8) CertErr!OdeCert {
+    const bar = std.mem.indexOfScalar(u8, text, '|') orelse return error.BadBar;
+    const hdr = text[0..bar];
+    const pre = "ode(k=";
+    if (hdr.len < pre.len or !std.mem.eql(u8, hdr[0..pre.len], pre)) return error.BadPre;
+    var i: usize = pre.len;
+    const order = try scanUint(hdr, &i);
+    if (i + 3 > hdr.len or hdr[i] != ',' or !std.mem.eql(u8, hdr[i + 1 .. i + 3], "d=")) return error.BadD;
+    i += 3;
+    const deg = try scanUint(hdr, &i);
+    if (i + 2 >= hdr.len or hdr[i] != ',' or hdr[hdr.len - 1] != ')') return error.BadVia;
+    var polys = std.ArrayList([]BI){};
+    errdefer {
+        for (polys.items) |p| {
+            for (p) |*b| b.deinit();
+            alloc.free(p);
+        }
+        polys.deinit(alloc);
+    }
+    certParseSegs(alloc, text[bar + 1 ..], &polys) catch |e| {
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.Bad;
+    };
+    if (polys.items.len != order + 1) return error.Bad;
+    return .{ .order = order, .deg = deg, .polys = try polys.toOwnedSlice(alloc) };
+}
+
+fn certWrite(alloc: std.mem.Allocator, order: usize, deg: usize, via: []const u8, polys: []const []BI) ![]u8 {
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    const hdr = std.fmt.allocPrint(alloc, "ode(k={d},d={d},via={s})", .{ order, deg, via }) catch return error.OutOfMemory;
+    defer alloc.free(hdr);
+    try out.appendSlice(alloc, hdr);
+    for (polys, 0..) |p, k| {
+        const tag = std.fmt.allocPrint(alloc, "|p{d}=[", .{k}) catch return error.OutOfMemory;
+        defer alloc.free(tag);
+        try out.appendSlice(alloc, tag);
+        for (p, 0..) |*b, j| {
+            if (j > 0) try out.append(alloc, ',');
+            const bs = try b.toString(alloc, 10, .lower);
+            defer alloc.free(bs);
+            try out.appendSlice(alloc, bs);
+        }
+        try out.append(alloc, ']');
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+// integralShift: order+1, prepend the zero polynomial, keep the rest.
+fn certShifted(alloc: std.mem.Allocator, c: *const OdeCert) !OdeCert {
+    const polys = try alloc.alloc([]BI, c.order + 2);
+    var i: usize = 0;
+    errdefer {
+        for (polys[0..i]) |p| {
+            for (p) |*b| b.deinit();
+            alloc.free(p);
+        }
+        alloc.free(polys);
+    }
+    const z = try alloc.alloc(BI, 1);
+    errdefer alloc.free(z);
+    z[0] = try BI.initSet(alloc, 0);
+    polys[0] = z;
+    i = 1;
+    while (i <= c.order + 1) : (i += 1) {
+        const src = c.polys[i - 1];
+        const p = try alloc.alloc(BI, src.len);
+        var j: usize = 0;
+        errdefer {
+            for (p[0..j]) |*b| b.deinit();
+            alloc.free(p);
+        }
+        while (j < src.len) : (j += 1) p[j] = try src[j].clone();
+        polys[i] = p;
+    }
+    return .{ .order = c.order + 1, .deg = c.deg, .polys = polys };
+}
+
+// Integral closure — HolonomicCertificate.integralShift, proven in Lean
+// (HolonomicClosure.integral_closure_shift): prepend p0=0, order+1. A
+// theorem application, not a search — consumes the cert string.
+~pub tor cert-shift { c: string<std/io:!allocated> }
+| exact string<std/io:allocated!>
+| bad-cert string<std/io:allocated!>
+
+~proc cert-shift|zig {
+    defer symFree(c);
+    var cert = certParse(koru_allocator(), c) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
+    defer certFree(koru_allocator(), &cert);
+    if (certPolyZero(cert.polys[cert.order])) return .{ .bad_cert = ownedCopy("degenerate-leading") };
+    var shifted = certShifted(koru_allocator(), &cert) catch @panic("std/sym:cert-shift");
+    defer certFree(koru_allocator(), &shifted);
+    const out = certWrite(koru_allocator(), shifted.order, shifted.deg, "shift", shifted.polys) catch @panic("std/sym:cert-shift");
+    return .{ .exact = out };
+}
+
+// Abstract-term seed — declares a cert body `p0=[..]|p1=[..]|...` as
+// data; truth is GIVEN, not discovered. This is the entry point for
+// holonomy over terms the grammar does not close over: register the
+// law, everything above it is algebra (cert-shift, later compose).
+~pub tor cert-seed { body: string }
+| exact string<std/io:allocated!>
+| bad-cert string<std/io:allocated!>
+
+~proc cert-seed|zig {
+    const alloc = koru_allocator();
+    var polys = std.ArrayList([]BI){};
+    defer {
+        for (polys.items) |p| {
+            for (p) |*b| b.deinit();
+            alloc.free(p);
+        }
+        polys.deinit(alloc);
+    }
+    certParseSegs(alloc, body, &polys) catch return .{ .bad_cert = ownedCopy("malformed-cert-body") };
+    if (polys.items.len == 0) return .{ .bad_cert = ownedCopy("empty-cert") };
+    const order = polys.items.len - 1;
+    if (certPolyZero(polys.items[order])) return .{ .bad_cert = ownedCopy("degenerate-leading") };
+    var deg: usize = 0;
+    for (polys.items) |p| {
+        if (p.len - 1 > deg) deg = p.len - 1;
+    }
+    const out = certWrite(alloc, order, deg, "seed", polys.items) catch @panic("std/sym:cert-seed");
+    return .{ .exact = out };
 }
