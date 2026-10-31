@@ -1,0 +1,11 @@
+decide(layer=elementary)|integral=[0,3,1]|note=polynomial-termwise-constructed
+hs:decide(layer=holonomic-special)|note=no-risch-elementary-form-not-constructed;integrand-cert-theorem-grade|integrand=ode(k=1,d=1,via=of)|p0=[-1]|p1=[1,-1]|antiderivative=ode(k=2,d=1,via=shift)|p0=[0]|p1=[-1]|p2=[1,-1]
+hs:decide(layer=holonomic-special)|note=no-risch-elementary-form-not-constructed;seed-finite-witness|integrand=ode(k=1,d=1,via=verified)|p0=[-1,0]|p1=[4,4]|antiderivative=ode(k=2,d=1,via=shift)|p0=[0]|p1=[-1,0]|p2=[4,4]
+un:decide(layer=unresolved)|note=no-holonomic-certificate-within-bounds(order<=0,deg<=0);structural=sqrt-nonpoly
+decide(layer=liouvillian)|r=2|form=y=C1*exp(sqrt(r)*x)+C2*exp(-sqrt(r)*x)|note=kovacic-check-bounded
+decide(layer=liouvillian)|r=-1|form=y=C1*cos(sqrt(|r|)*x)+C2*sin(sqrt(|r|)*x)|note=kovacic-check-bounded
+hs:decide(layer=holonomic-special)|note=kovacic-pole-structure-unbounded:proven-no-liouvillian-solution
+hs:decide(layer=holonomic-special)|note=kovacic-pole-structure-unbounded:proven-no-liouvillian-solution
+uc:r-not-rational-function
+ode(k=2,d=1,via=shift)|p0=[0]|p1=[-1]|p2=[1,-1]
+field-nf
