@@ -1,0 +1,7 @@
+0e0
+(2e0*g(sin)*g(cos))
+ug
+rel:v1;sin=g(cos);cos=(-1e0*g(sin))
+((g(exp)*x)+g(exp))
+ll-f
+dup-ok

@@ -1,0 +1,200 @@
+// ============================================================================
+// std/sym part: rel — declared-generator relationships.
+//
+// A generator is a named function of x declared in a `rel:v1` registry:
+//   rel:v1;exp=;sin=g(cos);cos=(-1e0*g(sin))
+// Entry i internes atom 4+i; `g(name)` in an expression resolves against the
+// registry's names. A law is a canonical sexpr (over x, decimals, √/inv and
+// other generators) giving D(g_i) — attached after declaration so cyclic
+// law pairs (sin <-> cos) and self-laws (exp' = exp) both work.
+//
+// Grammar extension lives in sym.kz: `g(name)` parses only under a registry
+// (ParseCtx.greg); the closed `lit` grammar refuses g-atoms. Expressions
+// containing g-atoms form a distinct universe from <sexpr!> — they cannot
+// flow through sym:add/mul/... (those parse with no registry) — so rel
+// surfaces take and return plain strings.
+//
+// Tors:
+//   rel-new    -> rel:v1                                        (allocated!)
+//   rel-seed   reg, name      -> exact reg' | dup | full | bad   declare a name
+//   rel-law    reg, name, law -> exact reg' | unknown-generator | bad
+//   rel-derive reg, expr      -> exact text | unknown-generator | lawless | bad
+//   rel-norm   reg, expr      -> exact text | unknown-generator | bad
+//
+// rel-derive applies the declared laws mechanically (chain rule) and returns
+// the normalized canonical text — theorem-grade, since each step is the
+// derivative rule or a declared law substitution. rel-norm gives the canonical
+// form: two expressions provably-equal under the laws iff their canonical
+// texts match (the equality-check primitive is caller-side text compare).
+// ============================================================================
+
+fn relNameOk(nm: []const u8) bool {
+    if (nm.len == 0) return false;
+    if (!(std.ascii.isAlphabetic(nm[0]) or nm[0] == '_')) return false;
+    for (nm[1..]) |ch| {
+        if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return false;
+    }
+    return true;
+}
+
+// Two-pass: names first (all entries), then each law under the complete
+// registry — so stored laws may reference names declared after them in the
+// text (cyclic pairs serialize fine).
+fn relParse(alloc: std.mem.Allocator, s: []const u8) !GReg {
+    if (!std.mem.startsWith(u8, s, "rel:v1")) return error.Malformed;
+    const tail = s["rel:v1".len..];
+    if (tail.len > 0 and tail[0] != ';') return error.Malformed;
+    var g = GReg{ .names = .{}, .laws = .{} };
+    var raws = std.ArrayList(?[]const u8){};
+    defer raws.deinit(alloc);
+    var it = std.mem.splitScalar(u8, tail, ';');
+    while (it.next()) |ent| {
+        if (ent.len == 0) continue;
+        const eq = std.mem.indexOfScalar(u8, ent, '=') orelse return error.Malformed;
+        const nm = ent[0..eq];
+        if (!relNameOk(nm)) return error.Malformed;
+        for (g.names.items) |n2| {
+            if (std.mem.eql(u8, n2, nm)) return error.Malformed;
+        }
+        try g.names.append(alloc, nm);
+        try raws.append(alloc, if (eq + 1 < ent.len) ent[eq + 1 ..] else null);
+    }
+    for (raws.items) |r| {
+        if (r) |lt| {
+            const t = parseTreeG(alloc, lt, &g) catch return error.Malformed;
+            try g.laws.append(alloc, t);
+        } else {
+            try g.laws.append(alloc, null);
+        }
+    }
+    return g;
+}
+
+fn relEmit(alloc: std.mem.Allocator, g: *const GReg) ![]u8 {
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    try out.appendSlice(alloc, "rel:v1");
+    for (g.names.items, 0..) |nm, i| {
+        try out.append(alloc, ';');
+        try out.appendSlice(alloc, nm);
+        try out.append(alloc, '=');
+        if (g.laws.items[i]) |law| {
+            const c = try canonOfG(alloc, law, g);
+            defer alloc.free(c);
+            try out.appendSlice(alloc, c);
+        }
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+// regFind returns the atom index offset (names position) or null.
+fn relFind(g: *const GReg, nm: []const u8) ?usize {
+    for (g.names.items, 0..) |n2, i| {
+        if (std.mem.eql(u8, n2, nm)) return i;
+    }
+    return null;
+}
+
+~pub tor rel-new {} -> string<std/io:allocated!>
+
+~proc rel-new|zig {
+    return ownedCopy("rel:v1");
+}
+
+// Declare a generator name (lawless until rel-law attaches a law).
+~pub tor rel-seed { reg: string<std/io:!allocated>, name: string }
+| exact string<std/io:allocated!>
+| dup
+| full
+| bad
+
+~proc rel-seed|zig {
+    defer symFree(reg);
+    const alloc = koru_allocator();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var g = relParse(a, reg) catch return .{ .bad = .{} };
+    if (!relNameOk(name)) return .{ .bad = .{} };
+    if (relFind(&g, name) != null) return .{ .dup = .{} };
+    if (g.names.items.len >= 252) return .{ .full = .{} };
+    g.names.append(a, name) catch @panic("std/sym:rel-seed: oom");
+    g.laws.append(a, null) catch @panic("std/sym:rel-seed: oom");
+    const out = relEmit(alloc, &g) catch @panic("std/sym:rel-seed: emit");
+    return .{ .exact = out };
+}
+
+// Attach (or replace) the derivative law for a declared generator. The law
+// is a sexpr over x and generator names — self- and mutual references
+// resolve since the name set is complete at attach time.
+~pub tor rel-law { reg: string<std/io:!allocated>, name: string, law: string }
+| exact string<std/io:allocated!>
+| unknown-generator
+| bad
+
+~proc rel-law|zig {
+    defer symFree(reg);
+    const alloc = koru_allocator();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var g = relParse(a, reg) catch return .{ .bad = .{} };
+    const i = relFind(&g, name) orelse return .{ .unknown_generator = .{} };
+    const t = parseTreeG(a, law, &g) catch |e| switch (e) {
+        error.UnknownGenerator => return .{ .unknown_generator = .{} },
+        else => return .{ .bad = .{} },
+    };
+    const nt = norm(a, t) catch return .{ .bad = .{} };
+    g.laws.items[i] = nt;
+    const out = relEmit(alloc, &g) catch @panic("std/sym:rel-law: emit");
+    return .{ .exact = out };
+}
+
+// d/dx of expr under the declared laws — theorem-grade: every rewrite step
+// is a derivative rule or a declared-law substitution.
+~pub tor rel-derive { reg: string<*>, a: string }
+| exact string<std/io:allocated!>
+| unknown-generator
+| lawless
+| bad
+
+~proc rel-derive|zig {
+    const alloc = koru_allocator();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var g = relParse(ar, reg) catch return .{ .bad = .{} };
+    const t = parseTreeG(ar, a, &g) catch |e| switch (e) {
+        error.UnknownGenerator => return .{ .unknown_generator = .{} },
+        else => return .{ .bad = .{} },
+    };
+    const d = deriveNodeG(ar, t, &g) catch |e| switch (e) {
+        error.Lawless => return .{ .lawless = .{} },
+        else => return .{ .bad = .{} },
+    };
+    const nt = norm(ar, d) catch return .{ .bad = .{} };
+    const c = canonOfG(ar, nt, &g) catch return .{ .bad = .{} };
+    return .{ .exact = ownedCopy(c) };
+}
+
+// Canonical normal form of expr under the registry's name set — the
+// caller-side equality primitive: canon-equal texts are provably equal.
+~pub tor rel-norm { reg: string<*>, a: string }
+| exact string<std/io:allocated!>
+| unknown-generator
+| bad
+
+~proc rel-norm|zig {
+    const alloc = koru_allocator();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var g = relParse(ar, reg) catch return .{ .bad = .{} };
+    const t = parseTreeG(ar, a, &g) catch |e| switch (e) {
+        error.UnknownGenerator => return .{ .unknown_generator = .{} },
+        else => return .{ .bad = .{} },
+    };
+    const nt = norm(ar, t) catch return .{ .bad = .{} };
+    const c = canonOfG(ar, nt, &g) catch return .{ .bad = .{} };
+    return .{ .exact = ownedCopy(c) };
+}
