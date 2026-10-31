@@ -1,0 +1,292 @@
+// Koru Standard Library: the `certreg` part of sym.kz — the certificate
+// registry, mirroring isar_holonomic_closure_algebra.py's
+// HolonomicRegistry. Koru has no mutable globals: the registry is an
+// allocated TEXT BLOB threaded through flows — every op consumes the
+// old blob and hands back a new one (persistent-value semantics).
+// Joined via `~part certreg` in sym.kz; merged into the module at load.
+//
+// Format: reg:v1;G1=<cert>;G2=<cert>;...
+// Keys are deterministic (G1, G2, ...). Provenance is embedded in each
+// cert's `via` field: seed / verified=N / shift(Gk) / sum(Ga,Gb) /
+// prod(Ga,Gb) — the Python registry's provenance strings, compressed
+// into the cert text itself.
+
+// Split `reg:v1;G1=cert;...` into cert-text slices borrowing `text`.
+// Validates the header and each `G<n>=` record prefix.
+fn regEntries(alloc: std.mem.Allocator, text: []const u8) ![][]const u8 {
+    var it = std.mem.splitScalar(u8, text, ';');
+    const hdr = it.next() orelse return error.Bad;
+    if (!std.mem.eql(u8, hdr, "reg:v1")) return error.Bad;
+    var list = std.ArrayList([]const u8){};
+    errdefer list.deinit(alloc);
+    var idx: usize = 1;
+    while (it.next()) |seg| {
+        if (seg.len == 0) continue;
+        if (seg.len < 3 or seg[0] != 'G') return error.Bad;
+        var i: usize = 1;
+        const want = scanUint(seg, &i) catch return error.Bad;
+        if (want != idx) return error.Bad;
+        if (i >= seg.len or seg[i] != '=') return error.Bad;
+        try list.append(alloc, seg[i + 1 ..]);
+        idx += 1;
+    }
+    return list.toOwnedSlice(alloc);
+}
+
+// Borrowing lookup: cert text for key "G<n>", or null.
+fn regLookup(text: []const u8, key: []const u8) ?[]const u8 {
+    if (key.len < 2 or key[0] != 'G') return null;
+    var it = std.mem.splitScalar(u8, text, ';');
+    _ = it.next(); // header
+    while (it.next()) |seg| {
+        if (seg.len == 0) continue;
+        // prefix match "G<n>=" — key must match the record name exactly
+        const eq = std.mem.indexOfScalar(u8, seg, '=') orelse return null;
+        if (std.mem.eql(u8, seg[0..eq], key)) return seg[eq + 1 ..];
+    }
+    return null;
+}
+
+// new blob = old blob + ";G{count+1}={cert}"
+fn regAppend(alloc: std.mem.Allocator, reg: []const u8, count: usize, cert: []const u8) ![]u8 {
+    const sep = std.fmt.allocPrint(alloc, ";G{d}=", .{count + 1}) catch @panic("std/sym:certreg");
+    defer alloc.free(sep);
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    try out.appendSlice(alloc, reg);
+    try out.appendSlice(alloc, sep);
+    try out.appendSlice(alloc, cert);
+    return out.toOwnedSlice(alloc);
+}
+
+// Parse + clone a looked-up cert out of a registry blob; the result is
+// owned (the borrow dies with the blob).
+fn regCertAt(alloc: std.mem.Allocator, reg: []const u8, key: []const u8) !?OdeCert {
+    const text = regLookup(reg, key) orelse return null;
+    const entries = regEntries(alloc, reg) catch return error.Bad;
+    defer alloc.free(entries);
+    return try certParse(alloc, text);
+}
+
+// ============================================================================
+// Tors.
+// ============================================================================
+
+// An empty registry blob.
+~pub tor cert-reg-new {} -> string<std/io:allocated!>
+
+~proc cert-reg-new|zig {
+    return ownedCopy("reg:v1");
+}
+
+// Append a raw cert text as the next G entry. Validates the registry
+// blob AND the cert — nothing unvalidated enters the store.
+~pub tor cert-reg-put { reg: string<std/io:!allocated>, cert: string<std/io:!allocated> }
+| exact string<std/io:allocated!>
+| bad-cert string<std/io:allocated!>
+
+~proc cert-reg-put|zig {
+    defer symFree(reg);
+    defer symFree(cert);
+    const alloc = koru_allocator();
+    const entries = regEntries(alloc, reg) catch return .{ .bad_cert = ownedCopy("malformed-registry") };
+    defer alloc.free(entries);
+    var c = certParse(alloc, cert) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
+    defer certFree(alloc, &c);
+    const out = regAppend(alloc, reg, entries.len, cert) catch @panic("std/sym:cert-reg-put");
+    return .{ .exact = out };
+}
+
+// Register a declared law body — the abstract-term path, appended as
+// the next G entry with via=seed.
+~pub tor cert-reg-seed { reg: string<std/io:!allocated>, body: string }
+| exact string<std/io:allocated!>
+| bad-cert string<std/io:allocated!>
+
+~proc cert-reg-seed|zig {
+    defer symFree(reg);
+    const alloc = koru_allocator();
+    const entries = regEntries(alloc, reg) catch return .{ .bad_cert = ownedCopy("malformed-registry") };
+    defer alloc.free(entries);
+    var polys = std.ArrayList([]BI){};
+    defer {
+        for (polys.items) |p| {
+            for (p) |*b| b.deinit();
+            alloc.free(p);
+        }
+        polys.deinit(alloc);
+    }
+    certParseSegs(alloc, body, &polys) catch return .{ .bad_cert = ownedCopy("malformed-cert-body") };
+    if (polys.items.len == 0) return .{ .bad_cert = ownedCopy("empty-cert") };
+    const order = polys.items.len - 1;
+    if (certPolyZero(polys.items[order])) return .{ .bad_cert = ownedCopy("degenerate-leading") };
+    var deg: usize = 0;
+    for (polys.items) |p| {
+        if (p.len - 1 > deg) deg = p.len - 1;
+    }
+    const ct = certWrite(alloc, order, deg, "seed", polys.items) catch @panic("std/sym:cert-reg-seed");
+    defer alloc.free(ct);
+    const out = regAppend(alloc, reg, entries.len, ct) catch @panic("std/sym:cert-reg-seed");
+    return .{ .exact = out };
+}
+
+// integralShift at registry level: G_new = shift(G_key), via=shift(Gk).
+~pub tor cert-reg-shift { reg: string<std/io:!allocated>, key: string }
+| exact string<std/io:allocated!>
+| not-found
+| bad-cert string<std/io:allocated!>
+
+~proc cert-reg-shift|zig {
+    defer symFree(reg);
+    const alloc = koru_allocator();
+    const entries = regEntries(alloc, reg) catch return .{ .bad_cert = ownedCopy("malformed-registry") };
+    defer alloc.free(entries);
+    var c = (regCertAt(alloc, reg, key) catch return .{ .bad_cert = ownedCopy("malformed-cert") }) orelse return .{ .not_found = .{} };
+    defer certFree(alloc, &c);
+    if (certPolyZero(c.polys[c.order])) return .{ .bad_cert = ownedCopy("degenerate-leading") };
+    var shifted = certShifted(alloc, &c) catch @panic("std/sym:cert-reg-shift");
+    defer certFree(alloc, &shifted);
+    const via = std.fmt.allocPrint(alloc, "shift({s})", .{key}) catch @panic("std/sym:certreg");
+    defer alloc.free(via);
+    const ct = certWrite(alloc, shifted.order, shifted.deg, via, shifted.polys) catch @panic("std/sym:cert-reg-shift");
+    defer alloc.free(ct);
+    const out = regAppend(alloc, reg, entries.len, ct) catch @panic("std/sym:cert-reg-shift");
+    return .{ .exact = out };
+}
+
+// Sum closure at registry level: G_new = sum(G_a, G_b), via=sum(Ga,Gb).
+~pub tor cert-reg-sum { reg: string<std/io:!allocated>, a: string, b: string }
+| exact string<std/io:allocated!>
+| not-found
+| bad-cert string<std/io:allocated!>
+
+~proc cert-reg-sum|zig {
+    defer symFree(reg);
+    const alloc = koru_allocator();
+    const entries = regEntries(alloc, reg) catch return .{ .bad_cert = ownedCopy("malformed-registry") };
+    defer alloc.free(entries);
+    var ca = (regCertAt(alloc, reg, a) catch return .{ .bad_cert = ownedCopy("malformed-cert") }) orelse return .{ .not_found = .{} };
+    defer certFree(alloc, &ca);
+    var cb = (regCertAt(alloc, reg, b) catch return .{ .bad_cert = ownedCopy("malformed-cert") }) orelse return .{ .not_found = .{} };
+    defer certFree(alloc, &cb);
+    if (certPolyZero(ca.polys[ca.order]) or certPolyZero(cb.polys[cb.order])) return .{ .bad_cert = ownedCopy("degenerate-leading") };
+    var out = certClosure(alloc, &ca, &cb, .sum) catch |e| switch (e) {
+        error.NoDep => return .{ .bad_cert = ownedCopy("closure-no-dependency") },
+        else => @panic("std/sym:cert-reg-sum"),
+    };
+    defer certFree(alloc, &out);
+    const via = std.fmt.allocPrint(alloc, "sum({s},{s})", .{ a, b }) catch @panic("std/sym:certreg");
+    defer alloc.free(via);
+    const ct = certWrite(alloc, out.order, out.deg, via, out.polys) catch @panic("std/sym:cert-reg-sum");
+    defer alloc.free(ct);
+    const res = regAppend(alloc, reg, entries.len, ct) catch @panic("std/sym:cert-reg-sum");
+    return .{ .exact = res };
+}
+
+// Product closure at registry level, via=prod(Ga,Gb).
+~pub tor cert-reg-prod { reg: string<std/io:!allocated>, a: string, b: string }
+| exact string<std/io:allocated!>
+| not-found
+| bad-cert string<std/io:allocated!>
+
+~proc cert-reg-prod|zig {
+    defer symFree(reg);
+    const alloc = koru_allocator();
+    const entries = regEntries(alloc, reg) catch return .{ .bad_cert = ownedCopy("malformed-registry") };
+    defer alloc.free(entries);
+    var ca = (regCertAt(alloc, reg, a) catch return .{ .bad_cert = ownedCopy("malformed-cert") }) orelse return .{ .not_found = .{} };
+    defer certFree(alloc, &ca);
+    var cb = (regCertAt(alloc, reg, b) catch return .{ .bad_cert = ownedCopy("malformed-cert") }) orelse return .{ .not_found = .{} };
+    defer certFree(alloc, &cb);
+    if (certPolyZero(ca.polys[ca.order]) or certPolyZero(cb.polys[cb.order])) return .{ .bad_cert = ownedCopy("degenerate-leading") };
+    var out = certClosure(alloc, &ca, &cb, .prod) catch |e| switch (e) {
+        error.NoDep => return .{ .bad_cert = ownedCopy("closure-no-dependency") },
+        else => @panic("std/sym:cert-reg-prod"),
+    };
+    defer certFree(alloc, &out);
+    const via = std.fmt.allocPrint(alloc, "prod({s},{s})", .{ a, b }) catch @panic("std/sym:certreg");
+    defer alloc.free(via);
+    const ct = certWrite(alloc, out.order, out.deg, via, out.polys) catch @panic("std/sym:cert-reg-prod");
+    defer alloc.free(ct);
+    const res = regAppend(alloc, reg, entries.len, ct) catch @panic("std/sym:cert-reg-prod");
+    return .{ .exact = res };
+}
+
+// Discovery at registry level (Python register_from_expr): run the
+// bounded SupGen search, append via=verified=N on success.
+~pub tor cert-reg-derive { reg: string<std/io:!allocated>, a: string<!sexpr>, max-order: i64, max-deg: i64 }
+| exact string<std/io:allocated!>
+| not-found
+| non-analytic
+| non-rational
+| bad
+| bad-cert string<std/io:allocated!>
+
+~proc cert-reg-derive|zig {
+    defer symFree(reg);
+    defer symFree(a);
+    if (max_order < 0 or max_order > 8 or max_deg < 0 or max_deg > 12) return .{ .bad = .{} };
+    const alloc = koru_allocator();
+    const entries = regEntries(alloc, reg) catch return .{ .bad_cert = ownedCopy("malformed-registry") };
+    defer alloc.free(entries);
+    const r = symDeriveOde(alloc, a, max_order, max_deg) catch |err| switch (err) {
+        error.NonAnalytic => return .{ .non_analytic = .{} },
+        error.NonRational => return .{ .non_rational = .{} },
+        error.Bad => return .{ .bad = .{} },
+        else => @panic("std/sym:cert-reg-derive"),
+    };
+    const cert = r orelse return .{ .not_found = .{} };
+    defer alloc.free(cert);
+    const out = regAppend(alloc, reg, entries.len, cert) catch @panic("std/sym:cert-reg-derive");
+    return .{ .exact = out };
+}
+
+// Composition at registry level: validate both keys resolve to certs,
+// then refuse by name — the impossibility is a theorem.
+~pub tor cert-reg-compose { reg: string<std/io:!allocated>, outer: string, inner: string }
+| not-holonomic string<std/io:allocated!>
+| not-found
+| bad-cert string<std/io:allocated!>
+
+~proc cert-reg-compose|zig {
+    defer symFree(reg);
+    const alloc = koru_allocator();
+    const entries = regEntries(alloc, reg) catch return .{ .bad_cert = ownedCopy("malformed-registry") };
+    defer alloc.free(entries);
+    var ca = (regCertAt(alloc, reg, outer) catch return .{ .bad_cert = ownedCopy("malformed-cert") }) orelse return .{ .not_found = .{} };
+    defer certFree(alloc, &ca);
+    var cb = (regCertAt(alloc, reg, inner) catch return .{ .bad_cert = ownedCopy("malformed-cert") }) orelse return .{ .not_found = .{} };
+    defer certFree(alloc, &cb);
+    return .{ .not_holonomic = ownedCopy("not-generally-holonomic:exp(exp(x))-obstruction") };
+}
+
+// Fetch a cert's text by key. Borrows the registry — the blob's
+// allocated! obligation stays with the caller.
+~pub tor cert-reg-get { reg: string<*>, key: string }
+| exact string<std/io:allocated!>
+| not-found
+| bad-cert string<std/io:allocated!>
+
+~proc cert-reg-get|zig {
+    const text = regLookup(reg, key) orelse return .{ .not_found = .{} };
+    // validate the stored cert is well-formed before handing it out
+    var c = certParse(koru_allocator(), text) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
+    defer certFree(koru_allocator(), &c);
+    return .{ .exact = ownedCopy(text) };
+}
+
+// The key of the most recent entry ("G{n}"), for threading chains.
+// Borrows the registry.
+~pub tor cert-reg-last { reg: string<*> }
+| exact string<std/io:allocated!>
+| empty
+| bad-cert string<std/io:allocated!>
+
+~proc cert-reg-last|zig {
+    const alloc = koru_allocator();
+    const entries = regEntries(alloc, reg) catch return .{ .bad_cert = ownedCopy("malformed-registry") };
+    defer alloc.free(entries);
+    if (entries.len == 0) return .{ .empty = .{} };
+    const out = std.fmt.allocPrint(alloc, "G{d}", .{entries.len}) catch @panic("std/sym:certreg");
+    return .{ .exact = out };
+}
