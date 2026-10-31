@@ -1,0 +1,448 @@
+// Koru Standard Library: the `certgen` part of sym.kz — certified series.
+//
+// Joined via `~part certgen` in sym.kz; merged into the module at load.
+// Depends on: sym.kz (parseTree/norm/SNode), supgen (Rat/serFromNode/
+//   certWrite/OdeCert), certcomp (Poly/Frac closure algebra, certBridge,
+//   recWrite, certClosure).
+//
+// cert-of derives the ODE STRUCTURALLY — theorem-level, no series
+// witness (HolonomicClosure.lean semantics):
+//   dec        -> f' = 0
+//   x          -> x f' - f = 0
+//   a + b      -> certClosure sum
+//   a * b      -> certClosure prod
+//   inv(a), a order-1  -> q1 g' - q0 g = 0   (g = 1/f)
+//   sq(p), p a poly    -> 2p g' - p' g = 0   (g = sqrt(p))
+// anything else is a named refusal, never a silent default.
+//
+// cert-series emits `cser(terms=N,det=1)|a=[...]|ode=...|rec=...`:
+// cert-of -> certBridge -> det (Lean h0: q_{K,0} != 0) -> seeds are the
+// expression's ACTUAL first R coefficients (exact), tail is generated
+// by the recurrence. Every generated coefficient is forced by the ODE
+// residual — theorem-correct, not a finite witness. det=0 refuses as
+// under-determined carrying the (unpackageable) rec for diagnostics.
+// ============================================================================
+
+const CertgenErr = error{ InvHighOrder, SqrtNonPoly };
+
+fn biSlice(alloc: std.mem.Allocator, vals: []const i64) ![]BI {
+    const out = try alloc.alloc(BI, vals.len);
+    var n: usize = 0;
+    errdefer {
+        for (out[0..n]) |*b| b.deinit();
+        alloc.free(out);
+    }
+    while (n < vals.len) : (n += 1) out[n] = try BI.initSet(alloc, vals[n]);
+    return out;
+}
+
+fn biPolyClone(alloc: std.mem.Allocator, p: []const BI) ![]BI {
+    const out = try alloc.alloc(BI, p.len);
+    var n: usize = 0;
+    errdefer {
+        for (out[0..n]) |*b| b.deinit();
+        alloc.free(out);
+    }
+    while (n < p.len) : (n += 1) out[n] = try p[n].clone();
+    return out;
+}
+
+fn biPolyNeg(alloc: std.mem.Allocator, p: []const BI) ![]BI {
+    const out = try biPolyClone(alloc, p);
+    errdefer {
+        for (out) |*b| b.deinit();
+        alloc.free(out);
+    }
+    for (out) |*b| b.negate();
+    return out;
+}
+
+fn biLcm(alloc: std.mem.Allocator, a: *const BI, b: *const BI) !BI {
+    var g = try biGcd(alloc, a, b);
+    defer g.deinit();
+    var prod = try a.clone();
+    defer prod.deinit();
+    try prod.mul(&prod, b);
+    var q = try BI.init(alloc);
+    errdefer q.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try q.divTrunc(&rem, &prod, &g);
+    q.abs();
+    return q;
+}
+
+// Common-denominator integerization of Rat-coefficient polys.
+fn intPolysFromRats(alloc: std.mem.Allocator, polys: []const []const Rat) ![][]BI {
+    var L = try BI.initSet(alloc, 1);
+    defer L.deinit();
+    for (polys) |p| {
+        for (p) |*c| {
+            if (denIsOne(c)) continue;
+            const nl = try biLcm(alloc, &L, &c.d);
+            L.deinit();
+            L = nl;
+        }
+    }
+    const out = try alloc.alloc([]BI, polys.len);
+    var np: usize = 0;
+    errdefer {
+        for (out[0..np]) |p| {
+            for (p) |*b| b.deinit();
+            alloc.free(p);
+        }
+        alloc.free(out);
+    }
+    for (polys) |p| {
+        var tl: usize = 1;
+        if (!polyIsZero(p)) tl = polyDegIdx(p) + 1;
+        const ip = try alloc.alloc(BI, tl);
+        var i: usize = 0;
+        errdefer {
+            for (ip[0..i]) |*b| b.deinit();
+            alloc.free(ip);
+        }
+        while (i < tl) : (i += 1) {
+            if (i >= p.len or ratIsZero(&p[i])) {
+                ip[i] = try BI.initSet(alloc, 0);
+                continue;
+            }
+            var scaled = try p[i].n.clone();
+            errdefer scaled.deinit();
+            var qq = try BI.init(alloc);
+            defer qq.deinit();
+            var rr = try BI.init(alloc);
+            defer rr.deinit();
+            var dd = try p[i].d.clone();
+            defer dd.deinit();
+            try qq.divTrunc(&rr, &L, &dd);
+            try scaled.mul(&scaled, &qq);
+            ip[i] = scaled;
+        }
+        out[np] = ip;
+        np += 1;
+    }
+    return out;
+}
+
+// Structural polynomial extraction over Q: dec/x/+/* only. Anything
+// involving inv or sq (or non-x atoms, which are not rational) is not a
+// poly over Q[x] for these purposes.
+fn polyOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!?[]Rat {
+    switch (n.kind) {
+        .dec => {
+            const p = try alloc.alloc(Rat, 1);
+            errdefer alloc.free(p);
+            p[0] = try ratFromDec(alloc, &n.dec);
+            return p;
+        },
+        .atom => {
+            if (n.atom != 3) return null;
+            const p = try alloc.alloc(Rat, 2);
+            errdefer alloc.free(p);
+            p[0] = try ratFromInt(alloc, 0);
+            p[1] = try ratFromInt(alloc, 1);
+            return p;
+        },
+        .add => {
+            var acc = try polyEmpty(alloc);
+            errdefer polyFree(alloc, acc);
+            for (n.kids) |k| {
+                const kp = (try polyOfNode(alloc, k)) orelse {
+                    polyFree(alloc, acc);
+                    return null;
+                };
+                defer polyFree(alloc, kp);
+                const na = try polyAdd(alloc, acc, kp);
+                polyFree(alloc, acc);
+                acc = na;
+            }
+            return acc;
+        },
+        .mul => {
+            var acc = (try polyOfNode(alloc, n.kids[0])) orelse return null;
+            errdefer polyFree(alloc, acc);
+            for (n.kids[1..]) |k| {
+                const kp = (try polyOfNode(alloc, k)) orelse {
+                    polyFree(alloc, acc);
+                    return null;
+                };
+                defer polyFree(alloc, kp);
+                const na = try polyMul(alloc, acc, kp);
+                polyFree(alloc, acc);
+                acc = na;
+            }
+            return acc;
+        },
+        .sq, .inv => return null,
+    }
+}
+
+fn certDegOf(polys: []const []BI) usize {
+    var deg: usize = 0;
+    for (polys) |p| {
+        if (p.len > deg + 1) deg = p.len - 1;
+    }
+    return deg;
+}
+
+fn certLeafConst(alloc: std.mem.Allocator) !OdeCert {
+    const polys = try alloc.alloc([]BI, 2);
+    errdefer alloc.free(polys);
+    polys[0] = try biSlice(alloc, &.{0});
+    errdefer {
+        for (polys[0]) |*b| b.deinit();
+        alloc.free(polys[0]);
+    }
+    polys[1] = try biSlice(alloc, &.{1});
+    return .{ .order = 1, .deg = 0, .polys = polys };
+}
+
+fn certLeafVar(alloc: std.mem.Allocator) !OdeCert {
+    const polys = try alloc.alloc([]BI, 2);
+    errdefer alloc.free(polys);
+    polys[0] = try biSlice(alloc, &.{-1});
+    errdefer {
+        for (polys[0]) |*b| b.deinit();
+        alloc.free(polys[0]);
+    }
+    polys[1] = try biSlice(alloc, &.{ 0, 1 });
+    return .{ .order = 1, .deg = 1, .polys = polys };
+}
+
+// Structural (theorem-level) ODE derivation.
+fn certOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!OdeCert {
+    switch (n.kind) {
+        .dec => return certLeafConst(alloc),
+        .atom => return if (n.atom == 3) certLeafVar(alloc) else certLeafConst(alloc),
+        .add, .mul => {
+            const mode: ClMode = if (n.kind == .add) .sum else .prod;
+            var acc = try certOfNode(alloc, n.kids[0]);
+            errdefer certFree(alloc, &acc);
+            for (n.kids[1..]) |k| {
+                var ck = try certOfNode(alloc, k);
+                defer certFree(alloc, &ck);
+                const nc = try certClosure(alloc, &acc, &ck, mode);
+                certFree(alloc, &acc);
+                acc = nc;
+            }
+            return acc;
+        },
+        .inv => {
+            // g = 1/p for a polynomial p satisfies p g' + p' g = 0 — order
+            // 1 regardless of p's structure (the companion-basis closure
+            // over dependent summands can yield a valid but non-minimal
+            // ODE for the inner cert, so the poly path must come first).
+            if (try polyOfNode(alloc, n.kid)) |p| {
+                defer polyFree(alloc, p);
+                const dp = try polyDer(alloc, p);
+                defer polyFree(alloc, dp);
+                const pp = try polyClone(alloc, p);
+                defer polyFree(alloc, pp);
+                const rat_polys = [2][]const Rat{ dp, pp };
+                const ips = try intPolysFromRats(alloc, &rat_polys);
+                return .{ .order = 1, .deg = certDegOf(ips), .polys = ips };
+            }
+            var inner = try certOfNode(alloc, n.kid);
+            defer certFree(alloc, &inner);
+            if (inner.order != 1) return CertgenErr.InvHighOrder;
+            const polys = try alloc.alloc([]BI, 2);
+            errdefer alloc.free(polys);
+            polys[0] = try biPolyNeg(alloc, inner.polys[0]);
+            errdefer {
+                for (polys[0]) |*b| b.deinit();
+                alloc.free(polys[0]);
+            }
+            polys[1] = try biPolyClone(alloc, inner.polys[1]);
+            return .{ .order = 1, .deg = certDegOf(polys), .polys = polys };
+        },
+        .sq => {
+            const p = (try polyOfNode(alloc, n.kid)) orelse return CertgenErr.SqrtNonPoly;
+            defer polyFree(alloc, p);
+            const dp = try polyDer(alloc, p);
+            defer polyFree(alloc, dp);
+            const ndp = try polyNeg(alloc, dp);
+            defer polyFree(alloc, ndp);
+            var two = try ratFromInt(alloc, 2);
+            defer ratDeinit(&two);
+            const tp = try polyScal(alloc, p, &two);
+            defer polyFree(alloc, tp);
+            const rat_polys = [2][]const Rat{ ndp, tp };
+            const ips = try intPolysFromRats(alloc, &rat_polys);
+            return .{ .order = 1, .deg = certDegOf(ips), .polys = ips };
+        },
+    }
+}
+
+// Horner evaluation of a Rat-coefficient poly at integer n.
+fn polyEvalRat(alloc: std.mem.Allocator, p: []const Rat, n: i64) !Rat {
+    var acc = try ratFromInt(alloc, 0);
+    errdefer ratDeinit(&acc);
+    var nr = try ratFromInt(alloc, n);
+    defer ratDeinit(&nr);
+    var j: usize = p.len;
+    while (j > 0) {
+        j -= 1;
+        var t = try ratMul(alloc, &acc, &nr);
+        ratDeinit(&acc);
+        const s = try ratAdd(alloc, &t, &p[j]);
+        ratDeinit(&t);
+        acc = s;
+    }
+    return acc;
+}
+
+// Generate `total` coefficients: seeds[0..R) are the actual series
+// coefficients; a_m for m >= R is forced by the recurrence
+//   sum_{k<R} p'_k(m-R) * a_{m-R+k} + p'_R(m-R) * a_m = 0.
+// Callers guarantee det=1 so the denominator never vanishes.
+fn certGenSeries(alloc: std.mem.Allocator, rec: *const OdeCert, seeds: []const Rat, total: usize) ![]Rat {
+    const R = rec.order;
+    const out = try alloc.alloc(Rat, total);
+    var filled: usize = 0;
+    errdefer {
+        for (out[0..filled]) |*r| ratDeinit(r);
+        alloc.free(out);
+    }
+    const shared = @min(R, total);
+    while (filled < shared) : (filled += 1) out[filled] = try ratClone(&seeds[filled]);
+    const rps = try alloc.alloc([]Rat, rec.polys.len);
+    var nrp: usize = 0;
+    defer {
+        for (rps[0..nrp]) |p| polyFree(alloc, p);
+        alloc.free(rps);
+    }
+    for (rec.polys) |bp| {
+        rps[nrp] = try polyFromInts(alloc, bp);
+        nrp += 1;
+    }
+    while (filled < total) : (filled += 1) {
+        const nn: i64 = @intCast(filled - R);
+        var num = try ratFromInt(alloc, 0);
+        defer ratDeinit(&num);
+        var k: usize = 0;
+        while (k < R) : (k += 1) {
+            var ev = try polyEvalRat(alloc, rps[k], nn);
+            defer ratDeinit(&ev);
+            var t = try ratMul(alloc, &ev, &out[filled - R + k]);
+            defer ratDeinit(&t);
+            const s = try ratAdd(alloc, &num, &t);
+            ratDeinit(&num);
+            num = s;
+        }
+        var den = try polyEvalRat(alloc, rps[R], nn);
+        defer ratDeinit(&den);
+        if (ratIsZero(&den)) @panic("std/sym:cert-series det violated");
+        var neg = try ratNeg(&num);
+        defer ratDeinit(&neg);
+        out[filled] = try ratDiv(alloc, &neg, &den);
+    }
+    return out;
+}
+
+// cser(terms=N,det=1)|a=[...]|ode=...|rec=...
+fn cserWrite(alloc: std.mem.Allocator, total: usize, coeffs: []const Rat, ode_text: []const u8, rec_text: []const u8) ![]u8 {
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    const hdr = std.fmt.allocPrint(alloc, "cser(terms={d},det=1)", .{total}) catch return error.OutOfMemory;
+    defer alloc.free(hdr);
+    try out.appendSlice(alloc, hdr);
+    try out.appendSlice(alloc, "|a=[");
+    const csv = try ratJoinCsv(alloc, coeffs);
+    defer alloc.free(csv);
+    const colon = std.mem.indexOfScalar(u8, csv, ':') orelse csv.len;
+    try out.appendSlice(alloc, csv[colon + 1 ..]);
+    try out.appendSlice(alloc, "]|ode=");
+    try out.appendSlice(alloc, ode_text);
+    try out.appendSlice(alloc, "|rec=");
+    try out.appendSlice(alloc, rec_text);
+    return out.toOwnedSlice(alloc);
+}
+
+// ============================================================================
+// Tors.
+// ============================================================================
+
+// Structural ODE derivation — theorem-level, no series witness.
+~pub tor cert-of { a: string<!sexpr> }
+| exact string<std/io:allocated!>
+| not-holonomic string<std/io:allocated!>
+| bad string<std/io:allocated!>
+
+~proc cert-of|zig {
+    defer symFree(a);
+    const alloc = koru_allocator();
+    const t = parseTree(alloc, a) catch return .{ .bad = ownedCopy("malformed-expr") };
+    defer nodeFree(alloc, t);
+    const nt = norm(alloc, t) catch return .{ .bad = ownedCopy("malformed-expr") };
+    defer nodeFree(alloc, nt);
+    var cert = certOfNode(alloc, nt) catch |e| switch (e) {
+        CertgenErr.InvHighOrder => return .{ .not_holonomic = ownedCopy("not-generally-holonomic:inv-order>1") },
+        CertgenErr.SqrtNonPoly => return .{ .not_holonomic = ownedCopy("not-generally-holonomic:sqrt-nonpoly") },
+        else => @panic("std/sym:cert-of"),
+    };
+    defer certFree(alloc, &cert);
+    if (certPolyZero(cert.polys[cert.order])) return .{ .not_holonomic = ownedCopy("degenerate-leading") };
+    const s = certWrite(alloc, cert.order, cert.deg, "of", cert.polys) catch @panic("std/sym:cert-of");
+    return .{ .exact = s };
+}
+
+// Certified series: the theorem upgrade. cert-of -> bridge -> det ->
+// exact seeds -> recurrence-generated tail. The emitted coefficients
+// are FORCED by the annihilating ODE (residual zero for all n >= 0 by
+// the closure theorems), so the tail is theorem-correct — the finite
+// window only seeds it.
+~pub tor cert-series { a: string<!sexpr>, terms: i64 }
+| exact string<std/io:allocated!>
+| under-determined string<std/io:allocated!>
+| not-holonomic string<std/io:allocated!>
+| non-rational
+| non-analytic
+| bad
+
+~proc cert-series|zig {
+    defer symFree(a);
+    const alloc = koru_allocator();
+    if (terms < 1 or terms > 1024) return .{ .bad = .{} };
+    const t = parseTree(alloc, a) catch return .{ .bad = .{} };
+    defer nodeFree(alloc, t);
+    const nt = norm(alloc, t) catch return .{ .bad = .{} };
+    defer nodeFree(alloc, nt);
+    var cert = certOfNode(alloc, nt) catch |e| switch (e) {
+        CertgenErr.InvHighOrder => return .{ .not_holonomic = ownedCopy("not-generally-holonomic:inv-order>1") },
+        CertgenErr.SqrtNonPoly => return .{ .not_holonomic = ownedCopy("not-generally-holonomic:sqrt-nonpoly") },
+        else => @panic("std/sym:cert-series"),
+    };
+    defer certFree(alloc, &cert);
+    if (certPolyZero(cert.polys[cert.order])) return .{ .not_holonomic = ownedCopy("degenerate-leading") };
+    var rec = certBridge(alloc, &cert) catch |e| switch (e) {
+        error.NonInt => @panic("std/sym:cert-series bridge"),
+        else => @panic("std/sym:cert-series"),
+    };
+    defer certFree(alloc, &rec);
+    const det = !cert.polys[cert.order][0].eqlZero();
+    const T: usize = @intCast(terms);
+    const R = rec.order;
+    if (!det) {
+        const rt = recWrite(alloc, rec.order, rec.deg, "bridge", false, rec.polys) catch @panic("std/sym:cert-series");
+        return .{ .under_determined = rt };
+    }
+    const seedn = @min(R, T);
+    const seeds = serFromNode(alloc, nt, seedn) catch |e| switch (e) {
+        error.NonAnalytic => return .{ .non_analytic = .{} },
+        error.NonRational => return .{ .non_rational = .{} },
+        else => @panic("std/sym:cert-series seeds"),
+    };
+    defer serFree(alloc, seeds);
+    const coeffs = certGenSeries(alloc, &rec, seeds, T) catch @panic("std/sym:cert-series gen");
+    defer {
+        for (coeffs) |*r| ratDeinit(r);
+        alloc.free(coeffs);
+    }
+    const odet = certWrite(alloc, cert.order, cert.deg, "of", cert.polys) catch @panic("std/sym:cert-series");
+    defer alloc.free(odet);
+    const rect = recWrite(alloc, rec.order, rec.deg, "bridge", true, rec.polys) catch @panic("std/sym:cert-series");
+    defer alloc.free(rect);
+    const s = cserWrite(alloc, T, coeffs, odet, rect) catch @panic("std/sym:cert-series");
+    return .{ .exact = s };
+}

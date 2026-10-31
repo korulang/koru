@@ -1,0 +1,6 @@
+ode(k=1,d=1,via=of)|p0=[-1]|p1=[2,2]
+cser(terms=8,det=1)|a=[1,1/2,-1/8,1/16,-5/128,7/256,-21/1024,33/2048]|ode=ode(k=1,d=1,via=of)|p0=[-1]|p1=[2,2]|rec=rec(k=2,d=1,via=bridge,det=1)|p0=[0]|p1=[1,2]|p2=[4,2]
+terms=8:1,1/2,-1/8,1/16,-5/128,7/256,-21/1024,33/2048
+cser(terms=8,det=1)|a=[1,1,1,1,1,1,1,1]|ode=ode(k=1,d=1,via=of)|p0=[-1]|p1=[1,-1]|rec=rec(k=2,d=1,via=bridge,det=1)|p0=[0]|p1=[-2,-1]|p2=[2,1]
+ud:rec(k=1,d=1,via=bridge,det=0)|p0=[0]|p1=[0,1]
+nh:not-generally-holonomic:sqrt-nonpoly
