@@ -261,6 +261,55 @@ normalizer makes refusal arms unfreeable.
 Tests: 615_037 (canon laws), 615_038 (refusals + taint boundary). 615
 cluster 30/30, 610 control 19/19, leak checker on.
 
-Still open in rung 3: quantity `<mag>` does not yet accept sym canon —
-`lit-sym` and the mixed decimal*symbolic promotion are the next move, then
-the `sym:deriv` table.
+Still open in rung 3: the `sym:deriv` table.
+
+## Rung 3b landed (2026-10-31) — symbolic `<mag>` lane in std/quantity
+
+`<mag>` widened to a self-describing field: the pack stays
+`mag|dim|unc@cov`, untagged — decimal canon is already a subset of sym
+canon (numeric leaves), so `unpack` detects the lane (`magIsDec`) and
+produces a `|num|sym` union. Decimal quantities take the identical chain
+as before — zero semantic change; sym mags route through `std/sym`; mixed
+operands promote via `sym:of-dec` (the bytes already are a numeric leaf,
+no re-parse).
+
+New surface: `lit-sym(mag: sexpr!, unit, unc, cov)`, `pack-sym`,
+`unit-dim`, `cov-tag`, `mag` now returns the lane union. `sym:of-dec` and
+`sym:pow` landed on the sym side; `pow` is repeated-mul NF with negative
+exponents through `inv` (`pow(0,-1)` rides `|div-zero`).
+
+Verified live (615_039/615_040): `(π m)+(π m) → (2e0*π) m`;
+`π m + 2 m → (2e0+π) m`; `π m * 2 s → (2e0*π) m·s`; `π m / π s →
+1e0 m/s`; `-(π m) → (-1e0*π) m`; `(π m)² → (π*π) m²`; mag union routes
+`π` to `|sym`. Headline: **`(1/3 m/s) * 3 s → 1e0 m` exactly** — the
+decimal lane answers `0.9999…`.
+
+Sigma rule: `add`/`sub`/`neg` carry decimal uncertainty on the sym lane
+fully — their sigma math never inspects the magnitude (`(π±0.1@x)+(π±0.1@x)
+→ (2π)±0.2@x`). `mul`/`div`/`pow` need `|mag|` for relative sigma, so a
+nonzero σ on a sym mag refuses `|sym-unc` by name — the eval rung
+(`sym:eval`, MetricApprox) is what would discharge it, and it stays
+unbuilt on purpose. Exact sym quantities (σ=0) work through every op.
+
+Two things the rung exposed:
+
+- **`coeff*inv(dec)` was not reduced.** The mul NF folded dec factors
+  into the coefficient but `inv(dec)` stayed a factor, so `3*inv(3)`
+  printed `(3e0*inv(3e0))`. Fix: reduce `(m_c*10^e_c)/(m_d*10^e_d)` to
+  lowest integer terms — den==1 folds into coeff, else the denominator
+  rewrites to the reduced canon. This is what makes `4*inv(6e1)` land
+  `inv(1.5e1)` — identical to a fresh `1/15` — so equiv = string
+  equality stays honest under rational cancellation.
+- **Emitter defect, reproduced in 20 lines:** nested union arms sharing
+  a name with different payload-ness lose the inner payload capture
+  (outer `| same` payload-free → inner `| same g` emits `.same =>` with
+  no `|g|`). The workaround is arm renames (`corr`, `bad-unit`,
+  `bad-tag`, `bad-lit`); the fix is compiler-core and out of this
+  branch's scope. `frag-a-nested-union-arm-name-collision-drops-the-
+  payload-capture` has the mechanism and the consumer-side rule.
+
+Tests: 615_039 (sym ops, mixed promotion, exact cancel, mag union),
+615_040 (`|sym-unc` refusal on mul/div/pow, sigma still carried on
+add). Existing call sites gained the mandatory `|sym-unc` arm; 615_026
+exercises the `|num` arm of the new mag union. 615 cluster 32/32, 610
+control 19/19, leak checker on.

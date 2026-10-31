@@ -33,6 +33,7 @@
 // render — the same discipline as std/num:exact.
 
 ~import std/io
+~import std/num
 
 const std = @import("std");
 const BI = std.math.big.int.Managed;
@@ -145,6 +146,31 @@ fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
         try r.mul(&r, &ten);
     }
     return r;
+}
+
+fn biGcd(alloc: std.mem.Allocator, a: *const BI, b: *const BI) !BI {
+    var x = try a.clone();
+    errdefer x.deinit();
+    var y = try b.clone();
+    errdefer y.deinit();
+    while (!y.eqlZero()) {
+        var q = BI.init(alloc) catch return error.OutOfMemory;
+        var r = BI.init(alloc) catch {
+            q.deinit();
+            return error.OutOfMemory;
+        };
+        q.divTrunc(&r, &x, &y) catch {
+            q.deinit();
+            r.deinit();
+            return error.OutOfMemory;
+        };
+        q.deinit();
+        x.deinit();
+        x = y;
+        y = r;
+    }
+    y.deinit();
+    return x;
 }
 
 fn decAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
@@ -602,6 +628,16 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     nodeFree(alloc, inner);
                     return nodeDec(alloc, rd);
                 }
+                if (inner.dec.neg) {
+                    // inv(-d) -> -1*inv(|d|): the sign lives on the coefficient,
+                    // so literal inv(-3e0) and 1/-3 land on one canon.
+                    inner.dec.neg = false;
+                    const mn = try nodeDec(alloc, try decOneN(alloc, true));
+                    errdefer nodeFree(alloc, mn);
+                    const iv = try nodeUnary(alloc, .inv, inner);
+                    errdefer nodeFree(alloc, iv);
+                    return nodeList(alloc, .mul, try list2(alloc, mn, iv));
+                }
             }
             if (inner.kind == .inv) {
                 // inv(inv(x)) -> x
@@ -789,6 +825,100 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                 coeff.m.deinit();
                 return nodeDec(alloc, try decZero(alloc));
             }
+            // coeff*inv(dec) rational reduction: (m_c*10^e_c)/(m_d*10^e_d)
+            // in lowest integer terms — den==1 folds fully into coeff, else
+            // the denominator rewrites to the reduced canon dec. This lands
+            // 3*inv(3e0) on 1e0 and 4*inv(6e1) on inv(1.5e1) — the same canon
+            // a fresh "1/15" produces, keeping equiv = string equality honest.
+            var ii: usize = 0;
+            while (ii < facs.items.len) {
+                const f = facs.items[ii];
+                if (f.kind != .inv or f.kid.kind != .dec) {
+                    ii += 1;
+                    continue;
+                }
+                var num = try coeff.m.clone();
+                errdefer num.deinit();
+                var den = try f.kid.dec.m.clone();
+                errdefer den.deinit();
+                const de_diff = coeff.e - f.kid.dec.e;
+                if (de_diff > 0) {
+                    var p = try pow10(alloc, de_diff);
+                    defer p.deinit();
+                    try num.mul(&num, &p);
+                } else if (de_diff < 0) {
+                    var p = try pow10(alloc, -de_diff);
+                    defer p.deinit();
+                    try den.mul(&den, &p);
+                }
+                var g = try biGcd(alloc, &num, &den);
+                errdefer g.deinit();
+                var numr = try BI.init(alloc);
+                errdefer numr.deinit();
+                var rem = try BI.init(alloc);
+                errdefer rem.deinit();
+                try numr.divTrunc(&rem, &num, &g);
+                var denr = try BI.init(alloc);
+                errdefer denr.deinit();
+                var rem2 = try BI.init(alloc);
+                errdefer rem2.deinit();
+                try denr.divTrunc(&rem2, &den, &g);
+                num.deinit();
+                den.deinit();
+                g.deinit();
+                rem.deinit();
+                rem2.deinit();
+                // canon dec mantissas carry no trailing zeros — strip them
+                // from numr/denr the same way decFromDigits does at parse.
+                var ten = try BI.initSet(alloc, 10);
+                defer ten.deinit();
+                var ce: i64 = 0;
+                while (true) {
+                    var q = try BI.init(alloc);
+                    var r = try BI.init(alloc);
+                    try q.divTrunc(&r, &numr, &ten);
+                    if (!r.eqlZero() or numr.eqlZero()) {
+                        q.deinit();
+                        r.deinit();
+                        break;
+                    }
+                    r.deinit();
+                    numr.deinit();
+                    numr = q;
+                    ce += 1;
+                }
+                var dx: i64 = 0;
+                while (true) {
+                    var q = try BI.init(alloc);
+                    var r = try BI.init(alloc);
+                    try q.divTrunc(&r, &denr, &ten);
+                    if (!r.eqlZero()) {
+                        q.deinit();
+                        r.deinit();
+                        break;
+                    }
+                    r.deinit();
+                    denr.deinit();
+                    denr = q;
+                    dx += 1;
+                }
+                const drop = denr.toConst().orderAgainstScalar(@as(u64, 1)) == .eq;
+                coeff.neg = coeff.neg != f.kid.dec.neg;
+                coeff.m.deinit();
+                coeff.m = numr;
+                coeff.e = ce;
+                if (drop) {
+                    denr.deinit();
+                    nodeFree(alloc, f);
+                    _ = facs.orderedRemove(ii);
+                } else {
+                    f.kid.dec.m.deinit();
+                    f.kid.dec.m = denr;
+                    f.kid.dec.e = dx;
+                    f.kid.dec.neg = false;
+                    ii += 1;
+                }
+            }
             // pair-cancel f with inv(f): scan, on hit remove both, restart
             var ci: usize = 0;
             while (ci < facs.items.len) {
@@ -950,6 +1080,40 @@ fn symSqrt(alloc: std.mem.Allocator, a: []const u8) ![]u8 {
     return canonOf(alloc, nt);
 }
 
+// n-fold symbolic power: a flat .mul list of clones through the normalizer.
+// Negative exponents wrap in inv — inv(0) refusals surface as DivZero.
+fn symPow(alloc: std.mem.Allocator, a: []const u8, n: i64) ![]u8 {
+    const ta = try parseTree(alloc, a);
+    defer nodeFree(alloc, ta);
+    var top: *SNode = undefined;
+    if (n == 0) {
+        var d = try decOneN(alloc, false);
+        errdefer decDeinit(&d);
+        top = try nodeDec(alloc, d);
+    } else {
+        const ml = blk: {
+            const an: usize = @intCast(@abs(n));
+            const kids = try alloc.alloc(*SNode, an);
+            errdefer alloc.free(kids);
+            var built: usize = 0;
+            errdefer for (kids[0..built]) |k| nodeFree(alloc, k);
+            for (kids) |*k| {
+                k.* = try nodeClone(alloc, ta);
+                built += 1;
+            }
+            break :blk try nodeList(alloc, .mul, kids);
+        };
+        top = if (n < 0) blk: {
+            errdefer nodeFree(alloc, ml);
+            break :blk try nodeUnary(alloc, .inv, ml);
+        } else ml;
+    }
+    defer nodeFree(alloc, top);
+    const nt = try norm(alloc, top);
+    defer nodeFree(alloc, nt);
+    return canonOf(alloc, nt);
+}
+
 fn symFree(s: []const u8) void {
     koru_allocator().free(s);
 }
@@ -1074,4 +1238,34 @@ fn ownedCopy(s: []const u8) []u8 {
 ~proc dup|zig {
     defer symFree(n);
     return .{ .a = ownedCopy(n), .b = ownedCopy(n) };
+}
+
+
+// ============================================================================
+// Cross-tower lanes
+// ============================================================================
+
+// Re-issue a canonical decimal as a symbolic leaf. The bytes are already
+// canonical sexpr — numeric leaves share the decimal alphabet — so this is
+// a mark move, not a conversion.
+~pub tor of-dec { n: string<std/num:!exact> } -> string<sexpr!>
+
+~proc of-dec|zig {
+    return n;
+}
+
+// Integer power by repeated symbolic multiply: pow(x,3) -> (x*x*x),
+// pow(x,-2) -> inv((x*x)), pow(x,0) -> 1e0. pow(0,-1) -> | div-zero,
+// riding inv's own zero guard.
+~pub tor pow { a: string<!sexpr>, n: i64 }
+| exact string<sexpr!>
+| div-zero
+
+~proc pow|zig {
+    defer symFree(a);
+    const r = symPow(koru_allocator(), a, n) catch |err| switch (err) {
+        error.DivZero => return .{ .div_zero = .{} },
+        else => @panic("std/sym:pow: malformed operand"),
+    };
+    return .{ .exact = r };
 }
