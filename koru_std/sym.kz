@@ -39,6 +39,7 @@
 
 ~import std/io
 ~import std/num
+~part supgen
 
 const std = @import("std");
 const BI = std.math.big.int.Managed;
@@ -156,8 +157,10 @@ fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
 fn biGcd(alloc: std.mem.Allocator, a: *const BI, b: *const BI) !BI {
     var x = try a.clone();
     errdefer x.deinit();
+    x.abs();
     var y = try b.clone();
     errdefer y.deinit();
+    y.abs();
     while (!y.eqlZero()) {
         var q = BI.init(alloc) catch return error.OutOfMemory;
         var r = BI.init(alloc) catch {
