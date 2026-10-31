@@ -200,3 +200,50 @@ x^5/15 instead of x^5/5 and the wrong sign).
 Tests: 615_033 (exp/ln + refusal arms), 615_034 (trig), 615_035 (powf +
 integral fast path + refusal arms). 615 cluster 27/27, 610 control 19/19,
 leak checker on.
+
+
+## Rung 2 landed (2026-10-31)
+
+`num:mod` (trunc-mod, sign follows dividend, `|div-zero`), `num:length` /
+`num:scale` introspection, and integer `to-base`/`from-base` (`|non-int`
+for non-integral input, `|bad-digit` on parse) — all over the same Dec
+core. Test 615_036; cluster 28/28.
+
+## Rung 3 landed (2026-10-31) — `std/sym`, the symbolic lane
+
+New module `koru_std/sym.kz` with its own mark `<sexpr!>` (module-scoped,
+not `num:exact` — boundary stays honest) plus `<sexpr-external!>` for
+ingested text that only `parse` discharges.
+
+The canon is a flat grammar: atoms `π e φ`, `√(e)`, `inv(e)`, products
+`(e*e)`, sums `(e+e)`, and decimal leaves in num canon. NF rules at build
+time: nested add/mul flatten; children sort by canon bytes (coefficient
+first in products, constant term first in sums); sum children group by
+structural base so `π+π -> (2e0*π)` and `(2e0*π)+(3e0*π) -> (5e0*π)`;
+decimals fold (`1/4 -> 2.5e-1` exact); `inv` folds iff the mantissa is a
+{2,5}-smooth power (`inv(3)` stays symbolic — no silent inexact); `inv`
+distributes over products and `inv(inv(x)) -> x`; `f * inv(f)` cancels;
+equal `√` factors pair to their radicand when provably nonneg; `√(dec)`
+folds perfect squares including negative exponents (`√(0.25) -> 5e-1`);
+negative decimal radicands refuse `|neg-root`; `0` denominators refuse
+`|div-zero`. `equiv` is still canon string equality — `e*π` and `π*e`
+land on one canon.
+
+Explicit non-goals for this rung: no distributive factoring, no power node
+(`π*π` stays a product), no trig/identity tables — those are the
+deriv/discovery rungs, not canon mechanics.
+
+Two ownership findings worth keeping: `BI.initSet(0)` allocates default
+limb capacity, so "reset the moved slot to a dummy" leaks on the success
+path — the fix is borrow-dont-move plus progress-indexed errdefer
+(frag-a-dummy-slot-reset-is-an-allocation-in-disguise); and `norm` is
+pure (const input, fresh tree) precisely so the error path can hand the
+unconsumed input back to the caller for a clean free — a consuming
+normalizer makes refusal arms unfreeable.
+
+Tests: 615_037 (canon laws), 615_038 (refusals + taint boundary). 615
+cluster 30/30, 610 control 19/19, leak checker on.
+
+Still open in rung 3: quantity `<mag>` does not yet accept sym canon —
+`lit-sym` and the mixed decimal*symbolic promotion are the next move, then
+the `sym:deriv` table.

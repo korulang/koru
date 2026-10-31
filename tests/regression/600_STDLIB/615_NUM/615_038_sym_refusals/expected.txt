@@ -1,0 +1,6 @@
+(e*π)
+sym:parse bad
+sym:div-zero
+sym:neg-root
+2e0
+(-1e0*√(2e0))

@@ -1,0 +1,1077 @@
+// std/sym — symbolic scalar expressions with a canonical normal form.
+//
+// A `sym` is a CANONICAL expression string over the decimal kernel:
+//   atoms    π, e, φ            (the kernel's SymExpr atom lane)
+//   radical  √( <expr> )
+//   inverse  inv( <expr> )      (a/b normalizes to a*inv(b))
+//   product  ( <e1> * <e2> * ... )   coefficient first, then factors sorted
+//   sum      ( <e1> + <e2> + ... )   constant term first, then terms sorted
+//   decimal  a std/num canonical literal — 0e0 | [-]D[.DDD]e[-]E
+//
+// The normal form is the contract: value-equivalence is string equality,
+// same law as std/num. NF rules applied at build time:
+//   - nested add/mul flatten
+//   - sum children group by structural base: π + π -> (2e0*π),
+//     (2e0*π)+(3e0*π) -> (5e0*π); decimals fold into one constant term
+//   - product decimals fold into one coefficient; coeff 0 -> 0e0,
+//     coeff 1 drops; f and inv(f) cancel pairwise
+//   - inv(inv(x)) -> x; inv distributes over product children;
+//     inv(dec) folds to a decimal iff the mantissa's prime factors are all
+//     in {2,5} (1/4 -> 2.5e-1 exact; inv(3) stays symbolic — no silent
+//     inexact)
+//   - √(dec>=0) folds iff a perfect square (√(0.25) -> 5e-1); a negative
+//     decimal radicand refuses on |neg-root
+//   - equal √ factors pair to their radicand (√2*√2 -> 2) when the
+//     radicand is provably nonneg (dec >= 0 or a positive atom)
+//
+// What NF does NOT do: no distributive factoring, no trig/ident tables,
+// no power node (π*π stays a product — a pow canon is a later rung).
+// Those are the deriv/discovery rungs, not canon mechanics.
+//
+// Marks: sym-owned strings ride <sexpr!>, issued by lit/parse and every op,
+// consumed linearly by ops, discharged by free, swapped to <allocated!> by
+// render — the same discipline as std/num:exact.
+
+~import std/io
+
+const std = @import("std");
+const BI = std.math.big.int.Managed;
+
+const Dec = struct {
+    neg: bool,
+    m: BI,
+    e: i64,
+};
+
+fn decDeinit(d: *Dec) void {
+    d.m.deinit();
+}
+
+// ============================================================================
+// Canonical decimal leaf — verbatim copy of std/num's Dec helpers (the
+// honest-seam ruling: data crosses, logic stays in-module; a shared helper
+// layer is a named debt, not a reason to couple modules).
+// ============================================================================
+
+fn decParse(alloc: std.mem.Allocator, s: []const u8) !Dec {
+    var t = std.mem.trim(u8, s, " \t\r\n");
+    if (t.len == 0) return error.BadNumber;
+
+    var neg = false;
+    if (t[0] == '+' or t[0] == '-') {
+        neg = t[0] == '-';
+        t = t[1..];
+    }
+    if (t.len == 0) return error.BadNumber;
+
+    var sci: i64 = 0;
+    if (std.mem.indexOfAny(u8, t, "eE")) |ei| {
+        const es = t[ei + 1 ..];
+        t = t[0..ei];
+        if (es.len == 0) return error.BadNumber;
+        sci = std.fmt.parseInt(i64, es, 10) catch return error.BadNumber;
+    }
+
+    var frac_len: i64 = 0;
+    var digits = std.ArrayList(u8).initCapacity(alloc, t.len) catch return error.OutOfMemory;
+    defer digits.deinit(alloc);
+
+    var seen_dot = false;
+    var seen_digit = false;
+    for (t) |c| {
+        if (c == '.') {
+            if (seen_dot) return error.BadNumber;
+            seen_dot = true;
+            continue;
+        }
+        if (!std.ascii.isDigit(c)) return error.BadNumber;
+        try digits.append(alloc, c);
+        seen_digit = true;
+        if (seen_dot) frac_len += 1;
+    }
+    if (!seen_digit) return error.BadNumber;
+
+    return decFromDigits(alloc, digits.items, sci - frac_len, neg);
+}
+
+fn decFromDigits(alloc: std.mem.Allocator, raw: []const u8, e: i64, neg: bool) !Dec {
+    var start: usize = 0;
+    while (start < raw.len and raw[start] == '0') start += 1;
+    var end: usize = raw.len;
+    while (end > start and raw[end - 1] == '0') end -= 1;
+
+    if (start == end) {
+        const m = try BI.initSet(alloc, 0);
+        return .{ .neg = false, .m = m, .e = 0 };
+    }
+
+    const stripped_trailing = raw.len - end;
+    var m = try BI.initSet(alloc, 0);
+    errdefer m.deinit();
+    try m.setString(10, raw[start..end]);
+    return .{ .neg = neg, .m = m, .e = e + @as(i64, @intCast(stripped_trailing)) };
+}
+
+fn decToString(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
+    if (d.m.eqlZero()) return alloc.dupe(u8, "0e0");
+
+    const ds = try d.m.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+
+    const adj: i64 = d.e + @as(i64, @intCast(ds.len)) - 1;
+
+    var out = std.ArrayList(u8).initCapacity(alloc, ds.len + 24) catch return error.OutOfMemory;
+    errdefer out.deinit(alloc);
+    if (d.neg) try out.append(alloc, '-');
+    try out.append(alloc, ds[0]);
+    if (ds.len > 1) {
+        try out.append(alloc, '.');
+        try out.appendSlice(alloc, ds[1..]);
+    }
+    try out.append(alloc, 'e');
+    var buf: [24]u8 = undefined;
+    const es = std.fmt.bufPrint(&buf, "{d}", .{adj}) catch unreachable;
+    try out.appendSlice(alloc, es);
+    return out.toOwnedSlice(alloc);
+}
+
+fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
+    var r = try BI.initSet(alloc, 1);
+    errdefer r.deinit();
+    var ten = try BI.initSet(alloc, 10);
+    defer ten.deinit();
+    var i: i64 = 0;
+    while (i < k) : (i += 1) {
+        try r.mul(&r, &ten);
+    }
+    return r;
+}
+
+fn decAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
+    const e_min = @min(a.e, b.e);
+    var am = try a.m.clone();
+    defer am.deinit();
+    var bm = try b.m.clone();
+    defer bm.deinit();
+    if (a.e > e_min) {
+        var p = try pow10(alloc, a.e - e_min);
+        defer p.deinit();
+        try am.mul(&am, &p);
+    }
+    if (b.e > e_min) {
+        var p = try pow10(alloc, b.e - e_min);
+        defer p.deinit();
+        try bm.mul(&bm, &p);
+    }
+    if (a.neg) am.negate();
+    if (b.neg) bm.negate();
+    var r = try BI.init(alloc);
+    defer r.deinit();
+    try r.add(&am, &bm);
+
+    const rneg = !r.isPositive();
+    var m_abs = try r.clone();
+    m_abs.abs();
+    defer m_abs.deinit();
+    const ds = try m_abs.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return decFromDigits(alloc, ds, e_min, rneg);
+}
+
+fn decMul(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
+    var r = try BI.init(alloc);
+    defer r.deinit();
+    try r.mul(&a.m, &b.m);
+    const ds = try r.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return decFromDigits(alloc, ds, a.e + b.e, a.neg != b.neg);
+}
+
+// Exact decimal reciprocal: m must divide a power of 10 — i.e. after
+// stripping factors 2 and 5 the mantissa is 1. Result mantissa = 2^n5*5^n2,
+// exponent = -e - n2 - n5. Returns null otherwise (inv stays symbolic).
+fn decRecipExact(alloc: std.mem.Allocator, d: *const Dec) !?Dec {
+    var m = try d.m.clone();
+    defer m.deinit();
+    var two = try BI.initSet(alloc, 2);
+    defer two.deinit();
+    var five = try BI.initSet(alloc, 5);
+    defer five.deinit();
+    var q = try BI.init(alloc);
+    defer q.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    var n2: i64 = 0;
+    var n5: i64 = 0;
+    while (true) {
+        try q.divTrunc(&rem, &m, &two);
+        if (!rem.eqlZero()) break;
+        m.deinit();
+        m = try q.clone();
+        n2 += 1;
+    }
+    while (true) {
+        try q.divTrunc(&rem, &m, &five);
+        if (!rem.eqlZero()) break;
+        m.deinit();
+        m = try q.clone();
+        n5 += 1;
+    }
+    var one = try BI.initSet(alloc, 1);
+    defer one.deinit();
+    if (!m.eql(one)) return null;
+    var num = try BI.initSet(alloc, 1);
+    defer num.deinit();
+    var i: i64 = 0;
+    while (i < n5) : (i += 1) try num.mul(&num, &two);
+    i = 0;
+    while (i < n2) : (i += 1) try num.mul(&num, &five);
+    const ds = try num.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return @as(?Dec, try decFromDigits(alloc, ds, -d.e - n2 - n5, d.neg));
+}
+
+// sqrt(d) when d is a dec >= 0 whose value is a perfect square; null
+// otherwise. value = m*10^e is a square iff e is even and m is a square
+// (e odd absorbs a factor 10 into m first).
+fn decSqrtExact(alloc: std.mem.Allocator, d: *const Dec) !?Dec {
+    var m = try d.m.clone();
+    defer m.deinit();
+    var e = d.e;
+    if (@mod(e, 2) != 0) {
+        var ten = try BI.initSet(alloc, 10);
+        defer ten.deinit();
+        try m.mul(&m, &ten);
+        e -= 1;
+    }
+    var s = try BI.init(alloc);
+    defer s.deinit();
+    try s.sqrt(&m);
+    var s2 = try BI.init(alloc);
+    defer s2.deinit();
+    try s2.mul(&s, &s);
+    if (!s2.eql(m)) return null;
+    const ds = try s.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return @as(?Dec, try decFromDigits(alloc, ds, @divTrunc(e, 2), false));
+}
+
+// ============================================================================
+// SNode — the expression tree. Canon strings are the boundary; nodes are
+// internal only. Children are heap SNodes owned by their parent.
+// ============================================================================
+
+const NodeKind = enum { dec, atom, sq, inv, add, mul };
+
+const SNode = struct {
+    kind: NodeKind,
+    dec: Dec = undefined,            // kind == .dec
+    atom: u8 = 0,                    // kind == .atom: 0=pi, 1=e, 2=phi
+    kids: []*SNode = &.{},           // kind == .add/.mul
+    kid: *SNode = undefined,         // kind == .sq/.inv
+};
+
+fn nodeNew(alloc: std.mem.Allocator, kind: NodeKind) !*SNode {
+    const n = try alloc.create(SNode);
+    n.* = .{ .kind = kind };
+    return n;
+}
+
+fn nodeDec(alloc: std.mem.Allocator, d: Dec) !*SNode {
+    const n = try nodeNew(alloc, .dec);
+    n.dec = d;
+    return n;
+}
+
+fn nodeAtom(alloc: std.mem.Allocator, a: u8) !*SNode {
+    const n = try nodeNew(alloc, .atom);
+    n.atom = a;
+    return n;
+}
+
+fn nodeUnary(alloc: std.mem.Allocator, kind: NodeKind, k: *SNode) !*SNode {
+    const n = try nodeNew(alloc, kind);
+    n.kid = k;
+    return n;
+}
+
+fn nodeList(alloc: std.mem.Allocator, kind: NodeKind, kids: []*SNode) !*SNode {
+    const n = try nodeNew(alloc, kind);
+    n.kids = kids;
+    return n;
+}
+
+fn nodeFree(alloc: std.mem.Allocator, n: *SNode) void {
+    switch (n.kind) {
+        .dec => n.dec.m.deinit(),
+        .add, .mul => {
+            for (n.kids) |k| nodeFree(alloc, k);
+            alloc.free(n.kids);
+        },
+        .sq, .inv => nodeFree(alloc, n.kid),
+        else => {},
+    }
+    alloc.destroy(n);
+}
+
+fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
+    switch (n.kind) {
+        .dec => return nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
+        .atom => return nodeAtom(alloc, n.atom),
+        .sq, .inv => return nodeUnary(alloc, n.kind, try nodeClone(alloc, n.kid)),
+        .add, .mul => {
+            const kids = try alloc.alloc(*SNode, n.kids.len);
+            for (n.kids, 0..) |k, i| kids[i] = try nodeClone(alloc, k);
+            return nodeList(alloc, n.kind, kids);
+        },
+    }
+}
+
+// ============================================================================
+// Canon render
+// ============================================================================
+
+const ATOMS = [_][]const u8{ "π", "e", "φ" };
+
+fn canonWrite(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(u8)) !void {
+    switch (n.kind) {
+        .dec => {
+            const s = try decToString(alloc, &n.dec);
+            defer alloc.free(s);
+            try out.appendSlice(alloc, s);
+        },
+        .atom => try out.appendSlice(alloc, ATOMS[n.atom]),
+        .sq => {
+            try out.appendSlice(alloc, "√(");
+            try canonWrite(alloc, n.kid, out);
+            try out.append(alloc, ')');
+        },
+        .inv => {
+            try out.appendSlice(alloc, "inv(");
+            try canonWrite(alloc, n.kid, out);
+            try out.append(alloc, ')');
+        },
+        .add, .mul => {
+            try out.append(alloc, '(');
+            const sep: []const u8 = if (n.kind == .add) "+" else "*";
+            for (n.kids, 0..) |k, i| {
+                if (i > 0) try out.appendSlice(alloc, sep);
+                try canonWrite(alloc, k, out);
+            }
+            try out.append(alloc, ')');
+        },
+    }
+}
+
+fn canonOf(alloc: std.mem.Allocator, n: *const SNode) ![]u8 {
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    try canonWrite(alloc, n, &out);
+    return out.toOwnedSlice(alloc);
+}
+
+// ============================================================================
+// Parser — user spelling to a raw tree, then normalize.
+//   expr := sum ; sum := prod (('+'|'-') prod)* ; prod := unary (('*'|'/') unary)*
+//   unary := '-' unary | factor
+//   factor := '√' '(' expr ')' | 'inv' '(' expr ')' | '(' expr ')' | atom | decimal
+// ============================================================================
+
+const ParseCtx = struct {
+    alloc: std.mem.Allocator,
+    s: []const u8,
+    i: usize = 0,
+};
+
+fn list2(alloc: std.mem.Allocator, a: *SNode, b: *SNode) ![]*SNode {
+    const l = try alloc.alloc(*SNode, 2);
+    l[0] = a;
+    l[1] = b;
+    return l;
+}
+
+fn negNode(alloc: std.mem.Allocator, inner: *SNode) !*SNode {
+    return nodeList(alloc, .mul, try list2(alloc, try nodeDec(alloc, .{ .neg = true, .m = try BI.initSet(alloc, 1), .e = 0 }), inner));
+}
+
+fn parseExpr(c: *ParseCtx) anyerror!*SNode {
+    var lhs = try parseProd(c);
+    while (c.i < c.s.len and (c.s[c.i] == '+' or c.s[c.i] == '-')) {
+        const minus = c.s[c.i] == '-';
+        c.i += 1;
+        var rhs = try parseProd(c);
+        if (minus) rhs = try negNode(c.alloc, rhs);
+        lhs = try nodeList(c.alloc, .add, try list2(c.alloc, lhs, rhs));
+    }
+    return lhs;
+}
+
+fn parseProd(c: *ParseCtx) anyerror!*SNode {
+    var lhs = try parseUnary(c);
+    while (c.i < c.s.len and (c.s[c.i] == '*' or c.s[c.i] == '/')) {
+        const div = c.s[c.i] == '/';
+        c.i += 1;
+        var rhs = try parseUnary(c);
+        if (div) rhs = try nodeUnary(c.alloc, .inv, rhs);
+        lhs = try nodeList(c.alloc, .mul, try list2(c.alloc, lhs, rhs));
+    }
+    return lhs;
+}
+
+fn parseUnary(c: *ParseCtx) anyerror!*SNode {
+    if (c.i < c.s.len and c.s[c.i] == '-') {
+        c.i += 1;
+        const inner = try parseUnary(c);
+        return negNode(c.alloc, inner);
+    }
+    return parseFactor(c);
+}
+
+fn utf8At(s: []const u8, i: usize) u21 {
+    const b = s[i];
+    if (b < 0x80) return b;
+    if (b < 0xE0) {
+        if (i + 1 >= s.len) return 0xFFFD;
+        return @as(u21, b & 0x1F) << 6 | (s[i + 1] & 0x3F);
+    }
+    if (i + 2 >= s.len) return 0xFFFD;
+    return @as(u21, b & 0x0F) << 12 | (@as(u21, s[i + 1] & 0x3F) << 6) | (s[i + 2] & 0x3F);
+}
+
+fn utf8Len(b: u8) usize {
+    if (b < 0x80) return 1;
+    if (b < 0xE0) return 2;
+    return 3;
+}
+
+fn parseFactor(c: *ParseCtx) anyerror!*SNode {
+    if (c.i >= c.s.len) return error.Bad;
+    const cp = utf8At(c.s, c.i);
+    if (cp == '√') {
+        c.i += utf8Len(c.s[c.i]);
+        if (c.i >= c.s.len or c.s[c.i] != '(') return error.Bad;
+        c.i += 1;
+        const inner = try parseExpr(c);
+        if (c.i >= c.s.len or c.s[c.i] != ')') return error.Bad;
+        c.i += 1;
+        return nodeUnary(c.alloc, .sq, inner);
+    }
+    if (cp == '(') {
+        c.i += 1;
+        const inner = try parseExpr(c);
+        if (c.i >= c.s.len or c.s[c.i] != ')') return error.Bad;
+        c.i += 1;
+        return inner;
+    }
+    if (cp == 'π') {
+        c.i += utf8Len(c.s[c.i]);
+        return nodeAtom(c.alloc, 0);
+    }
+    if (cp == 'φ') {
+        c.i += utf8Len(c.s[c.i]);
+        return nodeAtom(c.alloc, 2);
+    }
+    if (cp == 'e' and (c.i + 1 >= c.s.len or !std.ascii.isDigit(c.s[c.i + 1]))) {
+        c.i += 1;
+        return nodeAtom(c.alloc, 1);
+    }
+    if (std.ascii.isDigit(c.s[c.i]) or c.s[c.i] == '.') {
+        // scan the decimal: digits [. digits] [eE [-+] digits]
+        var j = c.i;
+        while (j < c.s.len and std.ascii.isDigit(c.s[j])) j += 1;
+        if (j < c.s.len and c.s[j] == '.') {
+            j += 1;
+            while (j < c.s.len and std.ascii.isDigit(c.s[j])) j += 1;
+        }
+        if (j < c.s.len and (c.s[j] == 'e' or c.s[j] == 'E')) {
+            var k = j + 1;
+            if (k < c.s.len and (c.s[k] == '-' or c.s[k] == '+')) k += 1;
+            var had = false;
+            while (k < c.s.len and std.ascii.isDigit(c.s[k])) {
+                k += 1;
+                had = true;
+            }
+            if (had) j = k;
+        }
+        const d = decParse(c.alloc, c.s[c.i..j]) catch return error.Bad;
+        c.i = j;
+        return nodeDec(c.alloc, d);
+    }
+    if (cp == 'i' and c.i + 3 < c.s.len and c.s[c.i + 1] == 'n' and c.s[c.i + 2] == 'v' and c.s[c.i + 3] == '(') {
+        c.i += 4;
+        const inner = try parseExpr(c);
+        if (c.i >= c.s.len or c.s[c.i] != ')') return error.Bad;
+        c.i += 1;
+        return nodeUnary(c.alloc, .inv, inner);
+    }
+    return error.Bad;
+}
+
+// ============================================================================
+// Normalization — the NF contract. PURE over the input: reads n and builds a
+// fresh normalized tree; the caller keeps and frees the original.
+// ============================================================================
+
+fn decZero(alloc: std.mem.Allocator) !Dec {
+    return .{ .neg = false, .m = try BI.initSet(alloc, 0), .e = 0 };
+}
+
+fn decOneN(alloc: std.mem.Allocator, neg: bool) !Dec {
+    return .{ .neg = neg, .m = try BI.initSet(alloc, 1), .e = 0 };
+}
+
+fn decIsOne(alloc: std.mem.Allocator, d: *const Dec) !bool {
+    var one = try BI.initSet(alloc, 1);
+    defer one.deinit();
+    return d.m.eql(one) and d.e == 0;
+}
+
+// Sort children canonically by rendered bytes (deterministic canon order).
+fn sortKids(alloc: std.mem.Allocator, kids: []*SNode) !void {
+    const canons = try alloc.alloc([]u8, kids.len);
+    defer alloc.free(canons);
+    for (kids, 0..) |k, i| canons[i] = try canonOf(alloc, k);
+    defer for (canons) |c| alloc.free(c);
+    var i: usize = 1;
+    while (i < kids.len) : (i += 1) {
+        var j = i;
+        while (j > 0 and std.mem.order(u8, canons[j], canons[j - 1]) == .lt) : (j -= 1) {
+            std.mem.swap(*SNode, &kids[j], &kids[j - 1]);
+            std.mem.swap([]u8, &canons[j], &canons[j - 1]);
+        }
+    }
+}
+
+// A node's structural base for sum grouping: the part after stripping a
+// leading decimal coefficient. Fresh nodes; coeff is cloned out.
+fn splitCoeff(alloc: std.mem.Allocator, n: *const SNode, coeff: *Dec) !*SNode {
+    if (n.kind == .dec) {
+        coeff.* = .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e };
+        return nodeDec(alloc, try decOneN(alloc, false));
+    }
+    if (n.kind == .mul and n.kids.len >= 2 and n.kids[0].kind == .dec) {
+        coeff.* = .{ .neg = n.kids[0].dec.neg, .m = try n.kids[0].dec.m.clone(), .e = n.kids[0].dec.e };
+        if (n.kids.len == 2) return nodeClone(alloc, n.kids[1]);
+        const rest = try alloc.alloc(*SNode, n.kids.len - 1);
+        for (n.kids[1..], 0..) |k, i| rest[i] = try nodeClone(alloc, k);
+        return nodeList(alloc, .mul, rest);
+    }
+    coeff.* = try decOneN(alloc, false);
+    return nodeClone(alloc, n);
+}
+
+// Build a fresh term node for base * coeff. Borrows both; returns an owned
+// node (a clone of base when coeff is +1, else a fresh product).
+fn termWithCoeff(alloc: std.mem.Allocator, coeff: *const Dec, base: *const SNode) !*SNode {
+    if (!coeff.neg and try decIsOne(alloc, coeff)) {
+        return nodeClone(alloc, base);
+    }
+    const cn = try nodeDec(alloc, .{ .neg = coeff.neg, .m = try coeff.m.clone(), .e = coeff.e });
+    errdefer nodeFree(alloc, cn);
+    if (base.kind == .mul) {
+        const tk = try alloc.alloc(*SNode, base.kids.len + 1);
+        tk[0] = cn;
+        for (base.kids, 1..) |k, i| tk[i] = try nodeClone(alloc, k);
+        return nodeList(alloc, .mul, tk);
+    }
+    return nodeList(alloc, .mul, try list2(alloc, cn, try nodeClone(alloc, base)));
+}
+
+fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
+    switch (n.kind) {
+        .dec => return nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
+        .atom => return nodeAtom(alloc, n.atom),
+        .sq => {
+            const inner = try norm(alloc, n.kid);
+            errdefer nodeFree(alloc, inner);
+            if (inner.kind == .dec) {
+                if (inner.dec.neg) return error.NegRadicand;
+                if (try decSqrtExact(alloc, &inner.dec)) |sqd| {
+                    nodeFree(alloc, inner);
+                    return nodeDec(alloc, sqd);
+                }
+            }
+            return nodeUnary(alloc, .sq, inner);
+        },
+        .inv => {
+            const inner = try norm(alloc, n.kid);
+            errdefer nodeFree(alloc, inner);
+            if (inner.kind == .dec) {
+                if (inner.dec.m.eqlZero()) return error.DivZero;
+                if (try decRecipExact(alloc, &inner.dec)) |rd| {
+                    nodeFree(alloc, inner);
+                    return nodeDec(alloc, rd);
+                }
+            }
+            if (inner.kind == .inv) {
+                // inv(inv(x)) -> x
+                const x = try nodeClone(alloc, inner.kid);
+                nodeFree(alloc, inner);
+                return x;
+            }
+            if (inner.kind == .mul) {
+                // inv(x*y) -> inv(x)*inv(y) so pairs can cancel downstream
+                var kids = try std.ArrayList(*SNode).initCapacity(alloc, inner.kids.len);
+                defer kids.deinit(alloc);
+                for (inner.kids) |k| {
+                    const iv = try nodeUnary(alloc, .inv, try nodeClone(alloc, k));
+                    const nv = norm(alloc, iv) catch |err| {
+                        nodeFree(alloc, iv);
+                        for (kids.items) |kk| nodeFree(alloc, kk);
+                        return err;
+                    };
+                    nodeFree(alloc, iv);
+                    try kids.append(alloc, nv);
+                }
+                nodeFree(alloc, inner);
+                return nodeList(alloc, .mul, try kids.toOwnedSlice(alloc));
+            }
+            return nodeUnary(alloc, .inv, inner);
+        },
+        .add => {
+            var flat = std.ArrayList(*SNode){};
+            defer flat.deinit(alloc);
+            var fi: usize = 0;
+            errdefer for (flat.items[fi..]) |x| nodeFree(alloc, x);
+            for (n.kids) |k| {
+                const nk = try norm(alloc, k);
+                if (nk.kind == .add) {
+                    for (nk.kids, 0..) |kk, ki| {
+                        flat.append(alloc, kk) catch |e| {
+                            for (nk.kids[ki..]) |kk2| nodeFree(alloc, kk2);
+                            alloc.free(nk.kids);
+                            alloc.destroy(nk);
+                            return e;
+                        };
+                    }
+                    alloc.free(nk.kids);
+                    alloc.destroy(nk);
+                } else {
+                    flat.append(alloc, nk) catch |e| {
+                        nodeFree(alloc, nk);
+                        return e;
+                    };
+                }
+            }
+            // group children by structural base; sum coefficients
+            var bases = std.ArrayList(*SNode){};
+            defer bases.deinit(alloc);
+            defer for (bases.items) |x| nodeFree(alloc, x);
+            var coeffs = std.ArrayList(Dec){};
+            defer coeffs.deinit(alloc);
+            defer for (coeffs.items) |*x| x.m.deinit();
+            for (flat.items) |k| {
+                var coeff: Dec = undefined;
+                const base = try splitCoeff(alloc, k, &coeff);
+                nodeFree(alloc, k);
+                fi += 1;
+                const bc = canonOf(alloc, base) catch |e| {
+                    nodeFree(alloc, base);
+                    coeff.m.deinit();
+                    return e;
+                };
+                defer alloc.free(bc);
+                var found = false;
+                for (bases.items, 0..) |b, bi| {
+                    const oc = canonOf(alloc, b) catch |e| {
+                        nodeFree(alloc, base);
+                        coeff.m.deinit();
+                        return e;
+                    };
+                    defer alloc.free(oc);
+                    if (std.mem.eql(u8, oc, bc)) {
+                        const nc = decAdd(alloc, &coeffs.items[bi], &coeff) catch |e| {
+                            nodeFree(alloc, base);
+                            coeff.m.deinit();
+                            return e;
+                        };
+                        coeffs.items[bi].m.deinit();
+                        coeffs.items[bi] = nc;
+                        coeff.m.deinit();
+                        nodeFree(alloc, base);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    bases.append(alloc, base) catch |e| {
+                        nodeFree(alloc, base);
+                        coeff.m.deinit();
+                        return e;
+                    };
+                    coeffs.append(alloc, coeff) catch |e| {
+                        coeff.m.deinit();
+                        return e;
+                    };
+                }
+            }
+            // rebuild terms: constant term (base == dec 1) first
+            var out_kids = std.ArrayList(*SNode){};
+            defer out_kids.deinit(alloc);
+            errdefer for (out_kids.items) |x| nodeFree(alloc, x);
+            var const_term: ?*SNode = null;
+            errdefer if (const_term) |ct| nodeFree(alloc, ct);
+            for (bases.items, 0..) |b, bi| {
+                if (coeffs.items[bi].m.eqlZero()) continue;
+                const is_const = b.kind == .dec and b.dec.e == 0 and !b.dec.neg and blk: {
+                    var one = try BI.initSet(alloc, 1);
+                    defer one.deinit();
+                    break :blk b.dec.m.eql(one);
+                };
+                if (is_const) {
+                    const_term = try nodeDec(alloc, .{ .neg = coeffs.items[bi].neg, .m = try coeffs.items[bi].m.clone(), .e = coeffs.items[bi].e });
+                } else {
+                    try out_kids.append(alloc, try termWithCoeff(alloc, &coeffs.items[bi], b));
+                }
+            }
+            try sortKids(alloc, out_kids.items);
+            if (const_term) |ct| {
+                try out_kids.insert(alloc, 0, ct);
+                const_term = null;
+            }
+            const kids_slice = try out_kids.toOwnedSlice(alloc);
+            if (kids_slice.len == 0) {
+                alloc.free(kids_slice);
+                return nodeDec(alloc, try decZero(alloc));
+            }
+            if (kids_slice.len == 1) {
+                const only = kids_slice[0];
+                alloc.free(kids_slice);
+                return only;
+            }
+            return nodeList(alloc, .add, kids_slice);
+        },
+        .mul => {
+            var flat = std.ArrayList(*SNode){};
+            defer flat.deinit(alloc);
+            var fi: usize = 0;
+            errdefer for (flat.items[fi..]) |x| nodeFree(alloc, x);
+            for (n.kids) |k| {
+                const nk = try norm(alloc, k);
+                if (nk.kind == .mul) {
+                    for (nk.kids, 0..) |kk, ki| {
+                        flat.append(alloc, kk) catch |e| {
+                            for (nk.kids[ki..]) |kk2| nodeFree(alloc, kk2);
+                            alloc.free(nk.kids);
+                            alloc.destroy(nk);
+                            return e;
+                        };
+                    }
+                    alloc.free(nk.kids);
+                    alloc.destroy(nk);
+                } else {
+                    flat.append(alloc, nk) catch |e| {
+                        nodeFree(alloc, nk);
+                        return e;
+                    };
+                }
+            }
+            // fold decimal factors into one coefficient
+            var coeff = try decOneN(alloc, false);
+            var coeff_live = true;
+            errdefer if (coeff_live) coeff.m.deinit();
+            var facs = std.ArrayList(*SNode){};
+            defer facs.deinit(alloc);
+            errdefer for (facs.items) |x| nodeFree(alloc, x);
+            while (fi < flat.items.len) : (fi += 1) {
+                const k = flat.items[fi];
+                if (k.kind == .dec) {
+                    const nc = try decMul(alloc, &coeff, &k.dec);
+                    coeff.m.deinit();
+                    coeff = nc;
+                    nodeFree(alloc, k);
+                } else {
+                    try facs.append(alloc, k);
+                }
+            }
+            if (coeff.m.eqlZero()) {
+                for (facs.items) |f| nodeFree(alloc, f);
+                coeff.m.deinit();
+                return nodeDec(alloc, try decZero(alloc));
+            }
+            // pair-cancel f with inv(f): scan, on hit remove both, restart
+            var ci: usize = 0;
+            while (ci < facs.items.len) {
+                const f = facs.items[ci];
+                if (f.kind != .inv) {
+                    ci += 1;
+                    continue;
+                }
+                const fc = try canonOf(alloc, f.kid);
+                defer alloc.free(fc);
+                var removed = false;
+                var j: usize = 0;
+                while (j < facs.items.len) : (j += 1) {
+                    if (j == ci) continue;
+                    const g = facs.items[j];
+                    if (g.kind == .inv) continue;
+                    const gc = try canonOf(alloc, g);
+                    defer alloc.free(gc);
+                    if (std.mem.eql(u8, gc, fc)) {
+                        nodeFree(alloc, f);
+                        nodeFree(alloc, g);
+                        _ = facs.orderedRemove(@max(ci, j));
+                        _ = facs.orderedRemove(@min(ci, j));
+                        removed = true;
+                        break;
+                    }
+                }
+                if (!removed) ci += 1;
+            }
+            // pair equal sqrt factors into their radicand (provably nonneg)
+            ci = 0;
+            while (ci < facs.items.len) {
+                const f = facs.items[ci];
+                if (f.kind != .sq) {
+                    ci += 1;
+                    continue;
+                }
+                const nonneg = switch (f.kid.kind) {
+                    .dec => !f.kid.dec.neg,
+                    .atom => true,
+                    else => false,
+                };
+                if (!nonneg) {
+                    ci += 1;
+                    continue;
+                }
+                const fc = try canonOf(alloc, f);
+                defer alloc.free(fc);
+                var replaced = false;
+                var j: usize = ci + 1;
+                while (j < facs.items.len) : (j += 1) {
+                    const g = facs.items[j];
+                    if (g.kind != .sq) continue;
+                    const gc = try canonOf(alloc, g);
+                    defer alloc.free(gc);
+                    if (std.mem.eql(u8, gc, fc)) {
+                        const rad = try nodeClone(alloc, f.kid);
+                        nodeFree(alloc, f);
+                        nodeFree(alloc, g);
+                        _ = facs.orderedRemove(j);
+                        facs.items[ci] = rad;
+                        replaced = true;
+                        break;
+                    }
+                }
+                if (!replaced) ci += 1;
+            }
+            // sort factors, then prepend coefficient unless it's 1
+            try sortKids(alloc, facs.items);
+            const is_one = try decIsOne(alloc, &coeff) and !coeff.neg;
+            if (!is_one) {
+                const cn = try nodeDec(alloc, coeff);
+                coeff_live = false;
+                try facs.insert(alloc, 0, cn);
+            } else {
+                coeff.m.deinit();
+                coeff_live = false;
+            }
+            const kids_slice = try facs.toOwnedSlice(alloc);
+            if (kids_slice.len == 0) {
+                alloc.free(kids_slice);
+                return nodeDec(alloc, try decOneN(alloc, false));
+            }
+            if (kids_slice.len == 1) {
+                const only = kids_slice[0];
+                alloc.free(kids_slice);
+                return only;
+            }
+            return nodeList(alloc, .mul, kids_slice);
+        },
+    }
+}
+
+// ============================================================================
+// Boundary helpers
+// ============================================================================
+
+fn parseTree(alloc: std.mem.Allocator, s: []const u8) !*SNode {
+    var ctx = ParseCtx{ .alloc = alloc, .s = s };
+    const t = try parseExpr(&ctx);
+    if (ctx.i != s.len) {
+        nodeFree(alloc, t);
+        return error.Bad;
+    }
+    return t;
+}
+
+fn normCanon(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
+    const t = try parseTree(alloc, s);
+    defer nodeFree(alloc, t);
+    const nt = try norm(alloc, t);
+    defer nodeFree(alloc, nt);
+    return canonOf(alloc, nt);
+}
+
+const BinOp = enum { add, sub, mul, div };
+
+fn symCompose(alloc: std.mem.Allocator, a: []const u8, b: []const u8, op: BinOp) ![]u8 {
+    const ta = try parseTree(alloc, a);
+    defer nodeFree(alloc, ta);
+    const tb = try parseTree(alloc, b);
+    defer nodeFree(alloc, tb);
+    var top: *SNode = undefined;
+    switch (op) {
+        .add => top = try nodeList(alloc, .add, try list2(alloc, try nodeClone(alloc, ta), try nodeClone(alloc, tb))),
+        .sub => {
+            const nb = try negNode(alloc, try nodeClone(alloc, tb));
+            top = try nodeList(alloc, .add, try list2(alloc, try nodeClone(alloc, ta), nb));
+        },
+        .mul => top = try nodeList(alloc, .mul, try list2(alloc, try nodeClone(alloc, ta), try nodeClone(alloc, tb))),
+        .div => {
+            const ib = try nodeUnary(alloc, .inv, try nodeClone(alloc, tb));
+            top = try nodeList(alloc, .mul, try list2(alloc, try nodeClone(alloc, ta), ib));
+        },
+    }
+    defer nodeFree(alloc, top);
+    const nt = try norm(alloc, top);
+    defer nodeFree(alloc, nt);
+    return canonOf(alloc, nt);
+}
+
+fn symNegate(alloc: std.mem.Allocator, a: []const u8) ![]u8 {
+    const ta = try parseTree(alloc, a);
+    defer nodeFree(alloc, ta);
+    const top = try negNode(alloc, try nodeClone(alloc, ta));
+    defer nodeFree(alloc, top);
+    const nt = try norm(alloc, top);
+    defer nodeFree(alloc, nt);
+    return canonOf(alloc, nt);
+}
+
+fn symSqrt(alloc: std.mem.Allocator, a: []const u8) ![]u8 {
+    const ta = try parseTree(alloc, a);
+    defer nodeFree(alloc, ta);
+    const top = try nodeUnary(alloc, .sq, try nodeClone(alloc, ta));
+    defer nodeFree(alloc, top);
+    const nt = try norm(alloc, top);
+    defer nodeFree(alloc, nt);
+    return canonOf(alloc, nt);
+}
+
+fn symFree(s: []const u8) void {
+    koru_allocator().free(s);
+}
+
+fn ownedCopy(s: []const u8) []u8 {
+    return koru_allocator().dupe(u8, s) catch @panic("std/sym: out of memory");
+}
+
+// ============================================================================
+// Tors. Canon strings ride <sexpr!>; ops consume linearly.
+// ============================================================================
+
+// Literal / trusted parse: "π", "e", "2*π", "√(2)", "(π+e)", "1/3"...
+~pub tor lit { s: string }
+| exact string<sexpr!>
+| bad
+
+~proc lit|zig {
+    const c = normCanon(koru_allocator(), s) catch return .{ .bad = .{} };
+    return .{ .exact = c };
+}
+
+// External boundary: outside text -> <sexpr-external!>, only parse discharges.
+~pub tor ingest { s: string } -> string<sexpr-external!>
+
+~proc ingest|zig {
+    return ownedCopy(s);
+}
+
+~pub tor parse { s: string<!sexpr-external> }
+| exact string<sexpr!>
+| bad string<std/io:allocated!>
+
+~proc parse|zig {
+    const c = normCanon(koru_allocator(), s) catch return .{ .bad = s };
+    symFree(s);
+    return .{ .exact = c };
+}
+
+~pub tor add { a: string<!sexpr>, b: string<!sexpr> } -> string<sexpr!>
+
+~proc add|zig {
+    defer symFree(a);
+    defer symFree(b);
+    return symCompose(koru_allocator(), a, b, .add) catch @panic("std/sym:add: malformed operand");
+}
+
+~pub tor sub { a: string<!sexpr>, b: string<!sexpr> } -> string<sexpr!>
+
+~proc sub|zig {
+    defer symFree(a);
+    defer symFree(b);
+    return symCompose(koru_allocator(), a, b, .sub) catch @panic("std/sym:sub: malformed operand");
+}
+
+~pub tor mul { a: string<!sexpr>, b: string<!sexpr> } -> string<sexpr!>
+
+~proc mul|zig {
+    defer symFree(a);
+    defer symFree(b);
+    return symCompose(koru_allocator(), a, b, .mul) catch @panic("std/sym:mul: malformed operand");
+}
+
+~pub tor div { a: string<!sexpr>, b: string<!sexpr> }
+| exact string<sexpr!>
+| div-zero
+
+~proc div|zig {
+    defer symFree(a);
+    defer symFree(b);
+    const r = symCompose(koru_allocator(), a, b, .div) catch |err| switch (err) {
+        error.DivZero => return .{ .div_zero = .{} },
+        else => @panic("std/sym:div: malformed operand"),
+    };
+    return .{ .exact = r };
+}
+
+~pub tor neg { a: string<!sexpr> } -> string<sexpr!>
+
+~proc neg|zig {
+    defer symFree(a);
+    return symNegate(koru_allocator(), a) catch @panic("std/sym:neg: malformed operand");
+}
+
+~pub tor sqrt { a: string<!sexpr> }
+| exact string<sexpr!>
+| neg-root
+
+~proc sqrt|zig {
+    defer symFree(a);
+    const r = symSqrt(koru_allocator(), a) catch |err| switch (err) {
+        error.NegRadicand => return .{ .neg_root = .{} },
+        else => @panic("std/sym:sqrt: malformed operand"),
+    };
+    return .{ .exact = r };
+}
+
+// Equivalence is canonical string equality — borrows both.
+~pub tor equiv { a: string<sexpr>, b: string<sexpr> }
+| same
+| diff
+
+~proc equiv|zig {
+    if (std.mem.eql(u8, a, b)) return .{ .same = .{} };
+    return .{ .diff = .{} };
+}
+
+~pub tor free { n: string<!sexpr> }
+
+~proc free|zig {
+    symFree(n);
+}
+
+~pub tor render { n: string<!sexpr> } -> string<std/io:allocated!>
+
+~proc render|zig {
+    return n;
+}
+
+~pub tor dup { n: string<!sexpr> } -> { a: string<sexpr!>, b: string<sexpr!> }
+
+~proc dup|zig {
+    defer symFree(n);
+    return .{ .a = ownedCopy(n), .b = ownedCopy(n) };
+}
