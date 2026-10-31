@@ -8602,8 +8602,12 @@ pub fn main() !void {
         // in the trailing position: the file builds and the verb is swallowed
         // (Q3 in challenges/018_FIX_QUEUE.md). A flag in this slot is the
         // misplaced-flag case above, so skip anything that starts with '-'.
+        // `ci` is shared vocabulary, not dead input: it falls through to a
+        // plain build, and the step-graph driver below reads the absent
+        // command to run every declared std/build:step (drives_step_graph).
         if (detected_comptime_command == null and
-            !std.mem.startsWith(u8, potential_command, "-"))
+            !std.mem.startsWith(u8, potential_command, "-") and
+            !std.mem.eql(u8, potential_command, "ci"))
         {
             inline for (.{ "run", "build", "lib", "bundle", "init", "create", "skills", "zen" }) |verb| {
                 if (std.mem.eql(u8, potential_command, verb)) {
