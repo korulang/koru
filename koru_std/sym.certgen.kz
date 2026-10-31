@@ -446,3 +446,271 @@ fn cserWrite(alloc: std.mem.Allocator, total: usize, coeffs: []const Rat, ode_te
     const s = cserWrite(alloc, T, coeffs, odet, rect) catch @panic("std/sym:cert-series");
     return .{ .exact = s };
 }
+
+// ============================================================================
+// Decision tower — port of the artifact's decide_integral /
+// risch_with_trig_rewrite / decide_ode
+// (isar_holonomic_closure_algebra.py). Layers: ELEMENTARY (constructed),
+// HOLONOMIC_SPECIAL (certified antiderivative via integral-shift),
+// UNRESOLVED (named bound/evidence). The grammar has no trig nodes, so
+// the artifact's Euler-rewrite leg is vacuous here; and there is no
+// Risch engine — non-polynomial elementary forms (logs/arctans) are not
+// constructed, they fall through to the holonomic lane with the note
+// field recording that no elementary form was constructed.
+// ============================================================================
+
+// Antiderivative of a polynomial over Q: b_{i+1} = c_i/(i+1), b_0 = 0.
+fn polyIntegral(alloc: std.mem.Allocator, p: []const Rat) ![]Rat {
+    const out = try alloc.alloc(Rat, p.len + 1);
+    var n: usize = 0;
+    errdefer {
+        for (out[0..n]) |*r| ratDeinit(r);
+        alloc.free(out);
+    }
+    out[0] = try ratFromInt(alloc, 0);
+    n = 1;
+    var i: usize = 0;
+    while (i < p.len) : (i += 1) {
+        var d = try ratFromInt(alloc, @as(i64, @intCast(i)) + 1);
+        defer ratDeinit(&d);
+        out[n] = try ratDiv(alloc, &p[i], &d);
+        n += 1;
+    }
+    return out;
+}
+
+// Rational-function extraction: returns a Frac (poly/poly over Q) for
+// expressions built from dec/x/+/*/inv. sq and non-x atoms -> null.
+fn ratFuncOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!?Frac {
+    switch (n.kind) {
+        .dec => {
+            const np = try alloc.alloc(Rat, 1);
+            errdefer alloc.free(np);
+            np[0] = try ratFromDec(alloc, &n.dec);
+            const dp = try polyOne(alloc);
+            return try fracNorm(alloc, np, dp);
+        },
+        .atom => {
+            if (n.atom != 3) return null;
+            const np = try alloc.alloc(Rat, 2);
+            errdefer alloc.free(np);
+            np[0] = try ratFromInt(alloc, 0);
+            np[1] = try ratFromInt(alloc, 1);
+            const dp = try polyOne(alloc);
+            return try fracNorm(alloc, np, dp);
+        },
+        .add => {
+            var acc = Frac{ .n = try polyEmpty(alloc), .d = try polyOne(alloc) };
+            errdefer fracFree(alloc, &acc);
+            for (n.kids) |k| {
+                var kf = (try ratFuncOfNode(alloc, k)) orelse {
+                    fracFree(alloc, &acc);
+                    return null;
+                };
+                defer fracFree(alloc, &kf);
+                const nf = try fracAdd(alloc, &acc, &kf);
+                fracFree(alloc, &acc);
+                acc = nf;
+            }
+            return acc;
+        },
+        .mul => {
+            var acc = (try ratFuncOfNode(alloc, n.kids[0])) orelse return null;
+            errdefer fracFree(alloc, &acc);
+            for (n.kids[1..]) |k| {
+                var kf = (try ratFuncOfNode(alloc, k)) orelse {
+                    fracFree(alloc, &acc);
+                    return null;
+                };
+                defer fracFree(alloc, &kf);
+                const nf = try fracMul(alloc, &acc, &kf);
+                fracFree(alloc, &acc);
+                acc = nf;
+            }
+            return acc;
+        },
+        .inv => {
+            var kf = (try ratFuncOfNode(alloc, n.kid)) orelse return null;
+            defer fracFree(alloc, &kf);
+            if (fracIsZero(&kf)) return null;
+            return try fracInv(alloc, &kf);
+        },
+        .sq => return null,
+    }
+}
+
+// decide(layer=L)|field=value|field=value — fixed set of decision-level
+// segment names; decide-field extracts one by name.
+const DECIDE_FIELDS = [_][]const u8{ "integral", "integrand", "antiderivative", "seed", "note", "r", "form" };
+
+fn decideFieldBounds(blob: []const u8, name: []const u8) ?struct { s: usize, e: usize } {
+    var i: usize = 0;
+    while (i + name.len + 2 <= blob.len) : (i += 1) {
+        if (blob[i] == '|' and std.mem.startsWith(u8, blob[i + 1 ..], name) and blob[i + 1 + name.len] == '=') {
+            const s = i + 2 + name.len;
+            var e = blob.len;
+            var j = s;
+            while (j < blob.len) : (j += 1) {
+                if (blob[j] != '|') continue;
+                for (DECIDE_FIELDS) |f| {
+                    if (std.mem.startsWith(u8, blob[j + 1 ..], f) and j + 1 + f.len < blob.len and blob[j + 1 + f.len] == '=') {
+                        e = j;
+                        break;
+                    }
+                }
+                if (e == j) break;
+            }
+            return .{ .s = s, .e = e };
+        }
+    }
+    return null;
+}
+
+fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, antiderivative: ?[]const u8) ![]u8 {
+    const alloc = koru_allocator();
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    const hdr = std.fmt.allocPrint(alloc, "decide(layer={s})|note={s}", .{ layer, note }) catch return error.OutOfMemory;
+    defer alloc.free(hdr);
+    try out.appendSlice(alloc, hdr);
+    if (integrand) |v| {
+        try out.appendSlice(alloc, "|integrand=");
+        try out.appendSlice(alloc, v);
+    }
+    if (antiderivative) |v| {
+        try out.appendSlice(alloc, "|antiderivative=");
+        try out.appendSlice(alloc, v);
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+// decide-integral: elementary construction for polynomial integrands;
+// otherwise the holonomic-special lane — structural cert-of preferred
+// (theorem-grade), bounded derive-ode as the discovery fallback
+// (witness-grade seed, flagged). Matches the artifact's layer order:
+// elementary-construct first, certified antiderivative via
+// integral-shift second, unresolved with named evidence last.
+~pub tor decide-integral { a: string<!sexpr>, max-order: i64, max-deg: i64 }
+| elementary string<std/io:allocated!>
+| holonomic-special string<std/io:allocated!>
+| unresolved string<std/io:allocated!>
+| not-holonomic string<std/io:allocated!>
+| non-rational
+| non-analytic
+| bad
+
+~proc decide-integral|zig {
+    defer symFree(a);
+    const alloc = koru_allocator();
+    if (max_order < 0 or max_order > 8 or max_deg < 0 or max_deg > 12) return .{ .bad = .{} };
+    const t = parseTree(alloc, a) catch return .{ .bad = .{} };
+    defer nodeFree(alloc, t);
+    const nt = norm(alloc, t) catch return .{ .bad = .{} };
+    defer nodeFree(alloc, nt);
+    const maybe_poly = polyOfNode(alloc, nt) catch @panic("std/sym:decide-integral poly");
+    if (maybe_poly) |p| {
+        defer polyFree(alloc, p);
+        const integ = polyIntegral(alloc, p) catch @panic("std/sym:decide-integral");
+        defer {
+            for (integ) |*r| ratDeinit(r);
+            alloc.free(integ);
+        }
+        const csv = ratJoinCsv(alloc, integ) catch @panic("std/sym:decide-integral");
+        defer alloc.free(csv);
+        const colon = std.mem.indexOfScalar(u8, csv, ':') orelse csv.len;
+        const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|integral=[{s}]|note=polynomial-termwise-constructed", .{csv[colon + 1 ..]}) catch @panic("std/sym:decide-integral");
+        return .{ .elementary = blob };
+    }
+    var structural_refusal: ?[]const u8 = null;
+    var cert = certOfNode(alloc, nt) catch |e| blk: {
+        switch (e) {
+            CertgenErr.InvHighOrder => structural_refusal = "inv-order>1",
+            CertgenErr.SqrtNonPoly => structural_refusal = "sqrt-nonpoly",
+            else => @panic("std/sym:decide-integral"),
+        }
+        // discovery fallback within declared bounds (witness-grade seed)
+        const found = symDeriveOde(alloc, a, max_order, max_deg) catch |err| switch (err) {
+            error.NonAnalytic => return .{ .non_analytic = .{} },
+            error.NonRational => return .{ .non_rational = .{} },
+            else => @panic("std/sym:decide-integral derive"),
+        } orelse {
+            const msg = std.fmt.allocPrint(alloc, "decide(layer=unresolved)|note=no-holonomic-certificate-within-bounds(order<={d},deg<={d});structural={s}", .{ max_order, max_deg, structural_refusal.? }) catch @panic("std/sym:decide-integral");
+            return .{ .unresolved = msg };
+        };
+        defer alloc.free(found);
+        const parsed = certParse(alloc, found) catch @panic("std/sym:decide-integral parse");
+        break :blk parsed;
+    };
+    defer certFree(alloc, &cert);
+    if (certPolyZero(cert.polys[cert.order])) return .{ .not_holonomic = ownedCopy("degenerate-leading") };
+    var shifted = certShifted(alloc, &cert) catch @panic("std/sym:decide-integral shift");
+    defer certFree(alloc, &shifted);
+    const via_seed = if (structural_refusal == null) "of" else "verified";
+    const odet = certWrite(alloc, cert.order, cert.deg, via_seed, cert.polys) catch @panic("std/sym:decide-integral");
+    defer alloc.free(odet);
+    const st = certWrite(alloc, shifted.order, shifted.deg, "shift", shifted.polys) catch @panic("std/sym:decide-integral");
+    defer alloc.free(st);
+    const note = if (structural_refusal == null)
+        "no-risch-elementary-form-not-constructed;integrand-cert-theorem-grade"
+    else
+        "no-risch-elementary-form-not-constructed;seed-finite-witness";
+    const blob = decideIntegNote("holonomic-special", note, odet, st) catch @panic("std/sym:decide-integral");
+    return .{ .holonomic_special = blob };
+}
+
+// decide-ode: Kovacic pole-structure classification for y'' = r(x) y.
+// Ported faithfully: poles = roots of den(r) — over C any non-constant
+// denominator has roots — so bounded iff den is constant and
+// deg(num) <= deg(den), i.e. r is a constant. No dsolve engine: the
+// bounded arm emits the constant-coefficient solution FORM as text.
+~pub tor decide-ode { r: string<!sexpr> }
+| liouvillian string<std/io:allocated!>
+| holonomic-special string<std/io:allocated!>
+| unclassifiable string<std/io:allocated!>
+| bad string<std/io:allocated!>
+
+~proc decide-ode|zig {
+    defer symFree(r);
+    const alloc = koru_allocator();
+    const t = parseTree(alloc, r) catch return .{ .bad = ownedCopy("malformed-expr") };
+    defer nodeFree(alloc, t);
+    const nt = norm(alloc, t) catch return .{ .bad = ownedCopy("malformed-expr") };
+    defer nodeFree(alloc, nt);
+    var f = (ratFuncOfNode(alloc, nt) catch @panic("std/sym:decide-ode")) orelse
+        return .{ .unclassifiable = ownedCopy("r-not-rational-function") };
+    defer fracFree(alloc, &f);
+    const den_const = !polyIsZero(f.d) and (polyIsZero(f.d) or polyDegIdx(f.d) == 0);
+    const num_deg: i64 = if (polyIsZero(f.n)) 0 else @intCast(polyDegIdx(f.n));
+    const den_deg: i64 = if (polyIsZero(f.d)) 0 else @intCast(polyDegIdx(f.d));
+    const bounded = den_const and num_deg <= den_deg;
+    if (!bounded) {
+        const blob = decideIntegNote("holonomic-special", "kovacic-pole-structure-unbounded:proven-no-liouvillian-solution", null, null) catch @panic("std/sym:decide-ode");
+        return .{ .holonomic_special = blob };
+    }
+    // bounded => r constant; emit the constant-coefficient solution form
+    const c = if (f.n.len > 0) f.n[0] else ratFromInt(alloc, 0) catch @panic("std/sym:decide-ode");
+    const cs = ratToString(alloc, &c) catch @panic("std/sym:decide-ode");
+    defer alloc.free(cs);
+    const form = if (ratIsZero(&c))
+        "y=C1+C2*x"
+    else if (c.n.toConst().orderAgainstScalar(@as(i64, 0)) == .lt)
+        "y=C1*cos(sqrt(|r|)*x)+C2*sin(sqrt(|r|)*x)"
+    else
+        "y=C1*exp(sqrt(r)*x)+C2*exp(-sqrt(r)*x)";
+    const blob = std.fmt.allocPrint(alloc, "decide(layer=liouvillian)|r={s}|form={s}|note=kovacic-check-bounded", .{ cs, form }) catch @panic("std/sym:decide-ode");
+    return .{ .liouvillian = blob };
+}
+
+// Generic `|name=` segment extractor over decision/cert blobs — the
+// composition seam that lets decide-* outputs feed cert-reg-put without
+// record-payload arms.
+~pub tor decide-field { blob: string<*>, name: string }
+| exact string<std/io:allocated!>
+| not-found
+
+~proc decide-field|zig {
+    const alloc = koru_allocator();
+    const bounds = decideFieldBounds(blob, name) orelse return .{ .not_found = .{} };
+    const out = alloc.dupe(u8, blob[bounds.s..bounds.e]) catch @panic("std/sym:decide-field");
+    return .{ .exact = out };
+}

@@ -490,9 +490,36 @@ summands have a Q(x) kernel (1 - x -> f''=0 instead of order 1),
 which is why inv takes the polynomial fast path before the order-1
 fallback.
 
-Remaining scheduled rungs: decide_integral / Risch-lite decision
-tower (registry seeds + closure + shift are the machinery), then the
-non-SI extension surface design (currency etc. — carrier/group laws +
-canon + conversion policy behind a seam; design only, low priority),
-then decide_integral / Risch-lite decision tower.
+## Landed 2026-11-01 — decide tower (decide-integral / decide-ode / decide-field)
+
+Port of the artifact's decision tower (isar_holonomic_closure_algebra.py:
+decide_ode + risch_with_trig_rewrite + decide_integral) into
+sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
+-> UNRESOLVED, each carrying named evidence.
+
+- `decide-integral(a, max-order, max-deg)`: polynomial integrand ->
+  constructed antiderivative (`integral=[coeff list]`, termwise over Q).
+  Otherwise structural cert-of + certShifted -> holonomic-special with
+  `integrand=` + `antiderivative=` cert texts; the note field marks
+  `integrand-cert-theorem-grade` vs `seed-finite-witness` (discovery
+  fallback) and records `no-risch-elementary-form-not-constructed` —
+  honest about the missing Risch engine (1/(1-x) has an elementary form
+  Koru does not construct; it is represented holonomically instead).
+  Grammar has no trig nodes so the artifact's Euler-rewrite leg is
+  vacuous. Unresolved names the searched bounds + structural refusal.
+- `decide-ode(r)`: Kovacic pole-structure port. Over C every
+  non-constant denominator has roots, so the artifact's `poles == []`
+  collapses to "r constant" — bounded -> liouvillian arm with the
+  constant-coefficient solution form; unbounded -> holonomic-special
+  "proven-no-liouvillian"; non-rational r -> unclassifiable.
+- `decide-field(blob, name)`: `|name=` segment extractor over decision
+  blobs — the composition seam into cert-reg-put (the artifact's
+  registry_key path) without record-payload arms.
+
+615_048 pins all arms incl. (1+x)^(1/4) fallback, the bounded/unbounded/
+unclassifiable decide-ode split, and decide-field nf. 615: 40/40.
+
+Remaining scheduled rung: the non-SI extension surface design
+(currency etc. — carrier/group laws + canon + conversion policy behind
+a seam; design only, low priority).
 
