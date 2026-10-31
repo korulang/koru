@@ -407,3 +407,28 @@ sym-canon identity, lookup before re-derivation), the verified=N to
 theorem upgrade via the P-recursive bridge + shiftBound, then the
 non-SI extension surface design.
 
+## Landed 2026-10-31 — cert registry (HolonomicRegistry port)
+
+~part certreg joins koru_std/sym.certreg.kz. No mutable globals, so the
+registry is an allocated TEXT BLOB threaded through flows — persistent
+value semantics, each op consumes the blob and hands back a new one:
+
+    reg:v1;G1=ode(...,via=seed)|...;G2=ode(...,via=shift(G1))|...
+
+Keys are deterministic (G1, G2, ...) and lineage is embedded in each
+cert's `via` field: seed / verified=N / shift(Gk) / sum(Ga,Gb) /
+prod(Ga,Gb). Tors: cert-reg-new, -put, -seed, -shift, -sum, -prod,
+-derive (SupGen discovery straight into the store — Python's
+register_from_expr), -compose (named theorem refusal), and borrowers
+cert-reg-get / cert-reg-last.
+
+Surfaced rule worth remembering: a `string` param accepts ONLY
+unqualified strings — borrowing any qualification needs `string<*>`
+(KORU030 says so itself: "declare '<*>' to accept any qualification").
+cert-reg-get/-last borrow the blob; mutating ops consume it.
+
+Remaining scheduled rungs: the verified=N to theorem upgrade via the
+P-recursive bridge + shiftBound (HolonomicBridge.lean), then the non-SI
+extension surface design (currency etc. — carrier/group laws + canon +
+conversion policy behind a seam; design only, low priority).
+

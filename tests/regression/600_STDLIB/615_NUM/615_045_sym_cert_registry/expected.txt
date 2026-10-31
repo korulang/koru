@@ -1,0 +1,5 @@
+ode(k=1,d=1,verified=25)|p0=[-1,0]|p1=[2,2]
+ode(k=1,d=0,via=prod(G1,G1))|p0=[-2]|p1=[1]
+G5
+reg:v1;G1=ode(k=1,d=0,via=seed)|p0=[-1]|p1=[1];G2=ode(k=2,d=0,via=shift(G1))|p0=[0]|p1=[-1]|p2=[1];G3=ode(k=1,d=0,via=sum(G1,G1))|p0=[-1]|p1=[1];G4=ode(k=1,d=0,via=prod(G1,G1))|p0=[-2]|p1=[1];G5=ode(k=1,d=1,verified=25)|p0=[-1,0]|p1=[2,2]
+nf-empty
