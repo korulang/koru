@@ -519,7 +519,45 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
 615_048 pins all arms incl. (1+x)^(1/4) fallback, the bounded/unbounded/
 unclassifiable decide-ode split, and decide-field nf. 615: 40/40.
 
-Remaining scheduled rung: the non-SI extension surface design
-(currency etc. — carrier/group laws + canon + conversion policy behind
-a seam; design only, low priority).
+## Design only — non-SI extension surface (currency et al.)
+
+Constraint that shapes everything: `Dim = [7]i32` is the Lean-proven
+free abelian group on 7 generators (QuantityKernel.lean DimExpr).
+Widening it diverges from the verified kernel — so extension axes must
+NOT widen Dim. Design:
+
+- **Axis registry, not axis syntax.** A threaded value like certreg:
+  `unitreg:v1;USD=axis(currency);EUR=axis(currency)`. Declaring an axis
+  is explicit data (composition is declared data); an undeclared unit
+  atom refuses `undeclared-axis:<name>`, never silently creates one.
+- **Packed format gains one optional segment.** Today:
+  `mag|dim|unc@cov`. Extension quantities carry the SI dim (usually
+  dimensionless-zero for pure currency) PLUS `!ext=EUR^1·USD^-1` — a
+  canonically sorted axis^exp product. Same abelian-group laws, disjoint
+  namespace; equiv stays string equality; mul/div/pow compose exponents
+  on both segments unchanged.
+- **Tor surface:** `unit-reg-new()`, `unit-reg-put(reg, name, kind) ->
+  reg'`, `unit-reg-get(reg, name)`; `quantity:lit-x(mag, unit, unc,
+  cov, ureg)` — the extended constructor that consults the registry;
+  SI atoms still resolve to Dim, declared ext atoms resolve to axes.
+  Borrow/obligation rules identical to certreg (`string<*>` borrows,
+  `allocated!` consumes).
+- **Conversion is an oracle, not a group law.** USD->EUR needs a rate —
+  external, time-varying, never exact. `convert-x(q, rate, axis)` where
+  `rate` is an ordinary tainted quantity (EUR/USD axis product);
+  num's exact/external taint discipline propagates: a converted value
+  is EXTERNAL by construction, which is the honest answer for money.
+  No implicit rates, no pinned tables — a rate table is a registry of
+  external quantities, injected per-flow.
+- **Refusals:** mixing undeclared axes (`undeclared-axis`), add across
+  ext dims (`dim-mismatch`, same law as SI), uncertainty on mul/div of
+  ext lanes (`sym-unc` analogue — the sigma math never inspects axes).
+- **Deliberately out:** arbitrary unit algebra parsing, factor
+  normalization between axes (that's conversion policy, external),
+  and any change to the 7-dim Dim.
+
+Open questions: whether ext axes carry a `kind` tag (currency/energy/
+custom) to group semantics without changing the algebra; whether cser/
+cert lanes ever need axis-aware magnitudes (probably not — magnitudes
+are dimensionless series).
 
