@@ -9,8 +9,7 @@ nest one level deeper than the producing arm.
 import random
 
 random.seed(42)
-import os
-B = os.path.dirname(os.path.abspath(__file__))
+B = "/tmp/korubench"
 
 def digits(n):
     return "".join(random.choice("0123456789") for _ in range(n))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-import re, sys, os
+import re, sys
 
-B = os.path.dirname(os.path.abspath(__file__))
+B = "/tmp/korubench"
 
 def digits_of(s):
     return re.sub(r"[^0-9]", "", s).lstrip("0")
