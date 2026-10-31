@@ -784,6 +784,31 @@ fn decAtan(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
     return fxToDec(alloc, &sum, w, prec);
 }
 
+// Exact remainder: r = a - b*trunc(a/b) at the finer exponent — C-style
+// trunc-mod, sign follows the dividend. Exact for any Dec pair; b != 0.
+fn decMod(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
+    const e = @min(a.e, b.e);
+    var am = try a.m.clone();
+    defer am.deinit();
+    var bm = try b.m.clone();
+    defer bm.deinit();
+    var p1 = try pow10(alloc, a.e - e);
+    defer p1.deinit();
+    try am.mul(&am, &p1);
+    var p2 = try pow10(alloc, b.e - e);
+    defer p2.deinit();
+    try bm.mul(&bm, &p2);
+    var q = try BI.init(alloc);
+    defer q.deinit();
+    var r = try BI.init(alloc);
+    defer r.deinit();
+    try q.divTrunc(&r, &am, &bm);
+    const rs = try r.toString(alloc, 10, .lower);
+    defer alloc.free(rs);
+    // r >= 0 as a magnitude; sign follows the dividend (trunc-mod).
+    return decFromDigits(alloc, rs, e, a.neg and !r.eqlZero());
+}
+
 fn ownedCopy(s: []const u8) []u8 {
     return koru_allocator().dupe(u8, s) catch @panic("std/num: out of memory");
 }
@@ -1230,3 +1255,122 @@ fn numFree(s: []const u8) void {
     defer decDeinit(&r);
     return .{ .exact = decToString(koru_allocator(), &r) catch @panic("std/num: out of memory") };
 }
+
+// ============================================================================
+// Rung 2: mod, length/scale introspection, base conversion.
+// ============================================================================
+
+// Exact remainder a mod b = a - b*trunc(a/b); sign follows the dividend.
+// |div-zero when b == 0.
+~pub tor mod { a: string<!exact>, b: string<!exact> }
+| exact string<exact!>
+| div-zero
+
+~proc mod|zig {
+    defer numFree(a);
+    defer numFree(b);
+    var da = decParse(koru_allocator(), a) catch @panic("std/num:mod: malformed operand");
+    defer decDeinit(&da);
+    var db = decParse(koru_allocator(), b) catch @panic("std/num:mod: malformed operand");
+    defer decDeinit(&db);
+    if (db.m.eqlZero()) return .{ .div_zero = .{} };
+    var r = decMod(koru_allocator(), &da, &db) catch @panic("std/num:mod: out of memory");
+    defer decDeinit(&r);
+    return .{ .exact = decToString(koru_allocator(), &r) catch @panic("std/num: out of memory") };
+}
+
+// Significant-digit count of the mantissa (bc's length()). Borrows.
+~pub tor length { a: string<exact> } -> i64
+
+~proc length|zig {
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:length: malformed operand");
+    defer decDeinit(&d);
+    const ms = d.m.toString(koru_allocator(), 10, .lower) catch @panic("std/num: out of memory");
+    defer koru_allocator().free(ms);
+    return @intCast(ms.len);
+}
+
+// Digits after the decimal point (bc's scale()). Canonical form has no
+// trailing zeros, so scale = max(0, -e). Borrows.
+~pub tor scale { a: string<exact> } -> i64
+
+~proc scale|zig {
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:scale: malformed operand");
+    defer decDeinit(&d);
+    return if (d.e < 0) -d.e else 0;
+}
+
+// Render an integral value in base 2..36 (bc's obase, honest about scope:
+// non-integers refuse rather than emitting bc's digit-vector notation).
+~pub tor to-base { a: string<!exact>, base: i64 }
+| exact string<exact!>
+| non-int
+| bad-base
+
+~proc to-base|zig {
+    defer numFree(a);
+    if (base < 2 or base > 36) return .{ .bad_base = .{} };
+    var d = decParse(koru_allocator(), a) catch @panic("std/num:to-base: malformed operand");
+    defer decDeinit(&d);
+    if (d.e < 0) return .{ .non_int = .{} };
+    var v = d.m.clone() catch @panic("std/num: out of memory");
+    defer v.deinit();
+    var p = pow10(koru_allocator(), d.e) catch @panic("std/num: out of memory");
+    defer p.deinit();
+    v.mul(&v, &p) catch @panic("std/num: out of memory");
+    const b8: u8 = @intCast(base);
+    const s = v.toString(koru_allocator(), b8, .lower) catch @panic("std/num: out of memory");
+    if (d.neg and !v.eqlZero()) {
+        var out = koru_allocator().alloc(u8, s.len + 1) catch @panic("std/num: out of memory");
+        out[0] = '-';
+        @memcpy(out[1..], s);
+        koru_allocator().free(s);
+        return .{ .exact = out };
+    }
+    return .{ .exact = s };
+}
+
+// Parse digits in base 2..36 into an integer value (bc's ibase; lit-lane —
+// the text is trusted, same contract as lit). Upper and lower case both
+// accepted; '_' separators refused, a leading '-' negates.
+~pub tor from-base { s: string, base: i64 }
+| exact string<exact!>
+| bad-digit
+| bad-base
+
+~proc from-base|zig {
+    if (base < 2 or base > 36) return .{ .bad_base = .{} };
+    var i: usize = 0;
+    var neg = false;
+    if (s.len > 0 and s[0] == '-') {
+        neg = true;
+        i = 1;
+    }
+    if (i >= s.len) return .{ .bad_digit = .{} };
+    var v = BI.initSet(koru_allocator(), 0) catch @panic("std/num: out of memory");
+    defer v.deinit();
+    var bb = BI.initSet(koru_allocator(), base) catch @panic("std/num: out of memory");
+    defer bb.deinit();
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        const dig: i64 = if (c >= '0' and c <= '9')
+            c - '0'
+        else if (c >= 'a' and c <= 'z')
+            c - 'a' + 10
+        else if (c >= 'A' and c <= 'Z')
+            c - 'A' + 10
+        else
+            return .{ .bad_digit = .{} };
+        if (dig >= base) return .{ .bad_digit = .{} };
+        var dd = BI.initSet(koru_allocator(), dig) catch @panic("std/num: out of memory");
+        defer dd.deinit();
+        v.mul(&v, &bb) catch @panic("std/num: out of memory");
+        v.add(&v, &dd) catch @panic("std/num: out of memory");
+    }
+    const ds = v.toString(koru_allocator(), 10, .lower) catch @panic("std/num: out of memory");
+    defer koru_allocator().free(ds);
+    var out = decFromDigits(koru_allocator(), ds, 0, neg and !v.eqlZero()) catch @panic("std/num: out of memory");
+    defer decDeinit(&out);
+    return .{ .exact = decToString(koru_allocator(), &out) catch @panic("std/num: out of memory") };
+}
+
