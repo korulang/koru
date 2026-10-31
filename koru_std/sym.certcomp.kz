@@ -1,0 +1,857 @@
+// Koru Standard Library: the `certcomp` part of sym.kz — certificate
+// closure under sum and product via companion-basis elimination over
+// the rational-function field Q(x). Mirrors
+// isar_holonomic_closure_algebra.py (_tensor_basis_certificate) and is
+// proven in isar-proofs HolonomicClosure.lean. General composition is
+// refused BY NAME (exp_exp_not_holonomic is a theorem, not a gap).
+// Joined via `~part certcomp` in sym.kz; merged into the module at load.
+//
+// A cert ode(k=m,d=D)|p0..pm with nonzero leading p_m yields the
+// companion rewrite g^(m) = sum_{k<m} (-p_k/p_m) g^k over Q(x). The
+// derivative stays inside a finite span:
+//   sum:     f^(i), g^(j)          dim = m + n
+//   product: f^(i) * g^(j)         dim = m * n
+// so h, h', ..., h^dim are linearly dependent over Q(x); the first
+// dependency found by augmented Gauss-Jordan gives h's ODE. Output is a
+// theorem application (via=sum / via=prod), not a finite witness.
+
+// ============================================================================
+// Polynomials over Rat — coefficient lists, low to high; trailing zeros
+// are permitted internally, polyIsZero/polyDegIdx scan.
+// ============================================================================
+
+fn polyIsZero(p: []const Rat) bool {
+    for (p) |*c| {
+        if (!ratIsZero(c)) return false;
+    }
+    return true;
+}
+
+fn polyDegIdx(p: []const Rat) usize {
+    var i = p.len;
+    while (i > 0) : (i -= 1) {
+        if (!ratIsZero(&p[i - 1])) return i - 1;
+    }
+    return 0;
+}
+
+fn polyFree(alloc: std.mem.Allocator, p: []Rat) void {
+    for (p) |*c| ratDeinit(c);
+    alloc.free(p);
+}
+
+fn polyClone(alloc: std.mem.Allocator, p: []const Rat) ![]Rat {
+    const out = try alloc.alloc(Rat, p.len);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| ratDeinit(c);
+        alloc.free(out);
+    }
+    while (i < p.len) : (i += 1) out[i] = try ratClone(&p[i]);
+    return out;
+}
+
+fn polyEmpty(alloc: std.mem.Allocator) ![]Rat {
+    return alloc.alloc(Rat, 0);
+}
+
+fn polyOne(alloc: std.mem.Allocator) ![]Rat {
+    const out = try alloc.alloc(Rat, 1);
+    errdefer alloc.free(out);
+    out[0] = try ratFromInt(alloc, 1);
+    return out;
+}
+
+fn ratIsOne(r: *const Rat) bool {
+    return r.n.toConst().orderAgainstScalar(@as(i64, 1)) == .eq and denIsOne(r);
+}
+
+fn polyAdd(alloc: std.mem.Allocator, a: []const Rat, b: []const Rat) ![]Rat {
+    const L = @max(a.len, b.len);
+    const out = try alloc.alloc(Rat, L);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| ratDeinit(c);
+        alloc.free(out);
+    }
+    while (i < L) : (i += 1) {
+        const ha = i < a.len;
+        const hb = i < b.len;
+        out[i] = if (ha and hb)
+            try ratAdd(alloc, &a[i], &b[i])
+        else if (ha)
+            try ratClone(&a[i])
+        else
+            try ratClone(&b[i]);
+    }
+    return out;
+}
+
+fn polyNeg(alloc: std.mem.Allocator, p: []const Rat) ![]Rat {
+    const out = try alloc.alloc(Rat, p.len);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| ratDeinit(c);
+        alloc.free(out);
+    }
+    while (i < p.len) : (i += 1) out[i] = try ratNeg(&p[i]);
+    return out;
+}
+
+fn polySub(alloc: std.mem.Allocator, a: []const Rat, b: []const Rat) ![]Rat {
+    const nb = try polyNeg(alloc, b);
+    defer polyFree(alloc, nb);
+    return polyAdd(alloc, a, nb);
+}
+
+fn polyMul(alloc: std.mem.Allocator, a: []const Rat, b: []const Rat) ![]Rat {
+    if (polyIsZero(a) or polyIsZero(b)) return polyEmpty(alloc);
+    const out = try alloc.alloc(Rat, a.len + b.len - 1);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| ratDeinit(c);
+        alloc.free(out);
+    }
+    while (i < out.len) : (i += 1) out[i] = try ratFromInt(alloc, 0);
+    var ai: usize = 0;
+    while (ai < a.len) : (ai += 1) {
+        if (ratIsZero(&a[ai])) continue;
+        var bi: usize = 0;
+        while (bi < b.len) : (bi += 1) {
+            if (ratIsZero(&b[bi])) continue;
+            var t = try ratMul(alloc, &a[ai], &b[bi]);
+            const nv = try ratAdd(alloc, &out[ai + bi], &t);
+            ratDeinit(&out[ai + bi]);
+            ratDeinit(&t);
+            out[ai + bi] = nv;
+        }
+    }
+    return out;
+}
+
+fn polyScal(alloc: std.mem.Allocator, p: []const Rat, s: *const Rat) ![]Rat {
+    const out = try alloc.alloc(Rat, p.len);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| ratDeinit(c);
+        alloc.free(out);
+    }
+    while (i < p.len) : (i += 1) out[i] = try ratMul(alloc, &p[i], s);
+    return out;
+}
+
+fn polyDer(alloc: std.mem.Allocator, p: []const Rat) ![]Rat {
+    if (p.len <= 1) return polyEmpty(alloc);
+    const out = try alloc.alloc(Rat, p.len - 1);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| ratDeinit(c);
+        alloc.free(out);
+    }
+    while (i < out.len) : (i += 1) out[i] = try ratMulInt(alloc, &p[i + 1], @intCast(i + 1));
+    return out;
+}
+
+const PolyDM = struct { q: []Rat, r: []Rat };
+
+// Exact field division: a = q*b + r, deg r < deg b. Requires b nonzero.
+fn polyDivMod(alloc: std.mem.Allocator, a_in: []const Rat, b: []const Rat) !PolyDM {
+    var a = try polyClone(alloc, a_in);
+    errdefer polyFree(alloc, a);
+    const q = try alloc.alloc(Rat, a_in.len);
+    var qi: usize = 0;
+    errdefer {
+        for (q[0..qi]) |*c| ratDeinit(c);
+        alloc.free(q);
+    }
+    while (qi < q.len) : (qi += 1) q[qi] = try ratFromInt(alloc, 0);
+    const bd = polyDegIdx(b);
+    while (true) {
+        if (polyIsZero(a)) break;
+        const ad = polyDegIdx(a);
+        if (ad < bd) break;
+        const shift = ad - bd;
+        var cf = try ratDiv(alloc, &a[ad], &b[bd]);
+        defer ratDeinit(&cf);
+        const nq = try ratAdd(alloc, &q[shift], &cf);
+        ratDeinit(&q[shift]);
+        q[shift] = nq;
+        var i: usize = 0;
+        while (i <= bd) : (i += 1) {
+            if (ratIsZero(&b[i])) continue;
+            var t = try ratMul(alloc, &cf, &b[i]);
+            const nv = try ratSub(alloc, &a[i + shift], &t);
+            ratDeinit(&a[i + shift]);
+            ratDeinit(&t);
+            a[i + shift] = nv;
+        }
+    }
+    return .{ .q = q, .r = a };
+}
+
+// Monic gcd; if both inputs are zero the result is the zero poly.
+fn polyGcd(alloc: std.mem.Allocator, a_in: []const Rat, b_in: []const Rat) ![]Rat {
+    var a = try polyClone(alloc, a_in);
+    errdefer polyFree(alloc, a);
+    var b = try polyClone(alloc, b_in);
+    defer polyFree(alloc, b);
+    while (!polyIsZero(b)) {
+        const dm = try polyDivMod(alloc, a, b);
+        polyFree(alloc, dm.q);
+        polyFree(alloc, a);
+        a = b;
+        b = dm.r;
+    }
+    if (polyIsZero(a)) return a;
+    const lc = &a[polyDegIdx(a)];
+    if (!ratIsOne(lc)) {
+        for (a) |*c| {
+            const v = try ratDiv(alloc, c, lc);
+            ratDeinit(c);
+            c.* = v;
+        }
+    }
+    return a;
+}
+
+fn polyLcm(alloc: std.mem.Allocator, a: []const Rat, b: []const Rat) ![]Rat {
+    if (polyIsZero(a) or polyIsZero(b)) return polyEmpty(alloc);
+    const g = try polyGcd(alloc, a, b);
+    defer polyFree(alloc, g);
+    const ab = try polyMul(alloc, a, b);
+    defer polyFree(alloc, ab);
+    const dm = try polyDivMod(alloc, ab, g);
+    polyFree(alloc, dm.r);
+    return dm.q;
+}
+
+fn polyFromInts(alloc: std.mem.Allocator, bs: []const BI) ![]Rat {
+    const out = try alloc.alloc(Rat, bs.len);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| ratDeinit(c);
+        alloc.free(out);
+    }
+    while (i < bs.len) : (i += 1) {
+        const d1 = try BI.initSet(alloc, 1);
+        out[i] = .{ .n = try bs[i].clone(), .d = d1 };
+    }
+    return out;
+}
+
+// ============================================================================
+// Frac: rational functions over Q(x) — canonical: gcd-reduced, den monic.
+// The zero frac is { n = len-0, d = len-0 }; den of a nonzero frac is
+// never empty and never zero.
+// ============================================================================
+
+const Frac = struct { n: []Rat, d: []Rat };
+
+fn fracFree(alloc: std.mem.Allocator, f: *Frac) void {
+    polyFree(alloc, f.n);
+    polyFree(alloc, f.d);
+}
+
+fn fracClone(alloc: std.mem.Allocator, f: *const Frac) !Frac {
+    return .{ .n = try polyClone(alloc, f.n), .d = try polyClone(alloc, f.d) };
+}
+
+fn fracIsZero(f: *const Frac) bool {
+    return f.n.len == 0 or polyIsZero(f.n);
+}
+
+fn fracOne(alloc: std.mem.Allocator) !Frac {
+    return .{ .n = try polyOne(alloc), .d = try polyOne(alloc) };
+}
+
+// Consumes owned n,d; returns canonical.
+fn fracNorm(alloc: std.mem.Allocator, n_in: []Rat, d_in: []Rat) !Frac {
+    var n = n_in;
+    var d = d_in;
+    errdefer {
+        polyFree(alloc, n);
+        polyFree(alloc, d);
+    }
+    if (polyIsZero(n)) {
+        const en = try polyEmpty(alloc);
+        errdefer polyFree(alloc, en);
+        const ed = try polyEmpty(alloc);
+        polyFree(alloc, n);
+        polyFree(alloc, d);
+        n = en;
+        d = ed;
+        return .{ .n = n, .d = d };
+    }
+    var g = try polyGcd(alloc, n, d);
+    defer polyFree(alloc, g);
+    if (!(g.len == 1 and ratIsOne(&g[0])) and !polyIsZero(g)) {
+        const dn = try polyDivMod(alloc, n, g);
+        polyFree(alloc, dn.r);
+        polyFree(alloc, n);
+        n = dn.q;
+        const dd = try polyDivMod(alloc, d, g);
+        polyFree(alloc, dd.r);
+        polyFree(alloc, d);
+        d = dd.q;
+    }
+    const lc = &d[polyDegIdx(d)];
+    if (!ratIsOne(lc)) {
+        for (d) |*c| {
+            const v = try ratDiv(alloc, c, lc);
+            ratDeinit(c);
+            c.* = v;
+        }
+        for (n) |*c| {
+            const v = try ratDiv(alloc, c, lc);
+            ratDeinit(c);
+            c.* = v;
+        }
+    }
+    return .{ .n = n, .d = d };
+}
+
+fn fracAdd(alloc: std.mem.Allocator, a: *const Frac, b: *const Frac) !Frac {
+    if (fracIsZero(a)) return fracClone(alloc, b);
+    if (fracIsZero(b)) return fracClone(alloc, a);
+    const t1 = try polyMul(alloc, a.n, b.d);
+    defer polyFree(alloc, t1);
+    const t2 = try polyMul(alloc, b.n, a.d);
+    defer polyFree(alloc, t2);
+    const n = try polyAdd(alloc, t1, t2);
+    errdefer polyFree(alloc, n);
+    const d = try polyMul(alloc, a.d, b.d);
+    return fracNorm(alloc, n, d);
+}
+
+fn fracNeg(alloc: std.mem.Allocator, a: *const Frac) !Frac {
+    if (fracIsZero(a)) return fracClone(alloc, a);
+    return .{ .n = try polyNeg(alloc, a.n), .d = try polyClone(alloc, a.d) };
+}
+
+fn fracMul(alloc: std.mem.Allocator, a: *const Frac, b: *const Frac) !Frac {
+    if (fracIsZero(a) or fracIsZero(b)) {
+        return .{ .n = try polyEmpty(alloc), .d = try polyEmpty(alloc) };
+    }
+    const n = try polyMul(alloc, a.n, b.n);
+    errdefer polyFree(alloc, n);
+    const d = try polyMul(alloc, a.d, b.d);
+    return fracNorm(alloc, n, d);
+}
+
+fn fracDiv(alloc: std.mem.Allocator, a: *const Frac, b: *const Frac) !Frac {
+    if (fracIsZero(b)) return error.DivZero;
+    if (fracIsZero(a)) {
+        return .{ .n = try polyEmpty(alloc), .d = try polyEmpty(alloc) };
+    }
+    const n = try polyMul(alloc, a.n, b.d);
+    errdefer polyFree(alloc, n);
+    const d = try polyMul(alloc, a.d, b.n);
+    return fracNorm(alloc, n, d);
+}
+
+fn fracInv(alloc: std.mem.Allocator, a: *const Frac) !Frac {
+    if (fracIsZero(a)) return error.DivZero;
+    return fracNorm(alloc, try polyClone(alloc, a.d), try polyClone(alloc, a.n));
+}
+
+// (n'd - n d') / d^2
+fn fracDer(alloc: std.mem.Allocator, a: *const Frac) !Frac {
+    if (fracIsZero(a)) {
+        return .{ .n = try polyEmpty(alloc), .d = try polyEmpty(alloc) };
+    }
+    const np = try polyDer(alloc, a.n);
+    defer polyFree(alloc, np);
+    const dp = try polyDer(alloc, a.d);
+    defer polyFree(alloc, dp);
+    const t1 = try polyMul(alloc, np, a.d);
+    defer polyFree(alloc, t1);
+    const t2 = try polyMul(alloc, a.n, dp);
+    defer polyFree(alloc, t2);
+    const n = try polySub(alloc, t1, t2);
+    errdefer polyFree(alloc, n);
+    const d = try polyMul(alloc, a.d, a.d);
+    return fracNorm(alloc, n, d);
+}
+
+// ============================================================================
+// Vectors over Frac — basis elements of the derivative-closed span.
+// ============================================================================
+
+fn vecZeros(alloc: std.mem.Allocator, dim: usize) ![]Frac {
+    const v = try alloc.alloc(Frac, dim);
+    var i: usize = 0;
+    errdefer {
+        for (v[0..i]) |*e| fracFree(alloc, e);
+        alloc.free(v);
+    }
+    while (i < dim) : (i += 1) {
+        v[i] = .{ .n = try polyEmpty(alloc), .d = try polyEmpty(alloc) };
+    }
+    return v;
+}
+
+fn vecFree(alloc: std.mem.Allocator, v: []Frac) void {
+    for (v) |*e| fracFree(alloc, e);
+    alloc.free(v);
+}
+
+// v[i] += term; consumes term.
+fn vecAcc(alloc: std.mem.Allocator, v: []Frac, i: usize, term: Frac) !void {
+    var t = term;
+    defer fracFree(alloc, &t);
+    if (fracIsZero(&t)) return;
+    const nv = try fracAdd(alloc, &v[i], &t);
+    fracFree(alloc, &v[i]);
+    v[i] = nv;
+}
+
+// ============================================================================
+// Companion closure.
+// ============================================================================
+
+const ClMode = enum { sum, prod };
+
+// rew[k] = -p_k / p_m for k in 0..m-1 — the companion relation.
+fn certRew(alloc: std.mem.Allocator, c: *const OdeCert) ![]Frac {
+    const m = c.order;
+    const lead = try polyFromInts(alloc, c.polys[m]);
+    defer polyFree(alloc, lead);
+    const rew = try alloc.alloc(Frac, m);
+    var i: usize = 0;
+    errdefer {
+        for (rew[0..i]) |*f| fracFree(alloc, f);
+        alloc.free(rew);
+    }
+    while (i < m) : (i += 1) {
+        const np = try polyFromInts(alloc, c.polys[i]);
+        const nn = try polyNeg(alloc, np);
+        polyFree(alloc, np);
+        rew[i] = try fracNorm(alloc, nn, try polyClone(alloc, lead));
+    }
+    return rew;
+}
+
+// One derivative step inside the basis span.
+fn diffVec(alloc: std.mem.Allocator, v: []const Frac, mode: ClMode, m: usize, n: usize, rewA: []const Frac, rewB: []const Frac) ![]Frac {
+    const dim = v.len;
+    const out = try vecZeros(alloc, dim);
+    errdefer vecFree(alloc, out);
+    for (v, 0..) |*c, s| {
+        if (fracIsZero(c)) continue;
+        const dc = try fracDer(alloc, c);
+        try vecAcc(alloc, out, s, dc);
+        switch (mode) {
+            .sum => {
+                if (s < m) {
+                    if (s + 1 < m) {
+                        try vecAcc(alloc, out, s + 1, try fracClone(alloc, c));
+                    } else {
+                        var k: usize = 0;
+                        while (k < m) : (k += 1) {
+                            try vecAcc(alloc, out, k, try fracMul(alloc, c, &rewA[k]));
+                        }
+                    }
+                } else {
+                    const j = s - m;
+                    if (j + 1 < n) {
+                        try vecAcc(alloc, out, m + j + 1, try fracClone(alloc, c));
+                    } else {
+                        var k: usize = 0;
+                        while (k < n) : (k += 1) {
+                            try vecAcc(alloc, out, m + k, try fracMul(alloc, c, &rewB[k]));
+                        }
+                    }
+                }
+            },
+            .prod => {
+                const i = s / n;
+                const j = s % n;
+                if (i + 1 < m) {
+                    try vecAcc(alloc, out, (i + 1) * n + j, try fracClone(alloc, c));
+                } else {
+                    var k: usize = 0;
+                    while (k < m) : (k += 1) {
+                        try vecAcc(alloc, out, k * n + j, try fracMul(alloc, c, &rewA[k]));
+                    }
+                }
+                if (j + 1 < n) {
+                    try vecAcc(alloc, out, i * n + j + 1, try fracClone(alloc, c));
+                } else {
+                    var k: usize = 0;
+                    while (k < n) : (k += 1) {
+                        try vecAcc(alloc, out, i * n + k, try fracMul(alloc, c, &rewB[k]));
+                    }
+                }
+            },
+        }
+    }
+    return out;
+}
+
+// Augmented Gauss-Jordan: rows are dim-long Frac vectors; append the
+// identity, eliminate over the first `dim` columns, and read a zero
+// row's identity part as the dependency coefficients. Returns null when
+// the rows are independent.
+fn findDep(alloc: std.mem.Allocator, rows: []const []const Frac, dim: usize) !?[]Frac {
+    const R = rows.len;
+    const W = dim + R;
+    const mat = try alloc.alloc([]Frac, R);
+    var mr: usize = 0;
+    defer {
+        for (mat[0..mr]) |row| {
+            for (row) |*e| fracFree(alloc, e);
+            alloc.free(row);
+        }
+        alloc.free(mat);
+    }
+    while (mr < R) : (mr += 1) {
+        mat[mr] = try alloc.alloc(Frac, W);
+        var j: usize = 0;
+        errdefer {
+            for (mat[mr][0..j]) |*e| fracFree(alloc, e);
+            alloc.free(mat[mr]);
+        }
+        while (j < W) : (j += 1) {
+            if (j < dim) {
+                mat[mr][j] = try fracClone(alloc, &rows[mr][j]);
+            } else if (j - dim == mr) {
+                mat[mr][j] = try fracOne(alloc);
+            } else {
+                mat[mr][j] = .{ .n = try polyEmpty(alloc), .d = try polyEmpty(alloc) };
+            }
+        }
+    }
+    var prow: usize = 0;
+    var col: usize = 0;
+    while (col < dim and prow < R) : (col += 1) {
+        var p = prow;
+        while (p < R and fracIsZero(&mat[p][col])) p += 1;
+        if (p == R) continue;
+        if (p != prow) std.mem.swap([]Frac, &mat[p], &mat[prow]);
+        var iv = try fracInv(alloc, &mat[prow][col]);
+        defer fracFree(alloc, &iv);
+        for (mat[prow]) |*e| {
+            const nv = try fracMul(alloc, e, &iv);
+            fracFree(alloc, e);
+            e.* = nv;
+        }
+        var ri: usize = 0;
+        while (ri < R) : (ri += 1) {
+            if (ri == prow or fracIsZero(&mat[ri][col])) continue;
+            var f = try fracNeg(alloc, &mat[ri][col]);
+            defer fracFree(alloc, &f);
+            var j: usize = 0;
+            while (j < W) : (j += 1) {
+                var t = try fracMul(alloc, &f, &mat[prow][j]);
+                defer fracFree(alloc, &t);
+                const nv = try fracAdd(alloc, &mat[ri][j], &t);
+                fracFree(alloc, &mat[ri][j]);
+                mat[ri][j] = nv;
+            }
+        }
+        prow += 1;
+    }
+    var ri: usize = 0;
+    while (ri < R) : (ri += 1) {
+        var allz = true;
+        for (mat[ri][0..dim]) |*e| {
+            if (!fracIsZero(e)) {
+                allz = false;
+                break;
+            }
+        }
+        if (allz) {
+            const coeffs = try alloc.alloc(Frac, R);
+            var j: usize = 0;
+            errdefer {
+                for (coeffs[0..j]) |*e| fracFree(alloc, e);
+                alloc.free(coeffs);
+            }
+            while (j < R) : (j += 1) coeffs[j] = try fracClone(alloc, &mat[ri][dim + j]);
+            return coeffs;
+        }
+    }
+    return null;
+}
+
+// Frac ODE coefficients -> integer polys [][]BI, lcm-cleared and
+// content-reduced, each trimmed to last nonzero + 1 (zero -> [0]).
+fn fracsToIntPolys(alloc: std.mem.Allocator, coeffs: []const Frac) ![][]BI {
+    const R = coeffs.len;
+    var L = try polyOne(alloc);
+    defer polyFree(alloc, L);
+    for (coeffs) |*c| {
+        if (fracIsZero(c)) continue;
+        const nl = try polyLcm(alloc, L, c.d);
+        polyFree(alloc, L);
+        L = nl;
+    }
+    const prats = try alloc.alloc([]Rat, R);
+    var npr: usize = 0;
+    defer {
+        for (prats[0..npr]) |p| polyFree(alloc, p);
+        alloc.free(prats);
+    }
+    while (npr < R) : (npr += 1) {
+        const c = &coeffs[npr];
+        if (fracIsZero(c)) {
+            prats[npr] = try polyEmpty(alloc);
+            continue;
+        }
+        const dm = try polyDivMod(alloc, L, c.d);
+        polyFree(alloc, dm.r);
+        const t = polyMul(alloc, c.n, dm.q) catch |e| {
+            polyFree(alloc, dm.q);
+            return e;
+        };
+        polyFree(alloc, dm.q);
+        prats[npr] = t;
+    }
+    var D = try BI.initSet(alloc, 1);
+    defer D.deinit();
+    for (prats) |p| {
+        for (p) |*r| {
+            if (ratIsZero(r)) continue;
+            var g = try biGcd(alloc, &D, &r.d);
+            defer g.deinit();
+            var q = try BI.init(alloc);
+            var rr = try BI.init(alloc);
+            try q.divTrunc(&rr, &r.d, &g);
+            rr.deinit();
+            var nl = try BI.init(alloc);
+            try nl.mul(&D, &q);
+            q.deinit();
+            D.deinit();
+            D = nl;
+        }
+    }
+    const out = try alloc.alloc([]BI, R);
+    var no: usize = 0;
+    errdefer {
+        for (out[0..no]) |p| {
+            for (p) |*b| b.deinit();
+            alloc.free(p);
+        }
+        alloc.free(out);
+    }
+    while (no < R) : (no += 1) {
+        const p = prats[no];
+        var tl: usize = 1;
+        if (!polyIsZero(p)) tl = polyDegIdx(p) + 1;
+        const ip = try alloc.alloc(BI, tl);
+        var ii: usize = 0;
+        errdefer {
+            for (ip[0..ii]) |*b| b.deinit();
+            alloc.free(ip);
+        }
+        while (ii < tl) : (ii += 1) {
+            const r = &p[ii];
+            var q = try BI.init(alloc);
+            var rr = try BI.init(alloc);
+            try q.divTrunc(&rr, &D, &r.d);
+            rr.deinit();
+            ip[ii] = try BI.init(alloc);
+            try ip[ii].mul(&r.n, &q);
+            q.deinit();
+        }
+        out[no] = ip;
+    }
+    // content gcd across all emitted ints
+    var cg = try BI.initSet(alloc, 0);
+    defer cg.deinit();
+    for (out) |p| {
+        for (p) |*b| {
+            if (b.eqlZero()) continue;
+            const g2 = try biGcd(alloc, &cg, b);
+            cg.deinit();
+            cg = g2;
+        }
+    }
+    if (!cg.eqlZero() and cg.toConst().orderAgainstScalar(@as(u64, 1)) != .eq) {
+        for (out) |p| {
+            for (p) |*b| {
+                var q = try BI.init(alloc);
+                var rr = try BI.init(alloc);
+                try q.divTrunc(&rr, b, &cg);
+                rr.deinit();
+                b.deinit();
+                b.* = q;
+            }
+        }
+    }
+    return out;
+}
+
+fn certClone(alloc: std.mem.Allocator, c: *const OdeCert) !OdeCert {
+    const polys = try alloc.alloc([]BI, c.polys.len);
+    var i: usize = 0;
+    errdefer {
+        for (polys[0..i]) |p| {
+            for (p) |*b| b.deinit();
+            alloc.free(p);
+        }
+        alloc.free(polys);
+    }
+    while (i < c.polys.len) : (i += 1) {
+        const src = c.polys[i];
+        const p = try alloc.alloc(BI, src.len);
+        var j: usize = 0;
+        errdefer {
+            for (p[0..j]) |*b| b.deinit();
+            alloc.free(p);
+        }
+        while (j < src.len) : (j += 1) p[j] = try src[j].clone();
+        polys[i] = p;
+    }
+    return .{ .order = c.order, .deg = c.deg, .polys = polys };
+}
+
+// Zero-generator law: an order-0 cert p0*f = 0 (p0 nonzero) means f = 0,
+// so f * anything is the order-0 law h = 0.
+fn certZeroLaw(alloc: std.mem.Allocator) !OdeCert {
+    const p0 = try alloc.alloc(BI, 1);
+    errdefer alloc.free(p0);
+    p0[0] = try BI.initSet(alloc, 1);
+    const polys = try alloc.alloc([]BI, 1);
+    polys[0] = p0;
+    return .{ .order = 0, .deg = 0, .polys = polys };
+}
+
+// The companion-basis closure: minimal-order ODE for f+g / f*g, an
+// exact dependency over Q(x) — theorem-level (via=sum/prod), matching
+// the Python artifact's product_closure/sum_closure.
+fn certClosure(alloc: std.mem.Allocator, ca: *const OdeCert, cb: *const OdeCert, mode: ClMode) !OdeCert {
+    if (ca.order == 0) {
+        if (mode == .sum) return certClone(alloc, cb);
+        return certZeroLaw(alloc);
+    }
+    if (cb.order == 0) {
+        if (mode == .sum) return certClone(alloc, ca);
+        return certZeroLaw(alloc);
+    }
+    const m = ca.order;
+    const n = cb.order;
+    const dim = if (mode == .sum) m + n else m * n;
+    const rewA = try certRew(alloc, ca);
+    defer {
+        for (rewA) |*f| fracFree(alloc, f);
+        alloc.free(rewA);
+    }
+    const rewB = try certRew(alloc, cb);
+    defer {
+        for (rewB) |*f| fracFree(alloc, f);
+        alloc.free(rewB);
+    }
+    var vecs = std.ArrayList([]Frac){};
+    defer {
+        for (vecs.items) |v| vecFree(alloc, v);
+        vecs.deinit(alloc);
+    }
+    const v0 = try vecZeros(alloc, dim);
+    if (mode == .sum) {
+        v0[0] = try fracOne(alloc);
+        v0[m] = try fracOne(alloc);
+    } else {
+        v0[0] = try fracOne(alloc);
+    }
+    try vecs.append(alloc, v0);
+    var coeffs: ?[]Frac = null;
+    var r: usize = 1;
+    while (r <= dim) : (r += 1) {
+        const nv = try diffVec(alloc, vecs.items[vecs.items.len - 1], mode, m, n, rewA, rewB);
+        errdefer vecFree(alloc, nv);
+        try vecs.append(alloc, nv);
+        coeffs = try findDep(alloc, vecs.items, dim);
+        if (coeffs) |cf| {
+            if (fracIsZero(&cf[cf.len - 1])) {
+                for (cf) |*e| fracFree(alloc, e);
+                alloc.free(cf);
+                coeffs = null;
+                continue;
+            }
+            break;
+        }
+    }
+    const cf = coeffs orelse return error.NoDep;
+    defer {
+        for (cf) |*e| fracFree(alloc, e);
+        alloc.free(cf);
+    }
+    const polys = try fracsToIntPolys(alloc, cf);
+    errdefer certFreePolys(alloc, polys);
+    if (certPolyZero(polys[cf.len - 1])) return error.NoDep;
+    var deg: usize = 0;
+    for (polys) |p| {
+        if (p.len > deg + 1) deg = p.len - 1;
+    }
+    return .{ .order = cf.len - 1, .deg = deg, .polys = polys };
+}
+
+// ============================================================================
+// Tors.
+// ============================================================================
+
+// Sum closure: h = f + g. Companion-basis elimination over Q(x);
+// HolonomicClosure's sum theorem — structural, not a finite witness.
+~pub tor cert-sum { a: string<std/io:!allocated>, b: string<std/io:!allocated> }
+| exact string<std/io:allocated!>
+| bad-cert string<std/io:allocated!>
+
+~proc cert-sum|zig {
+    defer symFree(a);
+    defer symFree(b);
+    const alloc = koru_allocator();
+    var ca = certParse(alloc, a) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
+    defer certFree(alloc, &ca);
+    var cb = certParse(alloc, b) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
+    defer certFree(alloc, &cb);
+    if (certPolyZero(ca.polys[ca.order]) or certPolyZero(cb.polys[cb.order])) return .{ .bad_cert = ownedCopy("degenerate-leading") };
+    var out = certClosure(alloc, &ca, &cb, .sum) catch |e| switch (e) {
+        error.NoDep => return .{ .bad_cert = ownedCopy("closure-no-dependency") },
+        else => @panic("std/sym:cert-sum"),
+    };
+    defer certFree(alloc, &out);
+    const s = certWrite(alloc, out.order, out.deg, "sum", out.polys) catch @panic("std/sym:cert-sum");
+    return .{ .exact = s };
+}
+
+// Product closure: h = f * g, dim <= m*n companion basis.
+~pub tor cert-prod { a: string<std/io:!allocated>, b: string<std/io:!allocated> }
+| exact string<std/io:allocated!>
+| bad-cert string<std/io:allocated!>
+
+~proc cert-prod|zig {
+    defer symFree(a);
+    defer symFree(b);
+    const alloc = koru_allocator();
+    var ca = certParse(alloc, a) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
+    defer certFree(alloc, &ca);
+    var cb = certParse(alloc, b) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
+    defer certFree(alloc, &cb);
+    if (certPolyZero(ca.polys[ca.order]) or certPolyZero(cb.polys[cb.order])) return .{ .bad_cert = ownedCopy("degenerate-leading") };
+    var out = certClosure(alloc, &ca, &cb, .prod) catch |e| switch (e) {
+        error.NoDep => return .{ .bad_cert = ownedCopy("closure-no-dependency") },
+        else => @panic("std/sym:cert-prod"),
+    };
+    defer certFree(alloc, &out);
+    const s = certWrite(alloc, out.order, out.deg, "prod", out.polys) catch @panic("std/sym:cert-prod");
+    return .{ .exact = s };
+}
+
+// Function composition f(g(x)) — proven not holonomic in general
+// (exp_exp_not_holonomic / Stanley 1980 growth bound). This is a named
+// theorem refusal, never a search: inputs are validated, then refused.
+~pub tor cert-compose { outer: string<std/io:!allocated>, inner: string<std/io:!allocated> }
+| not-holonomic string<std/io:allocated!>
+| bad-cert string<std/io:allocated!>
+
+~proc cert-compose|zig {
+    defer symFree(outer);
+    defer symFree(inner);
+    const alloc = koru_allocator();
+    var ca = certParse(alloc, outer) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
+    defer certFree(alloc, &ca);
+    var cb = certParse(alloc, inner) catch return .{ .bad_cert = ownedCopy("malformed-cert") };
+    defer certFree(alloc, &cb);
+    return .{ .not_holonomic = ownedCopy("not-generally-holonomic:exp(exp(x))-obstruction") };
+}
