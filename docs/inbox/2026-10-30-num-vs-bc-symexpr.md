@@ -140,26 +140,43 @@ constructors. That maps cleanly:
   name the axis, exactly the isar-proofs contract.
 - **Factorization/decomposition** = another law set (common-factor lift,
   difference of squares); partial by nature → named refusal arms.
-- **"Discovery"** — two real plex precedents, not one. `compiler_miner`
-  mines rewrite rules out of FASM source corpora (rules *from sources*).
-  And `plex-agent/three-tier-training.md` — the example/usage-driven
-  push that was remembered: a three-tier synthesis architecture where
-  Tier 1 synthesizes a compiler for an *unknown formal language* from
-  unlabeled data via **Futamura projection + confluence clustering**
-  (`auto_label_by_confluence` — samples that reach the same normal form
-  share a cluster, and each cluster induces a rewrite rule), Tier 2
-  meta-learns *strategy* (rule ordering) over known rules, Tier 3 is the
-  open domain. So "functions discovered from examples" was real and
-  designed — rules induced by NF-equivalence over observed data.
+- **"Discovery"** — three precedents, only one of which ever ran.
+  (a) `compiler_miner` mines rewrite rules out of FASM source corpora —
+  rules *from sources*. (b) The dialect-synthesis lane:
+  `plex-agent/three-tier-training.md` + `isar-system.py` — Futamura
+  projection + confluence clustering (`auto_label_by_confluence`), Tier 2
+  rule-ordering, Tier 3 open domains. Real as *design*; the Python calls
+  `FutamuraProjection`/`StrategyLearner` which are never defined —
+  pseudocode, never run. (c) **The working example — the one that was
+  actually remembered**: `isar-proofs/scratch/
+  isar_holonomic_closure_algebra.py` (SupGen, session doc
+  `docs/holonomic_closure_and_isar_session.md`, runs green 2026-10-31).
+  It *discovers* a function's defining law — `derive_holonomic_ode`
+  finds a polynomial-coefficient linear ODE for an expression by
+  undetermined coefficients over a series residual, solved by exact
+  linear algebra and verified residual=0 — then **levels it up**:
+  `integral_closure` derives the antiderivative's certificate as the
+  algebraic shift of the seed's (∫e^{-x²} → erf-class generator,
+  ∫∫ → chain verified against x·erf(x)+e^{-x²}/√π); product/sum
+  closure compose generators; composition is *proven impossible in
+  general* (Bell-number growth bound — a refusal theorem, not a gap).
+  That is "integral from usage": the integral's law derived from the
+  integrand's law, not a table. Fib fits the same machinery — a linear
+  recurrence is a constant-coefficient holonomic certificate.
 
   For Koru the translation lands at three depths: numeric transcendentals
-  arrive as **series impls over the dec core** (defining-law lane — exp
-  by Taylor, sqrt by Newton, both already proven in plex `math.py`); the
-  deriv/integral/factor tables are declared data first; and the genuine
-  discovery rung is **confluence-mining over the Koru corpus** — cluster
-  expressions by computed normal form, emit candidate rewrite rules, e.g.
-  `m/s * s` → `m` instances cluster into the composition law as *data*.
-  That is a compiler-side analysis tool, not a runtime primitive.
+  arrived as **series impls over the dec core** (rung 1, landed); the
+  deriv/integral/factor tables are declared data first (rung 4); and the
+  genuine discovery rung is **SupGen over the sym/Dec tower** — a
+  `derive` tor that computes a series expansion at declared precision,
+  searches for a polynomial-coefficient linear relation within bounds,
+  verifies the residual, and *registers the certificate* — with
+  "not found within bounds" as a named refusal (never a non-holonomicity
+  claim). `integral` then becomes `integral_closure`-style level-up on
+  certificates, and corpus/confluence mining induces rewrite rules as
+  data — the compiler-side lane. The TAXONOMY §5.3 e-graph synthesizer
+  (I/O-example → program, `extract_best`) stays a third, unrealized
+  design lane.
 
 ## Proposed order
 
