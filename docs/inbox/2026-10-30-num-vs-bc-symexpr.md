@@ -327,3 +327,20 @@ Tests: 615_039 (sym ops, mixed promotion, exact cancel, mag union),
 add). Existing call sites gained the mandatory `|sym-unc` arm; 615_026
 exercises the `|num` arm of the new mag union. 615 cluster 32/32, 610
 control 19/19, leak checker on.
+
+
+## Landed 2026-10-31 — `sym.supgen` part (SupGen rung 1)
+
+`~part supgen` joins `koru_std/sym.supgen.kz`: exact rationals `Rat = n/d`
+over bigints, power-series arithmetic (`series` tor — coefficients of any
+grammar expression are rational; `| non-rational` for pi/e/phi constants,
+`| non-analytic` for poles/zero-constant sqrt), and `derive-ode` — bounded
+holonomic ODE discovery: enumerate (order, degree) inside declared bounds,
+build the series residual, RREF the linear system over Q, take the null
+vector, verify the residual on 13 terms the solve never saw, integerize,
+emit `ode(k=K,d=D,verified=N)|p0=[...]|p1=[...]` — or `| not-found`
+(within bounds, never nonexistence).
+
+Verified live: `1/(1-x) -> f = (1-x)f'`; `sqrt(1+x) -> 2(1+x)f' = f`;
+`1/(1+x^2) -> (1+x^2)f' + 2x f = 0`. Every function in the current grammar
+is D-finite, so a certificate always exists at sufficient bounds.

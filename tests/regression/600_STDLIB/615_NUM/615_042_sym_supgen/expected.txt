@@ -1,0 +1,8 @@
+terms=8:1,1,1,1,1,1,1,1
+ode(k=1,d=1,verified=25)|p0=[1,0]|p1=[-1,1]
+terms=8:1,1/2,-1/8,1/16,-5/128,7/256,-21/1024,33/2048
+ode(k=1,d=1,verified=25)|p0=[-1,0]|p1=[2,2]
+ode(k=1,d=2,verified=27)|p0=[0,2,0]|p1=[1,0,1]
+non-rational
+non-analytic
+not-found
