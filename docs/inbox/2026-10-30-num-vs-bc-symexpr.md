@@ -261,7 +261,21 @@ normalizer makes refusal arms unfreeable.
 Tests: 615_037 (canon laws), 615_038 (refusals + taint boundary). 615
 cluster 30/30, 610 control 19/19, leak checker on.
 
-Still open in rung 3: the `sym:deriv` table.
+## Rung 4 landed (2026-10-31) — `sym:deriv`
+
+Structural differentiation w.r.t. a new free variable: `x` joined
+`ATOMS[3]` — π/e/φ stay named constants (deriv -> 0), x -> 1. Rules:
+add termwise; product rule over the canonical factor list;
+inv(f) -> -f'·inv(f)·inv(f); sq(f) -> f'·(1/2)·inv(sq f). The result
+runs through the same norm, so derivates land canon — verified:
+x·x·x -> (3e0*x*x), inv(x) -> (-1e0*inv(x)*inv(x)),
+√(x) -> (5e-1*inv(√(x))), x/x -> 0e0 (x/x canons to 1 first).
+
+615 cluster 33/33 (new 615_041), leak checker on.
+
+That is the last canon-side primitive SupGen needs above series level:
+a certificate's ODE terms are deriv-chains over x, and the linear
+algebra itself is Dec rows — the same tower.
 
 ## Rung 3b landed (2026-10-31) — symbolic `<mag>` lane in std/quantity
 

@@ -1,7 +1,8 @@
 // std/sym — symbolic scalar expressions with a canonical normal form.
 //
 // A `sym` is a CANONICAL expression string over the decimal kernel:
-//   atoms    π, e, φ            (the kernel's SymExpr atom lane)
+//   atoms    π, e, φ            (named constants — derive to zero)
+//   variable x                  (the free variable — sym:deriv w.r.t. x)
 //   radical  √( <expr> )
 //   inverse  inv( <expr> )      (a/b normalizes to a*inv(b))
 //   product  ( <e1> * <e2> * ... )   coefficient first, then factors sorted
@@ -23,6 +24,10 @@
 //     decimal radicand refuses on |neg-root
 //   - equal √ factors pair to their radicand (√2*√2 -> 2) when the
 //     radicand is provably nonneg (dec >= 0 or a positive atom)
+//   - coeff*inv(dec) reduces the rational to lowest terms, so the canon
+//     for a value is the reduced fraction: 4*inv(6e1) -> inv(1.5e1),
+//     which is what a fresh "1/15" produces
+//   - inv(-d) -> -1*inv(d): the sign lives on the coefficient
 //
 // What NF does NOT do: no distributive factoring, no trig/ident tables,
 // no power node (π*π stays a product — a pow canon is a later rung).
@@ -357,7 +362,7 @@ fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
 // Canon render
 // ============================================================================
 
-const ATOMS = [_][]const u8{ "π", "e", "φ" };
+const ATOMS = [_][]const u8{ "π", "e", "φ", "x" };
 
 fn canonWrite(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(u8)) !void {
     switch (n.kind) {
@@ -500,6 +505,10 @@ fn parseFactor(c: *ParseCtx) anyerror!*SNode {
     if (cp == 'e' and (c.i + 1 >= c.s.len or !std.ascii.isDigit(c.s[c.i + 1]))) {
         c.i += 1;
         return nodeAtom(c.alloc, 1);
+    }
+    if (cp == 'x') {
+        c.i += 1;
+        return nodeAtom(c.alloc, 3);
     }
     if (std.ascii.isDigit(c.s[c.i]) or c.s[c.i] == '.') {
         // scan the decimal: digits [. digits] [eE [-+] digits]
@@ -1013,6 +1022,106 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
 }
 
 // ============================================================================
+// Symbolic differentiation — w.r.t. the free variable x (atom 3).
+// dec -> 0; const atoms -> 0; x -> 1; add -> termwise; mul -> product
+// rule over the factor list; inv(f) -> -f'·inv(f)·inv(f);
+// sq(f) -> f'·(1/2)·inv(sq f). Built raw, normalized once at the top.
+// ============================================================================
+
+fn deriveNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
+    switch (n.kind) {
+        .dec => return nodeDec(alloc, try decZero(alloc)),
+        .atom => return nodeDec(alloc, if (n.atom == 3) try decOneN(alloc, false) else try decZero(alloc)),
+        .add => {
+            var kids = try std.ArrayList(*SNode).initCapacity(alloc, n.kids.len);
+            errdefer {
+                for (kids.items) |k| nodeFree(alloc, k);
+                kids.deinit(alloc);
+            }
+            for (n.kids) |k| try kids.append(alloc, try deriveNode(alloc, k));
+            return nodeList(alloc, .add, try kids.toOwnedSlice(alloc));
+        },
+        .mul => {
+            var terms = try std.ArrayList(*SNode).initCapacity(alloc, n.kids.len);
+            errdefer {
+                for (terms.items) |t| nodeFree(alloc, t);
+                terms.deinit(alloc);
+            }
+            for (n.kids, 0..) |k, i| {
+                const dk = try deriveNode(alloc, k);
+                if (dk.kind == .dec and dk.dec.m.eqlZero()) {
+                    nodeFree(alloc, dk);
+                    continue;
+                }
+                var kids = try std.ArrayList(*SNode).initCapacity(alloc, n.kids.len);
+                errdefer {
+                    for (kids.items) |f| nodeFree(alloc, f);
+                    kids.deinit(alloc);
+                }
+                try kids.append(alloc, dk);
+                for (n.kids, 0..) |k2, j| {
+                    if (j == i) continue;
+                    try kids.append(alloc, try nodeClone(alloc, k2));
+                }
+                try terms.append(alloc, try nodeList(alloc, .mul, try kids.toOwnedSlice(alloc)));
+            }
+            if (terms.items.len == 0) return nodeDec(alloc, try decZero(alloc));
+            if (terms.items.len == 1) {
+                const t = terms.items[0];
+                terms.deinit(alloc);
+                return t;
+            }
+            return nodeList(alloc, .add, try terms.toOwnedSlice(alloc));
+        },
+        .inv => {
+            const dk = try deriveNode(alloc, n.kid);
+            errdefer nodeFree(alloc, dk);
+            if (dk.kind == .dec and dk.dec.m.eqlZero()) {
+                nodeFree(alloc, dk);
+                return nodeDec(alloc, try decZero(alloc));
+            }
+            var kids = try std.ArrayList(*SNode).initCapacity(alloc, 4);
+            errdefer {
+                for (kids.items) |f| nodeFree(alloc, f);
+                kids.deinit(alloc);
+            }
+            try kids.append(alloc, try nodeDec(alloc, try decOneN(alloc, true)));
+            try kids.append(alloc, dk);
+            try kids.append(alloc, try nodeUnary(alloc, .inv, try nodeClone(alloc, n.kid)));
+            try kids.append(alloc, try nodeUnary(alloc, .inv, try nodeClone(alloc, n.kid)));
+            return nodeList(alloc, .mul, try kids.toOwnedSlice(alloc));
+        },
+        .sq => {
+            const dk = try deriveNode(alloc, n.kid);
+            errdefer nodeFree(alloc, dk);
+            if (dk.kind == .dec and dk.dec.m.eqlZero()) {
+                nodeFree(alloc, dk);
+                return nodeDec(alloc, try decZero(alloc));
+            }
+            var kids = try std.ArrayList(*SNode).initCapacity(alloc, 3);
+            errdefer {
+                for (kids.items) |f| nodeFree(alloc, f);
+                kids.deinit(alloc);
+            }
+            try kids.append(alloc, try nodeDec(alloc, try decFromDigits(alloc, "5", -1, false)));
+            try kids.append(alloc, dk);
+            try kids.append(alloc, try nodeUnary(alloc, .inv, try nodeUnary(alloc, .sq, try nodeClone(alloc, n.kid))));
+            return nodeList(alloc, .mul, try kids.toOwnedSlice(alloc));
+        },
+    }
+}
+
+fn symDeriv(alloc: std.mem.Allocator, a: []const u8) ![]u8 {
+    const ta = try parseTree(alloc, a);
+    defer nodeFree(alloc, ta);
+    const dt = try deriveNode(alloc, ta);
+    defer nodeFree(alloc, dt);
+    const nt = try norm(alloc, dt);
+    defer nodeFree(alloc, nt);
+    return canonOf(alloc, nt);
+}
+
+// ============================================================================
 // Boundary helpers
 // ============================================================================
 
@@ -1268,4 +1377,13 @@ fn ownedCopy(s: []const u8) []u8 {
         else => @panic("std/sym:pow: malformed operand"),
     };
     return .{ .exact = r };
+}
+
+// d/dx of a canonical sexpr — structural rules over the NF, result
+// normalized through the same norm, so deriv lands canon.
+~pub tor deriv { a: string<!sexpr> } -> string<sexpr!>
+
+~proc deriv|zig {
+    defer symFree(a);
+    return symDeriv(koru_allocator(), a) catch @panic("std/sym:deriv: malformed operand");
 }
