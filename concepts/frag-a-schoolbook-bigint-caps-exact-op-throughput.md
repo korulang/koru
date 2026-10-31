@@ -6,18 +6,21 @@ ts: 2026-10-31
 tags: [num, performance, bigint, measurement]
 ---
 
-Zig's `std.math.big.int.Managed.mul` is schoolbook O(n²). Every exact
-`std/num` op (mul, pow, div, mod) and every fixed-point series underneath
-`exp`/`ln`/`trig`/`atan`/`powf` rides on it, so at ~2000 digits a
-Karatsuba-capable bigint (python `int`/`decimal`) wins exact ops 30–600×
-while `bc`'s interpreted Taylor loops lose to koru's compiled ones 2–16×.
+EVOLVED (same day, same rig): the schoolbook ceiling is GONE for
+multiplication. `num.kz` now carries its own limb layer — `mulL`
+Karatsuba over `[]Limb` with arena scratch, `addL`/`subL`/`addInto`,
+routed through `mulFast` at every `Managed.mul` call site, KARA_MIN=24
+limbs; `pow10` and `pow` use binary exponentiation (`pow10` was a linear
+×10 loop — the silent second cost). Transcendentals dropped 5.6–9.4×;
+koru beats bc on 9/10 workloads and beats python-Taylor on ln and powf.
 
-The belief: koru's arithmetic *semantics* are verified to the last digit
-(full 47713-digit agreement on 3^100000, full 3001-digit agreement on
-sqrt(2) vs `math.isqrt`); the *throughput* ceiling is the multiplication
-algorithm, not codegen and not Debug-vs-Release (Debug is a further
-17–39× slower on top). Any future num-perf work starts at `decMul`'s
-limb path — Karatsuba at a limb threshold — not at call sites.
+What it cost to learn: `Managed.limbs` is magnitude only — sign lives in
+`metadata`/`positive`. A magnitude-multiplying limb path silently
+positivizes every product; mantissa-only call sites looked correct while
+signed fixed-point (alternating Taylor) broke. Propagate sign at the
+Managed boundary, never inside limbs.
 
-Open: whether a Koru-side Karatsuba belongs in `std/num` or waits for
-upstream Zig bigint (std.math.big has open perf issues).
+Remaining measured ceilings, in order: (1) decimal conversion —
+`pow`'s ~315ms on 3^100000 is `toString`+`decFromDigits` round-trip,
+not mul; (2) `divTrunc` schoolbook long division (w3/w9 unchanged);
+(3) KARA_MIN is a reasoned default, not a swept optimum.
