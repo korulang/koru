@@ -385,3 +385,25 @@ Scheduled next rungs on this lane, in order:
   extensions would declare their own carrier/group laws + canon +
   conversion policy behind a seam. Design only — low priority.
 
+## Landed 2026-10-31 — cert-sum/cert-prod closure (SupGen rung 2 done)
+
+~part certcomp joins koru_std/sym.certcomp.kz: polynomials over Rat,
+rational functions over Q(x) (gcd-reduced, den-monic), and the
+companion-basis elimination from the Python artifact. A cert with
+nonzero leading p_m gives the rewrite g^(m) = sum -p_k/p_m g^k; the
+derivative stays inside a finite span (sum: dim m+n, product: dim m*n),
+so h..h^dim are dependent over Q(x) — augmented Gauss-Jordan finds the
+minimal dependency, and that IS the ODE (theorem-level, via=sum/prod —
+no finite witness needed; HolonomicClosure.lean proves the theorems).
+
+Verified live: e^x + e^x -> f-f=0; e^x * e^x -> h=2h; e^x + 1/(1-x)
+-> order-2 ODE checked by hand against g'=g^2, g''=2g^3. cert-compose
+validates then refuses by name: not-generally-holonomic
+exp(exp(x))-obstruction — Stanley 1980 / exp_exp_not_holonomic, a
+theorem, never a search.
+
+Remaining scheduled rungs: cert registry (accumulate named laws keyed on
+sym-canon identity, lookup before re-derivation), the verified=N to
+theorem upgrade via the P-recursive bridge + shiftBound, then the
+non-SI extension surface design.
+

@@ -1,0 +1,4 @@
+ode(k=1,d=0,via=sum)|p0=[-1]|p1=[1]
+ode(k=1,d=0,via=prod)|p0=[-2]|p1=[1]
+ode(k=2,d=2,via=sum)|p0=[-1,-1]|p1=[1,2,-1]|p2=[0,-1,1]
+not-generally-holonomic:exp(exp(x))-obstruction
