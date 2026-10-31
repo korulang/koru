@@ -1,0 +1,55 @@
+// std/num:powf — a^e for real e via exp(e*ln a). Integral non-negative
+// exponents take the exact pow path. Negative base is |neg-base (complex is
+// out of scope); a==0 with e<=0 is |non-pos; huge results |overflow.
+import std/io
+import std/num
+
+std/num:lit(s: "4")
+| exact a |> std/num:lit(s: "0.5")
+    | exact b |> std/num:powf(a, e: b, prec: 30)
+        | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
+        | neg-base |> std/io:print.ln("nb")
+        | non-pos |> std/io:print.ln("np")
+        | overflow |> std/io:print.ln("of")
+    | bad y |> std/io:print.ln("bad-b")
+| bad x |> std/io:print.ln("bad-a")
+
+std/num:lit(s: "2")
+| exact a |> std/num:lit(s: "0.5")
+    | exact b |> std/num:powf(a, e: b, prec: 30)
+        | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
+        | neg-base |> std/io:print.ln("nb")
+        | non-pos |> std/io:print.ln("np")
+        | overflow |> std/io:print.ln("of")
+    | bad y |> std/io:print.ln("bad-b")
+| bad x |> std/io:print.ln("bad-a")
+
+std/num:lit(s: "4")
+| exact a |> std/num:lit(s: "2")
+    | exact b |> std/num:powf(a, e: b, prec: 30)
+        | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
+        | neg-base |> std/io:print.ln("nb")
+        | non-pos |> std/io:print.ln("np")
+        | overflow |> std/io:print.ln("of")
+    | bad y |> std/io:print.ln("bad-b")
+| bad x |> std/io:print.ln("bad-a")
+
+std/num:lit(s: "-4")
+| exact a |> std/num:lit(s: "0.5")
+    | exact b |> std/num:powf(a, e: b, prec: 20)
+        | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
+        | neg-base |> std/io:print.ln("powf:neg-base")
+        | non-pos |> std/io:print.ln("np")
+        | overflow |> std/io:print.ln("of")
+    | bad y |> std/io:print.ln("bad-b")
+| bad x |> std/io:print.ln("bad-a")
+
+std/num:lit(s: "0")
+| exact a |> std/num:lit(s: "-1")
+    | exact b |> std/num:powf(a, e: b, prec: 20)
+        | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
+        | neg-base |> std/io:print.ln("nb")
+        | non-pos |> std/io:print.ln("powf:non-pos")
+        | overflow |> std/io:print.ln("of")
+    | bad y |> std/io:print.ln("bad-b")
+| bad x |> std/io:print.ln("bad-a")
