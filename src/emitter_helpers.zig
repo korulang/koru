@@ -1658,7 +1658,7 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool, needs_
     try emitter.write("            @trap();\n");
     try emitter.write("        }\n");
     try emitter.write("    } else {\n");
-    try emitter.write("        @import(\"std\").debug.print(\"KORU LEAK CHECK FAILED: the produced program leaked (trace above)\\n\", .{});\n");
+    try emitter.write("        @import(\"std\").debug.print(\"KORU LEAK CHECK FAILED: the produced program leaked count={d}\\n\", .{__koru_leak_count.load(.acquire)});\n");
     try emitter.write("        @import(\"std\").process.exit(1);\n");
     try emitter.write("    }\n");
     try emitter.write("}\n\n");
