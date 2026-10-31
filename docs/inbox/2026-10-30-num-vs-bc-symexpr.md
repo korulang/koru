@@ -1,7 +1,9 @@
 # std/num vs bc — feature matrix, and the SymExpr rung
 
-Tree: `quantity-numbers` @ 3554fb90e. Measured against GNU bc 1.07.1
-(`/usr/bin/bc`) live this session, `plex/lib/std/math.py`, and
+Tree: `quantity-numbers` @ 3554fb90e + working tree (num/quantity `bad`
+ownership fix + qcalc, uncommitted at note time). Measured against GNU bc
+1.07.1 (`/usr/bin/bc`) live this session, `plex/lib/std/math.py`,
+`plex-agent/three-tier-training.md`, and
 `isar-proofs/src/ISAR/QuantityKernel.lean`.
 
 ## The race, honestly scored
@@ -13,7 +15,7 @@ Tree: `quantity-numbers` @ 3554fb90e. Measured against GNU bc 1.07.1
 | `+ − ×` | ✓ | ✓ exact | ✓ | parity |
 | `/` | ✓ scale-bound | ✓ prec-gated, `|div-zero` | ✓ | koru ahead — bc's scale is ambient state, koru's prec is an argument |
 | `^` | integer only; `2^0.5` → `1` + warning (**silent truncation**) | integer only, `|neg-exp` | int + frac via sqrt/exp | parity — but bc's non-integer path silently degrades; koru's next rung is fractional pow via exp/ln |
-| `sqrt` | `-l` only, fixed 20 digits | ✓ `prec` argument | Newton | koru ahead on precision control |
+| `sqrt` | `-l` only, `scale`-bound | ✓ `prec` argument | Newton | parity-ish — bc honors scale here; koru's prec is still an argument, not ambient state |
 | `%` | ✓ | **missing** | — | bc ahead |
 | `ibase`/`obase` | 2..16 | **missing** | base_systems (2/8/10/16) | bc ahead; plex had it |
 | `s/c/a` trig | `-l` | **missing** | — | bc ahead |
@@ -32,6 +34,42 @@ Tree: `quantity-numbers` @ 3554fb90e. Measured against GNU bc 1.07.1
 it), honest precision (bc's two silent degradations would be named refusals
 here), and an entire second layer (dims + uncertainty + covariance) bc has
 no concept of.
+
+## Speed / memory vs bc (measured, `/usr/bin/time -v`)
+
+| workload | koru | bc | reading |
+|---|---|---|---|
+| `2^200000` (~60k digits, print) | **6.91 s**, 3.2 MB | **0.22 s**, 2.3 MB | bc ~31× faster. Our `pow` calls `BI.pow` once on the mantissa — the gap is limb-multiplication speed in `std.math.big` vs bc's hand-tuned bignum, not the pipeline. Named, not hidden. |
+| `sqrt(2)` @ 1000 digits | ~0.01 s, 3.1 MB | ~0.01 s, 2.1 MB | parity |
+| `1/7` @ 2000 digits | ~0.02 s, 3.1 MB | ~0.00 s, 2.1 MB | bc faster but small absolute |
+
+Footprint: ~+1 MB RSS constant (our binary's runtime) vs bc's ~2 MB lean
+interpreter. Parity at small precision; a real bigint-speed gap at large
+exponents — worth knowing, not worth fixing before the surface is complete
+(a faster pow is a `BI` swap or repeated-squaring with truncation policy,
+both internal).
+
+## qcalc — a working calculator over this surface
+
+`examples/qcalc/qcalc.k` — stdin lines `<qty> ; <add|sub|mul|div> ; <qty>`,
+`std/regex:match` arms for both line grammar and op dispatch. Live output:
+
+    5 m/s ; mul ; 3 s            → 1.5e1|m^1 s^0 ...        (15 m)
+    5 m/s ; div ; 2 s            → 2.5e0|m^1 s^-2 ...       (2.5 m/s²)
+    4 N ; mul ; 2 m              → 8e0|m^2 s^-2 kg^1 ...    (≡ 8 J)
+    2.0+-0.1 m ; add ; 1.0+-0.1 m → 3e0|...|1.41e-1         (quadrature)
+    2+-0.1@bias m ; sub ; 1+-0.1@bias m → 1e0|...|-         (bias cancels)
+    2+-0.1@a m ; add ; 1+-0.1@b m → mixed-cov               (refusal)
+    2 m ; add ; 3 s              → dim-mismatch             (refusal)
+    5 kg ; pow ; 3 s             → unknown op: pow          (refusal)
+
+Writing it found a real stdlib leak: `num:parse`'s `|bad` returned the
+owned input buffer *before* its free ran, presented as unmarked `string`.
+Ruling now landed: **`bad` on parse boundaries carries
+`string<std/io:allocated!>`** — ownership transfers to the receiver,
+`io:free` disposes, the leak checker can see it. `quantity:lit`'s `bad`
+stays an unmarked message (the caller wrote the literal; impl frees the
+buffers). Pinned by `615_032_parse_bad_ownership`.
 
 ## Missing surface, ranked
 
@@ -102,16 +140,26 @@ constructors. That maps cleanly:
   name the axis, exactly the isar-proofs contract.
 - **Factorization/decomposition** = another law set (common-factor lift,
   difference of squares); partial by nature → named refusal arms.
-- **"Discovery"** — the real plex precedent is `compiler_miner`
-  (mines rewrite rules out of FASM source corpora) plus math.py's
-  series-derived functions (`exp` by Taylor, `sqrt` by Newton — functions
-  discovered *from their defining laws*, not from examples). For Koru the
-  translation is: numeric transcendentals arrive as **series impls over
-  the dec core** (the defining-law lane, already proven in plex), and the
-  rule-table lane (deriv/integral/factor tables) is where corpus-mining
-  could later feed — mine candidate antiderivatives/identities from the
-  test corpus the way compiler_miner mined macros. That's a later rung;
-  the tables are declared data first.
+- **"Discovery"** — two real plex precedents, not one. `compiler_miner`
+  mines rewrite rules out of FASM source corpora (rules *from sources*).
+  And `plex-agent/three-tier-training.md` — the example/usage-driven
+  push that was remembered: a three-tier synthesis architecture where
+  Tier 1 synthesizes a compiler for an *unknown formal language* from
+  unlabeled data via **Futamura projection + confluence clustering**
+  (`auto_label_by_confluence` — samples that reach the same normal form
+  share a cluster, and each cluster induces a rewrite rule), Tier 2
+  meta-learns *strategy* (rule ordering) over known rules, Tier 3 is the
+  open domain. So "functions discovered from examples" was real and
+  designed — rules induced by NF-equivalence over observed data.
+
+  For Koru the translation lands at three depths: numeric transcendentals
+  arrive as **series impls over the dec core** (defining-law lane — exp
+  by Taylor, sqrt by Newton, both already proven in plex `math.py`); the
+  deriv/integral/factor tables are declared data first; and the genuine
+  discovery rung is **confluence-mining over the Koru corpus** — cluster
+  expressions by computed normal form, emit candidate rewrite rules, e.g.
+  `m/s * s` → `m` instances cluster into the composition law as *data*.
+  That is a compiler-side analysis tool, not a runtime primitive.
 
 ## Proposed order
 
