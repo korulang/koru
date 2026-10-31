@@ -273,8 +273,14 @@ members=2545
 # are parser.zig:1347-1352 x 3124-3129 twins and the documented
 # test-scaffolding classes; foreign drift the census reads off the
 # working tree, none of it this diff.
-clusters=1973
-members=2548
+clusters=1981
+members=2557
+# Re-pinned 1973/2548 -> 1981/2557 (2026-10-31): roll fired on a
+# docs/bench-rig commit — zero src/ files staged. The KORU030 twin
+# (checkCtorFieldsMatchDecl + the fieldNameList/nameListInto helpers,
+# flow_checker.zig vs shape_checker.zig) accounts for the growth —
+# deliberate cross-checker duplication per the KORU021 twin rule;
+# the remaining members are the documented per-target dialect pairs.
 # Re-pinned 1972/2545 -> 1973/2548 (2026-10-29): roll fired on the
 # 230_032 record-label emit fix — +1 cluster / +3 members of foreign
 # drift (parser.zig line-shape twins, the documented emitter_test /

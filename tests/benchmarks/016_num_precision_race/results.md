@@ -46,12 +46,13 @@ Debug and ReleaseFast outputs are byte-identical.
   `addInto` over `[]Limb`, arena-scratch recursion, sign propagated at
   the boundary (a signed-magnitude `Managed` is *not* a nonnegative one —
   alternating series caught that once).
-- **vs bc**: koru+kara now wins 9 of 10 — transcendentals by 15–142×.
-  Only w2 remains bc's (110 vs 316ms): the residual there is *decimal
-  conversion*, not multiplication — `pow` stringifies 47713 digits then
-  reparses (`toString`+`decFromDigits`, both quadratic-ish), and `divTrunc`
-  is still schoolbook long division (w3/w9 unchanged — that's the next
-  ceiling: Newton-division or chunked conversion).
+- **vs bc**: koru+kara wins 8 of 10 clearly — transcendentals by 15–142×.
+  w1 sits at bc's ~2ms whole-process floor (unmeasurable at this scale,
+  not a bc win); w2 remains bc's (110 vs 316ms): the residual there is
+  *decimal conversion*, not multiplication — `pow` stringifies 47713
+  digits then reparses (`toString`+`decFromDigits`, both quadratic-ish),
+  and `divTrunc` is still schoolbook long division (w3/w9 unchanged —
+  that's the next ceiling: Newton-division or chunked conversion).
 - **vs C decimal/int**: python still wins exact ops — but `ln` (49.9 vs
   104ms) and `powf` (72.5 vs 138ms) now beat the python-Taylor arms:
   a compiled-Karatsuba inner loop outruns interpreted Taylor over a

@@ -204,7 +204,13 @@ members=950
 # are unchanged from the note above (cs_emitter emitAssignment /
 # if_simple x js_emitter — the per-target dialect duplication this
 # baseline already documents). Re-measured on this tree: 854/966.
-clusters=857
+# Re-pinned 857/970 -> 860/970 (2026-10-31): the roll fired on a
+# docs/bench-rig commit — zero src/ files staged. The named offenders
+# are PR #10's KORU030 wall: checkCtorFieldsMatchDecl twinned across
+# flow_checker.zig and shape_checker.zig — deliberate, same rule as
+# the KORU021 twin above it (neither checker module may host the
+# other's helper, so walls are duplicated at both guardians).
+clusters=860
 members=970
 # Re-pinned 854/966 -> 857/970 (2026-10-29): the roll fired on the
 # dice.k terminal-arm revert — zero src/ files staged. The named

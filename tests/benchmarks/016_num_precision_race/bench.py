@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import time, sys
-sys.path.insert(0, "/tmp/korubench")
+import time, sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from operands import *
 from decimal import Decimal, getcontext
 
