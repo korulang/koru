@@ -365,29 +365,79 @@ fn cloneBranch(allocator: std.mem.Allocator, branch: ast.Branch) !ast.Branch {
 fn cloneInvocation(allocator: std.mem.Allocator, invocation: ast.Invocation) !ast.Invocation {
     var args = try allocator.alloc(ast.Arg, invocation.args.len);
     for (invocation.args, 0..) |arg, i| {
-        args[i] = .{
-            .name = try allocator.dupe(u8, arg.name),
-            .value = try allocator.dupe(u8, arg.value),
-        };
+        args[i] = try cloneArg(allocator, arg);
+    }
+
+    var annotations = try allocator.alloc([]const u8, invocation.annotations.len);
+    for (invocation.annotations, 0..) |ann, i| {
+        annotations[i] = try allocator.dupe(u8, ann);
+    }
+
+    var marks = try allocator.alloc([]const u8, invocation.marks.len);
+    for (invocation.marks, 0..) |mark, i| {
+        marks[i] = try allocator.dupe(u8, mark);
+    }
+
+    var return_binding_annotations = try allocator.alloc([]const u8, invocation.return_binding_annotations.len);
+    for (invocation.return_binding_annotations, 0..) |ann, i| {
+        return_binding_annotations[i] = try allocator.dupe(u8, ann);
     }
 
     return .{
         .path = try clonePath(allocator, invocation.path),
         .args = args,
+        .annotations = annotations,
+        .marks = marks,
+        .inserted_by_tap = invocation.inserted_by_tap,
+        .from_opaque_tap = invocation.from_opaque_tap,
         .source_module = if (invocation.source_module.len > 0)
             try allocator.dupe(u8, invocation.source_module)
         else
             "",
+        .variant = if (invocation.variant) |v|
+            try allocator.dupe(u8, v)
+        else
+            null,
+        .return_binding = if (invocation.return_binding) |rb|
+            try allocator.dupe(u8, rb)
+        else
+            null,
+        .return_binding_annotations = return_binding_annotations,
+        .return_destructure = try ast.copyDestructure(allocator, invocation.return_destructure),
+        .return_destructure_named = invocation.return_destructure_named,
+        .inline_body = if (invocation.inline_body) |ib|
+            try allocator.dupe(u8, ib)
+        else
+            null,
+        .preamble_code = if (invocation.preamble_code) |pc|
+            try allocator.dupe(u8, pc)
+        else
+            null,
+    };
+}
+
+fn cloneArg(allocator: std.mem.Allocator, arg: ast.Arg) !ast.Arg {
+    // Field set mirrors ast_functional.cloneArg: source_value /
+    // expression_value / parsed_expression are SHALLOW pointer copies, safe
+    // under the single-compile-arena invariant. Dropping them loses
+    // interpolated-string args — a cloned choke body's
+    // `std/io:print.ln("saw {{ f:s }}")` emitted `__kw("\n", .{})`
+    // (210_199), its format carried only in parsed_expression.
+    return .{
+        .name = try allocator.dupe(u8, arg.name),
+        .value = try allocator.dupe(u8, arg.value),
+        .source_value = arg.source_value,
+        .expression_value = arg.expression_value,
+        .parsed_expression = arg.parsed_expression,
+        .phantom_type = if (arg.phantom_type) |pt| try allocator.dupe(u8, pt) else null,
+        .had_explicit_label = arg.had_explicit_label,
     };
 }
 
 fn cloneArgs(allocator: std.mem.Allocator, args: []const ast.Arg) ![]ast.Arg {
     var result = try allocator.alloc(ast.Arg, args.len);
     for (args, 0..) |arg, i| {
-        result[i] = .{
-            .name = try allocator.dupe(u8, arg.name),
-            .value = try allocator.dupe(u8, arg.value),
-        };
+        result[i] = try cloneArg(allocator, arg);
     }
     return result;
 }
