@@ -440,3 +440,7 @@
 2026-10-31T08:31:43.083Z	960e8f24c	regressed	690_342_indexed_store_bulk_maintains_index
 2026-10-31T08:31:43.083Z	960e8f24c	fixed	210_199_choke_body_keeps_module_qualifier
 2026-10-31T08:31:43.083Z	960e8f24c	fixed	320_021_for_zero_overhead
+2026-10-31T22:02:05.151Z	cc53e1f4e	regressed	210_199_choke_body_keeps_module_qualifier
+2026-10-31T22:02:05.151Z	cc53e1f4e	regressed	310_124_kebab_command_symbol
+2026-10-31T22:02:05.151Z	cc53e1f4e	regressed	320_021_for_zero_overhead
+2026-10-31T22:02:05.151Z	cc53e1f4e	fixed	690_342_indexed_store_bulk_maintains_index
