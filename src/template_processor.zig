@@ -1150,6 +1150,15 @@ fn classifyCellWrite(allocator: std.mem.Allocator, expr: []const u8, target: []c
 /// `for(lo..hi)` under `[parallel]` splits the range arithmetically — a
 /// 200k-item fold can't afford to materialize N first. Detect a bare `lo..hi`
 /// (the `..` at nesting depth 0); anything else materializes as before.
+fn rangeBoundForZig(allocator: std.mem.Allocator, bound: []const u8) ![]const u8 {
+    for (bound) |c| {
+        if (c < '0' or c > '9') {
+            return try std.fmt.allocPrint(allocator, "@as(usize, @intCast({s}))", .{bound});
+        }
+    }
+    return bound;
+}
+
 fn splitRangeExpr(expr: []const u8) ?struct { lo: []const u8, hi: []const u8 } {
     const t = std.mem.trim(u8, expr, " \t\n\r");
     var depth: usize = 0;
@@ -1273,8 +1282,12 @@ pub fn renderTemplateInvocation(
     if (ctx.get("expr")) |v| {
         if (v == .string) {
             if (splitRangeExpr(v.string)) |r| {
-                par_lo = r.lo;
-                par_hi = r.hi;
+                // Host-rule absorption: a Zig for-range demands usize bounds,
+                // so a runtime (non-literal) bound is wrapped here — the
+                // caller's i64 works bare. Integer literals coerce to usize
+                // at comptime and stay literal (320_021 zero-overhead pin).
+                par_lo = try rangeBoundForZig(allocator, r.lo);
+                par_hi = try rangeBoundForZig(allocator, r.hi);
             }
         }
     }

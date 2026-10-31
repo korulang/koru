@@ -3791,12 +3791,17 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("    }\n");
     try code_emitter.write("    return null;\n");
     try code_emitter.write("}\n\n");
-    // Strict variant for ?Expression parameters: no fallback, only explicit expression_value
+    // Strict variant for ?Expression parameters: presence = provided
     try code_emitter.write("fn extractOptionalExprFromArgs(args: []const Arg) ?[]const u8 {\n");
     try code_emitter.write("    for (args) |arg| {\n");
     try code_emitter.write("        if (arg.expression_value) |expr| {\n");
     try code_emitter.write("            return expr.text;\n");
     try code_emitter.write("        }\n");
+    try code_emitter.write("    }\n");
+    try code_emitter.write("    // Cloned/grafted invocations carry the arg as value text — the clone\n");
+    try code_emitter.write("    // drops expression_value (210_199). An arg with text was provided.\n");
+    try code_emitter.write("    if (args.len > 0 and args[0].value.len > 0) {\n");
+    try code_emitter.write("        return args[0].value;\n");
     try code_emitter.write("    }\n");
     try code_emitter.write("    return null;\n");
     try code_emitter.write("}\n\n");
@@ -4654,62 +4659,175 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
 }
 
 /// `.kmd` document emission (docs/KMD.md). The file is an implicit-comptime
-/// module whose residue IS the document: walk items in file order — md
-/// hostlines render through Liquid against `~const` bindings, `~const` feeds
-/// the environment, declarations are consumed structure. Anything else left
-/// over is residue that refuses to compile — never muted into the output.
+/// module whose residue IS the document. Two passes: `~const` bindings —
+/// from the `.kmd` itself AND the modules it imports — are hoisted into a
+/// Liquid environment; then the md hostlines render as whole contiguous
+/// templates (so `{% for %}`/`{% if %}` span lines) while fenced code
+/// samples stay raw. Anything the comptime stage can't consume is a
+/// compile failure, not silent output.
 fn emitKmdDocument(allocator: std.mem.Allocator, source_file: *ast.Program, input_path: []const u8, reporter: *errors.ErrorReporter) !void {
     var ctx = liquid.Context.init(allocator);
-    var doc = std.ArrayList(u8){};
-    const writer = doc.writer(allocator);
 
+    // Pass 1: hoist every `~const` flow into the document environment.
+    // Consts in imported data modules land inside `.module_decl` items —
+    // `~import corpus` IS the data reader. Skip koru_std: the stdlib's own
+    // const calls are machinery, not document data.
     for (source_file.items) |*item| {
         switch (item.*) {
-            .host_line => |hl| {
-                const rendered = try liquid.render(allocator, hl.content, &ctx);
-                try writer.writeAll(rendered);
-                try writer.writeAll("\n");
-            },
-            .import_decl => {},
-            .flow => |*flow| {
-                const node = flow.body.node orelse return error.KmdResidue;
-                if (node != .invocation) return error.KmdResidue;
-                const inv = node.invocation;
-                const is_const = inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "const");
-                if (!is_const) {
-                    // The residue wall: a call that can't be consumed at
-                    // compile time is not silently dropped from the document.
-                    try reporter.addErrorAtLocationWithHint(.KORU120, flow.location, "call `{s}` leaves residue a `.kmd` compile can't consume — comptime call results are not spliced into documents yet", .{inv.path.segments[inv.path.segments.len - 1]}, "declare the binding with `~const`, or wait for the comptime-result splice (docs/KMD.md)", .{});
-                    continue;
-                }
-                // ~const { name: value, ... } → Liquid context bindings.
-                for (inv.args) |arg| {
-                    if (arg.source_value) |src| {
-                        var it = std.mem.tokenizeAny(u8, src.text, "{}\n,");
-                        while (it.next()) |entry| {
-                            const colon = std.mem.indexOfScalar(u8, entry, ':') orelse continue;
-                            const name = std.mem.trim(u8, entry[0..colon], " \t");
-                            const raw = std.mem.trim(u8, entry[colon + 1 ..], " \t");
-                            if (name.len == 0 or raw.len == 0) continue;
-                            if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') {
-                                try ctx.put(name, .{ .string = raw[1 .. raw.len - 1] });
-                            } else if (std.mem.eql(u8, raw, "true") or std.mem.eql(u8, raw, "false")) {
-                                try ctx.put(name, .{ .boolean = std.mem.eql(u8, raw, "true") });
-                            } else {
-                                try ctx.put(name, .{ .string = raw });
-                            }
-                        }
-                    }
+            .flow => |*flow| try kmdEnvFromFlow(allocator, &ctx, flow),
+            .module_decl => |*md| {
+                for (md.items) |*sub| {
+                    if (sub.* == .flow) try kmdEnvFromFlow(allocator, &ctx, &sub.flow);
                 }
             },
             else => {},
         }
     }
 
+    // Pass 2: emit in file order. Non-fence lines accumulate into a
+    // template and render as ONE template per region (multi-line
+    // {% %} blocks work); fenced code lines land raw — a `{{ }}` inside
+    // a ```koru sample is display text, not a placeholder.
+    var doc = std.ArrayList(u8){};
+    const writer = doc.writer(allocator);
+    var tmpl = std.ArrayList(u8){};
+    var fence: ?KmdFenceT = null;
+
+    const flush = struct {
+        fn f(a: std.mem.Allocator, w: anytype, t: *std.ArrayList(u8), c: *liquid.Context) !void {
+            if (t.items.len == 0) return;
+            try w.writeAll(try liquid.render(a, t.items, c));
+            t.clearRetainingCapacity();
+        }
+    }.f;
+
+    for (source_file.items) |*item| {
+        switch (item.*) {
+            .host_line => |hl| {
+                const line = hl.content;
+                if (fence) |*f| {
+                    if (kmdFenceCloseLine(line, f)) {
+                        fence = null;
+                    }
+                    try flush(allocator, writer, &tmpl, &ctx);
+                    try writer.writeAll(line);
+                    try writer.writeAll("\n");
+                } else if (kmdFenceOpenLine(line)) |opened| {
+                    fence = opened;
+                    try flush(allocator, writer, &tmpl, &ctx);
+                    try writer.writeAll(line);
+                    try writer.writeAll("\n");
+                } else {
+                    try tmpl.appendSlice(allocator, line);
+                    try tmpl.append(allocator, '\n');
+                }
+            },
+            .import_decl => {},
+            .flow => |*flow| {
+                const node = flow.body.node orelse return error.KmdResidue;
+                if (node != .invocation) return error.KmdResidue;
+                const inv = node.invocation;
+                const last = inv.path.segments[inv.path.segments.len - 1];
+                // `const` feeds the env; `paths`/`import` are consumed
+                // structure — the residue wall only refuses what would
+                // need a comptime-result splice the doc can't do yet.
+                const consumed = (inv.path.segments.len == 1 and std.mem.eql(u8, last, "const"))
+                    or std.mem.eql(u8, last, "paths");
+                if (!consumed) {
+                    // The residue wall: a call that can't be consumed at
+                    // compile time is not silently dropped from the document.
+                    try reporter.addErrorAtLocationWithHint(.KORU120, flow.location, "call `{s}` leaves residue a `.kmd` compile can't consume — comptime call results are not spliced into documents yet", .{last}, "declare the binding with `~const`, or wait for the comptime-result splice (docs/KMD.md)", .{});
+                    continue;
+                }
+            },
+            else => {},
+        }
+    }
+    try flush(allocator, writer, &tmpl, &ctx);
+
     const file = try std.fs.cwd().createFile("output_emitted.md", .{});
     defer file.close();
     try file.writeAll(doc.items);
     try printStderr(allocator, "✓ Compiled {s} → output_emitted.md ({d} bytes)\n", .{ input_path, doc.items.len });
+}
+
+/// A `~const { … }` flow contributes its bindings to the doc env; any other
+/// flow is not env material. koru_std's own const calls are machinery.
+fn kmdEnvFromFlow(allocator: std.mem.Allocator, ctx: *liquid.Context, flow: *const ast.Flow) !void {
+    const node = flow.body.node orelse return;
+    if (node != .invocation) return;
+    const inv = node.invocation;
+    if (!(inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "const"))) return;
+    if (std.mem.indexOf(u8, flow.location.file, "koru_std") != null) return;
+    for (inv.args) |arg| {
+        if (arg.source_value) |src| try kmdConstToEnv(allocator, ctx, src.text);
+    }
+}
+
+/// `name: value` entries from a `~const { … }` source block → the Liquid
+/// env. Entries split on top-level commas/newlines only — array literals
+/// (`["a", "b"]`) keep their commas and become `Value.array`.
+fn kmdConstToEnv(allocator: std.mem.Allocator, ctx: *liquid.Context, text: []const u8) !void {
+    var depth: i32 = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= text.len) : (i += 1) {
+        const ch = if (i < text.len) text[i] else ',';
+        if (ch == '[' or ch == '{') depth += 1;
+        if (ch == ']' or ch == '}') depth -= 1;
+        const split = (ch == ',' or ch == '\n') and depth <= 0;
+        if (!split) continue;
+        const entry = std.mem.trim(u8, text[start..i], " \t\r\n{}");
+        start = i + 1;
+        const colon = std.mem.indexOfScalar(u8, entry, ':') orelse continue;
+        const name = std.mem.trim(u8, entry[0..colon], " \t");
+        const raw = std.mem.trim(u8, entry[colon + 1 ..], " \t");
+        if (name.len == 0 or raw.len == 0) continue;
+        if (raw.len >= 2 and raw[0] == '[' and raw[raw.len - 1] == ']') {
+            // Liquid arrays iterate *Context records — wrap each scalar as
+            // `{ value: "…" }` so `{% for t in tests %}{{ t.value }}` reads.
+            var vals = std.ArrayList(*liquid.Context){};
+            var it = std.mem.splitScalar(u8, raw[1 .. raw.len - 1], ',');
+            while (it.next()) |piece| {
+                const v = std.mem.trim(u8, piece, " \t\r\n\"'");
+                if (v.len == 0) continue;
+                const elem = try allocator.create(liquid.Context);
+                elem.* = liquid.Context.init(allocator);
+                try elem.put("value", .{ .string = v });
+                try vals.append(allocator, elem);
+            }
+            try ctx.put(name, .{ .array = vals.items });
+        } else if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') {
+            try ctx.put(name, .{ .string = raw[1 .. raw.len - 1] });
+        } else if (std.mem.eql(u8, raw, "true") or std.mem.eql(u8, raw, "false")) {
+            try ctx.put(name, .{ .boolean = std.mem.eql(u8, raw, "true") });
+        } else {
+            try ctx.put(name, .{ .string = raw });
+        }
+    }
+}
+
+const KmdFenceT = struct { char: u8, len: usize };
+
+fn kmdFenceOpenLine(line: []const u8) ?KmdFenceT {
+    var i: usize = 0;
+    while (i < line.len and line[i] == ' ' and i < 4) i += 1;
+    if (i > 3) return null;
+    if (i >= line.len or (line[i] != '`' and line[i] != '~')) return null;
+    var n: usize = 0;
+    while (i + n < line.len and line[i + n] == line[i]) n += 1;
+    if (n < 3) return null;
+    return .{ .char = line[i], .len = n };
+}
+
+fn kmdFenceCloseLine(line: []const u8, f: *const KmdFenceT) bool {
+    var i: usize = 0;
+    while (i < line.len and line[i] == ' ' and i < 4) i += 1;
+    if (i > 3 or i >= line.len or line[i] != f.char) return false;
+    var n: usize = 0;
+    while (i + n < line.len and line[i + n] == f.char) n += 1;
+    if (n < f.len) return false;
+    return std.mem.trim(u8, line[i + n ..], " \t").len == 0;
 }
 
 /// Print "  <name>" padded to a column — one entry of a help listing.
@@ -7943,19 +8061,6 @@ pub fn main() !void {
         source_file = try import_pipeline.mergeEntryCompanions(allocator, parse_allocator, input, source_file, !show_help);
     }
 
-    // `.kmd`: the document is the compile-time residue of an implicit-
-    // comptime module (docs/KMD.md). No backend, no binary — walk items in
-    // file order; md hostlines render through Liquid against ~const
-    // bindings; anything the comptime stage can't consume is a compile
-    // failure, not silent output.
-    if (file_types.koruExtensionOf(std.fs.path.basename(input_file.?))) |input_ext| {
-        if (std.mem.eql(u8, input_ext, ".kmd") and !ast_json_mode and !ast_canon_mode) {
-            try emitKmdDocument(compile_allocator, &source_file, input_file.?, &parser.reporter);
-            try exitOnReportedErrors(&parser.reporter);
-            return;
-        }
-    }
-
     // If --ast-json mode, output AST as JSON (even if there are parse errors)
     // This is crucial for IDE tooling - parse_error nodes in AST show where errors occurred
     if (ast_json_mode) {
@@ -8479,6 +8584,20 @@ pub fn main() !void {
     defer {
         for (combine_result.imported_paths) |p| allocator.free(p);
         allocator.free(combine_result.imported_paths);
+    }
+
+    // `.kmd`: the document is the compile-time residue of an implicit-
+    // comptime module (docs/KMD.md). No backend, no binary — walk items in
+    // file order; md hostlines render through Liquid against ~const
+    // bindings hoisted from the entry AND its imported data modules;
+    // anything the comptime stage can't consume is a compile failure,
+    // not silent output. Runs AFTER combineImports so `~import` lands.
+    if (file_types.koruExtensionOf(std.fs.path.basename(input_file.?))) |input_ext| {
+        if (std.mem.eql(u8, input_ext, ".kmd") and !ast_json_mode and !ast_canon_mode) {
+            try emitKmdDocument(compile_allocator, &source_file, input_file.?, &parser.reporter);
+            try exitOnReportedErrors(&parser.reporter);
+            return;
+        }
     }
 
     // --list-imports: emit transitive resolved canonical paths as a JSON array, then exit.

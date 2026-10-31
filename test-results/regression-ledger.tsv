@@ -444,3 +444,6 @@
 2026-10-31T22:02:05.151Z	cc53e1f4e	regressed	310_124_kebab_command_symbol
 2026-10-31T22:02:05.151Z	cc53e1f4e	regressed	320_021_for_zero_overhead
 2026-10-31T22:02:05.151Z	cc53e1f4e	fixed	690_342_indexed_store_bulk_maintains_index
+2026-10-31T23:06:22.008Z	9a2785fe9	fixed	210_199_choke_body_keeps_module_qualifier
+2026-10-31T23:06:22.008Z	9a2785fe9	fixed	310_124_kebab_command_symbol
+2026-10-31T23:06:22.008Z	9a2785fe9	fixed	320_021_for_zero_overhead

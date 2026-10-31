@@ -38,6 +38,73 @@ const Bulk = struct {
 
     const Range = struct { lo: []const u8, hi: []const u8 };
 
+    /// Does any leaf column carry a std/refine met (bounds or clamp)?
+    /// The same fold the emit prelude runs — refine's own metFields —
+    /// so gate and guard cannot disagree about what a facet says.
+    fn hasFacets(alloc: std.mem.Allocator, prog: *const ast.Program, provs: []const SL.ColProv) bool {
+        if (!@hasDecl(koru_std, "koru_refine")) return false;
+        for (provs) |pv| {
+            const met = koru_std.koru_refine.metFields(alloc, prog, pv.scope, pv.proto, null);
+            for (met) |*mf| {
+                if (!std.mem.eql(u8, mf.name, pv.field)) continue;
+                if (ast_functional.facets.hasTerms(mf) or mf.clamp != null) return true;
+            }
+        }
+        return false;
+    }
+
+    /// The counted `for` site: `std/control:for` with exactly an `expr`
+    /// arg spelling one top-level `lo..hi` range. A `keep` arg, a
+    /// variant, a return binding, a frozen template body — all decline.
+    fn rangeOf(alloc: std.mem.Allocator, iv: *const ast.Invocation) ?Range {
+        const mq = iv.path.module_qualifier orelse return null;
+        if (!std.mem.eql(u8, mq, "std.control") and !std.mem.eql(u8, mq, "std/control")) return null;
+        if (iv.path.segments.len != 1 or !std.mem.eql(u8, iv.path.segments[0], "for")) return null;
+        if (iv.variant != null or iv.return_binding != null or iv.return_destructure.len != 0 or
+            iv.preamble_code != null) return null;
+        // A nested `for` (inside a `|>` chain) already carries its
+        // template's RENDER in `inline_body` — renderNestedTemplates
+        // fills the slot before `new` walks. That render is still a
+        // pending splice: it contains `__koru_inline_*` markers the
+        // emitter resolves against the continuation list. Overwriting
+        // it is safe — the markers die with the text and the arms
+        // stay. Anything else in the slot is not ours to replace.
+        if (iv.inline_body) |ib| {
+            if (std.mem.indexOf(u8, ib, "__koru_inline_") == null and
+                std.mem.indexOf(u8, ib, "__koru_continue_") == null) return null;
+        }
+        var expr: ?[]const u8 = null;
+        for (iv.args) |a| {
+            if (std.mem.eql(u8, a.name, "expr")) {
+                expr = a.value;
+                continue;
+            }
+            return null;
+        }
+        const t = expr orelse return null;
+        const mask = ast.expressionMask(alloc, t);
+        var at: ?usize = null;
+        var depth: i32 = 0;
+        var i: usize = 0;
+        while (i + 1 < t.len) : (i += 1) {
+            if (!mask[i]) continue;
+            switch (t[i]) {
+                '(', '[', '{' => depth += 1,
+                ')', ']', '}' => depth -= 1,
+                '.' => if (depth == 0 and t[i + 1] == '.') {
+                    if (at != null) return null;
+                    if (i + 2 < t.len and t[i + 2] == '.') return null;
+                    at = i;
+                },
+                else => {},
+            }
+        }
+        const j = at orelse return null;
+        const lo = std.mem.trim(u8, t[0..j], " \t\n\r");
+        const hi = std.mem.trim(u8, t[j + 2 ..], " \t\n\r");
+        if (lo.len == 0 or hi.len == 0) return null;
+        return .{ .lo = lo, .hi = hi };
+    }
 
     /// One continuation: if its node is the counted `for` whose each
     /// arm is exactly this store's insert, freeze the bulk block into
@@ -70,7 +137,7 @@ const Bulk = struct {
     /// to leave the site a per-row insert. Every check that cannot
     /// prove the shape declines.
     fn match(alloc: std.mem.Allocator, prog: *const ast.Program, iv: *const ast.Invocation, c: *ast.Continuation, store: []const u8, cap: usize, handles: bool, reactive_min: ?usize, icol: ?[]const u8) ?[]const u8 {
-        const range = bulkRangeOf(alloc, iv) orelse return null;
+        const range = rangeOf(alloc, iv) orelse return null;
         // The range bounds must not read the store being filled — a
         // `0..s.len` hoisted check must see the same `hi` the per-row
         // loop saw.
@@ -127,16 +194,7 @@ const Bulk = struct {
         if (reactive_min) |m| {
             if (each.location.line > m) return null;
         }
-        // C#: the emit has its own arm (`BulkEmit.emitCs`) — but the
-        // `std/indexes` join inside the loop is Zig-shaped register
-        // machinery with no cs port, so an indexed store declines the
-        // bulk lowering here and takes the per-row path instead.
-        const host = storeHostTarget();
-        if (host == .cs and icol != null) return null;
-        const text = if (host == .cs)
-            bulkEmitCs(alloc, prog, store, cap, range, bind, flds, handles)
-        else
-            bulkEmit(alloc, prog, store, cap, range, bind, flds, handles, icol);
+        const text = BulkEmit.emit(alloc, prog, store, cap, range, bind, flds, handles, icol);
         // The bulk block carries the loop — the `each` arm is consumed
         // DATA now, not a live handler. The flag keeps the emitter's
         // Handlers-struct bridge from re-emitting the per-row insert
@@ -150,10 +208,13 @@ const Bulk = struct {
                 .binding = null,
                 .binding_annotations = &.{},
                 .binding_type = .branch_payload,
-                .is_catchall = false, .catchall_metatype = null,
-                .condition = null, .condition_expr = null,
+                .is_catchall = false,
+                .catchall_metatype = null,
+                .condition = null,
+                .condition_expr = null,
                 .node = .{ .terminal = {} },
-                .indent = 0, .continuations = &.{},
+                .indent = 0,
+                .continuations = &.{},
                 .location = each.location,
             };
             c.continuations = nc;

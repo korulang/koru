@@ -2,10 +2,7 @@
 // Joined via `~part bulkemit` in store.kz; merged into the module at load.
 //
 // The bulk-append emit half — token scanners, the insert-field match, and
-// the host text itself. Zig and C# (`emit`/`emitCs`); the caller gates
-// `host_is_js`, and C# declines indexed stores in `match` (the index join
-// is Zig-only).
-// ------------------------------------------------------------------
+// the Zig text itself. Zig only — the caller gates `host_is_js`.
 const BulkEmit = struct {
     const ast = @import("ast");
     const struct_literal = @import("struct_literal");
@@ -105,6 +102,81 @@ const BulkEmit = struct {
             if (std.mem.indexOf(u8, f.value, "__koru_") != null) return null;
         }
         return flds;
+    }
+
+    /// The Zig text. The capacity panic is the per-row path's own
+    /// precondition, hoisted: panic before writing ANY rather than at
+    /// the cap row — @panic aborts either way, unobservable. The bound
+    /// arm's binding becomes `lo + j`; a handle store's loop also mints
+    /// the exact slot sequence `len`-at-a-time inserts produce.
+    fn emit(alloc: std.mem.Allocator, prog: *const ast.Program, store: []const u8, cap: usize, range: Bulk.Range, bind: ?[]const u8, flds: []const struct_literal.StructField, handles: bool, icol: ?[]const u8) []const u8 {
+        var b = std.ArrayList(u8).initCapacity(alloc, 384) catch unreachable;
+        const w = b.writer(alloc);
+        // `//@koru:inline_stmt` — emit as statements, not `[expand]`:
+        // the block's result is void, branch arms are dead data.
+        // `n > cap - len`, not `len + n > cap`: the add can wrap usize
+        // in ReleaseFast when n is huge, and a wrapped check passes —
+        // the per-row path would panic at the cap row instead. `cap -
+        // len` cannot underflow: `len <= cap` is the store's invariant.
+        w.print("//@koru:inline_stmt\n{{\n    const __koru_bulk_lo = ({s});\n    const __koru_bulk_hi = ({s});\n    const __koru_bulk_n = __koru_bulk_hi - __koru_bulk_lo;\n    if (__koru_bulk_n > {d} - __koru_store_{s}.len) @panic(\"std/store: store '{s}' is full (capacity {d}) - declared capacity and the `| full` branch are pinned at 690_011\");\n    const __koru_bulk_base = __koru_store_{s}.len;\n", .{ range.lo, range.hi, cap, store, store, cap, store }) catch unreachable;
+        if (handles) {
+            // `cap - len` is exactly `free_len + (cap - next)` — the
+            // slots this batch can mint — so the hoisted panic covers
+            // the freelist-pop arm too. LIFO pops read the tail down;
+            // survivors are `free[0..frem-n]` when n < frem.
+            w.print("    const __koru_bulk_frem = __koru_store_{s}.__koru_hslot_free_len;\n    var __koru_bulk_fresh = __koru_store_{s}.__koru_hslot_next;\n    const __koru_bulk_idt = __koru_store_{s}.__koru_ident;\n", .{ store, store, store }) catch unreachable;
+        }
+        // `std/indexes:store` — the batch keeps the index: each row joins
+        // its key's bucket like a lone insert. `__koru_im` memoizes the
+        // probed bucket while the key repeats; a boundary re-probes only
+        // when the new key isn't the one just left — `_mk`/`_mp` cache that
+        // bucket, so alternating keys never re-probe. A growing `getOrPut`
+        // can rehash, so `_im`/`_mp` are only ever bound to fresh value_ptrs.
+        // The append is spelled inline: a capacity check plus a direct
+        // member store — measurably cheaper than the method's call shape.
+        if (icol) |ic0| {
+            const iec0 = codegen_utils.escapeZigIdentifier(alloc, ic0) catch ic0;
+            w.print("    var __koru_im: ?*@import(\"std\").ArrayListUnmanaged(i64) = null;\n    var __koru_mp: ?*@import(\"std\").ArrayListUnmanaged(i64) = null;\n    var __koru_mk: @TypeOf(__koru_store_{s}.{s}[0]) = undefined;\n", .{ store, iec0 }) catch unreachable;
+        }
+        w.print("    for (0..__koru_bulk_n) |__koru_bulk_j| {{\n", .{}) catch unreachable;
+        if (handles) {
+            w.print("        const __koru_bulk_slot = if (__koru_bulk_j < __koru_bulk_frem) __koru_store_{s}.__koru_hslot_free[__koru_bulk_frem - 1 - __koru_bulk_j] else blk_hm: {{ const __koru_s2 = __koru_bulk_fresh; __koru_bulk_fresh += 1; break :blk_hm __koru_s2; }};\n        if (!__koru_bulk_idt) {{\n            __koru_store_{s}.__koru_row_hslot[__koru_bulk_base + __koru_bulk_j] = __koru_bulk_slot;\n            __koru_store_{s}.__koru_hslot_row[__koru_bulk_slot] = __koru_bulk_base + __koru_bulk_j;\n        }}\n", .{ store, store, store }) catch unreachable;
+        }
+        if (bind) |bb| {
+            // Emit the binding only when a field expr reads it — Zig
+            // rejects an unused `const i` (390_113's constant fill) and
+            // rejects `_ = i` when i IS used. `useOf` is the arbiter.
+            var used = false;
+            for (flds) |f| {
+                if (useOf(alloc, f.value, bb)) used = true;
+            }
+            if (used) {
+                w.print("        const {s} = __koru_bulk_lo + __koru_bulk_j;\n", .{codegen_utils.escapeZigIdentifier(alloc, bb) catch bb}) catch unreachable;
+            }
+        }
+        for (flds) |f| {
+            const col = codegen_utils.escapeZigIdentifier(alloc, f.name) catch f.name;
+            if (StoreRefHome.refTargetOf(alloc, prog, store, f.name) != null) w.print("        __koru_home_{s}_{s}({s});\n", .{ store, f.name, f.value }) catch unreachable;
+            w.print("        __koru_store_{s}.{s}[__koru_bulk_base + __koru_bulk_j] = {s};\n", .{ store, col, f.value }) catch unreachable;
+        }
+        if (icol) |ic| {
+            const iec = codegen_utils.escapeZigIdentifier(alloc, ic) catch ic;
+            w.print("        const __koru_ik = __koru_store_{s}.{s}[__koru_bulk_base + __koru_bulk_j];\n        if (__koru_bulk_j == 0 or __koru_store_{s}.{s}[__koru_bulk_base + __koru_bulk_j - 1] != __koru_ik) {{\n            const __koru_ol = __koru_im;\n            if (__koru_mp != null and __koru_mk == __koru_ik) {{\n                __koru_im = __koru_mp;\n            }} else {{\n                const __koru_ig = __koru_store_{s}.__index_{s}.getOrPut(koru_allocator(), __koru_ik) catch @panic(\"std/indexes: index insert ran out of memory\");\n                if (!__koru_ig.found_existing) __koru_ig.value_ptr.* = .{{}};\n                __koru_im = __koru_ig.value_ptr;\n            }}\n            if (__koru_ol != null) {{ __koru_mk = __koru_store_{s}.{s}[__koru_bulk_base + __koru_bulk_j - 1]; __koru_mp = __koru_ol; }}\n        }}\n        const __koru_ib = __koru_im.?;\n        if (__koru_ib.items.len == __koru_ib.capacity) __koru_ib.ensureUnusedCapacity(koru_allocator(), 1) catch @panic(\"std/indexes: index insert ran out of memory\");\n        __koru_ib.items.ptr[__koru_ib.items.len] = __koru_store_{s}.__koru_handle_of(__koru_bulk_base + __koru_bulk_j);\n        __koru_ib.items.len += 1;\n", .{ store, iec, store, iec, store, ic, store, iec, store }) catch unreachable;
+        }
+        // `__koru_continue_1` is the done arm's hand-off — always
+        // present at index 1 (real, or the no-op arm `match`
+        // synthesizes). The resolver splices its body after the block.
+        // Written via `{d}` like the marker's four other writers so the
+        // variant-coverage derivation sees `__koru_continue_{}` — the
+        // marker class is already exempted (a splice token, not
+        // emitted code).
+        if (handles) {
+            w.print("    }}\n    __koru_store_{s}.__koru_hslot_free_len = __koru_bulk_frem -| __koru_bulk_n;\n    __koru_store_{s}.__koru_hslot_next = __koru_bulk_fresh;\n    __koru_store_{s}.len += __koru_bulk_n;\n}}\n", .{ store, store, store }) catch unreachable;
+        } else {
+            w.print("    }}\n    __koru_store_{s}.len += __koru_bulk_n;\n}}\n", .{store}) catch unreachable;
+        }
+        w.print("__koru_continue_{d}\n", .{1}) catch unreachable;
+        return b.items;
     }
 
     fn annotate(alloc: std.mem.Allocator, iv: *ast.Invocation) void {
