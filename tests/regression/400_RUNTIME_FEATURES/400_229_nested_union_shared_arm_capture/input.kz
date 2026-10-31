@@ -1,0 +1,41 @@
+// Nested unions sharing an arm name with different payload-ness.
+//
+// Reported by an external user 2026-10-31: `u1.same` is payload-free and
+// `u2.same` carries a string. The emitSubflowContinuationsWithDepth
+// return-switch path forwarded the chain head's event name into nested
+// switches, so the inner `| same g` arm's payload check read `u1.same`
+// (payload-free) and dropped the `|g|` capture — undeclared identifier
+// in the emitted Zig. `.other` survived only because `u1` has no `other`
+// arm and the lookup's not-found default is "has payload".
+//
+// Expected: `u2.same`'s payload binds `g`, frees it, prints `ok`.
+
+~import std/io
+
+~pub tor u1 { } | same | diff
+
+~proc u1|zig {
+    return .{ .same = .{} };
+}
+
+~pub tor u2 { }
+| same string<std/io:allocated!>
+| other string<std/io:allocated!>
+
+~proc u2|zig {
+    return .{ .same = koru_allocator().dupe(u8, "payload") catch @panic("oom") };
+}
+
+~pub tor go { }
+| ok
+| err string<std/io:allocated!>
+
+~go = u1()
+| diff => ok
+| same |> u2()
+    | same g |> std/io:free(content: g) => ok
+    | other g |> std/io:free(content: g) => ok
+
+~go()
+| ok |> std/io:print.ln("ok")
+| err e |> std/io:print.ln("err")

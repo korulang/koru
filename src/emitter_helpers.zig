@@ -3565,6 +3565,19 @@ fn emitSubflowContinuationsWithDepth(
                 (if (st == .invocation) st.invocation.return_binding else null)
             else
                 null;
+            // The child's switch scrutinee is THIS step's fresh
+            // `nested_result_{depth}`, so its payload checks must name this
+            // step's event — not the chain head's, which drops `|bind|`
+            // captures whenever a nested union shares an arm name with a
+            // payload-free arm on an ancestor result.
+            const child_source_event: ?[]const u8 = blk: {
+                if (!next_needs_switch) break :blk null;
+                if (cont.node) |st| {
+                    if (st == .invocation) break :blk buildCanonicalEventName(&st.invocation.path, bindings_alloc, main_module_name) catch null;
+                }
+                break :blk null;
+            };
+            defer if (child_source_event) |cse| bindings_alloc.free(cse);
             try emitSubflowContinuationsWithDepth(
                 emitter,
                 cont.continuations,
@@ -3576,7 +3589,7 @@ fn emitSubflowContinuationsWithDepth(
                 tap_registry,
                 type_registry,
                 main_module_name,
-                source_event_name,
+                child_source_event orelse source_event_name,
                 module_prefix,
                 enclosing_bare_return,
                 enclosing_event,
@@ -4321,7 +4334,19 @@ fn emitSubflowContinuationsWithDepth(
                 if (cont.continuations.len > 0 and !is_metatype_binding) {
                     var deeper_indent_buf: [128]u8 = undefined;
                     const deeper_indent = try indentDeeper(emitter, &deeper_indent_buf, indent, "        ");
-                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, program_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix, enclosing_bare_return, enclosing_event, if (cont.node) |st| (if (st == .invocation) st.invocation.return_binding else null) else null, self_loop_canonical, null, &local_bindings, subtree_refs);
+                    // The nested chain switches on THIS step's
+                    // `nested_result_{last_result_idx}` — payload checks below
+                    // name this step's event, not the chain head's (a shared
+                    // arm name across nested unions dropped the `|bind|`
+                    // capture: armprobe's `u2.same g` keyed against `u1.same`).
+                    const child_source_event: ?[]const u8 = blk: {
+                        if (cont.node) |st| {
+                            if (st == .invocation) break :blk buildCanonicalEventName(&st.invocation.path, bindings_alloc, main_module_name) catch null;
+                        }
+                        break :blk null;
+                    };
+                    defer if (child_source_event) |cse| bindings_alloc.free(cse);
+                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, program_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, child_source_event orelse source_event_name, module_prefix, enclosing_bare_return, enclosing_event, if (cont.node) |st| (if (st == .invocation) st.invocation.return_binding else null) else null, self_loop_canonical, null, &local_bindings, subtree_refs);
                 }
                 } // if (!self_reentry_emitted)
 

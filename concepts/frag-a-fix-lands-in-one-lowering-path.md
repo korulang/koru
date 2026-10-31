@@ -973,3 +973,40 @@ Pinned at 690_376 (plural store: `| then -> arena[h].item + 1` inside a
 tor called from a `| row` arm) and 697_017 (grid twin, same position).
 294/295 on the 690+695+697 slice; the one red is a ledger-known prior
 regression.
+
+## Seventh instance — the context parameter, not a check, is what drifted (2026-10-31)
+
+Every earlier instance is a *check* or a *member list* present on one
+walk and absent on its sibling. This one is a **threaded parameter**:
+`emitContinuationBody`/`emitContinuationList` update
+`ctx.current_source_event` from each step's invocation as the chain
+descends (the per-level scrutinee event — built for tap matching). The
+`emitSubflowContinuationsWithDepth` return-switch fast path lowers the
+same switches and never learned it — `source_event_name` is forwarded
+unchanged into every nested level, so each nested switch's
+payload-capture check asked "does `<head-event>.<arm>` have fields?"
+against the *outermost* union.
+
+An external user's 20-line probe made it visible: `u1.same` payload-free,
+`u2.same` carrying a string, the `u2` match nested inside `u1`'s `same`
+arm — `| same g` emitted `.same => {` with no `|g|` capture and the arm
+body referenced an undeclared `g`. `.other` survived only because `u1`
+has no `other` arm and the not-found default is "has payload" — the
+conservative default masking the same bug on every arm the ancestor
+doesn't happen to share.
+
+- **A stale parameter drifts the same way a missing check does.** Both
+  lowerings computed "does this arm carry a payload" correctly *per se*;
+  the fast path asked the question about the wrong event because the
+  name it consulted was never rebound at depth. The sibling's fix shape —
+  rebind the scrutinee at each descent — transplanted verbatim.
+- **The mask was the default.** `return true` on not-found is the right
+  conservative choice for a lookup that may not see the module — and it
+  also means the bug only fires when the ancestor union *has* the arm
+  and *differs* on payload-ness. Every earlier program either never
+  nested a switch or never collided names; the corpus's green was honest
+  and silent on exactly the distinguishing shape.
+
+Pinned at 400_229: nested unions sharing `same`/`other` arm names across
+`u1`→`u2`, `| same g |> free(content: g)` — `use of undeclared
+identifier 'g'` before, `ok` printed after.

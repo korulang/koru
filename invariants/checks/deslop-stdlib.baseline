@@ -7,6 +7,11 @@
 # committed drift accumulated under rolls that missed (the named
 # cross-file import_decl/event_decl residuals include the concurrent
 # scope-vocabulary feature's new part files).
+# Re-pinned 146/220 -> 146/221 (2026-10-31): the roll fired on
+# the scrutinee-event emitter fix commit (zero .kz staged — src/
+# emitter_helpers.zig, a concept file, and a regression dir). +1
+# member is committed foreign drift landed under rolls that
+# missed; measured at this commit's staged tree.
 # Re-pinned 92/145 -> 92/146 in "signals: define
 # sibling-enforcement-drift": the roll fired on +1 member of
 # foreign koru_std drift (invariants.kz/package.kz/parser.kz/
@@ -59,7 +64,7 @@
 # import_decl quad named by the census) — the documented decl-shell
 # protocol category. Measured 2026-10-28 on the working tree.
 clusters=146
-members=220
+members=221
 skipped=2
 spellings=59
 # 70/111: store.keyed.kz joined io.blk-style import preamble clone w/ interpreter.select.kz (3 shared compiler-module imports, boilerplate)
