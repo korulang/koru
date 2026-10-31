@@ -35,6 +35,8 @@
 const std = @import("std");
 const big = std.math.big;
 const BI = std.math.big.int.Managed;
+const Limb = std.math.big.Limb;
+const DoubleLimb = std.math.big.DoubleLimb;
 
 // ============================================================================
 // Canonical decimal: value = (neg ? -1 : 1) * m * 10^e, m >= 0, no trailing
@@ -146,15 +148,10 @@ fn decToString(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
 
 // r = a * 10^k (k >= 0), into a fresh Managed.
 fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
-    var r = try BI.initSet(alloc, 1);
-    errdefer r.deinit();
+    if (k <= 0) return BI.initSet(alloc, 1);
     var ten = try BI.initSet(alloc, 10);
     defer ten.deinit();
-    var i: i64 = 0;
-    while (i < k) : (i += 1) {
-        try r.mul(&r, &ten);
-    }
-    return r;
+    return biPowFast(alloc, &ten, @intCast(k));
 }
 
 // r = a + b. Caller owns result.
@@ -167,12 +164,12 @@ fn decAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     if (a.e > e_min) {
         var p = try pow10(alloc, a.e - e_min);
         defer p.deinit();
-        try am.mul(&am, &p);
+        try mulFast(&am, &am, &p);
     }
     if (b.e > e_min) {
         var p = try pow10(alloc, b.e - e_min);
         defer p.deinit();
-        try bm.mul(&bm, &p);
+        try mulFast(&bm, &bm, &p);
     }
     if (a.neg) am.negate();
     if (b.neg) bm.negate();
@@ -189,10 +186,191 @@ fn decAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     return decFromDigits(alloc, ds, e_min, rneg);
 }
 
+
+// ---------------------------------------------------------------------------
+// Limb-level multiplication — own algorithm, not Zig's primitives.
+// std.math.big Managed.mul is schoolbook O(n^2) unconditionally; below
+// KARA_MIN limbs it stays the path (proven, small), above it the Karatsuba
+// split takes over: z0=x0y0, z2=x1y1, z1=(x0+x1)(y0+y1)-z0-z2. Recursion
+// allocs ride a per-call arena — thousands of small scratch frees are one
+// deinit. Measured threshold: 016_num_precision_race.
+// ---------------------------------------------------------------------------
+const KARA_MIN: usize = 24;
+
+fn ltrim(x: []Limb) []Limb {
+    var n = x.len;
+    while (n > 0 and x[n - 1] == 0) n -= 1;
+    return x[0..n];
+}
+
+// x + y, normalized (little-endian, no leading zero limbs). empty == 0.
+fn addL(alloc: std.mem.Allocator, x: []const Limb, y: []const Limb) ![]Limb {
+    const a = if (x.len >= y.len) x else y;
+    const b = if (x.len >= y.len) y else x;
+    var r = try alloc.alloc(Limb, a.len + 1);
+    var carry: Limb = 0;
+    var i: usize = 0;
+    while (i < b.len) : (i += 1) {
+        const s = @addWithOverflow(a[i], b[i]);
+        const s2 = @addWithOverflow(s[0], carry);
+        r[i] = s2[0];
+        carry = @as(Limb, s[1]) + s2[1];
+    }
+    while (i < a.len) : (i += 1) {
+        const s = @addWithOverflow(a[i], carry);
+        r[i] = s[0];
+        carry = s[1];
+    }
+    r[a.len] = carry;
+    return ltrim(r);
+}
+
+// x - y, requires x >= y. normalized.
+fn subL(alloc: std.mem.Allocator, x: []const Limb, y: []const Limb) ![]Limb {
+    var r = try alloc.alloc(Limb, x.len);
+    var borrow: Limb = 0;
+    var i: usize = 0;
+    while (i < x.len) : (i += 1) {
+        const yi: Limb = if (i < y.len) y[i] else 0;
+        const d = @subWithOverflow(x[i], yi);
+        const d2 = @subWithOverflow(d[0], borrow);
+        r[i] = d2[0];
+        borrow = @as(Limb, d[1]) + d2[1];
+    }
+    return ltrim(r);
+}
+
+// dst += src in place. dst must have room (the caller's bound guarantees
+// the sum fits; carry past dst.len is a proof violation -> panic).
+fn addInto(dst: []Limb, src: []const Limb) void {
+    var carry: Limb = 0;
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) {
+        const s = @addWithOverflow(dst[i], src[i]);
+        const s2 = @addWithOverflow(s[0], carry);
+        dst[i] = s2[0];
+        carry = @as(Limb, s[1]) + s2[1];
+    }
+    while (carry != 0) : (i += 1) {
+        if (i >= dst.len) @panic("std/num kara: carry overflow");
+        const s = @addWithOverflow(dst[i], carry);
+        dst[i] = s[0];
+        carry = s[1];
+    }
+}
+
+fn mulSB(alloc: std.mem.Allocator, x: []const Limb, y: []const Limb) ![]Limb {
+    if (x.len == 0 or y.len == 0) return alloc.alloc(Limb, 0);
+    var r = try alloc.alloc(Limb, x.len + y.len);
+    @memset(r, 0);
+    var i: usize = 0;
+    while (i < x.len) : (i += 1) {
+        var carry: DoubleLimb = 0;
+        var j: usize = 0;
+        while (j < y.len) : (j += 1) {
+            const t = @as(DoubleLimb, x[i]) * y[j] + r[i + j] + carry;
+            r[i + j] = @truncate(t);
+            carry = t >> @bitSizeOf(Limb);
+        }
+        var k = i + y.len;
+        while (carry != 0) {
+            const t = @as(DoubleLimb, r[k]) + carry;
+            r[k] = @truncate(t);
+            carry = t >> @bitSizeOf(Limb);
+            k += 1;
+        }
+    }
+    return ltrim(r);
+}
+
+// karatsuba over the arena. x.len >= y.len is not required; both orders work.
+fn mulL(alloc: std.mem.Allocator, xin: []const Limb, yin: []const Limb) ![]Limb {
+    var x = xin;
+    var y = yin;
+    if (x.len < y.len) {
+        const t = x;
+        x = y;
+        y = t;
+    }
+    if (y.len == 0) return alloc.alloc(Limb, 0);
+    if (x.len <= KARA_MIN or y.len <= KARA_MIN) return mulSB(alloc, x, y);
+
+    const m = x.len / 2;
+    const x0 = x[0..m];
+    const x1 = x[m..];
+    const y0 = y[0..@min(m, y.len)];
+    const y1 = if (y.len > m) y[m..] else y[0..0];
+
+    const z0 = try mulL(alloc, x0, y0);
+    const z2 = try mulL(alloc, x1, y1);
+    const sx = try addL(alloc, x0, x1);
+    const sy = try addL(alloc, y0, y1);
+    const zt = try mulL(alloc, sx, sy);
+    const w = try subL(alloc, zt, z0);
+    const z1 = try subL(alloc, w, z2);
+
+    var r = try alloc.alloc(Limb, x.len + y.len);
+    @memset(r, 0);
+    @memcpy(r[0..z0.len], z0);
+    addInto(r[m..], z1);
+    addInto(r[2 * m ..], z2);
+    return ltrim(r);
+}
+
+// Managed wrapper: below cutoff Zig's schoolbook stays (proven path);
+// above it our limbs run under one arena.
+fn mulBI(alloc: std.mem.Allocator, a: *const BI, b: *const BI) !BI {
+    const xl = a.toConst().limbs;
+    const yl = b.toConst().limbs;
+    if (xl.len <= KARA_MIN or yl.len <= KARA_MIN) {
+        var r = try BI.init(alloc);
+        errdefer r.deinit();
+        try BI.mul(&r, a, b);
+        return r;
+    }
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const z = try mulL(arena.allocator(), xl, yl);
+    var r = try BI.initCapacity(alloc, @max(z.len, 1));
+    errdefer r.deinit();
+    if (z.len == 0) {
+        r.limbs[0] = 0;
+        r.setLen(1);
+    } else {
+        @memcpy(r.limbs[0..z.len], z);
+        r.setLen(z.len);
+        // limbs are magnitude — the sign lives in metadata and is ours to keep.
+        r.setSign(a.toConst().positive == b.toConst().positive);
+    }
+    return r;
+}
+
+// r = a * b, drop-in for r.mul(&a, &b) — result may alias a/b.
+fn mulFast(r: *BI, a: *const BI, b: *const BI) !void {
+    const z = try mulBI(r.allocator, a, b);
+    r.deinit();
+    r.* = z;
+}
+
+// base^e, binary exponentiation over mulBI (BI.pow muls stay schoolbook).
+fn biPowFast(alloc: std.mem.Allocator, base: *const BI, e0: u64) !BI {
+    var r = try BI.initSet(alloc, 1);
+    errdefer r.deinit();
+    var acc = try base.clone();
+    defer acc.deinit();
+    var e = e0;
+    while (e > 0) {
+        if (e & 1 == 1) try mulFast(&r, &r, &acc);
+        e >>= 1;
+        if (e > 0) try mulFast(&acc, &acc, &acc);
+    }
+    return r;
+}
+
 fn decMul(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     var r = try BI.init(alloc);
     defer r.deinit();
-    try r.mul(&a.m, &b.m);
+    try mulFast(&r, &a.m, &b.m);
     const ds = try r.toString(alloc, 10, .lower);
     defer alloc.free(ds);
     return decFromDigits(alloc, ds, a.e + b.e, a.neg != b.neg);
@@ -217,7 +395,7 @@ fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !De
     defer num.deinit();
     var p = try pow10(alloc, k);
     defer p.deinit();
-    try num.mul(&num, &p);
+    try mulFast(&num, &num, &p);
 
     var q = try BI.init(alloc);
     defer q.deinit();
@@ -247,7 +425,7 @@ fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
     defer x.deinit();
     var p = try pow10(alloc, k);
     defer p.deinit();
-    try x.mul(&x, &p);
+    try mulFast(&x, &x, &p);
 
     var s = try BI.init(alloc);
     defer s.deinit();
@@ -268,12 +446,12 @@ fn decCmpAbs(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !i8 {
     if (a.e > e_min) {
         var p = try pow10(alloc, a.e - e_min);
         defer p.deinit();
-        try am.mul(&am, &p);
+        try mulFast(&am, &am, &p);
     }
     if (b.e > e_min) {
         var p = try pow10(alloc, b.e - e_min);
         defer p.deinit();
-        try bm.mul(&bm, &p);
+        try mulFast(&bm, &bm, &p);
     }
     return switch (am.order(bm)) {
         .lt => -1,
@@ -301,7 +479,7 @@ fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !BI {
     if (k >= 0) {
         var p = try pow10(alloc, k);
         defer p.deinit();
-        try x.mul(&x, &p);
+        try mulFast(&x, &x, &p);
     } else {
         var p = try pow10(alloc, -k);
         defer p.deinit();
@@ -338,7 +516,7 @@ fn fxToDec(alloc: std.mem.Allocator, x: *const BI, w: i64, prec: i64) !Dec {
 fn fxMul(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
     var p = try BI.init(alloc);
     defer p.deinit();
-    try p.mul(a, b);
+    try mulFast(&p, a, b);
     var d = try pow10(alloc, w);
     defer d.deinit();
     var q = try BI.init(alloc);
@@ -355,7 +533,7 @@ fn fxDiv(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
     defer n.deinit();
     var p = try pow10(alloc, w);
     defer p.deinit();
-    try n.mul(&n, &p);
+    try mulFast(&n, &n, &p);
     var q = try BI.init(alloc);
     errdefer q.deinit();
     var rem = try BI.init(alloc);
@@ -370,7 +548,7 @@ fn fxSqrt(alloc: std.mem.Allocator, x: *const BI, w: i64) !BI {
     defer n.deinit();
     var p = try pow10(alloc, w);
     defer p.deinit();
-    try n.mul(&n, &p);
+    try mulFast(&n, &n, &p);
     var s = try BI.init(alloc);
     errdefer s.deinit();
     try s.sqrt(&n);
@@ -382,7 +560,7 @@ fn fxConst(alloc: std.mem.Allocator, v: i64, w: i64) !BI {
     errdefer r.deinit();
     var p = try pow10(alloc, w);
     defer p.deinit();
-    try r.mul(&r, &p);
+    try mulFast(&r, &r, &p);
     return r;
 }
 
@@ -403,7 +581,7 @@ fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !BI {
         defer den.deinit();
         var dj = try BI.initSet(alloc, 2 * j + 1);
         defer dj.deinit();
-        try den.mul(&den, &dj);
+        try mulFast(&den, &den, &dj);
         var q = try BI.init(alloc);
         defer q.deinit();
         var rem = try BI.init(alloc);
@@ -413,7 +591,7 @@ fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !BI {
         if (neg) q.negate();
         try sum.add(&sum, &q);
         neg = !neg;
-        try pk.mul(&pk, &kk);
+        try mulFast(&pk, &pk, &kk);
     }
     return sum;
 }
@@ -428,8 +606,8 @@ fn fxPi(alloc: std.mem.Allocator, w: i64) !BI {
     defer c16.deinit();
     var c4 = try BI.initSet(alloc, 4);
     defer c4.deinit();
-    try a5.mul(&a5, &c16);
-    try a239.mul(&a239, &c4);
+    try mulFast(&a5, &a5, &c16);
+    try mulFast(&a239, &a239, &c4);
     var r = try BI.init(alloc);
     errdefer r.deinit();
     try r.sub(&a5, &a239);
@@ -488,7 +666,7 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         while (ax.order(bound) == .gt) : (k += 1) {
             var two = try BI.initSet(alloc, 2);
             defer two.deinit();
-            try bound.mul(&bound, &two);
+            try mulFast(&bound, &bound, &two);
         }
     }
     var p2 = try BI.initSet(alloc, 1);
@@ -497,7 +675,7 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         var i: usize = 0;
         var two = try BI.initSet(alloc, 2);
         defer two.deinit();
-        while (i < k) : (i += 1) try p2.mul(&p2, &two);
+        while (i < k) : (i += 1) try mulFast(&p2, &p2, &two);
     }
     var r = try BI.init(alloc);
     defer r.deinit();
@@ -559,7 +737,7 @@ fn fxLnF(alloc: std.mem.Allocator, f: *const BI, w: i64) !BI {
     defer c16.deinit();
     var res = try BI.init(alloc);
     errdefer res.deinit();
-    try res.mul(&sum, &c16);
+    try mulFast(&res, &sum, &c16);
     return res;
 }
 
@@ -653,7 +831,7 @@ fn decTrig(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool) !
     defer two_pi.deinit();
     var two = try BI.initSet(alloc, 2);
     defer two.deinit();
-    try two_pi.mul(&pi, &two);
+    try mulFast(&two_pi, &pi, &two);
     var half_pi = try BI.init(alloc);
     defer half_pi.deinit();
     var rem = try BI.init(alloc);
@@ -681,7 +859,7 @@ fn decTrig(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool) !
     try qi.divTrunc(&rem, &qf, &unit);
     var qt = try BI.init(alloc);
     defer qt.deinit();
-    try qt.mul(&qi, &two_pi);
+    try mulFast(&qt, &qi, &two_pi);
     var r = try BI.init(alloc);
     defer r.deinit();
     try r.sub(&x, &qt);
@@ -756,7 +934,7 @@ fn decAtan(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         defer dn.deinit();
         var num2 = try BI.initSet(alloc, 2 * n - 1);
         defer num2.deinit();
-        try t.mul(&t, &num2);
+        try mulFast(&t, &t, &num2);
         var rem = try BI.init(alloc);
         defer rem.deinit();
         term.deinit();
@@ -767,7 +945,7 @@ fn decAtan(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
     }
     var c8 = try BI.initSet(alloc, 8);
     defer c8.deinit();
-    try sum.mul(&sum, &c8);
+    try mulFast(&sum, &sum, &c8);
     if (inv) {
         var pi = try fxPi(alloc, w);
         defer pi.deinit();
@@ -794,10 +972,10 @@ fn decMod(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     defer bm.deinit();
     var p1 = try pow10(alloc, a.e - e);
     defer p1.deinit();
-    try am.mul(&am, &p1);
+    try mulFast(&am, &am, &p1);
     var p2 = try pow10(alloc, b.e - e);
     defer p2.deinit();
-    try bm.mul(&bm, &p2);
+    try mulFast(&bm, &bm, &p2);
     var q = try BI.init(alloc);
     defer q.deinit();
     var r = try BI.init(alloc);
@@ -981,7 +1159,11 @@ fn numFree(s: []const u8) void {
     var r = BI.initSet(koru_allocator(), 1) catch @panic("std/num:pow: out of memory");
     defer r.deinit();
     if (n > std.math.maxInt(u32)) @panic("std/num:pow: exponent too large");
-    r.pow(&d.m, @intCast(n)) catch @panic("std/num:pow: out of memory");
+    {
+        const pr = biPowFast(koru_allocator(), &d.m, @intCast(n)) catch @panic("std/num:pow: out of memory");
+        r.deinit();
+        r = pr;
+    }
     const ds = r.toString(koru_allocator(), 10, .lower) catch @panic("std/num:pow: out of memory");
     defer koru_allocator().free(ds);
     var out = decFromDigits(koru_allocator(), ds, d.e * n, d.neg and @mod(n, 2) != 0) catch @panic("std/num:pow: out of memory");
@@ -1227,17 +1409,18 @@ fn numFree(s: []const u8) void {
     if (de.e >= 0 and !de.neg) {
         var en = de.m.clone() catch @panic("std/num:powf: out of memory");
         defer en.deinit();
-        var ten = BI.initSet(koru_allocator(), 10) catch @panic("std/num:powf: out of memory");
-        defer ten.deinit();
-        var i: i64 = 0;
-        while (i < de.e) : (i += 1) {
-            en.mul(&en, &ten) catch @panic("std/num:powf: out of memory");
-        }
+        var pe = pow10(koru_allocator(), de.e) catch @panic("std/num:powf: out of memory");
+        defer pe.deinit();
+        mulFast(&en, &en, &pe) catch @panic("std/num:powf: out of memory");
         const n64 = en.toConst().toInt(i64) catch -1;
         if (n64 < 0 or n64 > std.math.maxInt(u32)) return .{ .overflow = .{} };
         var r = BI.initSet(koru_allocator(), 1) catch @panic("std/num:powf: out of memory");
         defer r.deinit();
-        r.pow(&da.m, @intCast(n64)) catch @panic("std/num:powf: out of memory");
+        {
+            const pr = biPowFast(koru_allocator(), &da.m, @intCast(n64)) catch @panic("std/num:powf: out of memory");
+            r.deinit();
+            r = pr;
+        }
         const ds = r.toString(koru_allocator(), 10, .lower) catch @panic("std/num:powf: out of memory");
         defer koru_allocator().free(ds);
         var out = decFromDigits(koru_allocator(), ds, da.e * n64, false) catch @panic("std/num:powf: out of memory");
@@ -1317,7 +1500,7 @@ fn numFree(s: []const u8) void {
     defer v.deinit();
     var p = pow10(koru_allocator(), d.e) catch @panic("std/num: out of memory");
     defer p.deinit();
-    v.mul(&v, &p) catch @panic("std/num: out of memory");
+    mulFast(&v, &v, &p) catch @panic("std/num: out of memory");
     const b8: u8 = @intCast(base);
     const s = v.toString(koru_allocator(), b8, .lower) catch @panic("std/num: out of memory");
     if (d.neg and !v.eqlZero()) {
@@ -1364,7 +1547,7 @@ fn numFree(s: []const u8) void {
         if (dig >= base) return .{ .bad_digit = .{} };
         var dd = BI.initSet(koru_allocator(), dig) catch @panic("std/num: out of memory");
         defer dd.deinit();
-        v.mul(&v, &bb) catch @panic("std/num: out of memory");
+        mulFast(&v, &v, &bb) catch @panic("std/num: out of memory");
         v.add(&v, &dd) catch @panic("std/num: out of memory");
     }
     const ds = v.toString(koru_allocator(), 10, .lower) catch @panic("std/num: out of memory");
