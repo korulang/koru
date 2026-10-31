@@ -460,6 +460,29 @@ fn numFree(s: []const u8) void {
     return .{ .exact = decToString(koru_allocator(), &out) catch @panic("std/num:pow: out of memory") };
 }
 
+// sqrt(a^2 + b^2) to `prec` significant digits — quadrature addition. The
+// sum of two squares cannot be negative, so there is no lawful failure arm:
+// the op is total by construction.
+~pub tor qadd { a: string<!exact>, b: string<!exact>, prec: i64 } -> string<exact!>
+
+~proc qadd|zig {
+    defer numFree(a);
+    defer numFree(b);
+    var da = decParse(koru_allocator(), a) catch @panic("std/num:qadd: malformed operand");
+    defer decDeinit(&da);
+    var db = decParse(koru_allocator(), b) catch @panic("std/num:qadd: malformed operand");
+    defer decDeinit(&db);
+    var sa = decMul(koru_allocator(), &da, &da) catch @panic("std/num:qadd: out of memory");
+    defer decDeinit(&sa);
+    var sb = decMul(koru_allocator(), &db, &db) catch @panic("std/num:qadd: out of memory");
+    defer decDeinit(&sb);
+    var s = decAdd(koru_allocator(), &sa, &sb) catch @panic("std/num:qadd: out of memory");
+    defer decDeinit(&s);
+    var r = decSqrt(koru_allocator(), &s, prec) catch @panic("std/num:qadd: out of memory");
+    defer decDeinit(&r);
+    return decToString(koru_allocator(), &r) catch @panic("std/num:qadd: out of memory");
+}
+
 // isqrt to `prec` significant digits. Negative input lands on |negative.
 ~pub tor sqrt { a: string<!exact>, prec: i64 }
 | exact string<exact!>
@@ -515,9 +538,19 @@ fn numFree(s: []const u8) void {
 // ============================================================================
 
 // Fork one num into two (the lawful copy — a num is a linear resource).
-~pub tor dup { n: string<!exact> }
-| a string<exact!>
-| b string<exact!>
+// Canonical zero check — borrows the operand.
+~pub tor is-zero { n: string<exact> }
+| zero
+| nonzero
+
+~proc is-zero|zig {
+    var d = decParse(koru_allocator(), n) catch @panic("std/num:is-zero: malformed operand");
+    defer decDeinit(&d);
+    if (d.m.eqlZero()) return .{ .zero = .{} };
+    return .{ .nonzero = .{} };
+}
+
+~pub tor dup { n: string<!exact> } -> { a: string<exact!>, b: string<exact!> }
 
 ~proc dup|zig {
     const cp = ownedCopy(n);
@@ -529,6 +562,25 @@ fn numFree(s: []const u8) void {
 
 ~proc free|zig {
     numFree(n);
+}
+
+// Discharge an <external!> obligation WITHOUT validating — the lawful way
+// out when a sibling field already failed and this one never reaches parse.
+~pub tor drop { s: string<!external> }
+
+~proc drop|zig {
+    numFree(s);
+}
+
+// i64 -> canonical decimal. The bridge from host counters into the tower.
+~pub tor from-int { i: i64 } -> string<exact!>
+
+~proc from-int|zig {
+    var buf: [24]u8 = undefined;
+    const s = std.fmt.bufPrint(&buf, "{d}", .{i}) catch @panic("std/num:from-int: overflow");
+    var d = decParse(koru_allocator(), s) catch @panic("std/num:from-int: parse");
+    defer decDeinit(&d);
+    return decToString(koru_allocator(), &d) catch @panic("std/num: out of memory");
 }
 
 // Swap <exact!> to <allocated!>: hands the canonical text out for printing
