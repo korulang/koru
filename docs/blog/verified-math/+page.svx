@@ -13,7 +13,7 @@ draft: true
   import RegressionTestLink from '$lib/components/RegressionTestLink.svelte';
 </script>
 
-Koru has numbers now — not machine floats with better marketing, but a surface where "number" means something a proof can hold onto. Four modules carry it: `std/num` (arbitrary-precision decimals, exact or externally tainted), `std/quantity` (SI dimensions and uncertainty with covariance), `std/sym` (canonical symbolic expressions), and the certificate lane on top of it — whose semantics are the same ones `isar-proofs` verifies in Lean. The newest surface, `sym.rel`, is where relationships between abstract generators live.
+Koru has numbers now — not machine floats with better marketing, but a surface where "number" means something a proof can hold onto. Four modules carry it: `std/num` (arbitrary-precision decimals, exact or externally tainted), `std/quantity` (SI dimensions and uncertainty with covariance), `std/sym` (canonical symbolic expressions), and the certificate lane on top of it — whose semantics are machine-checked in Lean 4 (`HolonomicClosure.lean`, `HolonomicBridge.lean`, `QuantityKernel.lean`, and friends). The newest surface, `sym.rel`, is where relationships between abstract generators live.
 
 ## std/num — exact means exact
 
@@ -38,7 +38,7 @@ std/num:lit(s: "123456789012345678901234567890")
   ]}
 />
 
-The operation surface is the one a calculator wants — `add`/`sub`/`mul`/`div`, `pow`, `sqrt`, `exp`, `ln`, `sin`/`cos`/`atan`, `powf`, `mod`, base conversion — with fixed decimal precision requested per call, never machine precision smuggled in. The multiplication underneath is Koru's own limb-level Karatsuba: the race against `bc` and Python's `decimal` (`tests/benchmarks/016_num_precision_race`, replayable) showed Zig's stock schoolbook `mul` was the bottleneck, so the limb layer got owned — transcendentals dropped roughly an order of magnitude, and ReleaseFast beats `bc` on eight of ten workloads. The C bigint implementations still win the pure exact-op races; the honest remaining gap is there in the results table, not smoothed over.
+The operation surface is the one a calculator wants — `add`/`sub`/`mul`/`div`, `pow`, `sqrt`, `exp`, `ln`, `sin`/`cos`/`atan`, `powf`, `mod`, base conversion — with fixed decimal precision requested per call, never machine precision smuggled in. The multiplication underneath is Koru's own limb-level Karatsuba (Karatsuba & Ofman, 1962): the race against `bc` and Python's `decimal` (`tests/benchmarks/016_num_precision_race`, replayable) showed Zig's stock schoolbook `mul` was the bottleneck, so the limb layer got owned — transcendentals dropped roughly an order of magnitude, and ReleaseFast beats `bc` on eight of ten workloads, including a Machin-formula π (1706, still the fast classroom recipe). The C bigint implementations still win the pure exact-op races; the honest remaining gap is there in the results table, not smoothed over.
 
 ## std/quantity — dimensions are a group, not a string
 
@@ -46,14 +46,14 @@ The operation surface is the one a calculator wants — `add`/`sub`/`mul`/`div`,
 
 ## The holonomic lane — certificates, not witnesses
 
-`std/sym` gives canonical symbolic expressions; the certificate parts on top are where the semantics get heavy. A holonomic function is one annihilated by a linear ODE with polynomial coefficients — and that annihilating ODE is a *certificate*: finite data that proves a property of an infinite object.
+`std/sym` gives canonical symbolic expressions; the certificate parts on top are where the semantics get heavy. A holonomic function is one annihilated by a linear ODE with polynomial coefficients — Zeilberger's name (1990) for what Stanley called differentiably finite (1980); the friendly modern reference is Kauers & Paule's *The Concrete Tetrahedron* (2011). The annihilating ODE is a *certificate*: finite data that proves a property of an infinite object.
 
 - `cert-seed(body)` registers a declared law for an opaque generator — `p0=[-1]|p1=[1]` is `f' − f = 0`, exp's law, given as truth.
-- `derive-ode(expr, max-order, max-deg)` *discovers* a certificate by elimination over the truncated series — witness-grade, `verified=N` honestly.
-- `cert-sum`/`cert-prod` compose certificates through companion-basis elimination over ℚ(x) — theorem-grade, since `HolonomicClosure.lean` proves the closure. `cert-compose` refuses by name (`not-generally-holonomic`) because the Lean source says composition isn't, in general.
-- `cert-bridge` projects an ODE certificate into its P-recursive recurrence — `HolonomicBridge.lean` verbatim, with `det=1` flagging exactly the `h0` packaging hypothesis that makes the recurrence determine the sequence.
+- `derive-ode(expr, max-order, max-deg)` *discovers* a certificate by elimination over the truncated series — the "guessing" half of gfun's guess-and-prove (Salvy & Zimmermann, 1994) — witness-grade, `verified=N` honestly.
+- `cert-sum`/`cert-prod` compose certificates through companion-basis elimination over ℚ(x) — the standard linear-algebra proof of the classical closure theorems, so the output is theorem-grade; `HolonomicClosure.lean` checks the same statement. `cert-compose` refuses by name (`not-generally-holonomic`) because composition of D-finite functions isn't, in general.
+- `cert-bridge` projects an ODE certificate into its P-recursive coefficient recurrence — the D-finite ⇔ P-recursive equivalence (Stanley 1980; Kauers & Paule §7), machine-checked as `HolonomicBridge.lean`; `det=1` flags exactly the hypothesis that makes the recurrence determine the sequence.
 - `cert-of`/`cert-series` are the theorem upgrade: derive the ODE *structurally*, then let the recurrence *generate* the tail — every coefficient forced by the annihilating equation rather than merely witnessed.
-- `decide-integral`/`decide-ode`/`decide-field` are the decision tower — polynomial integrands get constructed antiderivatives, holonomic integrands get shifted certificates, Airy's equation classifies `non-Liouvillian`, and what the tower can't reach says `unresolved` with its search bounds named.
+- `decide-integral`/`decide-ode`/`decide-field` are the decision tower — polynomial integrands get constructed antiderivatives, holonomic integrands get shifted certificates (antiderivatives of D-finite functions stay D-finite — a closure corollary, same sources). `decide-ode` applies Kovacic's pole-order necessary conditions (Kovacic, *J. Symbolic Computation* 1986) to classify Liouvillian solvability, so Airy's equation comes back `non-Liouvillian` — correct, and Risch's integration-in-finite-terms framing (1969) is why that answer is honest rather than a shrug. What the tower can't reach says `unresolved` with its search bounds named.
 
 ```koru
 std/sym:lit(s: "inv((1e0+(-1e0*x)))")
@@ -120,6 +120,19 @@ std/sym:rel-new(): r0
 The surface's shape is defined by its edges as much as its operations. `cert-compose` refuses because composition isn't generally holonomic. `decide-ode` says `non-Liouvillian` rather than pretending. `cert-series` on `x` says `under-determined` — its recurrence genuinely leaves a seed free. Tainted operands, undeclared axes, lawless generators, dim mismatches, malformed external certificates — each is a named refusal, not a silent path. Discovery is witness-grade; declaration and derivation are theorem-grade; and the line between them is drawn where the Lean proofs draw it.
 
 Open rungs, honestly: `g(name, arg)` application (composition and addition theorems like `exp(x+y)=exp(x)exp(y)`) needs substitution machinery — band 2. Nonlinear jet relations are honest-refusal territory. And the exact-op multiplication gap versus the C bigint implementations narrows, not closes, with Karatsuba.
+
+## Where the math comes from
+
+- **Karatsuba & Ofman**, "Multiplication of Multidigit Numbers on Automata" (1962) — the limb multiplication.
+- **Machin** (1706) — π = 16·atan(1/5) − 4·atan(1/239), the benchmark's π workload.
+- **Stanley**, "Differentiably Finite Power Series" (*Europ. J. Combinatorics*, 1980; also *Enumerative Combinatorics* vol. 2, §6.4) — the D-finite theory, the closure theorems, the P-recursive equivalence.
+- **Zeilberger**, "A Holonomic Systems Approach to Special Functions Identities" (*J. Comput. Appl. Math.*, 1990) — the holonomic framing the certificate lane uses.
+- **Kauers & Paule**, *The Concrete Tetrahedron* (2011) — the working reference: closure proofs, series↔recurrence, guessing.
+- **Salvy & Zimmermann**, "GFUN: a Maple package for the manipulation of generating and holonomic functions" (*ACM TOMS*, 1994) — the implementation lineage `derive-ode`'s discovery half descends from.
+- **Kovacic**, "An Algorithm for Solving Second Order Linear Homogeneous Differential Equations" (*J. Symbolic Computation*, 1986) — the pole-structure conditions behind `decide-ode`.
+- **Risch**, "The Problem of Integration in Finite Terms" (1969) — the frame `decide-integral` answers honestly inside its (much smaller) reach.
+
+The formal semantics the certificates are checked against live in Lean 4, file by file: `HolonomicClosure.lean` (sum/product), `HolonomicCertificate.integralShift` (integration), `HolonomicBridge.lean` (the P-recursive projection), `HolonomicCompose.lean` (the composition obstruction), `QuantityKernel.lean` (the `Dim` group).
 
 <RegressionTestLink
   tests={[
