@@ -43,6 +43,7 @@
 ~part certcomp
 ~part certreg
 ~part certgen
+~part rel
 
 const std = @import("std");
 const BI = std.math.big.int.Managed;
@@ -371,21 +372,37 @@ fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
 const ATOMS = [_][]const u8{ "π", "e", "φ", "x" };
 
 fn canonWrite(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(u8)) !void {
+    return canonWriteG(alloc, n, null, out);
+}
+
+fn canonWriteG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg, out: *std.ArrayList(u8)) !void {
     switch (n.kind) {
         .dec => {
             const s = try decToString(alloc, &n.dec);
             defer alloc.free(s);
             try out.appendSlice(alloc, s);
         },
-        .atom => try out.appendSlice(alloc, ATOMS[n.atom]),
+        .atom => {
+            if (n.atom < 4) {
+                try out.appendSlice(alloc, ATOMS[n.atom]);
+            } else if (greg) |g| {
+                try out.appendSlice(alloc, "g(");
+                try out.appendSlice(alloc, g.names.items[n.atom - 4]);
+                try out.append(alloc, ')');
+            } else {
+                var buf: [16]u8 = undefined;
+                const ds = std.fmt.bufPrint(&buf, "g#{d}", .{n.atom - 4}) catch unreachable;
+                try out.appendSlice(alloc, ds);
+            }
+        },
         .sq => {
             try out.appendSlice(alloc, "√(");
-            try canonWrite(alloc, n.kid, out);
+            try canonWriteG(alloc, n.kid, greg, out);
             try out.append(alloc, ')');
         },
         .inv => {
             try out.appendSlice(alloc, "inv(");
-            try canonWrite(alloc, n.kid, out);
+            try canonWriteG(alloc, n.kid, greg, out);
             try out.append(alloc, ')');
         },
         .add, .mul => {
@@ -393,7 +410,7 @@ fn canonWrite(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(u8)
             const sep: []const u8 = if (n.kind == .add) "+" else "*";
             for (n.kids, 0..) |k, i| {
                 if (i > 0) try out.appendSlice(alloc, sep);
-                try canonWrite(alloc, k, out);
+                try canonWriteG(alloc, k, greg, out);
             }
             try out.append(alloc, ')');
         },
@@ -401,9 +418,13 @@ fn canonWrite(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(u8)
 }
 
 fn canonOf(alloc: std.mem.Allocator, n: *const SNode) ![]u8 {
+    return canonOfG(alloc, n, null);
+}
+
+fn canonOfG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg) ![]u8 {
     var out = std.ArrayList(u8){};
     errdefer out.deinit(alloc);
-    try canonWrite(alloc, n, &out);
+    try canonWriteG(alloc, n, greg, &out);
     return out.toOwnedSlice(alloc);
 }
 
@@ -414,10 +435,21 @@ fn canonOf(alloc: std.mem.Allocator, n: *const SNode) ![]u8 {
 //   factor := '√' '(' expr ')' | 'inv' '(' expr ')' | '(' expr ')' | atom | decimal
 // ============================================================================
 
+// Generator registry — atoms 4.. index a declared generator (0=pi,1=e,
+// 2=phi,3=x). GReg is per-call state built from a rel:v1 registry text;
+// SNode stores only the index, so every tree in one derivation shares one
+// registry. laws[i] == null means the generator is declared but lawless —
+// deriving it refuses by name.
+const GReg = struct {
+    names: std.ArrayList([]const u8),
+    laws: std.ArrayList(?*SNode),
+};
+
 const ParseCtx = struct {
     alloc: std.mem.Allocator,
     s: []const u8,
     i: usize = 0,
+    greg: ?*GReg = null,
 };
 
 fn list2(alloc: std.mem.Allocator, a: *SNode, b: *SNode) ![]*SNode {
@@ -515,6 +547,22 @@ fn parseFactor(c: *ParseCtx) anyerror!*SNode {
     if (cp == 'x') {
         c.i += 1;
         return nodeAtom(c.alloc, 3);
+    }
+    if (cp == 'g') {
+        if (c.i + 1 >= c.s.len or c.s[c.i + 1] != '(') return error.Bad;
+        c.i += 2;
+        const start = c.i;
+        while (c.i < c.s.len and (std.ascii.isAlphanumeric(c.s[c.i]) or c.s[c.i] == '_')) c.i += 1;
+        const nm = c.s[start..c.i];
+        if (nm.len == 0) return error.Bad;
+        if (c.i >= c.s.len or c.s[c.i] != ')') return error.Bad;
+        c.i += 1;
+        if (c.greg) |g| {
+            for (g.names.items, 0..) |n2, i| {
+                if (std.mem.eql(u8, n2, nm)) return nodeAtom(c.alloc, @as(u8, @intCast(4 + i)));
+            }
+        }
+        return error.UnknownGenerator;
     }
     if (std.ascii.isDigit(c.s[c.i]) or c.s[c.i] == '.') {
         // scan the decimal: digits [. digits] [eE [-+] digits]
@@ -1035,16 +1083,31 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
 // ============================================================================
 
 fn deriveNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
+    return deriveNodeG(alloc, n, null);
+}
+
+fn deriveNodeG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg) anyerror!*SNode {
     switch (n.kind) {
         .dec => return nodeDec(alloc, try decZero(alloc)),
-        .atom => return nodeDec(alloc, if (n.atom == 3) try decOneN(alloc, false) else try decZero(alloc)),
+        .atom => {
+            if (n.atom == 3) return nodeDec(alloc, try decOneN(alloc, false));
+            if (n.atom < 4) return nodeDec(alloc, try decZero(alloc));
+            const gi = n.atom - 4;
+            if (greg) |g| {
+                if (gi < g.laws.items.len) {
+                    if (g.laws.items[gi]) |law| return nodeClone(alloc, law);
+                    return error.Lawless;
+                }
+            }
+            return error.Opaque;
+        },
         .add => {
             var kids = try std.ArrayList(*SNode).initCapacity(alloc, n.kids.len);
             errdefer {
                 for (kids.items) |k| nodeFree(alloc, k);
                 kids.deinit(alloc);
             }
-            for (n.kids) |k| try kids.append(alloc, try deriveNode(alloc, k));
+            for (n.kids) |k| try kids.append(alloc, try deriveNodeG(alloc, k, greg));
             return nodeList(alloc, .add, try kids.toOwnedSlice(alloc));
         },
         .mul => {
@@ -1054,7 +1117,7 @@ fn deriveNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                 terms.deinit(alloc);
             }
             for (n.kids, 0..) |k, i| {
-                const dk = try deriveNode(alloc, k);
+                const dk = try deriveNodeG(alloc, k, greg);
                 if (dk.kind == .dec and dk.dec.m.eqlZero()) {
                     nodeFree(alloc, dk);
                     continue;
@@ -1080,7 +1143,7 @@ fn deriveNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             return nodeList(alloc, .add, try terms.toOwnedSlice(alloc));
         },
         .inv => {
-            const dk = try deriveNode(alloc, n.kid);
+            const dk = try deriveNodeG(alloc, n.kid, greg);
             errdefer nodeFree(alloc, dk);
             if (dk.kind == .dec and dk.dec.m.eqlZero()) {
                 nodeFree(alloc, dk);
@@ -1098,7 +1161,7 @@ fn deriveNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             return nodeList(alloc, .mul, try kids.toOwnedSlice(alloc));
         },
         .sq => {
-            const dk = try deriveNode(alloc, n.kid);
+            const dk = try deriveNodeG(alloc, n.kid, greg);
             errdefer nodeFree(alloc, dk);
             if (dk.kind == .dec and dk.dec.m.eqlZero()) {
                 nodeFree(alloc, dk);
@@ -1132,7 +1195,11 @@ fn symDeriv(alloc: std.mem.Allocator, a: []const u8) ![]u8 {
 // ============================================================================
 
 fn parseTree(alloc: std.mem.Allocator, s: []const u8) !*SNode {
-    var ctx = ParseCtx{ .alloc = alloc, .s = s };
+    return parseTreeG(alloc, s, null);
+}
+
+fn parseTreeG(alloc: std.mem.Allocator, s: []const u8, greg: ?*GReg) !*SNode {
+    var ctx = ParseCtx{ .alloc = alloc, .s = s, .greg = greg };
     const t = try parseExpr(&ctx);
     if (ctx.i != s.len) {
         nodeFree(alloc, t);

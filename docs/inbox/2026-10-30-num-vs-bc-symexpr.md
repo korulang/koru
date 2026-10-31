@@ -561,3 +561,59 @@ custom) to group semantics without changing the algebra; whether cser/
 cert lanes ever need axis-aware magnitudes (probably not — magnitudes
 are dimensionless series).
 
+
+## Landed 2026-11-01 — limb-level Karatsuba (own the multiplication)
+
+`std/num` no longer delegates the hot path to Zig `big.int.Managed.mul`
+(schoolbook O(n^2) limbs). Own `mulL`/`addL`/`subL` over `[]Limb` with
+arena-scratch recursion and a schoolbook cutoff; `mulFast` is the drop-in
+seam routing every `r.mul` site. `pow10` went binary (was a linear x10
+loop — that alone was a large hidden term in every fxDiv/decDiv scale),
+and `pow` uses binary exponentiation over the fast mul.
+
+Two correctness traps found by the race, both pinned as frags: mulBI
+multiplied magnitudes and dropped the operand sign — invisible on dec
+mantissas (nonneg) but broke every alternating Taylor term (sin/atan);
+and the backend-emit cache serves stale stdlib procs — koruc must rerun
+after .kz edits, not just the zig build.
+
+ReleaseFast race table updated in
+tests/benchmarks/016_num_precision_race/results.md — transcendentals
+dropped ~6-10x vs schoolbook. Standalone limb layer: 2800 operand-shape
+cases, zero failures. 615: 40/40, 610: 19/19.
+
+## Landed 2026-11-01 — rel band 1: declared generators with laws
+
+"Relationships in general" (vs ODE-laws-only) starts here. `sym.rel.kz`:
+
+- `rel:v1` registry text — `rel:v1;sin=g(cos);cos=(-1e0*g(sin))`. Names
+  intern atoms 4.. in SNode (atom u8, 0-3 reserved); the registry is a
+  threaded allocated blob like certreg.
+- Grammar extension in sym.kz: `g(name)` parses only under
+  `ParseCtx.greg`; the closed `lit` grammar refuses g-atoms with
+  `unknown-generator`. Two disjoint expression universes — g-atom text
+  cannot carry `sexpr!` (no producer can prove context-scoped
+  validity; the phantom-can-only-promise frag records the design rule).
+- Two-phase declaration solves cycles: `rel-seed(reg, name)` declares
+  lawless; `rel-law(reg, name, sexpr)` attaches D(g_i) — self-laws
+  (exp) and mutual pairs (sin/cos) both work since the law parses
+  under the complete name set.
+- `rel-derive(reg, expr)` — mechanical differentiation: derivative
+  rules + declared-law substitution, canonical output.
+- `rel-norm(reg, expr)` — canonical NF; caller-side text compare is the
+  equality-check primitive (provably-equal texts are canon-equal).
+- Refusals by name: `dup`, `full` (atom u8 cap), `unknown-generator`,
+  `lawless`, `bad`.
+
+Verified in 615_049: D(sin^2+cos^2)=0e0 (conservation proven
+mechanically), D(exp*x)=exp*x+exp via self-law + product rule,
+rel-norm collapses sin*cos+cos*sin to (2e0*g(sin)*g(cos)), plus the
+unknown-generator/lawless/dup refusal arms.
+
+Design note — what this band is NOT: relations are declared or derived
+mechanically; finding a relation numerically stays witness-grade (the
+same boundary the cert layer draws). Generator application g(name, arg)
+(function composition, addition theorems like exp(x+y)=exp(x)exp(y))
+needs subst-X machinery — band 2. Nonlinear jet relations / full
+differential algebra — honest refusal territory, same posture as
+cert-compose.
