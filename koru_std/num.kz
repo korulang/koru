@@ -317,6 +317,369 @@ fn mulL(alloc: std.mem.Allocator, xin: []const Limb, yin: []const Limb) ![]Limb 
     return ltrim(r);
 }
 
+
+// ---------------------------------------------------------------------------
+// Limb-level division — own algorithm, not Zig's primitives.
+// Small divisors: Knuth Algorithm D (TAOCP 4.3.1) over normalized limbs —
+// the only hardware divide used is 2-by-1 limb estimation. Large divisors
+// (>= NEWTON_MIN limbs): one reciprocal R = floor(beta^(3n)/B) by Newton
+// iteration R' = 2R - (B*R^2 >> 3n limbs), seeded from B's top two limbs and
+// converged to |R' - R| <= 1, then bounded correction. The whole quotient is
+// (A*R) >> 3n limbs in one multiply when A fits 3n limbs; wider dividends
+// take ~n quotient limbs per step off a 2n-limb window. Prototyped and
+// differential-tested before landing — see tests/benchmarks/016. Threshold
+// measured on the same rig.
+// ---------------------------------------------------------------------------
+const NEWTON_MIN: usize = 512;
+
+fn cmpL(x: []const Limb, y: []const Limb) i8 {
+    const lx = ltrimc(x).len;
+    const ly = ltrimc(y).len;
+    if (lx != ly) return if (lx < ly) -1 else 1;
+    var i = lx;
+    while (i > 0) {
+        i -= 1;
+        if (x[i] != y[i]) return if (x[i] < y[i]) -1 else 1;
+    }
+    return 0;
+}
+
+fn ltrimc(x: []const Limb) []const Limb {
+    var n = x.len;
+    while (n > 0 and x[n - 1] == 0) n -= 1;
+    return x[0..n];
+}
+
+// x << (s bits), s in 0..63. Returns normalized.
+fn shlBitsL(alloc: std.mem.Allocator, x: []const Limb, s: u6) ![]Limb {
+    if (x.len == 0) return alloc.alloc(Limb, 0);
+    var r = try alloc.alloc(Limb, x.len + 1);
+    var carry: Limb = 0;
+    for (x, 0..) |v, i| {
+        r[i] = (v << s) | carry;
+        carry = if (s == 0) 0 else v >> @as(u6, @intCast(64 - @as(u7, s)));
+    }
+    r[x.len] = carry;
+    return ltrim(r);
+}
+
+// x >> (s bits), s in 0..63. Returns normalized.
+fn shrBitsL(alloc: std.mem.Allocator, x: []const Limb, s: u6) ![]Limb {
+    if (x.len == 0) return alloc.alloc(Limb, 0);
+    var r = try alloc.alloc(Limb, x.len);
+    var i = x.len;
+    var carry: Limb = 0;
+    while (i > 0) {
+        i -= 1;
+        r[i] = (x[i] >> s) | carry;
+        carry = if (s == 0) 0 else x[i] << @as(u6, @intCast(64 - @as(u7, s)));
+    }
+    return ltrim(r);
+}
+
+// dst -= src. Requires dst >= src (proof violation -> panic).
+fn subInto(dst: []Limb, src: []const Limb) void {
+    var borrow: Limb = 0;
+    var i: usize = 0;
+    while (i < dst.len) : (i += 1) {
+        const sv: Limb = if (i < src.len) src[i] else 0;
+        const d = @subWithOverflow(dst[i], sv);
+        const d2 = @subWithOverflow(d[0], borrow);
+        dst[i] = d2[0];
+        borrow = d[1] + d2[1];
+    }
+    if (borrow != 0) @panic("std/num div: subInto borrow out");
+}
+
+// x << limbs: dst[0..shift] = 0, dst[shift..] = x.
+fn limbShift(alloc: std.mem.Allocator, x: []const Limb, shift: usize) ![]Limb {
+    var r = try alloc.alloc(Limb, x.len + shift);
+    @memset(r[0..shift], 0);
+    @memcpy(r[shift..], x);
+    return r;
+}
+
+// x / d for single-limb d -> {q, r}. r is a limb.
+const DivQR = struct { q: []Limb, r: []Limb };
+
+fn div1L(alloc: std.mem.Allocator, x: []const Limb, d: Limb) error{OutOfMemory}!struct { q: []Limb, r: Limb } {
+    var q = try alloc.alloc(Limb, x.len);
+    var rem: DoubleLimb = 0;
+    var i = x.len;
+    while (i > 0) {
+        i -= 1;
+        const cur = (rem << 64) | x[i];
+        q[i] = @intCast(cur / d);
+        rem = cur % d;
+    }
+    return .{ .q = ltrim(q), .r = @intCast(rem) };
+}
+
+// Knuth Algorithm D, a >= b > 0, b.len >= 2.
+fn divSB(alloc: std.mem.Allocator, a_in: []const Limb, b_in: []const Limb) error{OutOfMemory}!DivQR {
+    const n = b_in.len;
+    const s: u6 = @intCast(@clz(b_in[n - 1]));
+    const v = try shlBitsL(alloc, b_in, s);
+    const un0 = try shlBitsL(alloc, a_in, s);
+    var u = try alloc.alloc(Limb, un0.len + 1);
+    @memcpy(u[0..un0.len], un0);
+    u[un0.len] = 0;
+
+    const m = u.len - v.len; // quotient limb count
+    var q = try alloc.alloc(Limb, m);
+    var j = m;
+    while (j > 0) {
+        j -= 1;
+        const hi: DoubleLimb = (@as(DoubleLimb, u[j + n]) << 64) | u[j + n - 1];
+        var qhat: DoubleLimb = hi / v[n - 1];
+        var rhat: DoubleLimb = hi % v[n - 1];
+        if (qhat >= (@as(DoubleLimb, 1) << 64)) {
+            qhat = (@as(DoubleLimb, 1) << 64) - 1;
+            rhat = hi - qhat * v[n - 1];
+        }
+        while (n >= 2 and qhat * v[n - 2] > ((rhat << 64) | u[j + n - 2])) {
+            qhat -= 1;
+            rhat += v[n - 1];
+            if (rhat >= (@as(DoubleLimb, 1) << 64)) break;
+        }
+        const qh: Limb = @intCast(qhat);
+
+        // u[j..j+n] -= qh * v
+        var mul_carry: DoubleLimb = 0;
+        var sub_carry: Limb = 0;
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            const prod = @as(DoubleLimb, qh) * v[i] + mul_carry;
+            mul_carry = prod >> 64;
+            const d1 = @subWithOverflow(u[j + i], @as(Limb, @truncate(prod)));
+            const d2 = @subWithOverflow(d1[0], sub_carry);
+            u[j + i] = d2[0];
+            sub_carry = d1[1] + d2[1];
+        }
+        const d1 = @subWithOverflow(u[j + n], @as(Limb, @truncate(mul_carry)));
+        const d2 = @subWithOverflow(d1[0], sub_carry);
+        u[j + n] = d2[0];
+        const neg = d1[1] + d2[1] != 0;
+
+        if (neg) {
+            // rare: qhat was one too big; add v back.
+            q[j] = qh - 1;
+            var carry: Limb = 0;
+            i = 0;
+            while (i < n) : (i += 1) {
+                const a1 = @addWithOverflow(u[j + i], v[i]);
+                const a2 = @addWithOverflow(a1[0], carry);
+                u[j + i] = a2[0];
+                carry = a1[1] + a2[1];
+            }
+            u[j + n] +%= carry;
+        } else {
+            q[j] = qh;
+        }
+    }
+    const rl = try shrBitsL(alloc, u[0..n], s);
+    return .{ .q = ltrim(q), .r = rl };
+}
+
+// R = floor(beta^(3n)/B) for n-limb B, top limb nonzero.
+// Newton R' = 2R - (B*R^2 >> 3n limbs). Seed: beta^6 / top-2-limbs of B,
+// shifted to ~2n limbs — relative error < 1/beta, squares per step.
+// Terminates on |R' - R| <= 1, then bounded correction to the exact floor.
+fn recipL(alloc: std.mem.Allocator, b: []const Limb) error{OutOfMemory}![]Limb {
+    const n = b.len;
+    std.debug.assert(n >= 2 and b[n - 1] != 0);
+    if (n <= 4) {
+        // exact: beta^(3n) / B via Knuth D — numerator is 1 followed by 3n limbs of 0.
+        var num = try alloc.alloc(Limb, 3 * n + 1);
+        @memset(num, 0);
+        num[3 * n] = 1;
+        const qr = try divAnyL(alloc, num, b);
+        return qr.q;
+    }
+    // stage sizes: 4, 8, ..., n. R_i = floor(beta^(3i)/B_i) on the top i
+    // limbs; stage 2i seeds R_i << 2i limbs (beta^(3·2i)/B_2i ~ R_i·beta^2i)
+    // and Newton converges in ~2 steps. Base: exact small division.
+    var stage: usize = 4;
+    const bt4 = b[n - stage ..];
+    var num0 = try alloc.alloc(Limb, 3 * stage + 1);
+    @memset(num0, 0);
+    num0[3 * stage] = 1;
+    const qr0 = try divSB(alloc, num0, bt4);
+    var r = qr0.q;
+    while (stage < n) {
+        const ns = @min(2 * stage, n);
+        const bsub = b[n - ns ..];
+        var rseed = try limbShift(alloc, r, 2 * (ns - stage));
+        // Newton at stage-ns size: X' = 2X - (Bsub*X^2 >> 3*ns limbs)
+        var it: usize = 0;
+        while (it < 64) : (it += 1) {
+            const bx = try mulL(alloc, bsub, rseed);
+            const bx2 = try mulL(alloc, bx, rseed);
+            const t2 = ltrimc(bx2)[@min(3 * ns, ltrimc(bx2).len)..];
+            var r2v = try alloc.alloc(Limb, rseed.len + 1);
+            @memset(r2v, 0);
+            @memcpy(r2v[0..rseed.len], rseed);
+            addInto(r2v, rseed);
+            if (cmpL(r2v, t2) < 0) @panic("std/num div: newton underflow");
+            const r2 = try subL(alloc, r2v, t2);
+            const diff = if (cmpL(r2, rseed) >= 0) try subL(alloc, r2, rseed) else try subL(alloc, rseed, r2);
+            rseed = r2;
+            if (cmpL(diff, &[_]Limb{1}) <= 0) break;
+        }
+        r = rseed;
+        stage = ns;
+    }
+
+
+    // bounded correction to the exact floor: 0 <= (beta^(3n) - B*R) < 2*B.
+    var t = try alloc.alloc(Limb, 3 * n + 1);
+    @memset(t, 0);
+    t[3 * n] = 1;
+    var corr: usize = 0;
+    while (true) {
+        const br = try mulL(alloc, b, r);
+        const c = cmpL(br, t);
+        if (c > 0) {
+            // R too big
+            r = try subL(alloc, r, &[_]Limb{1});
+            corr += 1;
+        } else {
+            const br1 = try addL(alloc, br, b);
+            if (cmpL(br1, t) <= 0) {
+                r = try addL(alloc, r, &[_]Limb{1});
+                corr += 1;
+            } else break;
+        }
+        if (corr > 4) @panic("std/num div: recip correction bound exceeded");
+    }
+    return ltrim(r);
+}
+
+// a / b over limbs, any sizes. q and r normalized; a < b -> {0, a}.
+fn divAnyL(alloc: std.mem.Allocator, a_in: []const Limb, b_in: []const Limb) error{OutOfMemory}!DivQR {
+    const b = ltrimc(b_in);
+    const a = ltrimc(a_in);
+    if (b.len == 0) @panic("std/num div: division by zero");
+    if (cmpL(a, b) < 0) {
+        const z = try alloc.alloc(Limb, 0);
+        return .{ .q = z, .r = try limbShift(alloc, a, 0) };
+    }
+    if (b.len == 1) {
+        const qr = try div1L(alloc, a, b[0]);
+        var rr = try alloc.alloc(Limb, 1);
+        rr[0] = qr.r;
+        return .{ .q = qr.q, .r = ltrim(rr) };
+    }
+    // Newton pays only when the reciprocal amortizes over a huge quotient:
+    // measured 016 + divbench, recipL costs ~4-14 mulL at ~5n limbs while
+    // schoolbook does (a.len - n) passes at n limbs — schoolbook wins at
+    // every operand size we exercise (<= 3000 limbs). The gate below is the
+    // documented ceiling: Newton needs short products (top-limb-only
+    // B*R^2 per iteration) before it earns its slot.
+    if (b.len < NEWTON_MIN or a.len < 3 * b.len) return divSB(alloc, a, b);
+
+    const n = b.len;
+    const x = try recipL(alloc, b);
+
+    if (a.len <= 3 * n) {
+        // one-shot: q = (A * R) >> 3n limbs
+        const p = try mulL(alloc, a, x);
+        var qhat = try limbShift(alloc, ltrimc(p)[@min(3 * n, ltrimc(p).len)..], 0);
+        const qb = try mulL(alloc, qhat, b);
+        var r = try subL(alloc, a, qb);
+        var corr: usize = 0;
+        while (cmpL(r, b) >= 0) {
+            r = try subL(alloc, r, b);
+            qhat = try addL(alloc, qhat, &[_]Limb{1});
+            corr += 1;
+            if (corr > 3) @panic("std/num div: one-shot correction bound exceeded");
+        }
+        return .{ .q = ltrim(qhat), .r = ltrim(r) };
+    }
+
+    // chunked: ~n quotient limbs per step off the top 2n limbs of u.
+    var q = try alloc.alloc(Limb, 0);
+    var u = try limbShift(alloc, a, 0);
+    while (cmpL(u, b) >= 0) {
+        const un = ltrimc(u).len;
+        const w = @min(2 * n, un);
+        const m = un - w;
+        const uu = ltrimc(u[m..]);
+        var qhat: []Limb = undefined;
+        if (uu.len <= n) {
+            const qr = try divSB(alloc, uu, b);
+            qhat = qr.q;
+        } else {
+            const p = try mulL(alloc, uu, x);
+            qhat = try limbShift(alloc, ltrimc(p)[@min(3 * n, ltrimc(p).len)..], 0);
+            if (qhat.len == 0) {
+                const qr = try divSB(alloc, uu, b);
+                qhat = qr.q;
+            }
+        }
+        // r = u - qhat*B*beta^m, correcting down on negative.
+        var qb = try mulL(alloc, qhat, b);
+        var qbm = try limbShift(alloc, qb, m);
+        var corr: usize = 0;
+        while (cmpL(u, qbm) < 0) {
+            qhat = try subL(alloc, qhat, &[_]Limb{1});
+            qb = try mulL(alloc, qhat, b);
+            qbm = try limbShift(alloc, qb, m);
+            corr += 1;
+            if (corr > 3) @panic("std/num div: chunk correction bound exceeded");
+        }
+        var r = try subL(alloc, u, qbm);
+        while (cmpL(r, try limbShift(alloc, b, m)) >= 0 and corr <= 3) {
+            const bm = try limbShift(alloc, b, m);
+            r = try subL(alloc, r, bm);
+            qhat = try addL(alloc, qhat, &[_]Limb{1});
+            corr += 1;
+        }
+        if (corr > 3) @panic("std/num div: chunk correction bound exceeded");
+        const qm = try limbShift(alloc, qhat, m);
+        q = try addL(alloc, q, qm);
+        u = r;
+    }
+    return .{ .q = ltrim(q), .r = ltrim(u) };
+}
+
+// Managed wrapper: truncated division, sign(q) = a.sign != b.sign,
+// sign(r) = a.sign — matches Managed.divTrunc exactly.
+fn divFast(q: *BI, r: *BI, a: *const BI, b: *const BI) !void {
+    const alloc = q.allocator;
+    if (b.eqlZero()) @panic("division by zero");
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const qr = try divAnyL(arena.allocator(), a.toConst().limbs, b.toConst().limbs);
+
+    var qq = try BI.initCapacity(alloc, @max(qr.q.len, 1));
+    errdefer qq.deinit();
+    if (qr.q.len == 0) {
+        qq.limbs[0] = 0;
+        qq.setLen(1);
+        qq.setSign(true);
+    } else {
+        @memcpy(qq.limbs[0..qr.q.len], qr.q);
+        qq.setLen(qr.q.len);
+        qq.setSign(a.toConst().positive == b.toConst().positive);
+    }
+    var rr = try BI.initCapacity(alloc, @max(qr.r.len, 1));
+    errdefer rr.deinit();
+    if (qr.r.len == 0) {
+        rr.limbs[0] = 0;
+        rr.setLen(1);
+        rr.setSign(true);
+    } else {
+        @memcpy(rr.limbs[0..qr.r.len], qr.r);
+        rr.setLen(qr.r.len);
+        rr.setSign(a.toConst().positive);
+    }
+    q.deinit();
+    q.* = qq;
+    r.deinit();
+    r.* = rr;
+}
+
 // Managed wrapper: below cutoff Zig's schoolbook stays (proven path);
 // above it our limbs run under one arena.
 fn mulBI(alloc: std.mem.Allocator, a: *const BI, b: *const BI) !BI {
@@ -419,7 +782,7 @@ fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !De
     defer q.deinit();
     var rem = try BI.init(alloc);
     defer rem.deinit();
-    try q.divTrunc(&rem, &num, &b.m);
+    try divFast(&q, &rem, &num, &b.m);
 
     const qs = try q.toString(alloc, 10, .lower);
     defer alloc.free(qs);
@@ -506,7 +869,7 @@ fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !BI {
         var rem = try BI.init(alloc);
         defer rem.deinit();
         var q = try BI.init(alloc);
-        try q.divTrunc(&rem, &x, &p);
+        try divFast(&q, &rem, &x, &p);
         x.deinit();
         x = q;
     }
@@ -537,7 +900,7 @@ fn fxMul(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
     errdefer q.deinit();
     var rem = try BI.init(alloc);
     defer rem.deinit();
-    try q.divTrunc(&rem, &p, &d);
+    try divFast(&q, &rem, &p, &d);
     return q;
 }
 
@@ -552,7 +915,7 @@ fn fxDiv(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
     errdefer q.deinit();
     var rem = try BI.init(alloc);
     defer rem.deinit();
-    try q.divTrunc(&rem, &n, b);
+    try divFast(&q, &rem, &n, b);
     return q;
 }
 
@@ -600,7 +963,7 @@ fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !BI {
         defer q.deinit();
         var rem = try BI.init(alloc);
         defer rem.deinit();
-        try q.divTrunc(&rem, &unit, &den);
+        try divFast(&q, &rem, &unit, &den);
         if (q.eqlZero()) break;
         if (neg) q.negate();
         try sum.add(&sum, &q);
@@ -643,7 +1006,7 @@ fn fxExpSmall(alloc: std.mem.Allocator, r: *const BI, w: i64) !BI {
         defer rem.deinit();
         term.deinit();
         term = try BI.init(alloc);
-        try term.divTrunc(&rem, &t, &dn);
+        try divFast(&term, &rem, &t, &dn);
         try sum.add(&sum, &term);
     }
     return sum;
@@ -673,7 +1036,7 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         defer c16.deinit();
         var rem = try BI.init(alloc);
         defer rem.deinit();
-        try bound.divTrunc(&rem, &bound, &c16);
+        try divFast(&bound, &rem, &bound, &c16);
         var ax = try x.clone();
         defer ax.deinit();
         ax.abs();
@@ -695,7 +1058,7 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
     defer r.deinit();
     var rem = try BI.init(alloc);
     defer rem.deinit();
-    try r.divTrunc(&rem, &x, &p2);
+    try divFast(&r, &rem, &x, &p2);
     var e = try fxExpSmall(alloc, &r, w);
     defer e.deinit();
     var i: usize = 0;
@@ -741,7 +1104,7 @@ fn fxLnF(alloc: std.mem.Allocator, f: *const BI, w: i64) !BI {
         defer q.deinit();
         var rem = try BI.init(alloc);
         defer rem.deinit();
-        try q.divTrunc(&rem, &term, &dn);
+        try divFast(&q, &rem, &term, &dn);
         try sum.add(&sum, &q);
         const t2 = try fxMul(alloc, &term, &usq, w);
         term.deinit();
@@ -803,7 +1166,7 @@ fn fxSinSmall(alloc: std.mem.Allocator, u: *const BI, w: i64) !BI {
         defer rem.deinit();
         term.deinit();
         term = try BI.init(alloc);
-        try term.divTrunc(&rem, &t, &dn);
+        try divFast(&term, &rem, &t, &dn);
         term.negate();
         try sum.add(&sum, &term);
     }
@@ -828,7 +1191,7 @@ fn fxCosSmall(alloc: std.mem.Allocator, u: *const BI, w: i64) !BI {
         defer rem.deinit();
         term.deinit();
         term = try BI.init(alloc);
-        try term.divTrunc(&rem, &t, &dn);
+        try divFast(&term, &rem, &t, &dn);
         term.negate();
         try sum.add(&sum, &term);
     }
@@ -850,7 +1213,7 @@ fn decTrig(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool) !
     defer half_pi.deinit();
     var rem = try BI.init(alloc);
     defer rem.deinit();
-    try half_pi.divTrunc(&rem, &pi, &two);
+    try divFast(&half_pi, &rem, &pi, &two);
     var x = try fxFromDec(alloc, a, w);
     defer x.deinit();
     // q = round(x / 2pi), r = x - q*2pi in [-pi, pi]
@@ -859,7 +1222,7 @@ fn decTrig(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool) !
     {
         var half = try pow10(alloc, w);
         defer half.deinit();
-        try half.divTrunc(&rem, &half, &two);
+        try divFast(&half, &rem, &half, &two);
         if (qf.isPositive()) {
             try qf.add(&qf, &half);
         } else {
@@ -870,7 +1233,7 @@ fn decTrig(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool) !
     defer unit.deinit();
     var qi = try BI.init(alloc);
     defer qi.deinit();
-    try qi.divTrunc(&rem, &qf, &unit);
+    try divFast(&qi, &rem, &qf, &unit);
     var qt = try BI.init(alloc);
     defer qt.deinit();
     try mulFast(&qt, &qi, &two_pi);
@@ -953,7 +1316,7 @@ fn decAtan(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         defer rem.deinit();
         term.deinit();
         term = try BI.init(alloc);
-        try term.divTrunc(&rem, &t, &dn);
+        try divFast(&term, &rem, &t, &dn);
         term.negate();
         try sum.add(&sum, &term);
     }
@@ -969,7 +1332,7 @@ fn decAtan(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         defer hp.deinit();
         var rem = try BI.init(alloc);
         defer rem.deinit();
-        try hp.divTrunc(&rem, &pi, &two);
+        try divFast(&hp, &rem, &pi, &two);
         try sum.sub(&hp, &sum);
     }
     if (neg) sum.negate();
@@ -994,7 +1357,7 @@ fn decMod(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     defer q.deinit();
     var r = try BI.init(alloc);
     defer r.deinit();
-    try q.divTrunc(&r, &am, &bm);
+    try divFast(&q, &r, &am, &bm);
     const rs = try r.toString(alloc, 10, .lower);
     defer alloc.free(rs);
     // r >= 0 as a magnitude; sign follows the dividend (trunc-mod).
