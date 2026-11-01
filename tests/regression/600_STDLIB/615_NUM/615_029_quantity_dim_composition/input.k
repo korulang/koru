@@ -7,7 +7,7 @@ import std/quantity
 std/quantity:lit { 5 m/s }
 | exact v |> std/quantity:lit { 3 s }
     | exact t |> std/quantity:mul(a: v, b: t)
-        | exact d |> std/quantity:render(n: d): o |> std/io:print.ln("{{ o:s }}") |> std/io:free(content: o)
+        | exact d |> std/quantity:render(n: d): o |> std/io:print.ln("{{ o:s }}")
         | mixed-cov |> std/io:print.ln("mixed-cov")
         | bad x |> std/io:print.ln("{{ x:s }}")
         | sym-unc |> std/io:print.ln("sym-unc")
@@ -17,7 +17,7 @@ std/quantity:lit { 5 m/s }
 std/quantity:lit { 5 m/s }
 | exact v2 |> std/quantity:lit { 2 s }
     | exact s2 |> std/quantity:div(a: v2, b: s2, prec: 15)
-        | exact acc |> std/quantity:render(n: acc): o2 |> std/io:print.ln("{{ o2:s }}") |> std/io:free(content: o2)
+        | exact acc |> std/quantity:render(n: acc): o2 |> std/io:print.ln("{{ o2:s }}")
         | div-zero |> std/io:print.ln("div-zero")
         | mixed-cov |> std/io:print.ln("mixed-cov")
         | bad x |> std/io:print.ln("{{ x:s }}")

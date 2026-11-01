@@ -10,7 +10,7 @@ std/quantity:lit { 0.5 }
         | exact v |> std/quantity:pow(a: v, n: 2)
             | exact v2 |> std/quantity:mul(a: h, b: m)
                 | exact hm |> std/quantity:mul(a: hm, b: v2)
-                    | exact e |> std/quantity:render(n: e): t |> std/io:print.ln("{{ t:s }}") |> std/io:free(content: t)
+                    | exact e |> std/quantity:render(n: e): t |> std/io:print.ln("{{ t:s }}")
                     | mixed-cov |> std/io:print.ln("mixed-cov")
                     | bad x |> std/io:print.ln("{{ x:s }}")
                     | sym-unc |> std/io:print.ln("sym-unc")

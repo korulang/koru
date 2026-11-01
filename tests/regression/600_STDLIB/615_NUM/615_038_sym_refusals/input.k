@@ -6,11 +6,11 @@ import std/sym
 
 std/sym:ingest(s: "π*e"): x |> std/sym:parse(s: x)
     | exact r |> std/io:print.ln("{{ r:s }}") |> std/sym:free(n: r)
-    | bad b |> std/io:free(content: b)
+    | bad b
 
 std/sym:ingest(s: "not-an-expr!!"): x |> std/sym:parse(s: x)
     | exact r |> std/io:print.ln("{{ r:s }}") |> std/sym:free(n: r)
-    | bad b |> std/io:print.ln("sym:parse bad") |> std/io:free(content: b)
+    | bad b |> std/io:print.ln("sym:parse bad")
 
 std/sym:lit(5)
 | exact a |> std/sym:lit(0)

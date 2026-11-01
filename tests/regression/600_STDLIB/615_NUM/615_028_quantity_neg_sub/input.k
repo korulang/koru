@@ -6,14 +6,14 @@ import std/quantity
 std/quantity:lit { 5 m }
 | exact a |> std/quantity:lit { 2 m }
     | exact b |> std/quantity:sub(a, b)
-        | exact r |> std/quantity:render(n: r): t |> std/io:print.ln("{{ t:s }}") |> std/io:free(content: t)
+        | exact r |> std/quantity:render(n: r): t |> std/io:print.ln("{{ t:s }}")
         | dim-mismatch |> std/io:print.ln("dim-mismatch")
         | mixed-cov |> std/io:print.ln("mixed-cov")
     | bad x |> std/io:print.ln("bad")
 | bad y |> std/io:print.ln("bad")
 
 std/quantity:lit { 5+-0.5 m/s }
-| exact v |> std/quantity:neg(n: v): nv |> std/quantity:render(n: nv): t2 |> std/io:print.ln("{{ t2:s }}") |> std/io:free(content: t2)
+| exact v |> std/quantity:neg(n: v): nv |> std/quantity:render(n: nv): t2 |> std/io:print.ln("{{ t2:s }}")
 | bad z |> std/io:print.ln("bad")
 
 // 5 m - 2 s refuses dims, same lawful branch as add.

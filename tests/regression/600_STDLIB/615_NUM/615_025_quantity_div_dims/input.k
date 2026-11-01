@@ -5,7 +5,7 @@ import std/quantity
 std/quantity:lit { 10 m }
 | exact a |> std/quantity:lit { 4 s }
     | exact b |> std/quantity:div(a, b, prec: 20)
-        | exact r |> std/quantity:render(n: r): t |> std/io:print.ln("{{ t:s }}") |> std/io:free(content: t)
+        | exact r |> std/quantity:render(n: r): t |> std/io:print.ln("{{ t:s }}")
         | div-zero |> std/io:print.ln("divzero")
         | mixed-cov |> std/io:print.ln("mixed-cov")
         | bad x |> std/io:print.ln("{{ x:s }}")

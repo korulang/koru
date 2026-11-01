@@ -8,8 +8,8 @@ import std/quantity
 
 std/num:ingest(s: "not-a-number"): t |> std/num:parse(s: t)
     | exact n |> std/io:print.ln("parsed") |> std/num:free(n)
-    | bad x |> std/io:print.ln("bad num: {{ x:s }}") |> std/io:free(content: x)
+    | bad x |> std/io:print.ln("bad num: {{ x:s }}")
 
 std/quantity:ingest(s: "5 furlongs per fortnight!!"): q |> std/quantity:parse(s: q)
     | exact v |> std/io:print.ln("parsed") |> std/quantity:free(n: v)
-    | bad m |> std/io:print.ln("bad qty: {{ m:s }}") |> std/io:free(content: m)
+    | bad m |> std/io:print.ln("bad qty: {{ m:s }}")
