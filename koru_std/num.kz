@@ -115,9 +115,8 @@ fn decFromDigits(alloc: std.mem.Allocator, raw: []const u8, e: i64, neg: bool) !
     }
 
     const stripped_trailing = raw.len - end;
-    var m = try BI.initSet(alloc, 0);
+    var m = try biFromDigits(alloc, raw[start..end]);
     errdefer m.deinit();
-    try m.setString(10, raw[start..end]);
     return .{ .neg = neg, .m = m, .e = e + @as(i64, @intCast(stripped_trailing)) };
 }
 
@@ -125,7 +124,7 @@ fn decFromDigits(alloc: std.mem.Allocator, raw: []const u8, e: i64, neg: bool) !
 fn decToString(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
     if (d.m.eqlZero()) return alloc.dupe(u8, "0e0");
 
-    const ds = try d.m.toString(alloc, 10, .lower);
+    const ds = try biToDigits(alloc, &d.m);
     defer alloc.free(ds);
 
     // adjusted exponent: value = ds[0].ds[1..] * 10^adj
@@ -181,7 +180,7 @@ fn decAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     var m_abs = try r.clone();
     m_abs.abs();
     defer m_abs.deinit();
-    const ds = try m_abs.toString(alloc, 10, .lower);
+    const ds = try biToDigits(alloc, &m_abs);
     defer alloc.free(ds);
     return decFromDigits(alloc, ds, e_min, rneg);
 }
@@ -721,6 +720,163 @@ fn isqrtL(alloc: std.mem.Allocator, a_in: []const Limb) error{OutOfMemory}![]Lim
     return ltrim(cur);
 }
 
+// ---------------------------------------------------------------------------
+// Radix conversion, both directions divide-and-conquer — replaces Zig's
+// per-digit quadratic setString/toString (measured 231ms + 35ms on the
+// 47713-digit w2 operand). Below RADIX_DNC_MIN digits the schoolbook paths
+// chunk 19 digits per limb step.
+// ---------------------------------------------------------------------------
+
+const RADIX_DNC_MIN: usize = 600;
+
+const POW10_U64 = [20]Limb{
+    1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000,
+    1000000000, 10000000000, 100000000000, 1000000000000,
+    10000000000000, 100000000000000, 1000000000000000,
+    10000000000000000, 100000000000000000, 1000000000000000000,
+    10000000000000000000,
+};
+
+// m = x*s + c in one pass (s, c single limbs).
+fn mulAddSmall(alloc: std.mem.Allocator, x: []const Limb, s: Limb, c: Limb) error{OutOfMemory}![]Limb {
+    var r = try alloc.alloc(Limb, x.len + 1);
+    var carry: DoubleLimb = c;
+    for (x, 0..) |v, i| {
+        const prod = @as(DoubleLimb, v) * s + carry;
+        r[i] = @truncate(prod);
+        carry = prod >> 64;
+    }
+    r[x.len] = @intCast(carry);
+    return ltrim(r);
+}
+
+// digits -> limbs, schoolbook: 19-digit chunks, m = m*10^chunk + c.
+fn digitsToLimbsSB(alloc: std.mem.Allocator, digs: []const u8) error{OutOfMemory}![]Limb {
+    var m: []Limb = try alloc.alloc(Limb, 0);
+    var i: usize = 0;
+    while (i < digs.len) {
+        const chunk = @min(19, digs.len - i);
+        var c: Limb = 0;
+        for (digs[i .. i + chunk]) |ch| c = c * 10 + (ch - '0');
+        m = try mulAddSmall(alloc, m, POW10_U64[chunk], c);
+        i += chunk;
+    }
+    return ltrim(m);
+}
+
+// limbs -> digits, schoolbook: divmod by 10^19, little-endian chunks.
+fn limbsToDigitsSB(alloc: std.mem.Allocator, x_in: []const Limb) error{OutOfMemory}![]u8 {
+    if (x_in.len == 0) return alloc.dupe(u8, "0");
+    var rem = try limbShift(alloc, x_in, 0); // scratch copy
+    // x < 2^(64*len) -> at most 20*len digits -> chunks bound len*20 + 19.
+    var buf = try alloc.alloc(u8, x_in.len * 20 + 19);
+    var n_chunks: usize = 0;
+    while (rem.len > 0) {
+        const qr = try div1L(alloc, rem, POW10_U64[19]);
+        rem = qr.q;
+        var c = qr.r;
+        var k: usize = 19;
+        const base = n_chunks * 19;
+        while (k > 0) : (k -= 1) {
+            buf[base + k - 1] = '0' + @as(u8, @intCast(c % 10));
+            c /= 10;
+        }
+        n_chunks += 1;
+    }
+    // chunks are least-significant-first: reverse by 19-digit blocks,
+    // then strip leading zeros of the most significant block.
+    var out = try alloc.alloc(u8, n_chunks * 19);
+    var i: usize = 0;
+    while (i < n_chunks) : (i += 1) {
+        @memcpy(out[i * 19 .. i * 19 + 19],
+            buf[(n_chunks - 1 - i) * 19 .. (n_chunks - i) * 19]);
+    }
+    var start: usize = 0;
+    while (start + 1 < out.len and out[start] == '0') start += 1;
+    return out[start..];
+}
+
+// 10^k over limbs by binary exponentiation on mulL.
+fn pow10L(alloc: std.mem.Allocator, k: usize) error{OutOfMemory}![]Limb {
+    var r: []Limb = try alloc.dupe(Limb, &[_]Limb{1});
+    var b: []Limb = try alloc.dupe(Limb, &[_]Limb{10});
+    var e = k;
+    while (e > 0) {
+        if (e & 1 == 1) r = try mulL(alloc, r, b);
+        if (e > 1) b = try mulL(alloc, b, b);
+        e >>= 1;
+    }
+    return ltrim(r);
+}
+
+// digits -> limbs: val(hi)*10^lo.len + val(lo), recursively.
+fn digitsToLimbs(alloc: std.mem.Allocator, digs: []const u8) error{OutOfMemory}![]Limb {
+    if (digs.len == 0) return alloc.alloc(Limb, 0);
+    if (digs.len <= RADIX_DNC_MIN) return digitsToLimbsSB(alloc, digs);
+    const lo_len = digs.len / 2;
+    const hi = digs[0 .. digs.len - lo_len];
+    const lo = digs[digs.len - lo_len ..];
+    const p10 = try pow10L(alloc, lo_len);
+    const lohi = try digitsToLimbs(alloc, hi);
+    const lolo = try digitsToLimbs(alloc, lo);
+    const prod = try mulL(alloc, lohi, p10);
+    return addL(alloc, prod, lolo);
+}
+
+// limbs -> digits: split x = q*10^split + r, recurse, pad r to `split`.
+fn limbsToDigits(alloc: std.mem.Allocator, x_in: []const Limb) error{OutOfMemory}![]u8 {
+    const x = ltrimc(x_in);
+    if (x.len == 0) return alloc.dupe(u8, "0");
+    // decimal-digit estimate: bits*log10(2), upper bound, off by <=1.
+    const bits: usize = 64 * (x.len - 1) + (64 - @clz(x[x.len - 1]));
+    const nd: usize = @as(usize, @intFromFloat(@floor(@as(f64, @floatFromInt(bits)) * 0.3010299956639812))) + 1;
+    if (nd <= RADIX_DNC_MIN) return limbsToDigitsSB(alloc, x);
+    const split = nd / 2;
+    const p10 = try pow10L(alloc, split);
+    if (cmpL(x, p10) < 0) return limbsToDigitsSB(alloc, x); // estimate edge (x < 10^split: only tiny cases)
+    const qr = try divAnyL(alloc, x, p10);
+    const hi_s = try limbsToDigits(alloc, qr.q);
+    const lo_s = try limbsToDigits(alloc, qr.r);
+    var out = try alloc.alloc(u8, hi_s.len + split);
+    @memcpy(out[0..hi_s.len], hi_s);
+    if (lo_s.len > split) @panic("std/num radix: low half overflow");
+    const pad = split - lo_s.len;
+    @memset(out[hi_s.len .. hi_s.len + pad], '0');
+    @memcpy(out[hi_s.len + pad ..], lo_s);
+    return out;
+}
+
+// BI wrapper: decimal digit string of x's magnitude (caller owns).
+fn biToDigits(alloc: std.mem.Allocator, x: *const BI) ![]u8 {
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ds = try limbsToDigits(arena.allocator(), x.toConst().limbs);
+    return try alloc.dupe(u8, ds);
+}
+
+// BI from limbs (positive magnitude).
+fn biFromLimbs(alloc: std.mem.Allocator, r: []const Limb) !BI {
+    var ss = try BI.initCapacity(alloc, @max(r.len, 1));
+    errdefer ss.deinit();
+    if (r.len == 0) {
+        ss.limbs[0] = 0;
+        ss.setLen(1);
+    } else {
+        @memcpy(ss.limbs[0..r.len], r);
+        ss.setLen(r.len);
+    }
+    ss.setSign(true);
+    return ss;
+}
+
+// decimal digit string -> BI (magnitude), D&C.
+fn biFromDigits(alloc: std.mem.Allocator, digs: []const u8) !BI {
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const lm = try digitsToLimbs(arena.allocator(), digs);
+    return biFromLimbs(alloc, lm);
+}
+
 // Managed wrapper: s = floor(sqrt(x)); x must be nonnegative — matches
 // Managed.sqrt semantics on the magnitude lane.
 fn sqrtFast(s: *BI, x: *const BI) !void {
@@ -835,7 +991,7 @@ fn decMul(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     var r = try BI.init(alloc);
     defer r.deinit();
     try mulFast(&r, &a.m, &b.m);
-    const ds = try r.toString(alloc, 10, .lower);
+    const ds = try biToDigits(alloc, &r);
     defer alloc.free(ds);
     return decFromDigits(alloc, ds, a.e + b.e, a.neg != b.neg);
 }
@@ -853,7 +1009,7 @@ fn trimDigits(ds: []const u8, prec: i64) Trimmed {
 
 // a truncated to `prec` significant digits (floor-magnitude).
 fn decTrunc(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
-    const ds = try a.m.toString(alloc, 10, .lower);
+    const ds = try biToDigits(alloc, &a.m);
     defer alloc.free(ds);
     const t = trimDigits(ds, prec);
     return decFromDigits(alloc, t.digits, a.e + t.e_adj, a.neg);
@@ -866,9 +1022,9 @@ fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !De
 
     // an m-digit by n-digit integer quotient has m-n or m-n+1 digits; scale A
     // so m-n = prec, then trim to prec.
-    const la = try a.m.toString(alloc, 10, .lower);
+    const la = try biToDigits(alloc, &a.m);
     defer alloc.free(la);
-    const lb = try b.m.toString(alloc, 10, .lower);
+    const lb = try biToDigits(alloc, &b.m);
     defer alloc.free(lb);
     var k: i64 = prec - @as(i64, @intCast(la.len)) + @as(i64, @intCast(lb.len));
     if (k < 0) k = 0;
@@ -885,7 +1041,7 @@ fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !De
     defer rem.deinit();
     try divFast(&q, &rem, &num, &b.m);
 
-    const qs = try q.toString(alloc, 10, .lower);
+    const qs = try biToDigits(alloc, &q);
     defer alloc.free(qs);
     const t = trimDigits(qs, prec);
     return decFromDigits(alloc, t.digits, a.e - b.e - k + t.e_adj, a.neg != b.neg);
@@ -898,7 +1054,7 @@ fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
 
     // Want r = sqrt(A * 10^E). Compute s = isqrt(A * 10^k) with k = E (mod 2)
     // and len(A) + k >= 2*prec, so s has >= prec digits; result = s * 10^((E - k)/2).
-    const la = try a.m.toString(alloc, 10, .lower);
+    const la = try biToDigits(alloc, &a.m);
     defer alloc.free(la);
     var k: i64 = 2 * @max(prec, 1) - @as(i64, @intCast(la.len));
     if (k < 0) k = 0;
@@ -914,7 +1070,7 @@ fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
     defer s.deinit();
     try sqrtFast(&s, &x);
 
-    const ss = try s.toString(alloc, 10, .lower);
+    const ss = try biToDigits(alloc, &s);
     defer alloc.free(ss);
     const t = trimDigits(ss, prec);
     return decFromDigits(alloc, t.digits, @divExact(a.e - k, 2) + t.e_adj, false);
@@ -984,7 +1140,7 @@ fn fxToDec(alloc: std.mem.Allocator, x: *const BI, w: i64, prec: i64) !Dec {
     defer xa.deinit();
     const neg = !xa.isPositive() and !xa.eqlZero();
     xa.abs();
-    const ds = try xa.toString(alloc, 10, .lower);
+    const ds = try biToDigits(alloc, &xa);
     defer alloc.free(ds);
     const t = trimDigits(ds, prec);
     return decFromDigits(alloc, t.digits, -w + t.e_adj, neg);
@@ -1121,7 +1277,7 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         defer decDeinit(&le);
         var prod = try decMul(alloc, a, &le);
         defer decDeinit(&prod);
-        const ps = try prod.m.toString(alloc, 10, .lower);
+        const ps = try biToDigits(alloc, &prod.m);
         defer alloc.free(ps);
         if (prod.e + @as(i64, @intCast(ps.len)) > EXP_DIGCAP) return error.Overflow;
     }
@@ -1228,7 +1384,7 @@ fn fxLnTen(alloc: std.mem.Allocator, w: i64) !BI {
 // ln(a) for a > 0. a = f * 10^t with f in [1,10): ln = ln(f) + t*ln(10).
 fn decLn(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
     const w = prec + GUARD + 8;
-    const ms = try a.m.toString(alloc, 10, .lower);
+    const ms = try biToDigits(alloc, &a.m);
     defer alloc.free(ms);
     const L: i64 = @intCast(ms.len);
     var fdec = Dec{ .neg = false, .m = try a.m.clone(), .e = 1 - L };
@@ -1459,7 +1615,7 @@ fn decMod(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     var r = try BI.init(alloc);
     defer r.deinit();
     try divFast(&q, &r, &am, &bm);
-    const rs = try r.toString(alloc, 10, .lower);
+    const rs = try biToDigits(alloc, &r);
     defer alloc.free(rs);
     // r >= 0 as a magnitude; sign follows the dividend (trunc-mod).
     return decFromDigits(alloc, rs, e, a.neg and !r.eqlZero());
