@@ -310,62 +310,183 @@ fn serSqrt(alloc: std.mem.Allocator, c: []const Rat) ![]Rat {
     return s;
 }
 
-fn serFromNode(alloc: std.mem.Allocator, n: *const SNode, L: usize) anyerror![]Rat {
+// ============================================================================
+// Laurent series with exact precision: x^v * (c0 + c1 x + ...), where c.len
+// is the RELATIVE precision — every stored coefficient is exact, nothing
+// past it is known. Normalized means c0 != 0, or c.len == 0 ("zero to
+// absolute order v"). Cancellation in add shrinks the known prefix instead
+// of inventing zeros, so a removable singularity — (1 - sqrt(1-4x))/(2x) —
+// divides out exactly and only a genuine pole (v < 0 at the end) refuses.
+// ============================================================================
+
+const Laur = struct { v: i64, c: []Rat };
+
+fn laurFree(alloc: std.mem.Allocator, l: Laur) void {
+    serFree(alloc, l.c);
+}
+
+// Consumes c; strips leading zeros into v.
+fn laurMake(alloc: std.mem.Allocator, v: i64, c: []Rat) !Laur {
+    var k: usize = 0;
+    while (k < c.len and ratIsZero(&c[k])) k += 1;
+    if (k == 0) return .{ .v = v, .c = c };
+    defer serFree(alloc, c);
+    const out = try alloc.alloc(Rat, c.len - k);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*x| ratDeinit(x);
+        alloc.free(out);
+    }
+    while (i < out.len) : (i += 1) out[i] = try ratClone(&c[k + i]);
+    return .{ .v = v + @as(i64, @intCast(k)), .c = out };
+}
+
+fn laurAt(l: Laur, e: i64) ?*const Rat {
+    const idx = e - l.v;
+    if (idx < 0 or idx >= @as(i64, @intCast(l.c.len))) return null;
+    return &l.c[@intCast(idx)];
+}
+
+fn laurAdd(alloc: std.mem.Allocator, a: Laur, b: Laur) !Laur {
+    const v = @min(a.v, b.v);
+    const ap = @min(a.v + @as(i64, @intCast(a.c.len)), b.v + @as(i64, @intCast(b.c.len)));
+    if (ap <= v) return .{ .v = ap, .c = try serZero(alloc, 0) };
+    const n: usize = @intCast(ap - v);
+    const c = try alloc.alloc(Rat, n);
+    var i: usize = 0;
+    errdefer {
+        for (c[0..i]) |*x| ratDeinit(x);
+        alloc.free(c);
+    }
+    while (i < n) : (i += 1) {
+        const e = v + @as(i64, @intCast(i));
+        const x = laurAt(a, e);
+        const y = laurAt(b, e);
+        c[i] = if (x != null and y != null)
+            try ratAdd(alloc, x.?, y.?)
+        else if (x) |xx| try ratClone(xx) else if (y) |yy| try ratClone(yy) else try ratFromInt(alloc, 0);
+    }
+    return laurMake(alloc, v, c);
+}
+
+fn laurMul(alloc: std.mem.Allocator, a: Laur, b: Laur) !Laur {
+    const v = a.v + b.v;
+    const n = @min(a.c.len, b.c.len);
+    if (a.c.len == 0 or b.c.len == 0) return .{ .v = v, .c = try serZero(alloc, 0) };
+    const sa = a.c[0..n];
+    const sb = b.c[0..n];
+    return .{ .v = v, .c = try serMul(alloc, sa, sb) };
+}
+
+fn laurInv(alloc: std.mem.Allocator, a: Laur) !Laur {
+    if (a.c.len == 0) return error.LaurIndeterminate;
+    return .{ .v = -a.v, .c = try serInv(alloc, a.c) };
+}
+
+fn laurSqrt(alloc: std.mem.Allocator, a: Laur) !Laur {
+    if (a.c.len == 0) return error.LaurIndeterminate;
+    // The lane is real-valued, so √ is the principal real root:
+    // √(x^(2k)·u) = |x|^k·√u, analytic at 0 only when k is even. An odd
+    // valuation is a branch point, and v ≡ 2 (mod 4) is |x|-shaped.
+    if (@mod(a.v, 4) != 0) return error.NonAnalytic;
+    return .{ .v = @divExact(a.v, 2), .c = try serSqrt(alloc, a.c) };
+}
+
+fn laurOf(alloc: std.mem.Allocator, n: *const SNode, W: usize) anyerror!Laur {
     switch (n.kind) {
         .dec => {
-            const s = try serZero(alloc, L);
-            errdefer serFree(alloc, s);
-            const c0 = try ratFromDec(alloc, &n.dec);
+            var c0 = try ratFromDec(alloc, &n.dec);
+            if (ratIsZero(&c0)) {
+                ratDeinit(&c0);
+                return .{ .v = @intCast(W), .c = try serZero(alloc, 0) };
+            }
+            const s = serZero(alloc, W) catch |e| {
+                ratDeinit(&c0);
+                return e;
+            };
             ratDeinit(&s[0]);
             s[0] = c0;
-            return s;
+            return .{ .v = 0, .c = s };
         },
         .atom => {
             if (n.atom != 3) return error.NonRational;
-            const s = try serZero(alloc, L);
+            const s = try serZero(alloc, W);
             errdefer serFree(alloc, s);
-            if (L > 1) {
-                const c1 = try ratFromInt(alloc, 1);
-                ratDeinit(&s[1]);
-                s[1] = c1;
-            }
-            return s;
+            const c0 = try ratFromInt(alloc, 1);
+            ratDeinit(&s[0]);
+            s[0] = c0;
+            return .{ .v = 1, .c = s };
         },
         .add => {
-            var acc = try serZero(alloc, L);
-            errdefer serFree(alloc, acc);
-            for (n.kids) |k| {
-                const ks = try serFromNode(alloc, k, L);
-                defer serFree(alloc, ks);
-                const acc2 = try serAdd(alloc, acc, ks);
-                serFree(alloc, acc);
+            var acc = try laurOf(alloc, n.kids[0], W);
+            errdefer laurFree(alloc, acc);
+            for (n.kids[1..]) |k| {
+                const ks = try laurOf(alloc, k, W);
+                defer laurFree(alloc, ks);
+                const acc2 = try laurAdd(alloc, acc, ks);
+                laurFree(alloc, acc);
                 acc = acc2;
             }
             return acc;
         },
         .mul => {
-            var acc = try serFromNode(alloc, n.kids[0], L);
-            errdefer serFree(alloc, acc);
+            var acc = try laurOf(alloc, n.kids[0], W);
+            errdefer laurFree(alloc, acc);
             for (n.kids[1..]) |k| {
-                const ks = try serFromNode(alloc, k, L);
-                defer serFree(alloc, ks);
-                const acc2 = try serMul(alloc, acc, ks);
-                serFree(alloc, acc);
+                const ks = try laurOf(alloc, k, W);
+                defer laurFree(alloc, ks);
+                const acc2 = try laurMul(alloc, acc, ks);
+                laurFree(alloc, acc);
                 acc = acc2;
             }
             return acc;
         },
         .inv => {
-            const inner = try serFromNode(alloc, n.kid, L);
-            defer serFree(alloc, inner);
-            return serInv(alloc, inner);
+            const inner = try laurOf(alloc, n.kid, W);
+            defer laurFree(alloc, inner);
+            return laurInv(alloc, inner);
         },
         .sq => {
-            const inner = try serFromNode(alloc, n.kid, L);
-            defer serFree(alloc, inner);
-            return serSqrt(alloc, inner);
+            const inner = try laurOf(alloc, n.kid, W);
+            defer laurFree(alloc, inner);
+            return laurSqrt(alloc, inner);
         },
     }
+}
+
+// First L Taylor coefficients at 0. Works in Laurent form and widens the
+// working precision until L coefficients are exact; a pole that survives
+// all cancellation (v < 0) is NonAnalytic. A quotient whose denominator
+// stays zero at every working precision is a division by the zero
+// function, also NonAnalytic.
+fn serFromNode(alloc: std.mem.Allocator, n: *const SNode, L: usize) anyerror![]Rat {
+    var W: usize = L + 8;
+    var tries: usize = 0;
+    while (tries < 5) : (tries += 1) {
+        const l = laurOf(alloc, n, W) catch |e| switch (e) {
+            error.LaurIndeterminate => {
+                W *= 2;
+                continue;
+            },
+            else => return e,
+        };
+        defer laurFree(alloc, l);
+        const absp = l.v + @as(i64, @intCast(l.c.len));
+        if (l.c.len > 0 and l.v < 0) return error.NonAnalytic;
+        if (absp >= @as(i64, @intCast(L))) {
+            const out = try serZero(alloc, L);
+            errdefer serFree(alloc, out);
+            for (out, 0..) |*slot, i| {
+                if (laurAt(l, @intCast(i))) |c| {
+                    ratDeinit(slot);
+                    slot.* = try ratClone(c);
+                }
+            }
+            return out;
+        }
+        W *= 2;
+    }
+    return error.NonAnalytic;
 }
 
 fn ratJoinCsv(alloc: std.mem.Allocator, s: []const Rat) ![]u8 {

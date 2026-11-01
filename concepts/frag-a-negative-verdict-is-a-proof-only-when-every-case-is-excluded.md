@@ -37,6 +37,17 @@ representation*. Catching a representation bug needs a witness that is
 built separately, which is the same rule as the oracle independence in
 [[frag-a-phantom-can-only-promise-what-a-producer-can-prove]].
 
+**Same day, the series engine did the same thing.** `series` refused
+Catalan's `(1 − √(1−4x))/(2x)` as `non-analytic` because `inv` saw a zero
+constant term. The singularity is removable. What the engine actually
+checked was "the denominator's first coefficient is zero", which is weaker
+than "this function has a pole", and the refusal claimed the stronger one.
+Exact Laurent arithmetic fixes the claim: cancellation shrinks the known
+prefix instead of inventing zeros, and a pole is reported only when a
+negative valuation survives. The real-valued lane draws one more line here:
+`√(x²) = |x|` refuses even though `x` squares to `x²`. Choosing that branch
+would be a sign guess presented as a series.
+
 Open: the Kovacic case algorithms themselves (which need the poles'
 algebraic roots, or a factorization over Q̄) are what turn `open-cases` into
 decided-yes with a constructed solution. Until then, an open verdict is the
