@@ -29,6 +29,19 @@ not the type question: does anything that can only arrive at runtime need
 this spelling? If yes it is not redundant, it is misnamed — it wants the
 ingest boundary. If no, it was never a lane.
 
+**2026-11-01 — the unit DSL was not an exception.** `std/quantity:lit`
+looked like the case where `s:` was honest: `"5.0±0.2 m·s⁻¹"` is not a Koru
+expression. But that was the *spelling*, not the content. Magnitude, unit
+product, uncertainty and covariance tag all have expression-shaped
+spellings — `lit(5.0*m/s, unc: 0.2)`, `lit(2*m, unc: 0.1, cov: bias)` — and
+the old text spelling survives exactly where it belongs: `ingest`/`parse`
+for wire text. A DSL that resists `expr:` is first a question of whether its
+glyphs were chosen for the page or for the parser; only the residue that
+genuinely is not expression-shaped (a bare `-` cov tag on `lit-sym`) keeps a
+string field. The cost is stated: one magnitude term per literal —
+`lit(2*π*m)` refuses by name rather than folding decimals quantity cannot
+multiply.
+
 Pairs with [[frag-expression-source-are-strings-not-comptime]] (capture is
 representation, not timing — `expr:` arriving as text is why the runtime
 re-parse is honest) and [[frag-taint-is-per-value-signal-is-per-stream]]
