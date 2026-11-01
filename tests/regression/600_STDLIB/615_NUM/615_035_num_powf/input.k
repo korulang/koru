@@ -4,8 +4,8 @@
 import std/io
 import std/num
 
-std/num:lit { 4 }
-| exact a |> std/num:lit { 0.5 }
+std/num:lit(4)
+| exact a |> std/num:lit(0.5)
     | exact b |> std/num:powf(a, e: b, prec: 30)
         | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
         | neg-base |> std/io:print.ln("nb")
@@ -14,8 +14,8 @@ std/num:lit { 4 }
     | bad y |> std/io:print.ln("bad-b")
 | bad x |> std/io:print.ln("bad-a")
 
-std/num:lit { 2 }
-| exact a |> std/num:lit { 0.5 }
+std/num:lit(2)
+| exact a |> std/num:lit(0.5)
     | exact b |> std/num:powf(a, e: b, prec: 30)
         | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
         | neg-base |> std/io:print.ln("nb")
@@ -24,8 +24,8 @@ std/num:lit { 2 }
     | bad y |> std/io:print.ln("bad-b")
 | bad x |> std/io:print.ln("bad-a")
 
-std/num:lit { 4 }
-| exact a |> std/num:lit { 2 }
+std/num:lit(4)
+| exact a |> std/num:lit(2)
     | exact b |> std/num:powf(a, e: b, prec: 30)
         | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
         | neg-base |> std/io:print.ln("nb")
@@ -34,8 +34,8 @@ std/num:lit { 4 }
     | bad y |> std/io:print.ln("bad-b")
 | bad x |> std/io:print.ln("bad-a")
 
-std/num:lit { -4 }
-| exact a |> std/num:lit { 0.5 }
+std/num:lit(-4)
+| exact a |> std/num:lit(0.5)
     | exact b |> std/num:powf(a, e: b, prec: 20)
         | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
         | neg-base |> std/io:print.ln("powf:neg-base")
@@ -44,8 +44,8 @@ std/num:lit { -4 }
     | bad y |> std/io:print.ln("bad-b")
 | bad x |> std/io:print.ln("bad-a")
 
-std/num:lit { 0 }
-| exact a |> std/num:lit { -1 }
+std/num:lit(0)
+| exact a |> std/num:lit(-1)
     | exact b |> std/num:powf(a, e: b, prec: 20)
         | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
         | neg-base |> std/io:print.ln("nb")

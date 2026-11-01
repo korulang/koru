@@ -23,8 +23,8 @@ A `std/num` value is an arbitrary-precision decimal — mantissa as a big intege
 import std/io
 import std/num
 
-std/num:lit { 123456789012345678901234567890 }
-| exact a |> std/num:lit { 987654321098765432109876543210 }
+std/num:lit(123456789012345678901234567890)
+| exact a |> std/num:lit(987654321098765432109876543210)
     | exact b |> std/num:add(a, b): r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
     | bad x |> std/io:print.ln("bad")
 | bad y |> std/io:print.ln("bad")
@@ -56,7 +56,7 @@ The operation surface is the one a calculator wants — `add`/`sub`/`mul`/`div`,
 - `decide-integral`/`decide-ode`/`decide-field` are the decision tower — polynomial integrands get constructed antiderivatives, holonomic integrands get shifted certificates (antiderivatives of D-finite functions stay D-finite — a closure corollary, same sources). `decide-ode` applies Kovacic's pole-order necessary conditions (Kovacic, *J. Symbolic Computation* 1986) to classify Liouvillian solvability, so Airy's equation comes back `non-Liouvillian` — correct, and Risch's integration-in-finite-terms framing (1969) is why that answer is honest rather than a shrug. What the tower can't reach says `unresolved` with its search bounds named.
 
 ```koru
-std/sym:lit { inv((1e0+(-1e0*x))) }
+std/sym:lit(inv((1e0+(-1e0*x))))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 3)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)

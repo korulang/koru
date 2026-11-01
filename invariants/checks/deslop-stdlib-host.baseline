@@ -1,3 +1,7 @@
+# Re-pinned 1177/1069 -> 1246/1119 (2026-11-01): roll fired on the lit-revert
+# commit (expr:/source: split). Named growth is store.new.kz catch twins —
+# uncommitted WIP in the shared checkout, counted per the row's
+# uncommitted-work clause. Measured at this tree.
 # Pin: tools/deslop_kz.py --host over koru_std at --min-tokens=48,
 # measured 2026-10-14. The OTHER census: the .kz layer is Zig host text —
 # canon's host_line/proc-body strings are opaque to the decl census, so
@@ -61,8 +65,8 @@
 # io.blk.kz shared shapes) now fingerprint cross-file instead of
 # same-file. The +7/+9 is the file-boundary relabel; the new size-parse
 # code is under the token floor. Re-pinned to measured.
-clusters=1179
-members=1066
+clusters=1246
+members=1119
 # 1039/915: the roll fired on the |? coverage commit ("coverage: |? no
 # longer suppresses panic arms, and refuses where no union exists") —
 # that commit touches src/ checkers, in-repo tests, and a concept frag;
@@ -119,5 +123,5 @@ members=1066
 # documented). control.for.kz's synthetic stays unparseable both
 # sides of this diff (37 -> 39 errors — nested template arms; it was
 # already in the escaped set, so its host text never counted).
-clusters=1177
-members=1069
+clusters=1246
+members=1119

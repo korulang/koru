@@ -15,16 +15,18 @@ A parameter that takes *the author's own code or math* never spells `s:
 string` — quoted text the compiler can't read is authored structure
 smuggled through the string lane. Two honest spellings, by grammar:
 
-- **Koru-side authored values** → `expr: Expression` — a bare identifier or
-  expression at the callsite (`rel-law(name: cos, ...)`,
-  `rel-seed(name: sin, ...)`, `push(x)`); the compiler sees structure, the
-  proc receives text at runtime.
+- **Koru-expression payloads** → `expr: Expression` — the callsite payload
+  *is* koru expression syntax: a numeral (`num:lit(6.022e23)`), an sexpr
+  (`sym:lit(π+π)`), an identifier (`rel-seed(name: sin, ...)`,
+  `rel-law(name: cos, ...)`, `push(x)`). A literal is not "source" — the
+  compiler parses it as an expression, the proc receives text at runtime.
 - **Foreign-grammar code** → `source: Source` as a trailing block —
-  `std/sym:lit { inv((1e0+(-1e0*x))) }`, `std/quantity:lit { 5+-0.5 m/s }`,
-  `rel-derive(reg: r4) { g(sin)*g(sin)+g(cos)*g(cos) }`. The block carries
-  opaque text the proc's own parser reads (`source.text`) — the same
-  contract kernel's `shape`/`init` use. No ceiling: the block's grammar
-  never has to parse as a koru expression.
+  payloads a koru expression parser cannot read: quantity grammar
+  (`quantity:lit { 5+-0.5 m/s }` — `+-`, `@bias`, unit words), rel-registry
+  DSL (`rel-derive(reg: r4) { g(sin)*g(sin)+g(cos)*g(cos) }`). The block
+  carries opaque text the proc's own parser reads (`source.text`) — the
+  same contract kernel's `shape`/`init` use. No ceiling: the block's
+  grammar never has to parse as a koru expression.
 
 `source:` reaches runtime tors — the call emits `__koru_ast.Source{ .text
 }` into the Input struct and the proc binds `const source = input.source`;

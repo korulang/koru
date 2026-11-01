@@ -2,7 +2,7 @@ import std/io
 import std/sym
 
 // elementary: polynomial integrand -> constructed antiderivative
-std/sym:lit { ((2e0*x)+3e0) }
+std/sym:lit(((2e0*x)+3e0))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 3)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
@@ -14,7 +14,7 @@ std/sym:lit { ((2e0*x)+3e0) }
 | bad |> std/io:print.ln("bad-lit")
 
 // holonomic-special via structural cert: 1/(1-x) -> -h1 + (1-x) h2 = 0
-std/sym:lit { inv((1e0+(-1e0*x))) }
+std/sym:lit(inv((1e0+(-1e0*x))))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 3)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
@@ -26,7 +26,7 @@ std/sym:lit { inv((1e0+(-1e0*x))) }
 | bad |> std/io:print.ln("bad-lit")
 
 // holonomic-special via discovery fallback: (1+x)^(1/4)
-std/sym:lit { √(√((1e0+x))) }
+std/sym:lit(√(√((1e0+x))))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 3)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
@@ -38,7 +38,7 @@ std/sym:lit { √(√((1e0+x))) }
 | bad |> std/io:print.ln("bad-lit")
 
 // unresolved: same integrand, bounds too tight — named bound recorded
-std/sym:lit { √(√((1e0+x))) }
+std/sym:lit(√(√((1e0+x))))
 | exact a |> std/sym:decide-integral(a, max-order: 0, max-deg: 0)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
@@ -50,7 +50,7 @@ std/sym:lit { √(√((1e0+x))) }
 | bad |> std/io:print.ln("bad-lit")
 
 // decide-ode: y2 = 2y -> liouvillian exp form
-std/sym:lit { 2e0 }
+std/sym:lit(2e0)
 | exact r |> std/sym:decide-ode(r)
     | liouvillian m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
@@ -59,7 +59,7 @@ std/sym:lit { 2e0 }
 | bad |> std/io:print.ln("bad-lit")
 
 // decide-ode: y2 = -y -> liouvillian trig form
-std/sym:lit { (-1e0) }
+std/sym:lit((-1e0))
 | exact r |> std/sym:decide-ode(r)
     | liouvillian m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
@@ -68,7 +68,7 @@ std/sym:lit { (-1e0) }
 | bad |> std/io:print.ln("bad-lit")
 
 // decide-ode: y2 = x*y (Airy) -> unbounded -> holonomic-special
-std/sym:lit { (x) }
+std/sym:lit((x))
 | exact r |> std/sym:decide-ode(r)
     | liouvillian m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
@@ -77,7 +77,7 @@ std/sym:lit { (x) }
 | bad |> std/io:print.ln("bad-lit")
 
 // decide-ode: y2 = y/x -> pole at 0 -> unbounded -> holonomic-special
-std/sym:lit { inv(x) }
+std/sym:lit(inv(x))
 | exact r |> std/sym:decide-ode(r)
     | liouvillian m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
@@ -86,7 +86,7 @@ std/sym:lit { inv(x) }
 | bad |> std/io:print.ln("bad-lit")
 
 // decide-ode: y2 = sqrt(x)*y -> r not rational -> unclassifiable
-std/sym:lit { √(x) }
+std/sym:lit(√(x))
 | exact r |> std/sym:decide-ode(r)
     | liouvillian m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
@@ -95,7 +95,7 @@ std/sym:lit { √(x) }
 | bad |> std/io:print.ln("bad-lit")
 
 // decide-field: extract antiderivative cert for registry composition
-std/sym:lit { inv((1e0+(-1e0*x))) }
+std/sym:lit(inv((1e0+(-1e0*x))))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 3)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/sym:decide-field(blob: m, name: "antiderivative")
@@ -109,7 +109,7 @@ std/sym:lit { inv((1e0+(-1e0*x))) }
 | bad |> std/io:print.ln("bad-lit")
 
 // decide-field: absent field name -> not-found
-std/sym:lit { ((2e0*x)+3e0) }
+std/sym:lit(((2e0*x)+3e0))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 3)
     | elementary m |> std/sym:decide-field(blob: m, name: "antiderivative")
         | exact c |> std/io:print.ln("{{ c:s }}") |> std/io:free(content: c) |> std/io:free(content: m)
