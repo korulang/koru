@@ -294,15 +294,18 @@ fn fracNorm(alloc: std.mem.Allocator, n_in: []Rat, d_in: []Rat) !Frac {
         polyFree(alloc, d);
         d = dd.q;
     }
-    const lc = &d[polyDegIdx(d)];
-    if (!ratIsOne(lc)) {
+    // lc is copied out first: dividing d in place turns d's own leading
+    // coefficient into 1, and a pointer to it would then divide n by 1.
+    if (!ratIsOne(&d[polyDegIdx(d)])) {
+        var lc = try ratClone(&d[polyDegIdx(d)]);
+        defer ratDeinit(&lc);
         for (d) |*c| {
-            const v = try ratDiv(alloc, c, lc);
+            const v = try ratDiv(alloc, c, &lc);
             ratDeinit(c);
             c.* = v;
         }
         for (n) |*c| {
-            const v = try ratDiv(alloc, c, lc);
+            const v = try ratDiv(alloc, c, &lc);
             ratDeinit(c);
             c.* = v;
         }

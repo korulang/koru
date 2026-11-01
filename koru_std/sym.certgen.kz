@@ -539,9 +539,170 @@ fn ratFuncOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!?Frac {
     }
 }
 
+// ============================================================================
+// Hermite reduction (Horowitz–Ostrogradsky form) over Q(x): for reduced
+// N/D, with D- = gcd(D, D') and D* = D/D-,
+//   ∫ N/D = ∫ Q + B/D- + ∫ C/D*       (deg B < deg D-, deg C < deg D*)
+// where Q is the polynomial part. B, C solve the square linear system
+//   R = B'·D* − B·H + C·D-,   H = D*·D-'/D-   (a polynomial)
+// The rational part B/D- is the whole rational part of the antiderivative;
+// C/D* has a squarefree denominator, so its integral is purely logarithmic
+// (Rothstein–Trager). Result is checked exactly: Q + (B/D-)' + C/D* == N/D.
+// ============================================================================
+
+const HermiteOut = struct { poly: []Rat, rat: Frac, log: Frac };
+
+fn polyShiftScal(alloc: std.mem.Allocator, p: []const Rat, k: usize, s: i64) ![]Rat {
+    const out = try alloc.alloc(Rat, p.len + k);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| ratDeinit(c);
+        alloc.free(out);
+    }
+    while (i < k) : (i += 1) out[i] = try ratFromInt(alloc, 0);
+    while (i < out.len) : (i += 1) out[i] = try ratMulInt(alloc, &p[i - k], s);
+    return out;
+}
+
+fn hermiteReduce(alloc: std.mem.Allocator, f: *const Frac) !HermiteOut {
+    const qr = try polyDivMod(alloc, f.n, f.d);
+    defer polyFree(alloc, qr.r);
+    errdefer polyFree(alloc, qr.q);
+    const dD = try polyDer(alloc, f.d);
+    defer polyFree(alloc, dD);
+    const dm = try polyGcd(alloc, f.d, dD);
+    defer polyFree(alloc, dm);
+    const dsq = try polyDivMod(alloc, f.d, dm);
+    polyFree(alloc, dsq.r);
+    const ds = dsq.q;
+    defer polyFree(alloc, ds);
+    const dmD = try polyDer(alloc, dm);
+    defer polyFree(alloc, dmD);
+    const t = try polyMul(alloc, ds, dmD);
+    defer polyFree(alloc, t);
+    const hq = try polyDivMod(alloc, t, dm);
+    polyFree(alloc, hq.r);
+    const h = hq.q;
+    defer polyFree(alloc, h);
+
+    const m = polyDegIdx(dm);
+    const s = polyDegIdx(ds);
+    const n = m + s;
+    const rows = try alloc.alloc([]Rat, n);
+    var built: usize = 0;
+    defer {
+        for (rows[0..built]) |row| polyFree(alloc, row);
+        alloc.free(rows);
+    }
+    while (built < n) : (built += 1) {
+        rows[built] = try alloc.alloc(Rat, n + 1);
+        var z: usize = 0;
+        errdefer {
+            for (rows[built][0..z]) |*c| ratDeinit(c);
+            alloc.free(rows[built]);
+        }
+        while (z < n + 1) : (z += 1) rows[built][z] = try ratFromInt(alloc, 0);
+    }
+    const setCol = struct {
+        fn go(rs: [][]Rat, col: usize, p: []const Rat) !void {
+            for (p, 0..) |*c, j| {
+                if (ratIsZero(c)) continue;
+                if (j >= rs.len) return error.HermiteDegree;
+                ratDeinit(&rs[j][col]);
+                rs[j][col] = try ratClone(c);
+            }
+        }
+    }.go;
+    var i: usize = 0;
+    while (i < m) : (i += 1) {
+        const t1 = if (i > 0) try polyShiftScal(alloc, ds, i - 1, @intCast(i)) else try polyEmpty(alloc);
+        defer polyFree(alloc, t1);
+        const t2 = try polyShiftScal(alloc, h, i, 1);
+        defer polyFree(alloc, t2);
+        const col = try polySub(alloc, t1, t2);
+        defer polyFree(alloc, col);
+        try setCol(rows, i, col);
+    }
+    i = 0;
+    while (i < s) : (i += 1) {
+        const col = try polyShiftScal(alloc, dm, i, 1);
+        defer polyFree(alloc, col);
+        try setCol(rows, m + i, col);
+    }
+    const nr = try polyNeg(alloc, qr.r);
+    defer polyFree(alloc, nr);
+    try setCol(rows, n, nr);
+
+    const sol = (try rrefNullVec(alloc, rows, n + 1)) orelse return error.HermiteSingular;
+    defer polyFree(alloc, sol);
+    if (!ratIsOne(&sol[n])) return error.HermiteSingular;
+    // fracNorm consumes n,d (and frees both on its own error path), so each
+    // pair is handed over immediately — no errdefer stays armed across it.
+    const bpart = try polyClone(alloc, sol[0..m]);
+    const dm2 = polyClone(alloc, dm) catch |e| {
+        polyFree(alloc, bpart);
+        return e;
+    };
+    var rat = try fracNorm(alloc, bpart, dm2);
+    errdefer fracFree(alloc, &rat);
+    const cpart = try polyClone(alloc, sol[m..n]);
+    const ds2 = polyClone(alloc, ds) catch |e| {
+        polyFree(alloc, cpart);
+        return e;
+    };
+    const logp = try fracNorm(alloc, cpart, ds2);
+    return .{ .poly = qr.q, .rat = rat, .log = logp };
+}
+
+// Exact check: Q + (B/D-)' + C/D* == f.
+fn hermiteCheck(alloc: std.mem.Allocator, f: *const Frac, h: *const HermiteOut) !bool {
+    var qf = try fracNorm(alloc, try polyClone(alloc, h.poly), try polyOne(alloc));
+    defer fracFree(alloc, &qf);
+    var rd = try fracDer(alloc, &h.rat);
+    defer fracFree(alloc, &rd);
+    var s1 = try fracAdd(alloc, &qf, &rd);
+    defer fracFree(alloc, &s1);
+    var s2 = try fracAdd(alloc, &s1, &h.log);
+    defer fracFree(alloc, &s2);
+    var nf = try fracNeg(alloc, f);
+    defer fracFree(alloc, &nf);
+    var diff = try fracAdd(alloc, &s2, &nf);
+    defer fracFree(alloc, &diff);
+    return fracIsZero(&diff);
+}
+
+// Sexpr text of a polynomial / rational function — fed to normCanon, so
+// the shape only has to parse, not be canonical.
+fn polyText(alloc: std.mem.Allocator, out: *std.ArrayList(u8), p: []const Rat) !void {
+    try out.append(alloc, '(');
+    var first = true;
+    for (p, 0..) |*c, i| {
+        if (ratIsZero(c)) continue;
+        if (!first) try out.append(alloc, '+');
+        first = false;
+        const cs = try ratToString(alloc, c);
+        defer alloc.free(cs);
+        try out.append(alloc, '(');
+        try out.appendSlice(alloc, cs);
+        try out.append(alloc, ')');
+        var k: usize = 0;
+        while (k < i) : (k += 1) try out.appendSlice(alloc, "*x");
+    }
+    if (first) try out.append(alloc, '0');
+    try out.append(alloc, ')');
+}
+
+fn fracText(alloc: std.mem.Allocator, out: *std.ArrayList(u8), f: *const Frac) !void {
+    if (fracIsZero(f)) return out.appendSlice(alloc, "(0)");
+    try polyText(alloc, out, f.n);
+    try out.appendSlice(alloc, "*inv(");
+    try polyText(alloc, out, f.d);
+    try out.append(alloc, ')');
+}
+
 // decide(layer=L)|field=value|field=value — fixed set of decision-level
 // segment names; decide-field extracts one by name.
-const DECIDE_FIELDS = [_][]const u8{ "integral", "integrand", "antiderivative", "seed", "note", "r", "form" };
+const DECIDE_FIELDS = [_][]const u8{ "integral", "integrand", "antiderivative", "rational-part", "log-integrand", "seed", "note", "r", "form" };
 
 fn decideFieldBounds(blob: []const u8, name: []const u8) ?struct { s: usize, e: usize } {
     var i: usize = 0;
@@ -621,6 +782,40 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
         const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|integral=[{s}]|note=polynomial-termwise-constructed", .{csv[colon + 1 ..]}) catch @panic("std/sym:decide-integral");
         return .{ .elementary = blob };
     }
+    // Rational integrand: always elementary (Liouville). Hermite builds the
+    // full rational part; a nonzero squarefree remainder is the log part.
+    if (ratFuncOfNode(alloc, nt) catch @panic("std/sym:decide-integral rf")) |rf_in| {
+        var rf = rf_in;
+        defer fracFree(alloc, &rf);
+        var hr = hermiteReduce(alloc, &rf) catch @panic("std/sym:decide-integral hermite");
+        defer {
+            polyFree(alloc, hr.poly);
+            fracFree(alloc, &hr.rat);
+            fracFree(alloc, &hr.log);
+        }
+        if (!(hermiteCheck(alloc, &rf, &hr) catch @panic("std/sym:decide-integral check")))
+            @panic("std/sym:decide-integral: hermite reduction failed its exact check");
+        var txt = std.ArrayList(u8){};
+        defer txt.deinit(alloc);
+        const pint = polyIntegral(alloc, hr.poly) catch @panic("std/sym:decide-integral");
+        defer polyFree(alloc, pint);
+        polyText(alloc, &txt, pint) catch @panic("std/sym:decide-integral");
+        txt.append(alloc, '+') catch @panic("std/sym:decide-integral");
+        fracText(alloc, &txt, &hr.rat) catch @panic("std/sym:decide-integral");
+        const anti = normCanon(alloc, txt.items) catch @panic("std/sym:decide-integral canon");
+        defer alloc.free(anti);
+        if (fracIsZero(&hr.log)) {
+            const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=hermite-constructed;checked-exact", .{anti}) catch @panic("std/sym:decide-integral");
+            return .{ .elementary = blob };
+        }
+        var ltxt = std.ArrayList(u8){};
+        defer ltxt.deinit(alloc);
+        fracText(alloc, &ltxt, &hr.log) catch @panic("std/sym:decide-integral");
+        const logc = normCanon(alloc, ltxt.items) catch @panic("std/sym:decide-integral canon");
+        defer alloc.free(logc);
+        const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|rational-part={s}|log-integrand={s}|note=hermite-reduced;checked-exact;log-part-squarefree-not-constructed(no-log-node)", .{ anti, logc }) catch @panic("std/sym:decide-integral");
+        return .{ .elementary = blob };
+    }
     var structural_refusal: ?[]const u8 = null;
     var cert = certOfNode(alloc, nt) catch |e| blk: {
         switch (e) {
@@ -658,11 +853,41 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
     return .{ .holonomic_special = blob };
 }
 
-// decide-ode: Kovacic pole-structure classification for y'' = r(x) y.
-// Ported faithfully: poles = roots of den(r) — over C any non-constant
-// denominator has roots — so bounded iff den is constant and
-// deg(num) <= deg(den), i.e. r is a constant. No dsolve engine: the
-// bounded arm emits the constant-coefficient solution FORM as text.
+// Pole multiplicities of a reduced r = n/d are the root multiplicities of
+// d, read exactly over Q by the gcd tower c_k = gcd(c_{k-1}, c_{k-1}'):
+// deg c_{k-1} - deg c_k counts the distinct roots of multiplicity >= k.
+// Bit m of the result is set iff some pole has order exactly m.
+fn poleOrderMask(alloc: std.mem.Allocator, d: []const Rat) !u64 {
+    var mask: u64 = 0;
+    var c = try polyClone(alloc, d);
+    defer polyFree(alloc, c);
+    var prev_ge: usize = 0;
+    var k: usize = 1;
+    while (!polyIsZero(c) and polyDegIdx(c) > 0) : (k += 1) {
+        const dc = try polyDer(alloc, c);
+        defer polyFree(alloc, dc);
+        const g = try polyGcd(alloc, c, dc);
+        const ge = polyDegIdx(c) - (if (polyIsZero(g)) 0 else polyDegIdx(g));
+        if (k > 1 and prev_ge > ge and k - 1 < 64) mask |= @as(u64, 1) << @intCast(k - 1);
+        prev_ge = ge;
+        polyFree(alloc, c);
+        c = g;
+    }
+    if (prev_ge > 0 and k - 1 < 64) mask |= @as(u64, 1) << @intCast(k - 1);
+    return mask;
+}
+
+// decide-ode: Kovacic (J. Symbolic Computation 1986) for y'' = r(x) y.
+// Constant r is solved outright (constant-coefficient form). Otherwise the
+// three cases' NECESSARY conditions are checked on pole orders and the
+// order at infinity o = deg d - deg n:
+//   case 1: every pole of order 1 or even; o even or o > 2
+//   case 2: some pole of order 2 or of odd order > 2
+//   case 3: every pole of order <= 2; o >= 2
+// All three failing is a proof of no Liouvillian solution. Any surviving
+// case is NOT a proof either way — the case algorithms themselves (which
+// need the poles' algebraic roots) are not run, so the arm is
+// `unclassifiable` naming the open cases rather than a guess.
 ~pub tor decide-ode { r: string<!sexpr> }
 | liouvillian string<std/io:allocated!>
 | holonomic-special string<std/io:allocated!>
@@ -684,8 +909,23 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
     const den_deg: i64 = if (polyIsZero(f.d)) 0 else @intCast(polyDegIdx(f.d));
     const bounded = den_const and num_deg <= den_deg;
     if (!bounded) {
-        const blob = decideIntegNote("holonomic-special", "kovacic-pole-structure-unbounded:proven-no-liouvillian-solution", null, null) catch @panic("std/sym:decide-ode");
-        return .{ .holonomic_special = blob };
+        const mask = poleOrderMask(alloc, f.d) catch @panic("std/sym:decide-ode poles");
+        const o_inf = den_deg - num_deg;
+        const ODD_GT2: u64 = 0xAAAAAAAAAAAAAAA8; // bits 3,5,7,...
+        const EVEN_OR_1: u64 = 0x5555555555555556; // bits 1,2,4,6,...
+        const case1 = (mask & ~EVEN_OR_1) == 0 and (@mod(o_inf, 2) == 0 or o_inf > 2);
+        const case2 = (mask & ((@as(u64, 1) << 2) | ODD_GT2)) != 0;
+        const case3 = (mask >> 3) == 0 and o_inf >= 2;
+        if (!case1 and !case2 and !case3) {
+            const blob = decideIntegNote("holonomic-special", "kovacic-necessary-conditions-fail-all-cases:proven-no-liouvillian-solution", null, null) catch @panic("std/sym:decide-ode");
+            return .{ .holonomic_special = blob };
+        }
+        const open = std.fmt.allocPrint(alloc, "kovacic-necessary-conditions-met:open-cases={s}{s}{s}:case-algorithms-not-run", .{
+            if (case1) "1" else "",
+            if (case2) (if (case1) ",2" else "2") else "",
+            if (case3) (if (case1 or case2) ",3" else "3") else "",
+        }) catch @panic("std/sym:decide-ode");
+        return .{ .unclassifiable = open };
     }
     // bounded => r constant; emit the constant-coefficient solution form
     const c = if (f.n.len > 0) f.n[0] else ratFromInt(alloc, 0) catch @panic("std/sym:decide-ode");

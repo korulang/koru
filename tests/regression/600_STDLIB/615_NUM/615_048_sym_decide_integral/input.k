@@ -13,8 +13,9 @@ std/sym:lit(((2e0*x)+3e0))
     | bad |> std/io:print.ln("bad")
 | bad |> std/io:print.ln("bad-lit")
 
-// holonomic-special via structural cert: 1/(1-x) -> -h1 + (1-x) h2 = 0
-std/sym:lit(inv((1e0+(-1e0*x))))
+// holonomic-special via structural cert: sqrt(1+x) is not rational, so
+// no Hermite lane — its certificate shifts to the antiderivative's
+std/sym:lit(√(1+x))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 3)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
@@ -67,7 +68,7 @@ std/sym:lit((-1e0))
     | bad m |> std/io:print.ln("bad:{{ m:s }}") |> std/io:free(content: m)
 | bad |> std/io:print.ln("bad-lit")
 
-// decide-ode: y2 = x*y (Airy) -> unbounded -> holonomic-special
+// decide-ode: y2 = x*y (Airy) -> all three Kovacic cases fail -> proven
 std/sym:lit((x))
 | exact r |> std/sym:decide-ode(r)
     | liouvillian m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
@@ -76,7 +77,7 @@ std/sym:lit((x))
     | bad m |> std/io:print.ln("bad:{{ m:s }}") |> std/io:free(content: m)
 | bad |> std/io:print.ln("bad-lit")
 
-// decide-ode: y2 = y/x -> pole at 0 -> unbounded -> holonomic-special
+// decide-ode: y2 = y/x -> simple pole, order 1 at infinity -> all cases fail
 std/sym:lit(inv(x))
 | exact r |> std/sym:decide-ode(r)
     | liouvillian m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
@@ -95,7 +96,7 @@ std/sym:lit(√(x))
 | bad |> std/io:print.ln("bad-lit")
 
 // decide-field: extract antiderivative cert for registry composition
-std/sym:lit(inv((1e0+(-1e0*x))))
+std/sym:lit(√(1+x))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 3)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/sym:decide-field(blob: m, name: "antiderivative")
