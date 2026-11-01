@@ -190,3 +190,36 @@ print("  D(sin^2+cos^2) residual:", r, "OK" if r == 0 else "FAIL")
 print("\n=== decide-ode Airy sanity ===")
 print("  dsolve(y''=xy) returns Airy (non-elementary, consistent with",
       "non-Liouvillian):", sp.dsolve(sp.Eq(sp.Function('y')(x).diff(x, 2), x * sp.Function('y')(x))))
+
+print("\n=== Layer C: Hermite antiderivatives differentiate back (615_051) ===")
+def check_anti(name, anti, f):
+    res = sp.simplify(sp.diff(anti, x) - f)
+    print(f"  {name}: d/dx(anti) - f = {res}" + ("  OK" if res == 0 else "  FAIL"))
+check_anti("x/(1+x^2)^2 -> -1/(2(1+x^2))",
+           -sp.Rational(1, 2) / (1 + x**2), x / (1 + x**2) ** 2)
+check_anti("1/(2x+2)^2 -> -1/(4(1+x))",
+           -sp.Rational(1, 4) / (1 + x), 1 / (2 * x + 2) ** 2)
+check_anti("(x^4+1)/x^3 -> x^2/2 - 1/(2x^2)",
+           x**2 / 2 - 1 / (2 * x**2), (x**4 + 1) / x**3)
+check_anti("(x+1)/x^2 -> -1/x + log x (log part named as 1/x)",
+           -1 / x + sp.log(x), (x + 1) / x**2)
+
+print("\n=== Kovacic soundness: the formerly 'proven' cases have Liouvillian solutions ===")
+check_ode("y'' = (x^2+1) y has exp(x^2/2)", [-(x**2 + 1), 0, 1], sp.exp(x**2 / 2))
+check_ode("y'' = (2/x^2) y has x^2", [-2 / x**2, 0, 1], x**2)
+
+print("\n=== Catalan (615_052) ===")
+C = (1 - sp.sqrt(1 - 4 * x)) / (2 * x)
+check_ode("catalan ode 2f + (-2+10x)f' + (-x+4x^2)f''", [2, -2 + 10 * x, -x + 4 * x**2], C)
+ser_cat = sp.series(C, x, 0, 10).removeO().as_poly(x)
+cat = [ser_cat.nth(i) for i in range(10)]
+print("  series == catalan(n):", "OK" if cat == [sp.catalan(n) for n in range(10)] else "FAIL", cat)
+ok = all(sp.simplify((4 * n**2 + 22 * n + 30) * sp.catalan(n + 2) - (n**2 + 7 * n + 12) * sp.catalan(n + 3)) == 0
+         for n in range(20))
+print("  bridge rec (4n^2+22n+30)a_{n+2} = (n^2+7n+12)a_{n+3} on catalan(n):", "OK" if ok else "FAIL")
+r1 = sp.series((sp.sqrt(1 + x) - 1) / x, x, 0, 5).removeO().as_poly(x)
+print("  (sqrt(1+x)-1)/x coeffs:", "OK" if [r1.nth(i) for i in range(5)] ==
+      [sp.Rational(1, 2), -sp.Rational(1, 8), sp.Rational(1, 16), -sp.Rational(5, 128), sp.Rational(7, 256)] else "FAIL")
+r2 = sp.series(x**2 * sp.sqrt(1 + x), x, 0, 5).removeO().as_poly(x)
+print("  x^2 sqrt(1+x) coeffs:", "OK" if [r2.nth(i) for i in range(5)] ==
+      [0, 0, 1, sp.Rational(1, 2), -sp.Rational(1, 8)] else "FAIL")
