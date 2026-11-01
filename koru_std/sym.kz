@@ -299,7 +299,7 @@ fn decSqrtExact(alloc: std.mem.Allocator, d: *const Dec) !?Dec {
 // internal only. Children are heap SNodes owned by their parent.
 // ============================================================================
 
-const NodeKind = enum { dec, atom, sq, inv, add, mul };
+const NodeKind = enum { dec, atom, sq, inv, log, atan, add, mul };
 
 const SNode = struct {
     kind: NodeKind,
@@ -346,7 +346,7 @@ fn nodeFree(alloc: std.mem.Allocator, n: *SNode) void {
             for (n.kids) |k| nodeFree(alloc, k);
             alloc.free(n.kids);
         },
-        .sq, .inv => nodeFree(alloc, n.kid),
+        .sq, .inv, .log, .atan => nodeFree(alloc, n.kid),
         else => {},
     }
     alloc.destroy(n);
@@ -356,7 +356,7 @@ fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
     switch (n.kind) {
         .dec => return nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
         .atom => return nodeAtom(alloc, n.atom),
-        .sq, .inv => return nodeUnary(alloc, n.kind, try nodeClone(alloc, n.kid)),
+        .sq, .inv, .log, .atan => return nodeUnary(alloc, n.kind, try nodeClone(alloc, n.kid)),
         .add, .mul => {
             const kids = try alloc.alloc(*SNode, n.kids.len);
             var built: usize = 0;
@@ -410,6 +410,16 @@ fn canonWriteG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg, ou
         },
         .inv => {
             try out.appendSlice(alloc, "inv(");
+            try canonWriteG(alloc, n.kid, greg, out);
+            try out.append(alloc, ')');
+        },
+        .log => {
+            try out.appendSlice(alloc, "log(");
+            try canonWriteG(alloc, n.kid, greg, out);
+            try out.append(alloc, ')');
+        },
+        .atan => {
+            try out.appendSlice(alloc, "atan(");
             try canonWriteG(alloc, n.kid, greg, out);
             try out.append(alloc, ')');
         },
@@ -614,6 +624,22 @@ fn parseFactor(c: *ParseCtx) anyerror!*SNode {
         c.i = j;
         return nodeDec(c.alloc, d);
     }
+    if (cp == 'l' and c.i + 3 < c.s.len and c.s[c.i + 1] == 'o' and c.s[c.i + 2] == 'g' and c.s[c.i + 3] == '(') {
+        c.i += 4;
+        const inner = try parseExpr(c);
+        errdefer nodeFree(c.alloc, inner);
+        if (c.i >= c.s.len or c.s[c.i] != ')') return error.Bad;
+        c.i += 1;
+        return nodeUnary(c.alloc, .log, inner);
+    }
+    if (cp == 'a' and c.i + 4 < c.s.len and c.s[c.i + 1] == 't' and c.s[c.i + 2] == 'a' and c.s[c.i + 3] == 'n' and c.s[c.i + 4] == '(') {
+        c.i += 5;
+        const inner = try parseExpr(c);
+        errdefer nodeFree(c.alloc, inner);
+        if (c.i >= c.s.len or c.s[c.i] != ')') return error.Bad;
+        c.i += 1;
+        return nodeUnary(c.alloc, .atan, inner);
+    }
     if (cp == 'i' and c.i + 3 < c.s.len and c.s[c.i + 1] == 'n' and c.s[c.i + 2] == 'v' and c.s[c.i + 3] == '(') {
         c.i += 4;
         const inner = try parseExpr(c);
@@ -712,6 +738,52 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                 }
             }
             return nodeUnary(alloc, .sq, inner);
+        },
+        .log => {
+            const inner = try norm(alloc, n.kid);
+            var inner_live = true;
+            errdefer if (inner_live) nodeFree(alloc, inner);
+            if (inner.kind == .dec) {
+                if (inner.dec.m.eqlZero()) return error.LogZero;
+                if (inner.dec.neg) return error.LogNeg;
+                if (try decIsOne(alloc, &inner.dec)) {
+                    nodeFree(alloc, inner);
+                    inner_live = false;
+                    return nodeDec(alloc, try decZero(alloc));
+                }
+            }
+            if (inner.kind == .atom and inner.atom == 1) {
+                // log(e) = 1
+                nodeFree(alloc, inner);
+                inner_live = false;
+                return nodeDec(alloc, try decOneN(alloc, false));
+            }
+            return nodeUnary(alloc, .log, inner);
+        },
+        .atan => {
+            const inner = try norm(alloc, n.kid);
+            var inner_live = true;
+            errdefer if (inner_live) nodeFree(alloc, inner);
+            if (inner.kind == .dec) {
+                if (inner.dec.m.eqlZero()) {
+                    nodeFree(alloc, inner);
+                    inner_live = false;
+                    return nodeDec(alloc, try decZero(alloc));
+                }
+                if (inner.dec.neg) {
+                    // atan(-d) -> -1*atan(|d|): odd function, sign on coeff.
+                    inner.dec.neg = false;
+                    const mn = try nodeDec(alloc, try decOneN(alloc, true));
+                    errdefer nodeFree(alloc, mn);
+                    const at = try nodeUnary(alloc, .atan, inner);
+                    errdefer nodeFree(alloc, at);
+                    inner_live = false;
+                    const pair = try list2(alloc, mn, at);
+                    errdefer alloc.free(pair);
+                    return nodeList(alloc, .mul, pair);
+                }
+            }
+            return nodeUnary(alloc, .atan, inner);
         },
         .inv => {
             const inner = try norm(alloc, n.kid);
@@ -1273,6 +1345,86 @@ fn deriveNodeG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg) an
             try kids.append(alloc, dk);
             dk_live = false;
             try kids.append(alloc, try nodeUnary(alloc, .inv, try nodeUnary(alloc, .sq, try nodeClone(alloc, n.kid))));
+            const kids_slice = try kids.toOwnedSlice(alloc);
+            errdefer {
+                for (kids_slice) |f| nodeFree(alloc, f);
+                alloc.free(kids_slice);
+            }
+            return nodeList(alloc, .mul, kids_slice);
+        },
+        .log => {
+            const dk = try deriveNodeG(alloc, n.kid, greg);
+            var dk_live = true;
+            errdefer if (dk_live) nodeFree(alloc, dk);
+            if (dk.kind == .dec and dk.dec.m.eqlZero()) {
+                nodeFree(alloc, dk);
+                dk_live = false;
+                return nodeDec(alloc, try decZero(alloc));
+            }
+            var kids = try std.ArrayList(*SNode).initCapacity(alloc, 2);
+            errdefer {
+                for (kids.items) |f| nodeFree(alloc, f);
+                kids.deinit(alloc);
+            }
+            try kids.append(alloc, dk);
+            dk_live = false;
+            try kids.append(alloc, try nodeUnary(alloc, .inv, try nodeClone(alloc, n.kid)));
+            const kids_slice = try kids.toOwnedSlice(alloc);
+            errdefer {
+                for (kids_slice) |f| nodeFree(alloc, f);
+                alloc.free(kids_slice);
+            }
+            return nodeList(alloc, .mul, kids_slice);
+        },
+        .atan => {
+            const dk = try deriveNodeG(alloc, n.kid, greg);
+            var dk_live = true;
+            errdefer if (dk_live) nodeFree(alloc, dk);
+            if (dk.kind == .dec and dk.dec.m.eqlZero()) {
+                nodeFree(alloc, dk);
+                dk_live = false;
+                return nodeDec(alloc, try decZero(alloc));
+            }
+            var kids = try std.ArrayList(*SNode).initCapacity(alloc, 3);
+            errdefer {
+                for (kids.items) |f| nodeFree(alloc, f);
+                kids.deinit(alloc);
+            }
+            try kids.append(alloc, dk);
+            dk_live = false;
+            var uu = try std.ArrayList(*SNode).initCapacity(alloc, 2);
+            errdefer {
+                for (uu.items) |f| nodeFree(alloc, f);
+                uu.deinit(alloc);
+            }
+            try uu.append(alloc, try nodeDec(alloc, try decOneN(alloc, false)));
+            var pr = try std.ArrayList(*SNode).initCapacity(alloc, 2);
+            errdefer {
+                for (pr.items) |f| nodeFree(alloc, f);
+                pr.deinit(alloc);
+            }
+            try pr.append(alloc, try nodeClone(alloc, n.kid));
+            try pr.append(alloc, try nodeClone(alloc, n.kid));
+            const pr_slice = try pr.toOwnedSlice(alloc);
+            var pr_live = true;
+            errdefer if (pr_live) {
+                for (pr_slice) |f| nodeFree(alloc, f);
+                alloc.free(pr_slice);
+            };
+            const prod = try nodeList(alloc, .mul, pr_slice);
+            pr_live = false;
+            errdefer nodeFree(alloc, prod);
+            try uu.append(alloc, prod);
+            const uu_slice = try uu.toOwnedSlice(alloc);
+            var uu_live = true;
+            errdefer if (uu_live) {
+                for (uu_slice) |f| nodeFree(alloc, f);
+                alloc.free(uu_slice);
+            };
+            const den = try nodeList(alloc, .add, uu_slice);
+            uu_live = false;
+            errdefer nodeFree(alloc, den);
+            try kids.append(alloc, try nodeUnary(alloc, .inv, den));
             const kids_slice = try kids.toOwnedSlice(alloc);
             errdefer {
                 for (kids_slice) |f| nodeFree(alloc, f);

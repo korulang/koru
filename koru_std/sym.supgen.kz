@@ -451,6 +451,7 @@ fn laurOf(alloc: std.mem.Allocator, n: *const SNode, W: usize) anyerror!Laur {
             defer laurFree(alloc, inner);
             return laurSqrt(alloc, inner);
         },
+        .log, .atan => return error.NonRational,
     }
 }
 

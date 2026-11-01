@@ -499,14 +499,15 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
 
 - `decide-integral(a, max-order, max-deg)`: polynomial integrand ->
   constructed antiderivative (`integral=[coeff list]`, termwise over Q).
-  Otherwise structural cert-of + certShifted -> holonomic-special with
-  `integrand=` + `antiderivative=` cert texts; the note field marks
-  `integrand-cert-theorem-grade` vs `seed-finite-witness` (discovery
-  fallback) and records `no-risch-elementary-form-not-constructed` —
-  honest about the missing Risch engine (1/(1-x) has an elementary form
-  Koru does not construct; it is represented holonomically instead).
-  Grammar has no trig nodes so the artifact's Euler-rewrite leg is
-  vacuous. Unresolved names the searched bounds + structural refusal.
+  Rational integrand -> Hermite reduction + Rothstein–Trager log part:
+  rational residues give `c*log(gcd)` terms, degree-2 residue fields give
+  conjugate real-log pairs (disc>0) or a real log+atan pair (disc<0, no
+  i); every emission is checked exactly against the integrand before it
+  is returned (`checked-exact`). Residue cofactors of degree >=3 name
+  `residue-factor-deg{d}-needs-algebraic-coeffs`. Non-rational integrands
+  keep the structural cert + holonomic-special lane with
+  `no-risch-elementary-form-not-constructed` notes. Unresolved names the
+  searched bounds + structural refusal.
 - `decide-ode(r)`: Kovacic pole-structure port. Over C every
   non-constant denominator has roots, so the artifact's `poles == []`
   collapses to "r constant" — bounded -> liouvillian arm with the

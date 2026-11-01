@@ -3,7 +3,7 @@ import std/sym
 
 // Hermite reduction: a rational integrand's whole rational part is
 // constructed and checked exactly (Q + (B/D-)' + C/D* == N/D). A nonzero
-// squarefree remainder is the log part, named rather than built.
+// squarefree remainder goes through the Rothstein-Trager log-part layer.
 
 // x/(1+x^2)^2 -> -1/(2(1+x^2)), no log part
 std/sym:lit(x*inv((1+x*x)*(1+x*x)))

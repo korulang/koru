@@ -1,0 +1,17 @@
+decide(layer=elementary)|antiderivative=log((1e0+x))|note=hermite+trager-constructed;checked-exact
+decide(layer=elementary)|antiderivative=atan(x)|note=hermite+trager-constructed;checked-exact
+decide(layer=elementary)|antiderivative=log(x)|note=hermite+trager-constructed;checked-exact
+decide(layer=elementary)|antiderivative=((-1e0*log((-1e0+x)))+log((-2e0+x)))|note=hermite+trager-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(5e-1*log((1e0+(x*x))))|note=hermite+trager-constructed;checked-exact
+decide(layer=elementary)|antiderivative=((-1e0*log(((6e0*√(inv(1.2e1)))+x))*√(inv(1.2e1)))+(log(((-6e0*√(inv(1.2e1)))+x))*√(inv(1.2e1))))|note=hermite+trager-constructed;checked-exact
+decide(layer=elementary)|antiderivative=atan((1e0+x))|note=hermite+trager-constructed;checked-exact
+decide(layer=elementary)|antiderivative=((-5e-1*log((1e0+(x*x))))+log(x))|note=hermite+trager-constructed;checked-exact
+decide(layer=elementary)|rational-part=0e0|log-integrand=inv((-2e0+(x*x*x)))|note=hermite-reduced;checked-exact;log-part-residue-factor-deg3-needs-algebraic-coeffs(not-constructed)
+decide(layer=elementary)|antiderivative=((-1e0*log((1e0+x)))+inv((1e0+x))+log(x))|note=hermite+trager-constructed;checked-exact
+D:inv((1e0+x))
+D:inv((1e0+(x*x)))
+bad-lit
+bad-lit
+C:0e0
+C:0e0
+C:log(x)
