@@ -4,9 +4,9 @@
 import std/io
 import std/quantity
 
-std/quantity:lit(s: "0.5")
-| exact h |> std/quantity:lit(s: "2.0+-0.1 kg")
-    | exact m |> std/quantity:lit(s: "3.0 m/s")
+std/quantity:lit { 0.5 }
+| exact h |> std/quantity:lit { 2.0+-0.1 kg }
+    | exact m |> std/quantity:lit { 3.0 m/s }
         | exact v |> std/quantity:pow(a: v, n: 2)
             | exact v2 |> std/quantity:mul(a: h, b: m)
                 | exact hm |> std/quantity:mul(a: hm, b: v2)

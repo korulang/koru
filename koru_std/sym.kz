@@ -1311,12 +1311,12 @@ fn ownedCopy(s: []const u8) []u8 {
 // Literal / trusted parse: π, e, 2*π, √(2), (π+e), 1/3...
 // `expr` spells expression syntax at the callsite — authored math, not
 // quoted text. Runtime text goes through ingest/parse instead.
-~pub tor lit { expr: Expression }
+~pub tor lit { source: Source }
 | exact string<sexpr!>
 | bad
 
 ~proc lit|zig {
-    const c = normCanon(koru_allocator(), expr) catch return .{ .bad = .{} };
+    const c = normCanon(koru_allocator(), source.text) catch return .{ .bad = .{} };
     return .{ .exact = c };
 }
 

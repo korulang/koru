@@ -6,13 +6,13 @@ import std/sym
 std/sym:rel-new(): r0
 |> std/sym:rel-seed(reg: r0, name: "sin")
     | exact r1 |> std/sym:rel-seed(reg: r1, name: "cos")
-        | exact r2 |> std/sym:rel-law(reg: r2, name: "sin", law: "g(cos)")
-            | exact r3 |> std/sym:rel-law(reg: r3, name: "cos", law: "(-1e0*g(sin))")
-                | exact r4 |> std/sym:rel-derive(reg: r4, a: "g(sin)*g(sin)+g(cos)*g(cos)")
+        | exact r2 |> std/sym:rel-law(name: sin, reg: r2) { g(cos) }
+            | exact r3 |> std/sym:rel-law(name: cos, reg: r3) { (-1e0*g(sin)) }
+                | exact r4 |> std/sym:rel-derive(reg: r4) { g(sin)*g(sin)+g(cos)*g(cos) }
                     | exact d |> std/io:print.ln("{{ d:s }}") |> std/io:free(content: d)
-                        |> std/sym:rel-norm(reg: r4, a: "g(sin)*g(cos)+g(cos)*g(sin)")
+                        |> std/sym:rel-norm(reg: r4) { g(sin)*g(cos)+g(cos)*g(sin) }
                             | exact n |> std/io:print.ln("{{ n:s }}") |> std/io:free(content: n)
-                                |> std/sym:rel-derive(reg: r4, a: "g(ln)")
+                                |> std/sym:rel-derive(reg: r4) { g(ln) }
                                     | exact d2 |> std/io:print.ln("{{ d2:s }}") |> std/io:free(content: d2)
                                         |> std/io:print.ln("{{ r4:s }}") |> std/io:free(content: r4)
                                     | unknown-generator |> std/io:print.ln("ug") |> std/io:print.ln("{{ r4:s }}") |> std/io:free(content: r4)
@@ -37,11 +37,11 @@ std/sym:rel-new(): r0
 // exp self-law + product rule; then lawless + dup refusals.
 std/sym:rel-new(): q0
 |> std/sym:rel-seed(reg: q0, name: "exp")
-    | exact q1 |> std/sym:rel-law(reg: q1, name: "exp", law: "g(exp)")
-        | exact q2 |> std/sym:rel-derive(reg: q2, a: "g(exp)*x")
+    | exact q1 |> std/sym:rel-law(name: exp, reg: q1) { g(exp) }
+        | exact q2 |> std/sym:rel-derive(reg: q2) { g(exp)*x }
             | exact d |> std/io:print.ln("{{ d:s }}") |> std/io:free(content: d)
                 |> std/sym:rel-seed(reg: q2, name: "f")
-                    | exact q3 |> std/sym:rel-derive(reg: q3, a: "g(f)")
+                    | exact q3 |> std/sym:rel-derive(reg: q3) { g(f) }
                         | exact d3 |> std/io:print.ln("{{ d3:s }}") |> std/io:free(content: d3) |> std/io:free(content: q3)
                         | unknown-generator |> std/io:print.ln("ug-f") |> std/io:free(content: q3)
                         | lawless |> std/io:print.ln("ll-f") |> std/io:free(content: q3)

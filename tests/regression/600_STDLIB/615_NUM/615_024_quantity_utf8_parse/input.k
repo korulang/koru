@@ -3,10 +3,10 @@
 import std/io
 import std/quantity
 
-std/quantity:lit(s: "5.0±0.2 m·s⁻¹")
+std/quantity:lit { 5.0±0.2 m·s⁻¹ }
 | exact a |> std/quantity:render(n: a): t |> std/io:print.ln("{{ t:s }}") |> std/io:free(content: t)
 | bad x |> std/io:print.ln("bad")
 
-std/quantity:lit(s: "π m")
+std/quantity:lit { π m }
 | exact a |> std/quantity:render(n: a): t |> std/io:print.ln("{{ t:s }}") |> std/io:free(content: t)
 | bad x |> std/io:print.ln("bad")

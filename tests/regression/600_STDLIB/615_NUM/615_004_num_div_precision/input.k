@@ -2,8 +2,8 @@
 import std/io
 import std/num
 
-std/num:lit(1)
-| exact c |> std/num:lit(3)
+std/num:lit { 1 }
+| exact c |> std/num:lit { 3 }
     | exact d |> std/num:div(a: c, b: d, prec: 30)
         | exact q |> std/io:print.ln("{{ q:s }}") |> std/num:free(n: q)
         | div-zero |> std/io:print.ln("divzero")

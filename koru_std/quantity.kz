@@ -374,11 +374,11 @@ fn qtySplitText(alloc: std.mem.Allocator, s_in: []const u8, out: *SplitFields) !
 // discharge that canonicalizes. `bad` stays an unmarked message: the caller
 // wrote s themselves; the owned buffers are freed here rather than pushed
 // onto the caller as an obligation.
-~pub tor lit { s: string }
+~pub tor lit { source: Source }
 | exact string<exact!>
 | bad string
 
-~lit = ingest(s): ext |> split(s: ext)
+~lit = ingest(s: source.text): ext |> split(s: ext)
 | fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov)
     | exact q => exact q
     | bad e |> std/io:free(content: e) => bad "malformed quantity"

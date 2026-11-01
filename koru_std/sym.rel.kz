@@ -127,7 +127,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 // Attach (or replace) the derivative law for a declared generator. The law
 // is a sexpr over x and generator names — self- and mutual references
 // resolve since the name set is complete at attach time.
-~pub tor rel-law { reg: string<std/io:!allocated>, name: string, law: string }
+~pub tor rel-law { name: Expression, reg: string<std/io:!allocated>, source: Source }
 | exact string<std/io:allocated!>
 | unknown-generator
 | bad
@@ -140,7 +140,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     const a = arena.allocator();
     var g = relParse(a, reg) catch return .{ .bad = .{} };
     const i = relFind(&g, name) orelse return .{ .unknown_generator = .{} };
-    const t = parseTreeG(a, law, &g) catch |e| switch (e) {
+    const t = parseTreeG(a, source.text, &g) catch |e| switch (e) {
         error.UnknownGenerator => return .{ .unknown_generator = .{} },
         else => return .{ .bad = .{} },
     };
@@ -152,7 +152,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 
 // d/dx of expr under the declared laws — theorem-grade: every rewrite step
 // is a derivative rule or a declared-law substitution.
-~pub tor rel-derive { reg: string<*>, a: string }
+~pub tor rel-derive { reg: string<*>, source: Source }
 | exact string<std/io:allocated!>
 | unknown-generator
 | lawless
@@ -164,7 +164,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     defer arena.deinit();
     const ar = arena.allocator();
     var g = relParse(ar, reg) catch return .{ .bad = .{} };
-    const t = parseTreeG(ar, a, &g) catch |e| switch (e) {
+    const t = parseTreeG(ar, source.text, &g) catch |e| switch (e) {
         error.UnknownGenerator => return .{ .unknown_generator = .{} },
         else => return .{ .bad = .{} },
     };
@@ -179,7 +179,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 
 // Canonical normal form of expr under the registry's name set — the
 // caller-side equality primitive: canon-equal texts are provably equal.
-~pub tor rel-norm { reg: string<*>, a: string }
+~pub tor rel-norm { reg: string<*>, source: Source }
 | exact string<std/io:allocated!>
 | unknown-generator
 | bad
@@ -190,7 +190,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     defer arena.deinit();
     const ar = arena.allocator();
     var g = relParse(ar, reg) catch return .{ .bad = .{} };
-    const t = parseTreeG(ar, a, &g) catch |e| switch (e) {
+    const t = parseTreeG(ar, source.text, &g) catch |e| switch (e) {
         error.UnknownGenerator => return .{ .unknown_generator = .{} },
         else => return .{ .bad = .{} },
     };

@@ -2,7 +2,7 @@
 import std/io
 import std/num
 
-std/num:lit(2)
+std/num:lit { 2 }
 | exact s |> std/num:sqrt(a: s, prec: 40)
     | exact r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
     | negative |> std/io:print.ln("neg")

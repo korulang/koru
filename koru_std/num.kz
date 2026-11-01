@@ -1041,14 +1041,14 @@ fn numFree(s: []const u8) void {
 
 // Parse trusted in-program text — a literal. Same gate, no taint to consume.
 // `bad` returns the offending slice.
-~pub tor lit { expr: Expression }
+~pub tor lit { source: Source }
 | exact string<exact!>
 | bad string
 
 ~proc lit|zig {
-    var d = decParse(koru_allocator(), expr) catch |err| switch (err) {
+    var d = decParse(koru_allocator(), source.text) catch |err| switch (err) {
         error.OutOfMemory => @panic("std/num: out of memory"),
-        else => return .{ .bad = expr },
+        else => return .{ .bad = source.text },
     };
     defer decDeinit(&d);
     const canon = decToString(koru_allocator(), &d) catch @panic("std/num: out of memory");
