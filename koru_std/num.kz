@@ -21,7 +21,7 @@
 //   At runtime a num is just a []const u8 the module owns; every num-owned
 //   buffer is allocator-freed exactly once, at consume time.
 //
-// Arithmetic: mantissa is an arbitrary-precision integer (std.math.big), the
+// Arithmetic: mantissa is an owned arbitrary-precision Int (limbs + sign), the
 // exponent is decimal. Exact for +,-,*,pow; `div`/`sqrt` take an explicit
 // significant-digit `prec` because a decimal expansion need not terminate.
 //
@@ -33,10 +33,254 @@
 ~import std/io
 
 const std = @import("std");
-const big = std.math.big;
-const BI = std.math.big.int.Managed;
-const Limb = std.math.big.Limb;
-const DoubleLimb = std.math.big.DoubleLimb;
+const Limb = u64;
+const DoubleLimb = u128;
+
+// ============================================================================
+// Int — owned arbitrary-precision signed integer: magnitude limbs + sign.
+// Replaces std.math.big.int.Managed throughout this module (A1.4): the same
+// subset API (init/initSet/initCapacity/deinit/clone/toConst/eqlZero/
+// isPositive/negate/abs/order/add/sub/mul/setLen/setSign/toString/toInt)
+// over our own limb kernels — mulL/addL/subL/divAnyL/isqrtL/limbsToDigits/
+// digitsToLimbs. Canonical invariant: value 0 is always positive.
+// ============================================================================
+
+const IntConst = struct {
+    limbs: []const Limb,
+    positive: bool,
+
+    pub fn toInt(self: IntConst, comptime T: type) error{Overflow}!T {
+        var v: u128 = 0;
+        var i = self.limbs.len;
+        while (i > 0) {
+            i -= 1;
+            if (v > std.math.maxInt(u128) >> 64) return error.Overflow;
+            v = (v << 64) | self.limbs[i];
+        }
+        if (self.positive) return std.math.cast(T, v) orelse error.Overflow;
+        const info = @typeInfo(T);
+        if (info != .int or info.int.signedness != .signed) return error.Overflow;
+        const lim: u128 = @as(u128, 1) << @as(u7, @intCast(info.int.bits - 1));
+        if (v > lim) return error.Overflow;
+        if (v == lim) return std.math.minInt(T);
+        return @intCast(-@as(i128, @intCast(v)));
+    }
+};
+
+const Int = struct {
+    allocator: std.mem.Allocator,
+    limbs: []Limb, // capacity
+    len: usize, // used
+    positive: bool,
+
+    fn magL(self: *const Int) []const Limb {
+        return ltrimc(self.limbs[0..self.len]);
+    }
+
+    pub fn init(allocator: std.mem.Allocator) !Int {
+        const l = try allocator.alloc(Limb, 1);
+        l[0] = 0;
+        return .{ .allocator = allocator, .limbs = l, .len = 1, .positive = true };
+    }
+
+    pub fn initSet(allocator: std.mem.Allocator, value: anytype) !Int {
+        const T = @TypeOf(value);
+        if (T == Int or T == *const Int) return value.clone();
+        var umag: u128 = undefined;
+        var pos = true;
+        if (value < 0) {
+            pos = false;
+            umag = @intCast(-@as(i128, value));
+        } else {
+            umag = @intCast(value);
+        }
+        const n: usize = if (umag == 0) 1 else @intCast((128 - @clz(umag) + 63) / 64);
+        const l = try allocator.alloc(Limb, @max(n, 1));
+        var i: usize = 0;
+        while (umag > 0) : (i += 1) {
+            l[i] = @truncate(umag);
+            umag >>= 64;
+        }
+        if (i == 0) l[0] = 0;
+        return .{ .allocator = allocator, .limbs = l, .len = @max(i, 1), .positive = pos };
+    }
+
+    pub fn initCapacity(allocator: std.mem.Allocator, cap: usize) !Int {
+        const l = try allocator.alloc(Limb, @max(cap, 1));
+        l[0] = 0;
+        return .{ .allocator = allocator, .limbs = l, .len = 1, .positive = true };
+    }
+
+    pub fn deinit(self: *Int) void {
+        self.allocator.free(self.limbs);
+        self.* = undefined;
+    }
+
+    pub fn clone(self: *const Int) !Int {
+        const l = try self.allocator.alloc(Limb, @max(self.len, 1));
+        @memcpy(l[0..self.len], self.limbs[0..self.len]);
+        return .{ .allocator = self.allocator, .limbs = l, .len = self.len, .positive = self.positive };
+    }
+
+    pub fn toConst(self: *const Int) IntConst {
+        return .{ .limbs = self.magL(), .positive = self.positive };
+    }
+
+    pub fn eqlZero(self: *const Int) bool {
+        return self.magL().len == 0;
+    }
+
+    pub fn isPositive(self: *const Int) bool {
+        return self.positive;
+    }
+
+    pub fn negate(self: *Int) void {
+        if (!self.eqlZero()) self.positive = !self.positive;
+    }
+
+    pub fn abs(self: *Int) void {
+        self.positive = true;
+    }
+
+    pub fn setLen(self: *Int, n: usize) void {
+        std.debug.assert(n <= self.limbs.len);
+        self.len = n;
+        if (self.eqlZero()) self.positive = true;
+    }
+
+    pub fn setSign(self: *Int, positive: bool) void {
+        self.positive = positive;
+        if (self.eqlZero()) self.positive = true;
+    }
+
+    pub fn order(a: *const Int, b: Int) std.math.Order {
+        if (a.positive != b.positive) return if (a.positive) .gt else .lt;
+        const c = cmpL(a.magL(), b.magL());
+        const o: std.math.Order = if (c < 0) .lt else if (c > 0) .gt else .eq;
+        return if (a.positive) o else switch (o) {
+            .lt => .gt,
+            .gt => .lt,
+            .eq => .eq,
+        };
+    }
+
+    // exact-sized owned Int from a magnitude slice (copies; limb-op
+    // intermediates may be arena-owned and size-trimmed).
+    fn fromMag(allocator: std.mem.Allocator, mag: []const Limb, pos: bool) !Int {
+        const m = ltrimc(mag);
+        const l = try allocator.alloc(Limb, @max(m.len, 1));
+        if (m.len == 0) {
+            l[0] = 0;
+        } else {
+            @memcpy(l[0..m.len], m);
+        }
+        return .{ .allocator = allocator, .limbs = l, .len = @max(m.len, 1), .positive = pos or m.len == 0 };
+    }
+
+    pub fn add(r: *Int, a: *const Int, b: *const Int) !void {
+        const alloc = r.allocator;
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        const ar = arena.allocator();
+        const am = a.magL();
+        const bm = b.magL();
+        var mag: []const Limb = undefined;
+        var pos = true;
+        if (a.positive == b.positive) {
+            mag = try addL(ar, am, bm);
+            pos = a.positive;
+        } else switch (cmpL(am, bm)) {
+            0 => mag = am[0..0],
+            1 => {
+                mag = try subL(ar, am, bm);
+                pos = a.positive;
+            },
+            else => {
+                mag = try subL(ar, bm, am);
+                pos = b.positive;
+            },
+        }
+        const out = try Int.fromMag(alloc, mag, pos);
+        r.deinit();
+        r.* = out;
+    }
+
+    pub fn sub(r: *Int, a: *const Int, b: *const Int) !void {
+        var nb = b.*;
+        nb.positive = !b.positive;
+        return add(r, a, &nb);
+    }
+
+    pub fn mul(r: *Int, a: *const Int, b: *const Int) !void {
+        const alloc = r.allocator;
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        const mag = try mulL(arena.allocator(), a.magL(), b.magL());
+        const out = try Int.fromMag(alloc, mag, a.positive == b.positive);
+        r.deinit();
+        r.* = out;
+    }
+
+    pub fn toString(x: *const Int, alloc: std.mem.Allocator, base: u8, case: std.fmt.Case) ![]u8 {
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        const ar = arena.allocator();
+        const mag = x.magL();
+        var ds: []u8 = undefined;
+        if (base == 10) {
+            ds = try limbsToDigits(ar, mag);
+        } else {
+            ds = try intToBase(ar, mag, base, case);
+        }
+        if (x.positive or mag.len == 0) return alloc.dupe(u8, ds);
+        var out = try alloc.alloc(u8, ds.len + 1);
+        out[0] = '-';
+        @memcpy(out[1..], ds);
+        return out;
+    }
+};
+
+const BI = Int;
+
+// base (2..36) digits of a limb magnitude: chunk by largest power of base
+// fitting one limb, divmod repeatedly, little-endian chunks.
+fn intToBase(alloc: std.mem.Allocator, x_in: []const Limb, base: u8, case: std.fmt.Case) error{OutOfMemory}![]u8 {
+    if (x_in.len == 0) return alloc.dupe(u8, "0");
+    var e: usize = 0;
+    var chunk: Limb = 1;
+    while (chunk <= std.math.maxInt(Limb) / @as(Limb, base)) {
+        chunk *= base;
+        e += 1;
+    }
+    var rem = try alloc.dupe(Limb, x_in);
+    // digits bound: x < 2^(64*len) -> base>=2 -> <= 64*len digits
+    var scratch = try alloc.alloc(u8, x_in.len * 64 + e);
+    var total: usize = 0;
+    const digits_l = "0123456789abcdefghijklmnopqrstuvwxyz";
+    const digits_u = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const dg = if (case == .lower) digits_l else digits_u;
+    while (rem.len > 0) {
+        const qr = try div1L(alloc, rem, chunk);
+        rem = qr.q;
+        var c = qr.r;
+        var k: usize = 0;
+        while (k < e) : (k += 1) {
+            scratch[total + k] = dg[@intCast(c % @as(Limb, base))];
+            c /= @as(Limb, base);
+        }
+        total += e;
+    }
+    // digits least-significant-first in scratch; reverse in place and trim.
+    var i: usize = 0;
+    while (i < total / 2) : (i += 1) {
+        const t = scratch[i];
+        scratch[i] = scratch[total - 1 - i];
+        scratch[total - 1 - i] = t;
+    }
+    var start: usize = 0;
+    while (start + 1 < total and scratch[start] == '0') start += 1;
+    return scratch[start..total];
+}
 
 // ============================================================================
 // Canonical decimal: value = (neg ? -1 : 1) * m * 10^e, m >= 0, no trailing
@@ -145,7 +389,7 @@ fn decToString(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
     return out.toOwnedSlice(alloc);
 }
 
-// r = a * 10^k (k >= 0), into a fresh Managed.
+// r = a * 10^k (k >= 0), into a fresh Int.
 fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
     if (k <= 0) return BI.initSet(alloc, 1);
     var ten = try BI.initSet(alloc, 10);
@@ -877,8 +1121,8 @@ fn biFromDigits(alloc: std.mem.Allocator, digs: []const u8) !BI {
     return biFromLimbs(alloc, lm);
 }
 
-// Managed wrapper: s = floor(sqrt(x)); x must be nonnegative — matches
-// Managed.sqrt semantics on the magnitude lane.
+// Int wrapper: s = floor(sqrt(x)); x must be nonnegative — matches
+// floor-isqrt semantics on the magnitude lane.
 fn sqrtFast(s: *BI, x: *const BI) !void {
     const alloc = s.allocator;
     std.debug.assert(x.toConst().positive);
@@ -900,8 +1144,8 @@ fn sqrtFast(s: *BI, x: *const BI) !void {
     s.* = ss;
 }
 
-// Managed wrapper: truncated division, sign(q) = a.sign != b.sign,
-// sign(r) = a.sign — matches Managed.divTrunc exactly.
+// Int wrapper: truncated division, sign(q) = a.sign != b.sign,
+// sign(r) = a.sign — truncating-division convention.
 fn divFast(q: *BI, r: *BI, a: *const BI, b: *const BI) !void {
     const alloc = q.allocator;
     if (b.eqlZero()) @panic("division by zero");
