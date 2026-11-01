@@ -4,8 +4,8 @@ import std/sym
 // rel band 1: declared generators with derivative laws.
 // Conservation: D(sin^2+cos^2) = 0 mechanically under sin'=cos, cos'=-sin.
 std/sym:rel-new(): r0
-|> std/sym:rel-seed(reg: r0, name: "sin")
-    | exact r1 |> std/sym:rel-seed(reg: r1, name: "cos")
+|> std/sym:rel-seed(name: sin, reg: r0)
+    | exact r1 |> std/sym:rel-seed(name: cos, reg: r1)
         | exact r2 |> std/sym:rel-law(name: sin, reg: r2) { g(cos) }
             | exact r3 |> std/sym:rel-law(name: cos, reg: r3) { (-1e0*g(sin)) }
                 | exact r4 |> std/sym:rel-derive(reg: r4) { g(sin)*g(sin)+g(cos)*g(cos) }
@@ -36,11 +36,11 @@ std/sym:rel-new(): r0
 
 // exp self-law + product rule; then lawless + dup refusals.
 std/sym:rel-new(): q0
-|> std/sym:rel-seed(reg: q0, name: "exp")
+|> std/sym:rel-seed(name: exp, reg: q0)
     | exact q1 |> std/sym:rel-law(name: exp, reg: q1) { g(exp) }
         | exact q2 |> std/sym:rel-derive(reg: q2) { g(exp)*x }
             | exact d |> std/io:print.ln("{{ d:s }}") |> std/io:free(content: d)
-                |> std/sym:rel-seed(reg: q2, name: "f")
+                |> std/sym:rel-seed(name: f, reg: q2)
                     | exact q3 |> std/sym:rel-derive(reg: q3) { g(f) }
                         | exact d3 |> std/io:print.ln("{{ d3:s }}") |> std/io:free(content: d3) |> std/io:free(content: q3)
                         | unknown-generator |> std/io:print.ln("ug-f") |> std/io:free(content: q3)
@@ -60,8 +60,8 @@ std/sym:rel-new(): q0
 
 // dup refusal on re-seed.
 std/sym:rel-new(): p0
-|> std/sym:rel-seed(reg: p0, name: "a")
-    | exact p1 |> std/sym:rel-seed(reg: p1, name: "a")
+|> std/sym:rel-seed(name: a, reg: p0)
+    | exact p1 |> std/sym:rel-seed(name: a, reg: p1)
         | exact p2 |> std/io:print.ln("no-dup") |> std/io:free(content: p2)
         | dup |> std/io:print.ln("dup-ok")
         | full |> std/io:print.ln("full-p")

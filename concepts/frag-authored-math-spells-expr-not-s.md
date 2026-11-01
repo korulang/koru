@@ -16,8 +16,9 @@ string` — quoted text the compiler can't read is authored structure
 smuggled through the string lane. Two honest spellings, by grammar:
 
 - **Koru-side authored values** → `expr: Expression` — a bare identifier or
-  expression at the callsite (`rel-law(name: cos, ...)`, `push(x)`); the
-  compiler sees structure, the proc receives text at runtime.
+  expression at the callsite (`rel-law(name: cos, ...)`,
+  `rel-seed(name: sin, ...)`, `push(x)`); the compiler sees structure, the
+  proc receives text at runtime.
 - **Foreign-grammar code** → `source: Source` as a trailing block —
   `std/sym:lit { inv((1e0+(-1e0*x))) }`, `std/quantity:lit { 5+-0.5 m/s }`,
   `rel-derive(reg: r4) { g(sin)*g(sin)+g(cos)*g(cos) }`. The block carries

@@ -102,7 +102,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 }
 
 // Declare a generator name (lawless until rel-law attaches a law).
-~pub tor rel-seed { reg: string<std/io:!allocated>, name: string }
+~pub tor rel-seed { name: Expression, reg: string<std/io:!allocated> }
 | exact string<std/io:allocated!>
 | dup
 | full

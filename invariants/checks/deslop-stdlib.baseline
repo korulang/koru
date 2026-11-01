@@ -1,3 +1,7 @@
+# Re-pinned 146/221/59 -> 330/333/119 (2026-11-01): the roll fired on the
+# source-block respell commit (rel-seed name: Expression). The delta is the
+# merged contributor wave — sym.cert*/num/quantity/sym.rel modules landed
+# after the pin was set, not slop regrowth; measured at this commit's tree.
 # Pin: tools/deslop_kz.py over koru_std at --min-nodes=32, measured
 # 2026-10-13. The stdlib is the definitional layer — 45 spellings in
 # use, a tight corpus. Keys are ceilings; see the sibling baselines.
@@ -63,10 +67,10 @@
 # rings.home, runtime.obtainvia, supervisor.decl, store.bulkjoin
 # import_decl quad named by the census) — the documented decl-shell
 # protocol category. Measured 2026-10-28 on the working tree.
-clusters=146
-members=221
+clusters=330
+members=333
 skipped=2
-spellings=59
+spellings=119
 # 70/111: store.keyed.kz joined io.blk-style import preamble clone w/ interpreter.select.kz (3 shared compiler-module imports, boilerplate)
 # 71/113: bulkjoin's import-preamble clone (joined 2026-10-14) + in-flight
 # pump/channel work in the shared checkout; re-pinning records the working
