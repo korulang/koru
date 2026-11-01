@@ -1552,56 +1552,443 @@ fn fxConst(alloc: std.mem.Allocator, v: i64, w: i64) !Fx {
     return .{ .v = r, .e = 0 };
 }
 
-// atan(1/k) * SCALE via sum (-1)^j / ((2j+1) k^(2j+1)). Terms are exact
-// quotients truncated once each: e <= term count.
-fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !Fx {
-    var sum = try BI.init(alloc);
-    var kk = try BI.initSet(alloc, k * k);
-    defer kk.deinit();
-    var pk = try BI.initSet(alloc, k);
-    defer pk.deinit();
-    var unit = try pow10(alloc, w);
-    defer unit.deinit();
-    var j: i64 = 0;
-    var neg = false;
-    var e: f64 = 0;
-    while (true) : (j += 1) {
-        var den = try pk.clone();
-        defer den.deinit();
-        var dj = try BI.initSet(alloc, 2 * j + 1);
-        defer dj.deinit();
-        try mulFast(&den, &den, &dj);
-        var q = try BI.init(alloc);
-        defer q.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        try divFast(&q, &rem, &unit, &den);
-        if (q.eqlZero()) break;
-        if (neg) q.negate();
-        try sum.add(&sum, &q);
-        e += if (rem.eqlZero()) @as(f64, 0) else 1;
-        neg = !neg;
-        try mulFast(&pk, &pk, &kk);
-    }
-    return .{ .v = sum, .e = e };
+// ============================================================================
+// A2.2 — algorithm upgrades: binary splitting (pi, e, ln2), AGM ln,
+// Newton exp. The Fx error contract is unchanged; exact-integer product
+// trees make these bounds tighter than the Taylor loops they replace.
+// ============================================================================
+
+// Binary-split result over [a,b): sum_{k=a}^{b-1} prod_{j=a}^{k} (p_j/q_j)
+// is exactly t/q. All-integer until the final division.
+const BsT = struct { p: BI, q: BI, t: BI };
+
+fn bsDeinit(r: *BsT) void {
+    r.p.deinit();
+    r.q.deinit();
+    r.t.deinit();
 }
 
-// pi * SCALE via Machin: pi = 16 atan(1/5) - 4 atan(1/239).
+// Combine: T = T_L*Q_R + P_L*T_R ; P = P_L*P_R ; Q = Q_L*Q_R.
+fn bsSum(alloc: std.mem.Allocator, a: usize, b: usize, comptime leaf: anytype, ctx: anytype) error{OutOfMemory}!BsT {
+    if (b - a <= 1) return leaf(alloc, ctx, a);
+    const m = a + (b - a) / 2;
+    var L = try bsSum(alloc, a, m, leaf, ctx);
+    defer bsDeinit(&L);
+    var R = try bsSum(alloc, m, b, leaf, ctx);
+    defer bsDeinit(&R);
+    var out = BsT{
+        .p = try BI.init(alloc),
+        .q = try BI.init(alloc),
+        .t = try BI.init(alloc),
+    };
+    errdefer bsDeinit(&out);
+    var t1 = try BI.init(alloc);
+    defer t1.deinit();
+    try mulFast(&t1, &L.t, &R.q);
+    var t2 = try BI.init(alloc);
+    defer t2.deinit();
+    try mulFast(&t2, &L.p, &R.t);
+    try out.t.add(&t1, &t2);
+    try mulFast(&out.p, &L.p, &R.p);
+    try mulFast(&out.q, &L.q, &R.q);
+    return out;
+}
+
+// T*10^w/Q as Fx; only error is the final trunc (+ dropped tail, caller's
+// tail_e bound).
+fn bsToFx(alloc: std.mem.Allocator, r: *BsT, w: i64, tail_e: f64) !Fx {
+    var num = try BI.init(alloc);
+    defer num.deinit();
+    var p = try pow10(alloc, w);
+    defer p.deinit();
+    try mulFast(&num, &r.t, &p);
+    var v = try BI.init(alloc);
+    errdefer v.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try divFast(&v, &rem, &num, &r.q);
+    return .{ .v = v, .e = (if (rem.eqlZero()) @as(f64, 0) else 1) + tail_e };
+}
+
+// Chudnovsky leaves: term k carries p_k = (6k-5)(2k-1)(6k-1),
+// q_k = k^3 * 640320^3/24, t_k = p_k*(13591409+545140134k)*(-1)^k.
+// ~14.18 digits per term.
+fn leafChud(alloc: std.mem.Allocator, _: anytype, k: usize) error{OutOfMemory}!BsT {
+    var p = try BI.initSet(alloc, 1);
+    errdefer p.deinit();
+    var q = try BI.initSet(alloc, 1);
+    errdefer q.deinit();
+    const ki: i64 = @intCast(k);
+    if (k > 0) {
+        // (6k-5)(2k-1)(6k-1) fits i64 for any reachable k (< ~2.9e5 terms)
+        p.deinit();
+        p = try BI.initSet(alloc, (6 * ki - 5) * (2 * ki - 1) * (6 * ki - 1));
+        var kk = try BI.initSet(alloc, ki);
+        defer kk.deinit();
+        try mulFast(&q, &q, &kk);
+        try mulFast(&q, &q, &kk);
+        try mulFast(&q, &q, &kk);
+        var c = try BI.initSet(alloc, 10939058860032000); // 640320^3/24
+        defer c.deinit();
+        try mulFast(&q, &q, &c);
+    }
+    var t = try p.clone();
+    errdefer t.deinit();
+    var l = try BI.initSet(alloc, 13591409 + 545140134 * ki);
+    defer l.deinit();
+    try mulFast(&t, &t, &l);
+    if (k % 2 == 1) t.negate();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// pi * 10^w = trunc(426880 * Q * isqrt(10005*10^2w) / T). The only
+// approximations are the isqrt floor (<0.05 ulp of the quotient) and the
+// final div; the sum itself is exact integer arithmetic. Replaces the
+// Machin 16*atan(1/5) - 4*atan(1/239) Taylor pair.
 fn fxPi(alloc: std.mem.Allocator, w: i64) !Fx {
-    var a5 = try fxAtanInv(alloc, 5, w);
-    defer fxDeinit(&a5);
-    var a239 = try fxAtanInv(alloc, 239, w);
-    defer fxDeinit(&a239);
-    var c16 = try BI.initSet(alloc, 16);
-    defer c16.deinit();
-    var c4 = try BI.initSet(alloc, 4);
-    defer c4.deinit();
-    try mulFast(&a5.v, &a5.v, &c16);
-    try mulFast(&a239.v, &a239.v, &c4);
-    var r = try BI.init(alloc);
-    errdefer r.deinit();
-    try r.sub(&a5.v, &a239.v);
-    return .{ .v = r, .e = 16 * a5.e + 4 * a239.e };
+    const wf: f64 = @floatFromInt(w);
+    const n: usize = @intFromFloat(wf / 14.181647462725477 + 4);
+    var r = try bsSum(alloc, 0, n, leafChud, {});
+    defer bsDeinit(&r);
+    var n2 = try pow10(alloc, 2 * w);
+    defer n2.deinit();
+    var c5 = try BI.initSet(alloc, 10005);
+    defer c5.deinit();
+    try mulFast(&n2, &n2, &c5);
+    var s = try BI.init(alloc);
+    defer s.deinit();
+    try sqrtFast(&s, &n2);
+    var num = try BI.init(alloc);
+    defer num.deinit();
+    try mulFast(&num, &r.q, &s);
+    var c426880 = try BI.initSet(alloc, 426880);
+    defer c426880.deinit();
+    try mulFast(&num, &num, &c426880);
+    var v = try BI.init(alloc);
+    errdefer v.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try divFast(&v, &rem, &num, &r.t);
+    return .{ .v = v, .e = (if (rem.eqlZero()) @as(f64, 0) else 1) + 3 };
+}
+
+// e leaves: t_k = 1/k! = prod_{j=1}^{k} 1/j — f_0 = 1, f_k = 1/k.
+fn leafE(alloc: std.mem.Allocator, _: anytype, k: usize) error{OutOfMemory}!BsT {
+    var p = try BI.initSet(alloc, 1);
+    errdefer p.deinit();
+    var q = try BI.initSet(alloc, @max(@as(i64, @intCast(k)), 1));
+    errdefer q.deinit();
+    var t = try BI.initSet(alloc, 1);
+    errdefer t.deinit();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// e * 10^w by binary splitting of sum 1/k!. N! > 10^{w+8} makes the tail
+// << 1 ulp. N via fixed-point Stirling iteration.
+fn fxE(alloc: std.mem.Allocator, w: i64) !Fx {
+    const wf: f64 = @floatFromInt(w);
+    var nf: f64 = @max(wf * 0.4, 8);
+    var i: usize = 0;
+    while (i < 12) : (i += 1)
+        nf = (wf + 8) / (@log10(nf) - 0.4342944819032518);
+    const n: usize = @intFromFloat(@ceil(nf) + 4);
+    var r = try bsSum(alloc, 0, n, leafE, {});
+    defer bsDeinit(&r);
+    return bsToFx(alloc, &r, w, 2);
+}
+
+// ln2 leaves: ln2 = 2*atanh(1/3) = sum_k t_k with t_0 = 2/3 and
+// t_k/t_{k-1} = (2k-1)/(9(2k+1)).
+fn leafLn2(alloc: std.mem.Allocator, _: anytype, k: usize) error{OutOfMemory}!BsT {
+    const ki: i64 = @intCast(k);
+    var p = try BI.initSet(alloc, if (k == 0) @as(i64, 2) else 2 * ki - 1);
+    errdefer p.deinit();
+    var q = try BI.initSet(alloc, if (k == 0) @as(i64, 3) else 9 * (2 * ki + 1));
+    errdefer q.deinit();
+    var t = try p.clone();
+    errdefer t.deinit();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// ln 2 * 10^w by binary splitting; 9^N > 10^{w+8} for the tail.
+fn fxLnTwo(alloc: std.mem.Allocator, w: i64) !Fx {
+    const wf: f64 = @floatFromInt(w);
+    const n: usize = @intFromFloat((wf + 8) / 0.9542425094393249 + 2);
+    var r = try bsSum(alloc, 0, n, leafLn2, {});
+    defer bsDeinit(&r);
+    return bsToFx(alloc, &r, w, 2);
+}
+
+// atanh(1/9) leaves for ln10 = 3 ln2 + 2 atanh(1/9): t_0 = 2/9,
+// t_k/t_{k-1} = (2k-1)/(81(2k+1)).
+fn leafLn10(alloc: std.mem.Allocator, _: anytype, k: usize) error{OutOfMemory}!BsT {
+    const ki: i64 = @intCast(k);
+    var p = try BI.initSet(alloc, if (k == 0) @as(i64, 2) else 2 * ki - 1);
+    errdefer p.deinit();
+    var q = try BI.initSet(alloc, if (k == 0) @as(i64, 9) else 81 * (2 * ki + 1));
+    errdefer q.deinit();
+    var t = try p.clone();
+    errdefer t.deinit();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// ln 10 * 10^w = 3 ln2 + 2 atanh(1/9); 81^N > 10^{w+8} for the tail.
+fn fxLnTen(alloc: std.mem.Allocator, w: i64, ln2: *const Fx) !Fx {
+    const wf: f64 = @floatFromInt(w);
+    const n: usize = @intFromFloat((wf + 8) / 1.9084850188867997 + 2);
+    var r = try bsSum(alloc, 0, n, leafLn10, {});
+    defer bsDeinit(&r);
+    var a9 = try bsToFx(alloc, &r, w, 2);
+    defer fxDeinit(&a9);
+    var l3 = try fxScale(alloc, ln2, 3);
+    defer fxDeinit(&l3);
+    var res = Fx{ .v = try BI.init(alloc), .e = a9.e + l3.e };
+    errdefer res.v.deinit();
+    try res.v.add(&a9.v, &l3.v);
+    return res;
+}
+
+const AtanRCtx = struct { num: BI, den: BI, num2: BI, den2: BI };
+
+// atan(num/den) leaves: t_0 = num/den,
+// t_k/t_{k-1} = -num^2 (2k-1) / ((2k+1) den^2); sign lives in t.
+fn leafAtanR(alloc: std.mem.Allocator, ctx: *const AtanRCtx, k: usize) error{OutOfMemory}!BsT {
+    const ki: i64 = @intCast(k);
+    if (k == 0) {
+        var p = try ctx.num.clone();
+        errdefer p.deinit();
+        var q = try ctx.den.clone();
+        errdefer q.deinit();
+        var t = try ctx.num.clone();
+        errdefer t.deinit();
+        return .{ .p = p, .q = q, .t = t };
+    }
+    var p = try ctx.num2.clone();
+    errdefer p.deinit();
+    var c1 = try BI.initSet(alloc, 2 * ki - 1);
+    defer c1.deinit();
+    try mulFast(&p, &p, &c1);
+    var q = try ctx.den2.clone();
+    errdefer q.deinit();
+    var c2 = try BI.initSet(alloc, 2 * ki + 1);
+    defer c2.deinit();
+    try mulFast(&q, &q, &c2);
+    var t = try p.clone();
+    errdefer t.deinit();
+    if (k % 2 == 1) t.negate();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// atan(num/den) * 10^w by binary splitting — exact for small rationals.
+fn fxAtanRat(alloc: std.mem.Allocator, num: *const BI, den: *const BI, w: i64) !Fx {
+    var ctx = AtanRCtx{
+        .num = try num.clone(),
+        .den = try den.clone(),
+        .num2 = try BI.init(alloc),
+        .den2 = try BI.init(alloc),
+    };
+    defer { ctx.num.deinit(); ctx.den.deinit(); ctx.num2.deinit(); ctx.den2.deinit(); }
+    try mulFast(&ctx.num2, num, num);
+    try mulFast(&ctx.den2, den, den);
+    const wf: f64 = @floatFromInt(w);
+    const usq_r = @exp(@log(10.0) * (fxMag(&ctx.num2, 0) - fxMag(&ctx.den2, 0)));
+    const per: f64 = -@log10(usq_r);
+    const n: usize = @intFromFloat((wf + 8) / @max(per, 0.1) + 3);
+    var r = try bsSum(alloc, 0, n, leafAtanR, &ctx);
+    defer bsDeinit(&r);
+    return bsToFx(alloc, &r, w, 2);
+}
+
+fn pow2BI(alloc: std.mem.Allocator, p: i64) !BI {
+    const np: usize = @intCast(p);
+    var lm = try alloc.alloc(Limb, np / 64 + 1);
+    defer alloc.free(lm);
+    @memset(lm, 0);
+    lm[np / 64] = @as(Limb, 1) << @as(u6, @intCast(np % 64));
+    return biFromLimbs(alloc, lm);
+}
+
+// Rescale an Fx between widths: v * 10^{to-from} up (exact, e scales —
+// clamped so coarse seeds can't overflow the f64 bound) or trunc-div
+// down (+1 when digits drop).
+fn fxRescale(alloc: std.mem.Allocator, a: *const Fx, w_from: i64, w_to: i64) !Fx {
+    var v = try a.v.clone();
+    errdefer v.deinit();
+    var e = a.e;
+    if (w_to >= w_from) {
+        var p = try pow10(alloc, w_to - w_from);
+        defer p.deinit();
+        try mulFast(&v, &v, &p);
+        e = @min(e * fxP10(@floatFromInt(w_to - w_from)), 1e290);
+    } else {
+        var p = try pow10(alloc, w_from - w_to);
+        defer p.deinit();
+        var q = try BI.init(alloc);
+        errdefer q.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try divFast(&q, &rem, &v, &p);
+        v.deinit();
+        v = q;
+        e = e * fxP10(@floatFromInt(w_to - w_from)) +
+            (if (rem.eqlZero()) @as(f64, 0) else 1);
+    }
+    return .{ .v = v, .e = e };
+}
+
+const AgmConsts = struct { ln2: Fx, pi: Fx };
+
+fn agmConsts(alloc: std.mem.Allocator, w: i64) !AgmConsts {
+    return .{ .ln2 = try fxLnTwo(alloc, w), .pi = try fxPi(alloc, w) };
+}
+
+fn agmConstsDeinit(c: *AgmConsts) void {
+    fxDeinit(&c.ln2);
+    fxDeinit(&c.pi);
+}
+
+fn agmConstsAt(alloc: std.mem.Allocator, c: *const AgmConsts, w: i64, w2: i64) !AgmConsts {
+    return .{
+        .ln2 = try fxRescale(alloc, &c.ln2, w, w2),
+        .pi = try fxRescale(alloc, &c.pi, w, w2),
+    };
+}
+
+// ln(x) via AGM: for s = x * 2^p with s >= ~10^{w/2+16}, Brent's
+// ln s = pi/(2*AGM(1, 4/s)) holds with error O(ln s / s^2) — far below
+// one ulp; margin +8 covers it. ln x = pi/(2A) - p*ln2. The AGM iterate
+// converges quadratically; ~15 iterations of add + mul + isqrt at w
+// digits replace the sqrt-reduction + atanh Taylor path.
+fn fxLnAgm(alloc: std.mem.Allocator, x: *const Fx, w: i64, c: *const AgmConsts) !Fx {
+    // The iterate is computed at wA ~ 2w + margin: while b is tiny (b ~ 4/s)
+    // a 1-ulp floor in b_k perturbs the limit by ~M/b_k ulps — absolute-ulp
+    // error tracking can't see through isqrt, so the drift is bounded
+    // directly: sum 2*|a-b| sensitivity per iter, times |a|. Working wide
+    // and rescaling the RESULT down gives a provable bound at w.
+    const wA: i64 = 2 * w + 40;
+    const wAf: f64 = @floatFromInt(wA);
+    const xbits = fxMag(&x.v, w) * 3.321928094887362;
+    const need: f64 = (wAf * 0.5 + 16.0) * 3.321928094887362;
+    const p: i64 = @intFromFloat(@ceil(need - xbits));
+    var s = try x.v.clone();
+    defer s.deinit();
+    var two_p = try pow2BI(alloc, p);
+    defer two_p.deinit();
+    try mulFast(&s, &s, &two_p);
+    var sc = try pow10(alloc, wA - w);
+    defer sc.deinit();
+    try mulFast(&s, &s, &sc);
+    // b = 4/s at wA scale: b.v = floor(4 * 10^{2 wA} / s.v)
+    var bnum = try pow10(alloc, 2 * wA);
+    defer bnum.deinit();
+    var fourb = try BI.initSet(alloc, 4);
+    defer fourb.deinit();
+    try mulFast(&bnum, &bnum, &fourb);
+    var b = try BI.init(alloc);
+    defer b.deinit();
+    var brem = try BI.init(alloc);
+    defer brem.deinit();
+    try divFast(&b, &brem, &bnum, &s);
+    var a = try pow10(alloc, wA);
+    defer a.deinit();
+    var two = try BI.initSet(alloc, 2);
+    defer two.deinit();
+    var lim = try BI.initSet(alloc, 32);
+    defer lim.deinit();
+    var drift: f64 = 0;
+    var it: usize = 0;
+    var done = false;
+    while (it < 200 and !done) : (it += 1) {
+        var d = try BI.init(alloc);
+        defer d.deinit();
+        try d.sub(&a, &b);
+        d.abs();
+        if (d.order(lim) != .gt) {
+            done = true;
+            break;
+        }
+        // per-iter sensitivity of the limit to floor noise: ~M/a + M/b
+        drift += fxP10(-fxMag(&b, wA)) + fxP10(-fxMag(&a, wA));
+        var an = try BI.init(alloc);
+        defer an.deinit();
+        try an.add(&a, &b);
+        var ah = try BI.init(alloc);
+        errdefer ah.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try divFast(&ah, &rem, &an, &two);
+        var bm = try BI.init(alloc);
+        defer bm.deinit();
+        try mulFast(&bm, &a, &b);
+        var bn = try BI.init(alloc);
+        errdefer bn.deinit();
+        try sqrtFast(&bn, &bm);
+        a.deinit();
+        b.deinit();
+        a = ah;
+        b = bn;
+    }
+    if (!done) @panic("std/num: AGM ln did not converge");
+    const ax = Fx{ .v = a, .e = 8 * drift * fxP10(fxMag(&a, wA)) +
+        8 * @as(f64, @floatFromInt(it)) + 64 };
+    var c2 = try agmConstsAt(alloc, c, w, wA);
+    defer agmConstsDeinit(&c2);
+    var a2 = try fxScale(alloc, &ax, 2);
+    defer fxDeinit(&a2);
+    var ls = try fxDiv(alloc, &c2.pi, &a2, wA);
+    defer fxDeinit(&ls);
+    var pl = try fxScale(alloc, &c2.ln2, p);
+    defer fxDeinit(&pl);
+    var res = Fx{ .v = try BI.init(alloc), .e = ls.e + pl.e + 8 +
+        x.e * fxP10(-fxMag(&x.v, w)) * fxP10(@floatFromInt(wA - w)) };
+    defer fxDeinit(&res);
+    try res.v.sub(&ls.v, &pl.v);
+    return fxRescale(alloc, &res, wA, w);
+}
+
+// exp(x) * 10^w for |x| <= ~1/16 by Newton inversion of ln — Brent's
+// doubling ladder: y <- y*(1 + x - ln y), precision doubling each level.
+// The residual |ln y - x| IS the error certificate, so ln is evaluated
+// on a zero-error clone of y (input uncertainty is irrelevant to the
+// certificate — it would only contaminate the instrument bound).
+fn fxExpN(alloc: std.mem.Allocator, x: *const Fx, w: i64, c: *const AgmConsts) !Fx {
+    var wi: i64 = 48;
+    var x0 = try fxRescale(alloc, x, w, wi);
+    var y = try fxExpSmall(alloc, &x0, wi);
+    fxDeinit(&x0);
+    errdefer fxDeinit(&y);
+    while (wi < w) {
+        const w2 = @min(w, @min(2 * wi, wi + 250));
+        var y2 = try fxRescale(alloc, &y, wi, w2);
+        fxDeinit(&y);
+        var xi = try fxRescale(alloc, x, w, w2);
+        defer fxDeinit(&xi);
+        var yl = Fx{ .v = try y2.v.clone(), .e = 0 };
+        defer yl.v.deinit();
+        var c2 = try agmConstsAt(alloc, c, w, w2);
+        defer agmConstsDeinit(&c2);
+        var l = try fxLnAgm(alloc, &yl, w2, &c2);
+        defer fxDeinit(&l);
+        var res = Fx{ .v = try BI.init(alloc), .e = l.e + xi.e };
+        defer fxDeinit(&res);
+        try res.v.sub(&l.v, &xi.v);
+        var unit = try pow10(alloc, w2);
+        defer unit.deinit();
+        var d = Fx{ .v = try BI.init(alloc), .e = res.e };
+        defer fxDeinit(&d);
+        try d.v.sub(&unit, &res.v);
+        const y3 = try fxMul(alloc, &y2, &d, w2);
+        fxDeinit(&y2);
+        y = y3;
+        const w2f: f64 = @floatFromInt(w2);
+        const resulp = fxP10(fxMag(&res.v, w2) + w2f) + res.e;
+        const ymag = fxMag(&y.v, w2);
+        // |y_new - y*|/|y| <= e_instr + res^2 (Newton's ln relation).
+        y.e = fxP10(ymag) * res.e +
+            2 * fxP10(ymag + 2 * @log10(resulp) - w2f) + 4;
+        wi = w2;
+    }
+    return y;
 }
 
 // exp(r) * SCALE for |r| <= 1/16 by Taylor; terms truncate to zero to stop.
@@ -1651,6 +2038,16 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
 
 fn decExpW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec {
     const w = prec + extra + GUARD + @max(@as(i64, 0), a.e) + 8;
+    {
+        // exp(1) = e — the canonical constant: binary-split directly.
+        var one = try BI.initSet(alloc, 1);
+        defer one.deinit();
+        if (!a.neg and a.e == 0 and a.m.order(one) == .eq) {
+            var ee = try fxE(alloc, w);
+            defer fxDeinit(&ee);
+            return fxToDec(alloc, &ee, w, prec);
+        }
+    }
     var x = try fxFromDec(alloc, a, w);
     defer fxDeinit(&x);
     // k = smallest halving count with |x| / 2^k <= SCALE/16
@@ -1682,7 +2079,17 @@ fn decExpW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec 
     }
     var r = try fxTruncDiv(alloc, &x, &p2);
     defer fxDeinit(&r);
-    var e = try fxExpSmall(alloc, &r, w);
+    // Newton exp needs an AGM ln per ladder level; below ~4000 digits the
+    // plain Taylor series on the reduced argument still wins. The Newton
+    // path stays for large w where its O(M log^2) scaling dominates.
+    var e: Fx = undefined;
+    if (w > 4000) {
+        var c = try agmConsts(alloc, w);
+        defer agmConstsDeinit(&c);
+        e = try fxExpN(alloc, &r, w, &c);
+    } else {
+        e = try fxExpSmall(alloc, &r, w);
+    }
     defer fxDeinit(&e);
     var i: usize = 0;
     while (i < k) : (i += 1) {
@@ -1691,59 +2098,6 @@ fn decExpW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec 
         e = e2;
     }
     return fxToDec(alloc, &e, w, prec);
-}
-
-// ln(f) * SCALE for f in [1,10): 3 sqrt-reductions then 2*atanh(u).
-fn fxLnF(alloc: std.mem.Allocator, f: *const Fx, w: i64) !Fx {
-    var g = try f.v.clone();
-    var ge: f64 = f.e;
-    var unit = try pow10(alloc, w);
-    defer unit.deinit();
-    var i: usize = 0;
-    while (i < 3) : (i += 1) {
-        var gf = Fx{ .v = g, .e = ge };
-        const g2 = try fxSqrt(alloc, &gf, w);
-        g.deinit();
-        g = g2.v;
-        ge = g2.e;
-    }
-    var gf = Fx{ .v = g, .e = ge };
-    defer fxDeinit(&gf);
-    var un = Fx{ .v = try unit.clone(), .e = 0 };
-    defer fxDeinit(&un);
-    var num = Fx{ .v = try BI.init(alloc), .e = gf.e };
-    defer fxDeinit(&num);
-    try num.v.sub(&gf.v, &un.v);
-    var den = Fx{ .v = try BI.init(alloc), .e = gf.e };
-    defer fxDeinit(&den);
-    try den.v.add(&gf.v, &un.v);
-    var u = try fxDiv(alloc, &num, &den, w);
-    defer fxDeinit(&u);
-    var usq = try fxMul(alloc, &u, &u, w);
-    defer fxDeinit(&usq);
-    var term = Fx{ .v = try u.v.clone(), .e = u.e };
-    defer fxDeinit(&term);
-    var sum = Fx{ .v = try BI.init(alloc), .e = 0 };
-    defer fxDeinit(&sum);
-    var n: i64 = 1;
-    while (!term.v.eqlZero()) : (n += 1) {
-        var dn = try BI.initSet(alloc, 2 * n - 1);
-        defer dn.deinit();
-        var q = try fxTruncDiv(alloc, &term, &dn);
-        defer fxDeinit(&q);
-        try sum.v.add(&sum.v, &q.v);
-        sum.e += q.e;
-        const t2 = try fxMul(alloc, &term, &usq, w);
-        fxDeinit(&term);
-        term = t2;
-    }
-    return fxScale(alloc, &sum, 16);
-}
-
-fn fxLnTen(alloc: std.mem.Allocator, w: i64) !Fx {
-    var ten = try fxConst(alloc, 10, w);
-    defer fxDeinit(&ten);
-    return fxLnF(alloc, &ten, w);
 }
 
 // ln(a) for a > 0. a = f * 10^t with f in [1,10): ln = ln(f) + t*ln(10).
@@ -1762,6 +2116,16 @@ fn decLn(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
 
 fn decLnW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec {
     const w = prec + extra + GUARD + 8;
+    {
+        // ln(2): dedicated-constant lane (2*atanh(1/3) binary split).
+        var two = try BI.initSet(alloc, 2);
+        defer two.deinit();
+        if (!a.neg and a.e == 0 and a.m.order(two) == .eq) {
+            var l2 = try fxLnTwo(alloc, w);
+            defer fxDeinit(&l2);
+            return fxToDec(alloc, &l2, w, prec);
+        }
+    }
     const ms = try biToDigits(alloc, &a.m);
     defer alloc.free(ms);
     const L: i64 = @intCast(ms.len);
@@ -1769,9 +2133,11 @@ fn decLnW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec {
     defer fdec.m.deinit();
     var f = try fxFromDec(alloc, &fdec, w);
     defer fxDeinit(&f);
-    var lnf = try fxLnF(alloc, &f, w);
+    var c = try agmConsts(alloc, w);
+    defer agmConstsDeinit(&c);
+    var lnf = try fxLnAgm(alloc, &f, w, &c);
     defer fxDeinit(&lnf);
-    var ln10 = try fxLnTen(alloc, w);
+    var ln10 = try fxLnTen(alloc, w, &c.ln2);
     defer fxDeinit(&ln10);
     var tterm = try fxScale(alloc, &ln10, a.e + L - 1);
     defer fxDeinit(&tterm);
@@ -1937,6 +2303,76 @@ fn decAtan(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
 
 fn decAtanW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec {
     const w = prec + extra + GUARD + @max(@as(i64, 0), a.e) + 8;
+    {
+        // rational lane: |a| = num/den with small mantissa/exponent and
+        // ratio <= 1/2 -> exact-integer binary split, no halvings.
+        var num = try a.m.clone();
+        defer num.deinit();
+        var den = try BI.initSet(alloc, 1);
+        defer den.deinit();
+        var ok = true;
+        if (a.e >= 0) {
+            if (a.e > 9) {
+                ok = false;
+            } else {
+                var p = try pow10(alloc, a.e);
+                defer p.deinit();
+                try mulFast(&num, &num, &p);
+            }
+        } else {
+            if (-a.e > 9) {
+                ok = false;
+            } else {
+                den.deinit();
+                den = try pow10(alloc, -a.e);
+            }
+        }
+        if (ok and fxMag(&num, 0) <= 9.0 and fxMag(&den, 0) <= 9.0) {
+            var num2 = try BI.init(alloc);
+            defer num2.deinit();
+            try mulFast(&num2, &num, &num);
+            var den2 = try BI.init(alloc);
+            defer den2.deinit();
+            try mulFast(&den2, &den, &den);
+            var num4 = try BI.init(alloc);
+            defer num4.deinit();
+            var c2 = try BI.initSet(alloc, 2);
+            defer c2.deinit();
+            try mulFast(&num4, &num, &c2);
+            if (num.eqlZero()) {
+                var z = try BI.init(alloc);
+                defer z.deinit();
+                const zx = Fx{ .v = z, .e = 0 };
+                return fxToDec(alloc, &zx, w, prec);
+            } else if (num4.order(den) != .gt) {
+                // |u| <= 1/2 -> direct
+                var ar = try fxAtanRat(alloc, &num, &den, w);
+                defer fxDeinit(&ar);
+                if (a.neg) ar.v.negate();
+                return fxToDec(alloc, &ar, w, prec);
+            } else if (num4.order(den) == .gt) {
+                var den4 = try BI.init(alloc);
+                defer den4.deinit();
+                try mulFast(&den4, &den, &c2);
+                if (den4.order(num) != .gt) {
+                    // |u| > 2 -> atan = sign*(pi/2 - atan(den/num))
+                    var ar = try fxAtanRat(alloc, &den, &num, w);
+                    defer fxDeinit(&ar);
+                    var pi = try fxPi(alloc, w);
+                    defer fxDeinit(&pi);
+                    var twob = try BI.initSet(alloc, 2);
+                    defer twob.deinit();
+                    var hpi = try fxTruncDiv(alloc, &pi, &twob);
+                    defer fxDeinit(&hpi);
+                    var res = Fx{ .v = try BI.init(alloc), .e = ar.e + hpi.e };
+                    defer fxDeinit(&res);
+                    try res.v.sub(&hpi.v, &ar.v);
+                    if (a.neg) res.v.negate();
+                    return fxToDec(alloc, &res, w, prec);
+                }
+            }
+        }
+    }
     var x = try fxFromDec(alloc, a, w);
     defer fxDeinit(&x);
     const neg = !x.v.isPositive() and !x.v.eqlZero();
