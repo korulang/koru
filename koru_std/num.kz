@@ -1346,9 +1346,12 @@ fn decCmpAbs(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !i8 {
 
 // ============================================================================
 // Fixed-point layer for the transcendentals. An FX value is a signed bigint X
-// standing for X * 10^-w with the width w ambient per call. Series loops
-// terminate because terms eventually truncate to zero. GUARD digits absorb
-// the per-step truncation; results truncate (floor-magnitude) like div/sqrt.
+// standing for X * 10^-w with the width w ambient per call, paired with a
+// tracked error bound. Series loops terminate because terms eventually
+// truncate to zero; emitted digits are correctly rounded (half-even), with
+// the error bound required to clear the rounding boundary — on a straddle
+// the caller recomputes at finer w (Ziv loop). Exact ops (div/sqrt/mod)
+// keep their floor-magnitude contract.
 // ============================================================================
 
 const GUARD: i64 = 12;
@@ -1356,7 +1359,38 @@ const GUARD: i64 = 12;
 // |overflow, not a silent multi-minute Debug-mode multiply.
 const EXP_DIGCAP: i64 = 4;
 
-fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !BI {
+// ---- fixed-point with error accounting -----------------------------------
+// Fx: a w-digit fixed-point value X * 10^-w plus e, an upper bound on
+// |computed - true| / 10^-w in ulps. Each op derives its bound from the
+// operand bounds and the real magnitudes (fxMag ~ log10(|x| * 10^-w); +-1
+// digit slack only inflates the bound):
+//   mul      e <= a.e*|B| + b.e*|A| + 1        (truncation + propagation)
+//   div      e <= a.e/|B| + b.e*|V|/|B| + 1    (V = result magnitude)
+//   sqrt     e <= a.e/|V| + 1                  (sqrt contracts rel. error)
+//   add/sub  e <= a.e + b.e     scale c: e*|c|   trunc-div d: e/|d| + 1
+// Emission (fxToDec) rounds half-even. round()'s only discontinuity is the
+// half-ulp boundary (kept-digit boundaries preserve the outcome), so the
+// emitted digits are provably correctly rounded iff |f - half| >= e. On a
+// straddle the caller recomputes at finer w (Ziv loop).
+const Fx = struct { v: BI, e: f64 };
+
+fn fxDeinit(x: *Fx) void {
+    x.v.deinit();
+}
+
+fn fxMag(x: *const BI, w: i64) f64 {
+    const m = x.magL();
+    if (m.len == 0) return -1e30;
+    const bits: f64 = @floatFromInt(m.len * 64 - @as(usize, @clz(m[m.len - 1])));
+    return bits * 0.3010299956639812 - @as(f64, @floatFromInt(w));
+}
+
+fn fxP10(m: f64) f64 {
+    return std.math.pow(f64, 10.0, m);
+}
+
+// Dec -> X * 10^w. e = 0 when scaling up (exact), 1 when digits truncate.
+fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !Fx {
     const k = d.e + w;
     var x = try d.m.clone();
     errdefer x.deinit();
@@ -1375,26 +1409,83 @@ fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !BI {
         x = q;
     }
     if (d.neg) x.negate();
-    return x;
+    return .{ .v = x, .e = if (k < 0) 1 else 0 };
 }
 
-// X * 10^-w -> canonical Dec at `prec` significant digits (truncated).
-fn fxToDec(alloc: std.mem.Allocator, x: *const BI, w: i64, prec: i64) !Dec {
-    var xa = try x.clone();
+// X * 10^-w -> Dec at `prec` significant digits, correctly rounded
+// (half-even). error.Boundary = the error bound straddles the rounding
+// boundary and the last digit is not provable — caller recomputes at finer w.
+fn fxToDec(alloc: std.mem.Allocator, x: *const Fx, w: i64, prec: i64) !Dec {
+    var xa = try x.v.clone();
     defer xa.deinit();
     const neg = !xa.isPositive() and !xa.eqlZero();
     xa.abs();
+    if (xa.eqlZero()) {
+        // emits 0 only when |true| is below half the last emitted digit.
+        if (x.e < 0.5 * fxP10(@floatFromInt(w - prec)))
+            return decFromDigits(alloc, "0", 0, false);
+        return error.Boundary;
+    }
     const ds = try biToDigits(alloc, &xa);
     defer alloc.free(ds);
-    const t = trimDigits(ds, prec);
-    return decFromDigits(alloc, t.digits, -w + t.e_adj, neg);
+    const L: i64 = @intCast(ds.len);
+    const k: i64 = L - prec;
+    if (k <= 0) {
+        // emission claims sub-ulp trailing digits — only safe when the
+        // bound cannot reach them.
+        if (x.e < 0.5 * fxP10(@floatFromInt(k)))
+            return decFromDigits(alloc, ds, -w, neg);
+        return error.Boundary;
+    }
+    // f = dropped part (k digits), h = 5*10^(k-1). Every candidate in
+    // [v-e, v+e] rounds the same iff |f - h| >= e.
+    const pi64: usize = @intCast(prec);
+    var f = try biFromDigits(alloc, ds[pi64..]);
+    defer f.deinit();
+    var h = try pow10(alloc, k - 1);
+    defer h.deinit();
+    var five = try BI.initSet(alloc, 5);
+    defer five.deinit();
+    try mulFast(&h, &h, &five);
+    var diff = try BI.init(alloc);
+    defer diff.deinit();
+    if (f.order(h) == .lt) {
+        try diff.sub(&h, &f);
+    } else {
+        try diff.sub(&f, &h);
+    }
+    const eint: u64 = if (x.e < 0) 0 else @intFromFloat(@ceil(x.e));
+    var eb = try BI.initSet(alloc, eint);
+    defer eb.deinit();
+    if (diff.order(eb) == .lt) return error.Boundary;
+    const round_up = f.order(h) == .gt or
+        (f.order(h) == .eq and ds[pi64 - 1] % 2 == 1);
+    if (round_up) {
+        var keep = try alloc.dupe(u8, ds[0..pi64]);
+        defer alloc.free(keep);
+        var i: usize = pi64;
+        var carried = true;
+        while (i > 0) {
+            i -= 1;
+            if (keep[i] == '9') {
+                keep[i] = '0';
+            } else {
+                keep[i] += 1;
+                carried = false;
+                break;
+            }
+        }
+        if (carried) return decFromDigits(alloc, "1", L - w, neg);
+        return decFromDigits(alloc, keep, -w + L - prec, neg);
+    }
+    return decFromDigits(alloc, ds[0..pi64], -w + L - prec, neg);
 }
 
-// a * b / 10^w
-fn fxMul(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
+// a * b / 10^w (truncated), error e <= a.e*|B| + b.e*|A| + 1.
+fn fxMul(alloc: std.mem.Allocator, a: *const Fx, b: *const Fx, w: i64) !Fx {
     var p = try BI.init(alloc);
     defer p.deinit();
-    try mulFast(&p, a, b);
+    try mulFast(&p, &a.v, &b.v);
     var d = try pow10(alloc, w);
     defer d.deinit();
     var q = try BI.init(alloc);
@@ -1402,12 +1493,15 @@ fn fxMul(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
     var rem = try BI.init(alloc);
     defer rem.deinit();
     try divFast(&q, &rem, &p, &d);
-    return q;
+    return .{
+        .v = q,
+        .e = a.e * fxP10(fxMag(&b.v, w)) + b.e * fxP10(fxMag(&a.v, w)) + 1,
+    };
 }
 
-// a / b in FX: a * 10^w / b (truncated).
-fn fxDiv(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
-    var n = try a.clone();
+// a / b in FX: a * 10^w / b (truncated). e <= a.e/|B| + b.e*|V|/|B| + 1.
+fn fxDiv(alloc: std.mem.Allocator, a: *const Fx, b: *const Fx, w: i64) !Fx {
+    var n = try a.v.clone();
     defer n.deinit();
     var p = try pow10(alloc, w);
     defer p.deinit();
@@ -1416,13 +1510,17 @@ fn fxDiv(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
     errdefer q.deinit();
     var rem = try BI.init(alloc);
     defer rem.deinit();
-    try divFast(&q, &rem, &n, b);
-    return q;
+    try divFast(&q, &rem, &n, &b.v);
+    return .{
+        .v = q,
+        .e = a.e * fxP10(-fxMag(&b.v, w)) +
+            b.e * fxP10(fxMag(&q, w) - fxMag(&b.v, w)) + 1,
+    };
 }
 
-// sqrt(X * 10^-w) = isqrt(X * 10^w)
-fn fxSqrt(alloc: std.mem.Allocator, x: *const BI, w: i64) !BI {
-    var n = try x.clone();
+// sqrt(X * 10^-w) = isqrt(X * 10^w). e <= a.e/|V| + 1 (rel. err contracts).
+fn fxSqrt(alloc: std.mem.Allocator, x: *const Fx, w: i64) !Fx {
+    var n = try x.v.clone();
     defer n.deinit();
     var p = try pow10(alloc, w);
     defer p.deinit();
@@ -1430,21 +1528,42 @@ fn fxSqrt(alloc: std.mem.Allocator, x: *const BI, w: i64) !BI {
     var s = try BI.init(alloc);
     errdefer s.deinit();
     try sqrtFast(&s, &n);
-    return s;
+    return .{ .v = s, .e = x.e * fxP10(-fxMag(&s, w)) + 1 };
 }
 
-fn fxConst(alloc: std.mem.Allocator, v: i64, w: i64) !BI {
+// a * c for exact integer c: e *= |c|.
+fn fxScale(alloc: std.mem.Allocator, a: *const Fx, c: i64) !Fx {
+    var v = try a.v.clone();
+    errdefer v.deinit();
+    var cc = try BI.initSet(alloc, c);
+    defer cc.deinit();
+    try mulFast(&v, &v, &cc);
+    const cf: f64 = @floatFromInt(if (c < 0) -c else c);
+    return .{ .v = v, .e = a.e * cf };
+}
+
+// trunc(a / d) for exact integer d != 0: e <= a.e/|d| + 1.
+fn fxTruncDiv(alloc: std.mem.Allocator, a: *const Fx, d: *const BI) !Fx {
+    var q = try BI.init(alloc);
+    errdefer q.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try divFast(&q, &rem, &a.v, d);
+    return .{ .v = q, .e = a.e * fxP10(-fxMag(d, 0)) + 1 };
+}
+
+fn fxConst(alloc: std.mem.Allocator, v: i64, w: i64) !Fx {
     var r = try BI.initSet(alloc, v);
     errdefer r.deinit();
     var p = try pow10(alloc, w);
     defer p.deinit();
     try mulFast(&r, &r, &p);
-    return r;
+    return .{ .v = r, .e = 0 };
 }
 
-// atan(1/k) * SCALE via the alternating series sum (-1)^j / ((2j+1) k^(2j+1)).
-// Plain-bigint terms: term_j = SCALE / (k^(2j+1) * (2j+1)), stops at zero.
-fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !BI {
+// atan(1/k) * SCALE via sum (-1)^j / ((2j+1) k^(2j+1)). Terms are exact
+// quotients truncated once each: e <= term count.
+fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !Fx {
     var sum = try BI.init(alloc);
     var kk = try BI.initSet(alloc, k * k);
     defer kk.deinit();
@@ -1454,6 +1573,7 @@ fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !BI {
     defer unit.deinit();
     var j: i64 = 0;
     var neg = false;
+    var e: f64 = 0;
     while (true) : (j += 1) {
         var den = try pk.clone();
         defer den.deinit();
@@ -1468,54 +1588,55 @@ fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !BI {
         if (q.eqlZero()) break;
         if (neg) q.negate();
         try sum.add(&sum, &q);
+        e += 1;
         neg = !neg;
         try mulFast(&pk, &pk, &kk);
     }
-    return sum;
+    return .{ .v = sum, .e = e };
 }
 
 // pi * SCALE via Machin: pi = 16 atan(1/5) - 4 atan(1/239).
-fn fxPi(alloc: std.mem.Allocator, w: i64) !BI {
+fn fxPi(alloc: std.mem.Allocator, w: i64) !Fx {
     var a5 = try fxAtanInv(alloc, 5, w);
-    defer a5.deinit();
+    defer fxDeinit(&a5);
     var a239 = try fxAtanInv(alloc, 239, w);
-    defer a239.deinit();
+    defer fxDeinit(&a239);
     var c16 = try BI.initSet(alloc, 16);
     defer c16.deinit();
     var c4 = try BI.initSet(alloc, 4);
     defer c4.deinit();
-    try mulFast(&a5, &a5, &c16);
-    try mulFast(&a239, &a239, &c4);
+    try mulFast(&a5.v, &a5.v, &c16);
+    try mulFast(&a239.v, &a239.v, &c4);
     var r = try BI.init(alloc);
     errdefer r.deinit();
-    try r.sub(&a5, &a239);
-    return r;
+    try r.sub(&a5.v, &a239.v);
+    return .{ .v = r, .e = 16 * a5.e + 4 * a239.e };
 }
 
 // exp(r) * SCALE for |r| <= 1/16 by Taylor; terms truncate to zero to stop.
-fn fxExpSmall(alloc: std.mem.Allocator, r: *const BI, w: i64) !BI {
-    var sum = try pow10(alloc, w);
-    var term = try pow10(alloc, w);
-    defer term.deinit();
+fn fxExpSmall(alloc: std.mem.Allocator, r: *const Fx, w: i64) !Fx {
+    var sum = try fxConst(alloc, 1, w);
+    errdefer fxDeinit(&sum);
+    var term = try fxConst(alloc, 1, w);
+    defer fxDeinit(&term);
     var n: i64 = 1;
-    while (!term.eqlZero()) : (n += 1) {
+    while (!term.v.eqlZero()) : (n += 1) {
         var t = try fxMul(alloc, &term, r, w);
-        defer t.deinit();
+        defer fxDeinit(&t);
         var dn = try BI.initSet(alloc, n);
         defer dn.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        term.deinit();
-        term = try BI.init(alloc);
-        try divFast(&term, &rem, &t, &dn);
-        try sum.add(&sum, &term);
+        const nt = try fxTruncDiv(alloc, &t, &dn);
+        fxDeinit(&term);
+        term = nt;
+        try sum.v.add(&sum.v, &term.v);
+        sum.e += term.e;
     }
     return sum;
 }
 
 fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
     if (a.m.eqlZero()) return decFromDigits(alloc, "1", 0, false);
-    // Overflow gate: result digits ~ x * log10(e); cap at 10^EXP_DIGCAP digits.
+    // Overflow gate: result digits ~ x * log10(e); cap at 10^EXP_DIGCAP.
     if (!a.neg) {
         var le = try decParse(alloc, "4.3429448190325182765e-1");
         defer decDeinit(&le);
@@ -1525,9 +1646,22 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         defer alloc.free(ps);
         if (prod.e + @as(i64, @intCast(ps.len)) > EXP_DIGCAP) return error.Overflow;
     }
-    const w = prec + GUARD + @max(@as(i64, 0), a.e) + 8;
+    var extra: i64 = 0;
+    while (extra <= 512) : (extra += 32) {
+        if (decExpW(alloc, a, prec, extra)) |d| {
+            return d;
+        } else |err| switch (err) {
+            error.Boundary => continue,
+            else => return err,
+        }
+    }
+    @panic("std/num:exp: rounding boundary unresolved");
+}
+
+fn decExpW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec {
+    const w = prec + extra + GUARD + @max(@as(i64, 0), a.e) + 8;
     var x = try fxFromDec(alloc, a, w);
-    defer x.deinit();
+    defer fxDeinit(&x);
     // k = smallest halving count with |x| / 2^k <= SCALE/16
     var k: usize = 0;
     {
@@ -1538,7 +1672,7 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         var rem = try BI.init(alloc);
         defer rem.deinit();
         try divFast(&bound, &rem, &bound, &c16);
-        var ax = try x.clone();
+        var ax = try x.v.clone();
         defer ax.deinit();
         ax.abs();
         while (ax.order(bound) == .gt) : (k += 1) {
@@ -1555,289 +1689,325 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         defer two.deinit();
         while (i < k) : (i += 1) try mulFast(&p2, &p2, &two);
     }
-    var r = try BI.init(alloc);
-    defer r.deinit();
-    var rem = try BI.init(alloc);
-    defer rem.deinit();
-    try divFast(&r, &rem, &x, &p2);
+    var r = try fxTruncDiv(alloc, &x, &p2);
+    defer fxDeinit(&r);
     var e = try fxExpSmall(alloc, &r, w);
-    defer e.deinit();
+    defer fxDeinit(&e);
     var i: usize = 0;
     while (i < k) : (i += 1) {
         const e2 = try fxMul(alloc, &e, &e, w);
-        e.deinit();
+        fxDeinit(&e);
         e = e2;
     }
     return fxToDec(alloc, &e, w, prec);
 }
 
 // ln(f) * SCALE for f in [1,10): 3 sqrt-reductions then 2*atanh(u).
-fn fxLnF(alloc: std.mem.Allocator, f: *const BI, w: i64) !BI {
-    var g = try f.clone();
-    defer g.deinit();
+fn fxLnF(alloc: std.mem.Allocator, f: *const Fx, w: i64) !Fx {
+    var g = try f.v.clone();
+    var ge: f64 = f.e;
     var unit = try pow10(alloc, w);
     defer unit.deinit();
     var i: usize = 0;
     while (i < 3) : (i += 1) {
-        const g2 = try fxSqrt(alloc, &g, w);
+        var gf = Fx{ .v = g, .e = ge };
+        const g2 = try fxSqrt(alloc, &gf, w);
         g.deinit();
-        g = g2;
+        g = g2.v;
+        ge = g2.e;
     }
-    var num = try BI.init(alloc);
-    defer num.deinit();
-    try num.sub(&g, &unit);
-    var den = try BI.init(alloc);
-    defer den.deinit();
-    try den.add(&g, &unit);
+    var gf = Fx{ .v = g, .e = ge };
+    defer fxDeinit(&gf);
+    var un = Fx{ .v = try unit.clone(), .e = 0 };
+    defer fxDeinit(&un);
+    var num = Fx{ .v = try BI.init(alloc), .e = gf.e };
+    defer fxDeinit(&num);
+    try num.v.sub(&gf.v, &un.v);
+    var den = Fx{ .v = try BI.init(alloc), .e = gf.e };
+    defer fxDeinit(&den);
+    try den.v.add(&gf.v, &un.v);
     var u = try fxDiv(alloc, &num, &den, w);
-    defer u.deinit();
+    defer fxDeinit(&u);
     var usq = try fxMul(alloc, &u, &u, w);
-    defer usq.deinit();
-    var term = try u.clone();
-    defer term.deinit();
-    var sum = try BI.init(alloc);
-    defer sum.deinit();
+    defer fxDeinit(&usq);
+    var term = Fx{ .v = try u.v.clone(), .e = u.e };
+    defer fxDeinit(&term);
+    var sum = Fx{ .v = try BI.init(alloc), .e = 0 };
+    defer fxDeinit(&sum);
     var n: i64 = 1;
-    while (!term.eqlZero()) : (n += 1) {
+    while (!term.v.eqlZero()) : (n += 1) {
         var dn = try BI.initSet(alloc, 2 * n - 1);
         defer dn.deinit();
-        var q = try BI.init(alloc);
-        defer q.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        try divFast(&q, &rem, &term, &dn);
-        try sum.add(&sum, &q);
+        var q = try fxTruncDiv(alloc, &term, &dn);
+        defer fxDeinit(&q);
+        try sum.v.add(&sum.v, &q.v);
+        sum.e += q.e;
         const t2 = try fxMul(alloc, &term, &usq, w);
-        term.deinit();
+        fxDeinit(&term);
         term = t2;
     }
-    var c16 = try BI.initSet(alloc, 16);
-    defer c16.deinit();
-    var res = try BI.init(alloc);
-    errdefer res.deinit();
-    try mulFast(&res, &sum, &c16);
-    return res;
+    return fxScale(alloc, &sum, 16);
 }
 
-fn fxLnTen(alloc: std.mem.Allocator, w: i64) !BI {
+fn fxLnTen(alloc: std.mem.Allocator, w: i64) !Fx {
     var ten = try fxConst(alloc, 10, w);
-    defer ten.deinit();
+    defer fxDeinit(&ten);
     return fxLnF(alloc, &ten, w);
 }
 
 // ln(a) for a > 0. a = f * 10^t with f in [1,10): ln = ln(f) + t*ln(10).
 fn decLn(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
-    const w = prec + GUARD + 8;
+    var extra: i64 = 0;
+    while (extra <= 512) : (extra += 32) {
+        if (decLnW(alloc, a, prec, extra)) |d| {
+            return d;
+        } else |err| switch (err) {
+            error.Boundary => continue,
+            else => return err,
+        }
+    }
+    @panic("std/num:ln: rounding boundary unresolved");
+}
+
+fn decLnW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec {
+    const w = prec + extra + GUARD + 8;
     const ms = try biToDigits(alloc, &a.m);
     defer alloc.free(ms);
     const L: i64 = @intCast(ms.len);
     var fdec = Dec{ .neg = false, .m = try a.m.clone(), .e = 1 - L };
     defer fdec.m.deinit();
     var f = try fxFromDec(alloc, &fdec, w);
-    defer f.deinit();
+    defer fxDeinit(&f);
     var lnf = try fxLnF(alloc, &f, w);
-    defer lnf.deinit();
+    defer fxDeinit(&lnf);
     var ln10 = try fxLnTen(alloc, w);
-    defer ln10.deinit();
-    var tt = try BI.initSet(alloc, a.e + L - 1);
-    defer tt.deinit();
-    var tterm = try fxMul(alloc, &tt, &ln10, w);
-    defer tterm.deinit();
-    var res = try BI.init(alloc);
-    defer res.deinit();
-    try res.add(&lnf, &tterm);
+    defer fxDeinit(&ln10);
+    var tterm = try fxScale(alloc, &ln10, a.e + L - 1);
+    defer fxDeinit(&tterm);
+    var res = Fx{ .v = try BI.init(alloc), .e = lnf.e + tterm.e };
+    defer fxDeinit(&res);
+    try res.v.add(&lnf.v, &tterm.v);
     return fxToDec(alloc, &res, w, prec);
 }
 
 // sin(u) * SCALE by Taylor on the folded argument u in [0, pi/2].
-fn fxSinSmall(alloc: std.mem.Allocator, u: *const BI, w: i64) !BI {
+fn fxSinSmall(alloc: std.mem.Allocator, u: *const Fx, w: i64) !Fx {
     var usq = try fxMul(alloc, u, u, w);
-    defer usq.deinit();
-    var term = try u.clone();
-    defer term.deinit();
-    var sum = try u.clone();
-    errdefer sum.deinit();
+    defer fxDeinit(&usq);
+    var term = Fx{ .v = try u.v.clone(), .e = u.e };
+    defer fxDeinit(&term);
+    var sum = Fx{ .v = try u.v.clone(), .e = u.e };
+    errdefer fxDeinit(&sum);
     var n: i64 = 1;
-    while (!term.eqlZero()) : (n += 1) {
+    while (!term.v.eqlZero()) : (n += 1) {
         var t = try fxMul(alloc, &term, &usq, w);
-        defer t.deinit();
+        defer fxDeinit(&t);
         var dn = try BI.initSet(alloc, (2 * n) * (2 * n + 1));
         defer dn.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        term.deinit();
-        term = try BI.init(alloc);
-        try divFast(&term, &rem, &t, &dn);
-        term.negate();
-        try sum.add(&sum, &term);
+        const nt = try fxTruncDiv(alloc, &t, &dn);
+        fxDeinit(&term);
+        term = nt;
+        term.v.negate();
+        try sum.v.add(&sum.v, &term.v);
+        sum.e += term.e;
     }
     return sum;
 }
 
 // cos(u) * SCALE by Taylor on u in [0, pi/2].
-fn fxCosSmall(alloc: std.mem.Allocator, u: *const BI, w: i64) !BI {
+fn fxCosSmall(alloc: std.mem.Allocator, u: *const Fx, w: i64) !Fx {
     var usq = try fxMul(alloc, u, u, w);
-    defer usq.deinit();
-    var term = try pow10(alloc, w);
-    defer term.deinit();
-    var sum = try term.clone();
-    errdefer sum.deinit();
+    defer fxDeinit(&usq);
+    var term = try fxConst(alloc, 1, w);
+    defer fxDeinit(&term);
+    var sum = try fxConst(alloc, 1, w);
+    errdefer fxDeinit(&sum);
     var n: i64 = 1;
-    while (!term.eqlZero()) : (n += 1) {
+    while (!term.v.eqlZero()) : (n += 1) {
         var t = try fxMul(alloc, &term, &usq, w);
-        defer t.deinit();
+        defer fxDeinit(&t);
         var dn = try BI.initSet(alloc, (2 * n - 1) * (2 * n));
         defer dn.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        term.deinit();
-        term = try BI.init(alloc);
-        try divFast(&term, &rem, &t, &dn);
-        term.negate();
-        try sum.add(&sum, &term);
+        const nt = try fxTruncDiv(alloc, &t, &dn);
+        fxDeinit(&term);
+        term = nt;
+        term.v.negate();
+        try sum.v.add(&sum.v, &term.v);
+        sum.e += term.e;
     }
     return sum;
 }
 
-// Reduce x mod 2pi and fold to u in [0, pi/2]; reports the sin sign and the
-// cos flip that the fold implies.
 fn decTrig(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool) !Dec {
-    const w = prec + GUARD + @max(@as(i64, 0), a.e) + 8;
-    var pi = try fxPi(alloc, w);
-    defer pi.deinit();
-    var two_pi = try BI.init(alloc);
-    defer two_pi.deinit();
-    var two = try BI.initSet(alloc, 2);
-    defer two.deinit();
-    try mulFast(&two_pi, &pi, &two);
-    var half_pi = try BI.init(alloc);
-    defer half_pi.deinit();
-    var rem = try BI.init(alloc);
-    defer rem.deinit();
-    try divFast(&half_pi, &rem, &pi, &two);
-    var x = try fxFromDec(alloc, a, w);
-    defer x.deinit();
-    // q = round(x / 2pi), r = x - q*2pi in [-pi, pi]
-    var qf = try fxDiv(alloc, &x, &two_pi, w);
-    defer qf.deinit();
-    {
-        var half = try pow10(alloc, w);
-        defer half.deinit();
-        try divFast(&half, &rem, &half, &two);
-        if (qf.isPositive()) {
-            try qf.add(&qf, &half);
-        } else {
-            try qf.sub(&qf, &half);
+    var extra: i64 = 0;
+    while (extra <= 512) : (extra += 32) {
+        if (decTrigW(alloc, a, prec, want_sin, extra)) |d| {
+            return d;
+        } else |err| switch (err) {
+            error.Boundary => continue,
+            else => return err,
         }
     }
+    @panic("std/num:trig: rounding boundary unresolved");
+}
+
+// Reduce x mod 2pi and fold to u in [0, pi/2]; reports the sin sign and the
+// cos flip that the fold implies.
+fn decTrigW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool, extra: i64) !Dec {
+    const w = prec + extra + GUARD + @max(@as(i64, 0), a.e) + 8;
+    var pi = try fxPi(alloc, w);
+    defer fxDeinit(&pi);
+    var two_pi = try fxScale(alloc, &pi, 2);
+    defer fxDeinit(&two_pi);
+    var two = try BI.initSet(alloc, 2);
+    defer two.deinit();
+    var half_pi = try fxTruncDiv(alloc, &pi, &two);
+    defer fxDeinit(&half_pi);
+    var x = try fxFromDec(alloc, a, w);
+    defer fxDeinit(&x);
+    // q = round(x / 2pi), r = x - q*2pi in [-pi, pi]
+    var qf = try fxDiv(alloc, &x, &two_pi, w);
+    defer fxDeinit(&qf);
     var unit = try pow10(alloc, w);
     defer unit.deinit();
     var qi = try BI.init(alloc);
     defer qi.deinit();
-    try divFast(&qi, &rem, &qf, &unit);
-    var qt = try BI.init(alloc);
-    defer qt.deinit();
-    try mulFast(&qt, &qi, &two_pi);
-    var r = try BI.init(alloc);
-    defer r.deinit();
-    try r.sub(&x, &qt);
+    {
+        var qfr = try qf.v.clone();
+        defer qfr.deinit();
+        var half = try unit.clone();
+        defer half.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try divFast(&half, &rem, &half, &two);
+        if (qfr.isPositive()) {
+            try qfr.add(&qfr, &half);
+        } else {
+            try qfr.sub(&qfr, &half);
+        }
+        try divFast(&qi, &rem, &qfr, &unit);
+    }
+    // qt = qi * 2pi exactly scaled; the qf rounding contributes <= ~2pi ulps.
+    var qt = Fx{ .v = try BI.init(alloc), .e = qf.e * fxP10(fxMag(&two_pi.v, w)) + 4 };
+    defer fxDeinit(&qt);
+    try mulFast(&qt.v, &qi, &two_pi.v);
+    qt.e += fxP10(fxMag(&qi, 0)) * two_pi.e;
+    var r = Fx{ .v = try BI.init(alloc), .e = x.e + qt.e };
+    defer fxDeinit(&r);
+    try r.v.sub(&x.v, &qt.v);
     // fold to [0, pi/2]
-    var u = try r.clone();
-    defer u.deinit();
+    var u = try r.v.clone();
+    var ue = r.e;
     const neg_r = !u.isPositive() and !u.eqlZero();
     u.abs();
     var flip_cos = false;
-    if (u.order(half_pi) == .gt) {
+    if (u.order(half_pi.v) == .gt) {
         var usq = try BI.init(alloc);
-        defer usq.deinit();
-        try usq.sub(&pi, &u);
+        try usq.sub(&pi.v, &u);
         u.deinit();
-        u = try usq.clone();
+        u = usq;
+        ue += pi.e;
         flip_cos = true;
     }
+    var uf = Fx{ .v = u, .e = ue };
+    defer fxDeinit(&uf);
     var res = if (want_sin)
-        try fxSinSmall(alloc, &u, w)
+        try fxSinSmall(alloc, &uf, w)
     else
-        try fxCosSmall(alloc, &u, w);
-    defer res.deinit();
-    if ((want_sin and neg_r) or (!want_sin and flip_cos)) res.negate();
+        try fxCosSmall(alloc, &uf, w);
+
+    defer fxDeinit(&res);
+    if ((want_sin and neg_r) or (!want_sin and flip_cos)) res.v.negate();
     return fxToDec(alloc, &res, w, prec);
 }
 
 // atan(a) * SCALE->Dec: reduce to |x| <= 1 (atan x = pi/2 - atan(1/x)),
 // then 3 argument halvings atan x = 2 atan(x/(1+sqrt(1+x^2))), then Taylor.
 fn decAtan(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
-    const w = prec + GUARD + @max(@as(i64, 0), a.e) + 8;
+    var extra: i64 = 0;
+    while (extra <= 512) : (extra += 32) {
+        if (decAtanW(alloc, a, prec, extra)) |d| {
+            return d;
+        } else |err| switch (err) {
+            error.Boundary => continue,
+            else => return err,
+        }
+    }
+    @panic("std/num:atan: rounding boundary unresolved");
+}
+
+fn decAtanW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec {
+    const w = prec + extra + GUARD + @max(@as(i64, 0), a.e) + 8;
     var x = try fxFromDec(alloc, a, w);
-    defer x.deinit();
-    const neg = !x.isPositive() and !x.eqlZero();
-    x.abs();
-    var unit = try pow10(alloc, w);
-    defer unit.deinit();
+    defer fxDeinit(&x);
+    const neg = !x.v.isPositive() and !x.v.eqlZero();
+    x.v.abs();
+    var unit = try fxConst(alloc, 1, w);
+    defer fxDeinit(&unit);
     var inv = false;
-    if (x.order(unit) == .gt) {
+    if (x.v.order(unit.v) == .gt) {
         const xi = try fxDiv(alloc, &unit, &x, w);
-        x.deinit();
+        fxDeinit(&x);
         x = xi;
         inv = true;
     }
     var i: usize = 0;
     while (i < 3) : (i += 1) {
         var x2 = try fxMul(alloc, &x, &x, w);
-        defer x2.deinit();
-        var s = try BI.init(alloc);
-        defer s.deinit();
-        try s.add(&x2, &unit);
+        defer fxDeinit(&x2);
+        var s = Fx{ .v = try BI.init(alloc), .e = x2.e };
+        defer fxDeinit(&s);
+        try s.v.add(&x2.v, &unit.v);
         var sq = try fxSqrt(alloc, &s, w);
-        defer sq.deinit();
-        var den = try BI.init(alloc);
-        defer den.deinit();
-        try den.add(&sq, &unit);
+        defer fxDeinit(&sq);
+        var den = Fx{ .v = try BI.init(alloc), .e = sq.e };
+        defer fxDeinit(&den);
+        try den.v.add(&sq.v, &unit.v);
         const nx = try fxDiv(alloc, &x, &den, w);
-        x.deinit();
+        fxDeinit(&x);
         x = nx;
     }
     // Taylor atan x = x - x^3/3 + x^5/5 - ...
     var x2 = try fxMul(alloc, &x, &x, w);
-    defer x2.deinit();
-    var term = try x.clone();
-    defer term.deinit();
-    var sum = try x.clone();
-    defer sum.deinit();
+    defer fxDeinit(&x2);
+    var term = Fx{ .v = try x.v.clone(), .e = x.e };
+    defer fxDeinit(&term);
+    var sum = Fx{ .v = try x.v.clone(), .e = x.e };
+    defer fxDeinit(&sum);
     var n: i64 = 1;
-    while (!term.eqlZero()) : (n += 1) {
+    while (!term.v.eqlZero()) : (n += 1) {
         var t = try fxMul(alloc, &term, &x2, w);
-        defer t.deinit();
-        var dn = try BI.initSet(alloc, 2 * n + 1);
-        defer dn.deinit();
+        defer fxDeinit(&t);
         var num2 = try BI.initSet(alloc, 2 * n - 1);
         defer num2.deinit();
-        try mulFast(&t, &t, &num2);
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        term.deinit();
-        term = try BI.init(alloc);
-        try divFast(&term, &rem, &t, &dn);
-        term.negate();
-        try sum.add(&sum, &term);
+        try mulFast(&t.v, &t.v, &num2);
+        t.e *= @floatFromInt(2 * n - 1);
+        var dn = try BI.initSet(alloc, 2 * n + 1);
+        defer dn.deinit();
+        const nt = try fxTruncDiv(alloc, &t, &dn);
+        fxDeinit(&term);
+        term = nt;
+        term.v.negate();
+        try sum.v.add(&sum.v, &term.v);
+        sum.e += term.e;
     }
-    var c8 = try BI.initSet(alloc, 8);
-    defer c8.deinit();
-    try mulFast(&sum, &sum, &c8);
+    var sum8 = try fxScale(alloc, &sum, 8);
+    defer fxDeinit(&sum8);
     if (inv) {
         var pi = try fxPi(alloc, w);
-        defer pi.deinit();
+        defer fxDeinit(&pi);
         var two = try BI.initSet(alloc, 2);
         defer two.deinit();
-        var hp = try BI.init(alloc);
-        defer hp.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        try divFast(&hp, &rem, &pi, &two);
-        try sum.sub(&hp, &sum);
+        var hp = try fxTruncDiv(alloc, &pi, &two);
+        defer fxDeinit(&hp);
+        var res = Fx{ .v = try BI.init(alloc), .e = hp.e + sum8.e };
+        defer fxDeinit(&res);
+        try res.v.sub(&hp.v, &sum8.v);
+        if (neg) res.v.negate();
+        return fxToDec(alloc, &res, w, prec);
     }
-    if (neg) sum.negate();
-    return fxToDec(alloc, &sum, w, prec);
+    if (neg) sum8.v.negate();
+    return fxToDec(alloc, &sum8, w, prec);
 }
 
 // Exact remainder: r = a - b*trunc(a/b) at the finer exponent — C-style
