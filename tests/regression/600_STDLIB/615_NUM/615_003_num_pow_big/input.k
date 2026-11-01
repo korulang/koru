@@ -2,7 +2,7 @@
 import std/io
 import std/num
 
-std/num:lit(s: "2")
+std/num:lit(2)
 | exact a |> std/num:pow(a, n: 70)
     | exact p |> std/io:print.ln("{{ p:s }}") |> std/num:free(n: p)
     | neg-exp |> std/io:print.ln("negexp")

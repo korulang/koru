@@ -3,6 +3,6 @@
 import std/io
 import std/num
 
-std/num:lit(s: "abc")
+std/num:lit(abc)
 | exact a |> std/io:print.ln("parsed") |> std/num:free(n: a)
 | bad x |> std/io:print.ln("bad: {{ x:s }}")

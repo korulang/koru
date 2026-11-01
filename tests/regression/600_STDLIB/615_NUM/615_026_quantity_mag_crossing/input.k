@@ -8,7 +8,7 @@ import std/quantity
 
 std/quantity:lit(s: "2.5 kg")
 | exact q |> std/quantity:mag(q)
-    | num m |> std/num:lit(s: "0.5")
+    | num m |> std/num:lit(0.5)
         | exact h |> std/num:add(a: m, b: h): r |> std/io:print.ln("{{ r:s }}") |> std/num:free(n: r)
         | bad x |> std/io:print.ln("bad")
     | sym m |> std/io:print.ln("sym-lane") |> std/sym:free(n: m)
