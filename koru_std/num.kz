@@ -1348,10 +1348,10 @@ fn decCmpAbs(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !i8 {
 // Fixed-point layer for the transcendentals. An FX value is a signed bigint X
 // standing for X * 10^-w with the width w ambient per call, paired with a
 // tracked error bound. Series loops terminate because terms eventually
-// truncate to zero; emitted digits are correctly rounded (half-even), with
-// the error bound required to clear the rounding boundary — on a straddle
-// the caller recomputes at finer w (Ziv loop). Exact ops (div/sqrt/mod)
-// keep their floor-magnitude contract.
+// truncate to zero; emitted digits are the floor-magnitude prefix (the
+// first `prec` digits of the true expansion), with the error bound
+// required to clear the cut — on a straddle the caller recomputes at
+// finer w (Ziv loop). Same contract as div/sqrt/mod throughout.
 // ============================================================================
 
 const GUARD: i64 = 12;
@@ -1368,10 +1368,11 @@ const EXP_DIGCAP: i64 = 4;
 //   div      e <= a.e/|B| + b.e*|V|/|B| + 1    (V = result magnitude)
 //   sqrt     e <= a.e/|V| + 1                  (sqrt contracts rel. error)
 //   add/sub  e <= a.e + b.e     scale c: e*|c|   trunc-div d: e/|d| + 1
-// Emission (fxToDec) rounds half-even. round()'s only discontinuity is the
-// half-ulp boundary (kept-digit boundaries preserve the outcome), so the
-// emitted digits are provably correctly rounded iff |f - half| >= e. On a
-// straddle the caller recomputes at finer w (Ziv loop).
+// Emission (fxToDec) emits the floor-magnitude prefix — the first `prec`
+// digits of the true expansion, matching the div/sqrt contract. floor()'s
+// only discontinuities are integer multiples of the cut, so the prefix is
+// provable iff [f, f+e) fits inside [0, 10^k). On a straddle the caller
+// recomputes at finer w (Ziv loop).
 const Fx = struct { v: BI, e: f64 };
 
 fn fxDeinit(x: *Fx) void {
@@ -1394,6 +1395,7 @@ fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !Fx {
     const k = d.e + w;
     var x = try d.m.clone();
     errdefer x.deinit();
+    var e0: f64 = 0;
     if (k >= 0) {
         var p = try pow10(alloc, k);
         defer p.deinit();
@@ -1405,24 +1407,32 @@ fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !Fx {
         defer rem.deinit();
         var q = try BI.init(alloc);
         try divFast(&q, &rem, &x, &p);
+        // exact iff the trunc div dropped nothing (e.g. x * 10^-w hits
+        // an integer — sin/cos of 0 stay provably exact through it)
+        e0 = if (rem.eqlZero()) 0 else 1;
         x.deinit();
         x = q;
     }
     if (d.neg) x.negate();
-    return .{ .v = x, .e = if (k < 0) 1 else 0 };
+    return .{ .v = x, .e = e0 };
 }
 
-// X * 10^-w -> Dec at `prec` significant digits, correctly rounded
-// (half-even). error.Boundary = the error bound straddles the rounding
-// boundary and the last digit is not provable — caller recomputes at finer w.
+// X * 10^-w -> Dec at `prec` significant digits, floor-magnitude like
+// div/sqrt — i.e. the first `prec` digits of the true expansion, not the
+// nearest prec-digit value. floor()'s only discontinuities are the integer
+// multiples of the cut 10^k, so the emitted prefix is provable iff the
+// dropped part f clears both sides: f >= e and f + e < 10^k — every
+// candidate in [v-e, v+e] then shares the same floor. error.Boundary = the
+// bound straddles a cut; the caller recomputes at finer w (Ziv loop).
 fn fxToDec(alloc: std.mem.Allocator, x: *const Fx, w: i64, prec: i64) !Dec {
     var xa = try x.v.clone();
     defer xa.deinit();
     const neg = !xa.isPositive() and !xa.eqlZero();
     xa.abs();
     if (xa.eqlZero()) {
-        // emits 0 only when |true| is below half the last emitted digit.
-        if (x.e < 0.5 * fxP10(@floatFromInt(w - prec)))
+        // the all-zero prefix is provable only when the bound keeps the
+        // true value's leading digit beyond `prec`.
+        if (x.e < fxP10(@floatFromInt(w - prec)))
             return decFromDigits(alloc, "0", 0, false);
         return error.Boundary;
     }
@@ -1431,57 +1441,29 @@ fn fxToDec(alloc: std.mem.Allocator, x: *const Fx, w: i64, prec: i64) !Dec {
     const L: i64 = @intCast(ds.len);
     const k: i64 = L - prec;
     if (k <= 0) {
-        // emission claims sub-ulp trailing digits — only safe when the
-        // bound cannot reach them.
+        // emitting every computed digit — honest only when the bound
+        // cannot reach the last one.
         if (x.e < 0.5 * fxP10(@floatFromInt(k)))
             return decFromDigits(alloc, ds, -w, neg);
         return error.Boundary;
     }
-    // f = dropped part (k digits), h = 5*10^(k-1). Every candidate in
-    // [v-e, v+e] rounds the same iff |f - h| >= e.
     const pi64: usize = @intCast(prec);
     var f = try biFromDigits(alloc, ds[pi64..]);
     defer f.deinit();
-    var h = try pow10(alloc, k - 1);
-    defer h.deinit();
-    var five = try BI.initSet(alloc, 5);
-    defer five.deinit();
-    try mulFast(&h, &h, &five);
-    var diff = try BI.init(alloc);
-    defer diff.deinit();
-    if (f.order(h) == .lt) {
-        try diff.sub(&h, &f);
-    } else {
-        try diff.sub(&f, &h);
-    }
+    var cap = try pow10(alloc, k);
+    defer cap.deinit();
     const eint: u64 = if (x.e < 0) 0 else @intFromFloat(@ceil(x.e));
     var eb = try BI.initSet(alloc, eint);
     defer eb.deinit();
-    if (diff.order(eb) == .lt) return error.Boundary;
-    const round_up = f.order(h) == .gt or
-        (f.order(h) == .eq and ds[pi64 - 1] % 2 == 1);
-    if (round_up) {
-        var keep = try alloc.dupe(u8, ds[0..pi64]);
-        defer alloc.free(keep);
-        var i: usize = pi64;
-        var carried = true;
-        while (i > 0) {
-            i -= 1;
-            if (keep[i] == '9') {
-                keep[i] = '0';
-            } else {
-                keep[i] += 1;
-                carried = false;
-                break;
-            }
-        }
-        if (carried) return decFromDigits(alloc, "1", L - w, neg);
-        return decFromDigits(alloc, keep, -w + L - prec, neg);
-    }
+    if (f.order(eb) == .lt) return error.Boundary;
+    var fpe = try f.clone();
+    defer fpe.deinit();
+    try fpe.add(&fpe, &eb);
+    if (fpe.order(cap) != .lt) return error.Boundary;
     return decFromDigits(alloc, ds[0..pi64], -w + L - prec, neg);
 }
 
-// a * b / 10^w (truncated), error e <= a.e*|B| + b.e*|A| + 1.
+// a * b / 10^w (truncated), error e <= a.e*|B| + b.e*|A| + (rem != 0).
 fn fxMul(alloc: std.mem.Allocator, a: *const Fx, b: *const Fx, w: i64) !Fx {
     var p = try BI.init(alloc);
     defer p.deinit();
@@ -1495,11 +1477,13 @@ fn fxMul(alloc: std.mem.Allocator, a: *const Fx, b: *const Fx, w: i64) !Fx {
     try divFast(&q, &rem, &p, &d);
     return .{
         .v = q,
-        .e = a.e * fxP10(fxMag(&b.v, w)) + b.e * fxP10(fxMag(&a.v, w)) + 1,
+        .e = a.e * fxP10(fxMag(&b.v, w)) + b.e * fxP10(fxMag(&a.v, w)) +
+            (if (rem.eqlZero()) @as(f64, 0) else 1),
     };
 }
 
-// a / b in FX: a * 10^w / b (truncated). e <= a.e/|B| + b.e*|V|/|B| + 1.
+// a / b in FX: a * 10^w / b (truncated). e <= a.e/|B| + b.e*|V|/|B| +
+// (rem != 0).
 fn fxDiv(alloc: std.mem.Allocator, a: *const Fx, b: *const Fx, w: i64) !Fx {
     var n = try a.v.clone();
     defer n.deinit();
@@ -1514,11 +1498,13 @@ fn fxDiv(alloc: std.mem.Allocator, a: *const Fx, b: *const Fx, w: i64) !Fx {
     return .{
         .v = q,
         .e = a.e * fxP10(-fxMag(&b.v, w)) +
-            b.e * fxP10(fxMag(&q, w) - fxMag(&b.v, w)) + 1,
+            b.e * fxP10(fxMag(&q, w) - fxMag(&b.v, w)) +
+            (if (rem.eqlZero()) @as(f64, 0) else 1),
     };
 }
 
-// sqrt(X * 10^-w) = isqrt(X * 10^w). e <= a.e/|V| + 1 (rel. err contracts).
+// sqrt(X * 10^-w) = isqrt(X * 10^w). e <= a.e/|V| + (s*s != n) (rel. err
+// contracts; the +1 is the isqrt floor, dropped when the root is exact).
 fn fxSqrt(alloc: std.mem.Allocator, x: *const Fx, w: i64) !Fx {
     var n = try x.v.clone();
     defer n.deinit();
@@ -1528,7 +1514,11 @@ fn fxSqrt(alloc: std.mem.Allocator, x: *const Fx, w: i64) !Fx {
     var s = try BI.init(alloc);
     errdefer s.deinit();
     try sqrtFast(&s, &n);
-    return .{ .v = s, .e = x.e * fxP10(-fxMag(&s, w)) + 1 };
+    var s2 = try BI.init(alloc);
+    defer s2.deinit();
+    try mulFast(&s2, &s, &s);
+    return .{ .v = s, .e = x.e * fxP10(-fxMag(&s, w)) +
+        (if (s2.order(n) == .eq) @as(f64, 0) else 1) };
 }
 
 // a * c for exact integer c: e *= |c|.
@@ -1542,14 +1532,15 @@ fn fxScale(alloc: std.mem.Allocator, a: *const Fx, c: i64) !Fx {
     return .{ .v = v, .e = a.e * cf };
 }
 
-// trunc(a / d) for exact integer d != 0: e <= a.e/|d| + 1.
+// trunc(a / d) for exact integer d != 0: e <= a.e/|d| + (rem != 0).
 fn fxTruncDiv(alloc: std.mem.Allocator, a: *const Fx, d: *const BI) !Fx {
     var q = try BI.init(alloc);
     errdefer q.deinit();
     var rem = try BI.init(alloc);
     defer rem.deinit();
     try divFast(&q, &rem, &a.v, d);
-    return .{ .v = q, .e = a.e * fxP10(-fxMag(d, 0)) + 1 };
+    return .{ .v = q, .e = a.e * fxP10(-fxMag(d, 0)) +
+        (if (rem.eqlZero()) @as(f64, 0) else 1) };
 }
 
 fn fxConst(alloc: std.mem.Allocator, v: i64, w: i64) !Fx {
@@ -1588,7 +1579,7 @@ fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !Fx {
         if (q.eqlZero()) break;
         if (neg) q.negate();
         try sum.add(&sum, &q);
-        e += 1;
+        e += if (rem.eqlZero()) @as(f64, 0) else 1;
         neg = !neg;
         try mulFast(&pk, &pk, &kk);
     }
@@ -1887,8 +1878,16 @@ fn decTrigW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool, 
         }
         try divFast(&qi, &rem, &qfr, &unit);
     }
-    // qt = qi * 2pi exactly scaled; the qf rounding contributes <= ~2pi ulps.
-    var qt = Fx{ .v = try BI.init(alloc), .e = qf.e * fxP10(fxMag(&two_pi.v, w)) + 4 };
+    // qt = qi * 2pi exactly scaled; the qf rounding contributes <= ~2pi ulps,
+    // but only when the quotient actually rounded (an exact-integer qf needs
+    // none — that is what keeps sin/cos of 0 provably exact).
+    var qrem = try BI.init(alloc);
+    defer qrem.deinit();
+    var qint = try BI.init(alloc);
+    defer qint.deinit();
+    try divFast(&qint, &qrem, &qf.v, &unit);
+    const quant: f64 = if (qrem.eqlZero() and qf.e == 0) 0 else 4;
+    var qt = Fx{ .v = try BI.init(alloc), .e = qf.e * fxP10(fxMag(&two_pi.v, w)) + quant };
     defer fxDeinit(&qt);
     try mulFast(&qt.v, &qi, &two_pi.v);
     qt.e += fxP10(fxMag(&qi, 0)) * two_pi.e;

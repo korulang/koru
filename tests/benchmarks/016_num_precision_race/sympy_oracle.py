@@ -106,10 +106,10 @@ for k in ["w1", "w2", "w9"]:
         n += 1
     total = len(rd)
     print(f"{k}: {n}/{total} digits agree" + ("  EXACT" if kd == rd else ""))
-# koru emits correctly-rounded digits (round-half-even, error-bound-checked
-# via the Fx layer). A carry-aware check therefore compares against the
-# reference rounded to the same length, and also reports the raw prefix
-# agreement for context.
+# koru emits the floor-magnitude prefix — the first `prec` digits of the
+# true expansion, error-bound-checked via the Fx layer (same contract as
+# div/sqrt). The honest check is pure prefix agreement: every emitted
+# digit must be a digit of the true expansion.
 for k in ["w3", "w4", "w5", "w6", "w7", "w8", "w10"]:
     if k not in koru:
         print(f"{k}: MISSING")
@@ -119,20 +119,9 @@ for k in ["w3", "w4", "w5", "w6", "w7", "w8", "w10"]:
     n = 0
     while n < min(len(kd), len(rs)) and kd[n] == rs[n]:
         n += 1
-    # reference correctly rounded to len(kd) digits
-    rr = mp.nstr(refs[k], len(kd)).replace(".", "").lstrip("0")
-    exact = kd == rr
-    # or one-ulp-away (round boundary conventions may differ on exact .5)
-    kdn = int(kd); rrn = int(rr)
-    near = abs(kdn - rrn) <= 1
     mpt = f"  (mpmath: {mp_times[k]:.1f} ms)" if k in mp_times else ""
-    if exact:
-        status = "  CORRECTLY ROUNDED"
-    elif near:
-        status = "  within 1 ulp of rounded ref"
-    else:
-        status = ""
-    print(f"{k}: {n}/{len(kd)} prefix digits; last-digit rounded vs ref: {'OK' if exact else ('1ulp' if near else 'FAIL')}{status}{mpt}")
+    status = "  TRUE PREFIX" if n == len(kd) else f"  DIVERGES AT DIGIT {n + 1}"
+    print(f"{k}: {n}/{len(kd)} prefix digits{status}{mpt}")
 
 # ---------- Layer B: symbolic annihilation ----------
 
