@@ -1,0 +1,103 @@
+---
+title: "SupGen: Exact Power Series, Discovered ODEs, and Their Recurrences"
+subject: "SupGen"
+date: 2026-11-01
+excerpt: "std/sym's SupGen layer expands any expression in the grammar as an exact rational power series, discovers the linear ODE that annihilates it, and projects that ODE into the recurrence its coefficients obey. Catalan numbers come out of one literal."
+readTime: 6 min read
+tags: [koru, symbolic computation, holonomic, verification]
+ai_authored: mostly
+draft: true
+---
+
+<script>
+  import RegressionTestLink from '$lib/components/RegressionTestLink.svelte';
+</script>
+
+SupGen is the series-and-guessing layer of `std/sym`. It has three operations. `series` expands an expression into exact rational Taylor coefficients. `derive-ode` finds a linear ODE with polynomial coefficients that annihilates the expression. `cert-bridge` turns that ODE into the recurrence the coefficients satisfy. Each step's output is a value with an obligation, and each step refuses by name when the mathematics doesn't hold.
+
+## One literal, the Catalan numbers
+
+The Catalan generating function is `(1 − √(1−4x)) / (2x)`. It has a removable singularity at 0, since the numerator vanishes there too:
+
+```koru
+// Catalan generating function (1 - sqrt(1-4x)) / (2x): removable at 0
+std/sym:lit((1+(-1*√(1+(-4*x))))*inv(2*x))
+| exact a |> std/sym:series(a, terms: 10)
+    | exact s |> std/io:print.ln("catalan series: {{ s:s }}")
+    | non-analytic |> std/io:print.ln("catalan series: non-analytic")
+    | non-rational |> std/io:print.ln("catalan series: non-rational")
+    | bad |> std/io:print.ln("catalan series: bad")
+| bad |> std/io:print.ln("bad-literal")
+```
+
+```
+catalan series: terms=10:1,1,2,5,14,42,132,429,1430,4862
+```
+
+Series run in exact Laurent form, `x^v · (c₀ + c₁x + …)`, where the stored prefix is exactly what is known. When `1 − √(1−4x)` cancels its constant term, the known prefix gets shorter instead of acquiring invented zeros. The working precision then widens until ten coefficients are exact. Dividing by `2x` lowers the valuation by one, and since the result's valuation is not negative, the series exists. A pole that survives cancellation refuses `non-analytic`, and so does a branch point. The lane is real-valued, so `√(x²) = |x|` refuses while `√(x⁴(1+x)) = x²√(1+x)` expands.
+
+There is no `free` anywhere in these samples. `std/sym:lit` returns `string<sexpr!>`, `series` returns `string<std/io:allocated!>`, each obligation has exactly one disposer, and the compiler inserts the disposer on every exit arm.
+
+## The ODE, and then the recurrence
+
+```koru
+std/sym:lit((1+(-1*√(1+(-4*x))))*inv(2*x))
+| exact a |> std/sym:derive-ode(a, max-order: 2, max-deg: 2)
+    | exact c |> std/io:print.ln("catalan ode: {{ c:s }}")
+        |> std/sym:cert-bridge(c)
+            | exact r |> std/io:print.ln("catalan recurrence: {{ r:s }}")
+            | bad-cert m |> std/io:print.ln("catalan recurrence: bad-cert {{ m:s }}")
+    | not-found |> std/io:print.ln("catalan ode: not-found")
+    | non-analytic |> std/io:print.ln("catalan ode: non-analytic")
+    | non-rational |> std/io:print.ln("catalan ode: non-rational")
+    | bad |> std/io:print.ln("catalan ode: bad")
+| bad |> std/io:print.ln("bad-literal")
+```
+
+```
+catalan ode: ode(k=2,d=2,verified=30)|p0=[2,0,0]|p1=[-2,10,0]|p2=[0,-1,4]
+catalan recurrence: rec(k=3,d=2,via=bridge,det=0)|p0=[0]|p1=[0]|p2=[30,22,4]|p3=[-12,-7,-1]
+```
+
+`derive-ode` searches orders and degrees within the declared bounds. For each one it solves the series residual as a linear system over ℚ and keeps the first kernel vector. It then checks that vector on 30 coefficients the solve never used, and `verified=30` records that count. The certificate reads `2f + (10x − 2)f' + (4x² − x)f'' = 0`. Order 2 is the minimum here: a first-order homogeneous ODE would need `f'/f` to be rational, and for this algebraic function it is not.
+
+`cert-bridge` is the D-finite ⇔ P-recursive projection (Stanley 1980). It gives `(4n²+22n+30)·a(n+2) = (n²+7n+12)·a(n+3)`. Dividing out the common factor `(n+3)` and shifting leaves `(n+2)·C(n+1) = (4n+2)·C(n)`, the classical Catalan recurrence. The bridge does not reduce that common factor, so it shows up in the output. `det=0` is the honest flag: the ODE's leading coefficient `4x² − x` vanishes at 0, so the hypothesis under which `HolonomicBridge.lean` makes the recurrence determine the sequence does not hold. The recurrence is still true, and the oracle below checks it.
+
+<RegressionTestLink
+  tests={[
+    { name: "615_052 removable singularities", directory: "615_052_sym_series_removable", categorySlug: "600_STDLIB/615_NUM", description: "Catalan series, ODE and recurrence; poles, branch points and |x| refuse." },
+    { name: "615_042 SupGen basics", directory: "615_042_sym_supgen", categorySlug: "600_STDLIB/615_NUM", description: "Geometric and binomial series, discovered ODEs, and the non-rational / non-analytic / not-found arms." },
+    { name: "615_046 the P-recursive bridge", directory: "615_046_sym_cert_bridge", categorySlug: "600_STDLIB/615_NUM", description: "ODE to recurrence, with the det flag carrying Lean's packaging hypothesis." }
+  ]}
+/>
+
+## What refuses, and why
+
+Each refusal names a distinct reason:
+
+- `non-rational`: `series(π·x)`. The coefficients would leave ℚ, and the lane does not approximate them.
+- `non-analytic`: `series(1/x)`, `series(√x)`, `series(√(x²))`. These are a surviving pole, a branch point, and `|x|`.
+- `not-found`: `derive-ode(√(1+x), max-order: 0, …)`. No certificate exists within the declared bounds, and the bounds are part of the answer.
+- `unclassifiable` from `decide-ode`, with the open Kovacic cases named. `y'' = (x²+1)·y` reports `open-cases=1`, and it does have the Liouvillian solution `e^{x²/2}`. A proof of non-Liouvillian (Airy's `y'' = x·y`, `y'' = x³·y`) is issued only when all three of Kovacic's necessary conditions fail.
+
+Rational integrands now leave the holonomic lane entirely. `decide-integral` runs Hermite reduction and returns the whole rational part of the antiderivative, checked exactly. `x/(1+x²)²` gives `−1/(2(1+x²))`. For `(x+1)/x²` it returns the rational part `−1/x` and names the remaining log part `1/x`, because the grammar has no `log` node to build it with.
+
+<RegressionTestLink
+  test={{ name: "615_051 Hermite and Kovacic", directory: "615_051_sym_hermite_kovacic", categorySlug: "600_STDLIB/615_NUM", description: "Rational parts constructed and checked exactly; Kovacic proves only when every case fails." }}
+/>
+
+## Checked by someone else
+
+The SymPy oracle (`tests/benchmarks/016_num_precision_race/sympy_oracle.py`) checks all of the above independently. The Catalan ODE annihilates `(1 − √(1−4x))/(2x)` symbolically. `sympy.series` agrees with `catalan(n)` for the first ten terms. The bridge recurrence holds on `catalan(n)` for n < 20. All four Hermite antiderivatives differentiate back to their integrands. `e^{x²/2}` and `x²` annihilate the two ODEs that `decide-ode` must not call non-Liouvillian.
+
+## Open rungs
+
+The log part of a rational integral is named but not built. Building it (Rothstein–Trager, or Lazard–Rioboo–Trager to stay over ℚ) needs a `log` node, and that node is also the first step toward transcendental Risch over `exp`/`log` towers. The Kovacic case algorithms, which would turn `open-cases` into constructed solutions, are not run. `derive-ode` is witness-grade by construction: `verified=N` is a count of checked coefficients, not a proof. The theorem-grade route is `cert-of`, which derives the ODE structurally.
+
+## Where the math comes from
+
+- **Stanley**, "Differentiably Finite Power Series" (*Europ. J. Combinatorics*, 1980): D-finite functions and the P-recursive equivalence.
+- **Salvy & Zimmermann**, "GFUN" (*ACM TOMS*, 1994): the guess-and-prove lineage `derive-ode` descends from.
+- **Kauers & Paule**, *The Concrete Tetrahedron* (2011): series, recurrences, guessing.
+- **Kovacic**, *J. Symbolic Computation* (1986): the three cases and their necessary conditions.
+- **Hermite** (1872) and **Horowitz** (SYMSAC 1971): the rational-part reduction. **Bronstein**, *Symbolic Integration I* (2005), for the full Risch frame.
