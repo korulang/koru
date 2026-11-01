@@ -2079,9 +2079,12 @@ fn decExpW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec 
     }
     var r = try fxTruncDiv(alloc, &x, &p2);
     defer fxDeinit(&r);
-    // Newton exp needs an AGM ln per ladder level; below ~4000 digits the
-    // plain Taylor series on the reduced argument still wins. The Newton
-    // path stays for large w where its O(M log^2) scaling dominates.
+    // Crossover gate — measured, not proved: GMP-style tuning constants
+    // trade time only, never correctness (both arms are proved at the
+    // emit cut). MPFR/Arb keep exp series-based at all widths; our
+    // Newton win above ~4000 is likely an artifact of fxExpSmall being
+    // a term-at-a-time O(terms*M(w)) loop — binary-splitting the reduced
+    // series would be O(M(w)*log w) and would move or erase this gate.
     var e: Fx = undefined;
     if (w > 4000) {
         var c = try agmConsts(alloc, w);
