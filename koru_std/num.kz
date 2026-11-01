@@ -376,19 +376,37 @@ fn decMul(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     return decFromDigits(alloc, ds, a.e + b.e, a.neg != b.neg);
 }
 
-// a / b to `prec` significant digits (floor-magnitude, then renorm).
+// First `prec` digits of a digit string (floor-magnitude) and the exponent
+// bump for the digits dropped.
+const Trimmed = struct { digits: []const u8, e_adj: i64 };
+
+fn trimDigits(ds: []const u8, prec: i64) Trimmed {
+    const L: i64 = @intCast(ds.len);
+    const keep = @max(prec, 1);
+    if (L <= keep) return .{ .digits = ds, .e_adj = 0 };
+    return .{ .digits = ds[0..@intCast(keep)], .e_adj = L - keep };
+}
+
+// a truncated to `prec` significant digits (floor-magnitude).
+fn decTrunc(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
+    const ds = try a.m.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    const t = trimDigits(ds, prec);
+    return decFromDigits(alloc, t.digits, a.e + t.e_adj, a.neg);
+}
+
+// a / b to exactly `prec` significant digits (floor-magnitude, then renorm).
 fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !Dec {
     if (b.m.eqlZero()) return error.DivZero;
     if (a.m.eqlZero()) return decInit(alloc, 0, 0);
 
-    // result digits: len(A) - len(B) + 1 magnitudes; scale A so the quotient
-    // carries `prec` significant digits.
+    // an m-digit by n-digit integer quotient has m-n or m-n+1 digits; scale A
+    // so m-n = prec, then trim to prec.
     const la = try a.m.toString(alloc, 10, .lower);
     defer alloc.free(la);
     const lb = try b.m.toString(alloc, 10, .lower);
     defer alloc.free(lb);
-    const rough: i64 = @as(i64, @intCast(la.len)) - @as(i64, @intCast(lb.len)) + 1;
-    var k: i64 = prec - rough;
+    var k: i64 = prec - @as(i64, @intCast(la.len)) + @as(i64, @intCast(lb.len));
     if (k < 0) k = 0;
 
     var num = try a.m.clone();
@@ -405,21 +423,22 @@ fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !De
 
     const qs = try q.toString(alloc, 10, .lower);
     defer alloc.free(qs);
-    return decFromDigits(alloc, qs, a.e - b.e - k, a.neg != b.neg);
+    const t = trimDigits(qs, prec);
+    return decFromDigits(alloc, t.digits, a.e - b.e - k + t.e_adj, a.neg != b.neg);
 }
 
-// sqrt(a) to `prec` significant digits. a < 0 refuses at the tor level.
+// sqrt(a) to exactly `prec` significant digits (floor-magnitude). a < 0
+// refuses at the tor level.
 fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
     if (a.m.eqlZero()) return decInit(alloc, 0, 0);
 
-    // Want r = sqrt(A * 10^E). Compute s = isqrt(A * 10^k) with even k chosen
-    // so s has ~prec digits; result = s * 10^((E - k)/2).
+    // Want r = sqrt(A * 10^E). Compute s = isqrt(A * 10^k) with k = E (mod 2)
+    // and len(A) + k >= 2*prec, so s has >= prec digits; result = s * 10^((E - k)/2).
     const la = try a.m.toString(alloc, 10, .lower);
     defer alloc.free(la);
-    const rough_mag: i64 = @divFloor(a.e + @as(i64, @intCast(la.len)), 2);
-    var k: i64 = 2 * (prec - rough_mag + a.e) - a.e;
+    var k: i64 = 2 * @max(prec, 1) - @as(i64, @intCast(la.len));
     if (k < 0) k = 0;
-    if (@mod(k, 2) != 0) k += 1;
+    if (@mod(k - a.e, 2) != 0) k += 1;
 
     var x = try a.m.clone();
     defer x.deinit();
@@ -433,7 +452,8 @@ fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
 
     const ss = try s.toString(alloc, 10, .lower);
     defer alloc.free(ss);
-    return decFromDigits(alloc, ss, @divFloor(a.e - k, 2), false);
+    const t = trimDigits(ss, prec);
+    return decFromDigits(alloc, t.digits, @divExact(a.e - k, 2) + t.e_adj, false);
 }
 
 // |a|, |b| compare by absolute value: -1, 0, 1.
@@ -502,14 +522,8 @@ fn fxToDec(alloc: std.mem.Allocator, x: *const BI, w: i64, prec: i64) !Dec {
     xa.abs();
     const ds = try xa.toString(alloc, 10, .lower);
     defer alloc.free(ds);
-    const L: i64 = @intCast(ds.len);
-    var keep = ds;
-    var e_adj: i64 = 0;
-    if (L > prec) {
-        keep = ds[0..@intCast(prec)];
-        e_adj = L - prec;
-    }
-    return decFromDigits(alloc, keep, -w + e_adj, neg);
+    const t = trimDigits(ds, prec);
+    return decFromDigits(alloc, t.digits, -w + t.e_adj, neg);
 }
 
 // a * b / 10^w
@@ -1169,6 +1183,18 @@ fn numFree(s: []const u8) void {
     var out = decFromDigits(koru_allocator(), ds, d.e * n, d.neg and @mod(n, 2) != 0) catch @panic("std/num:pow: out of memory");
     defer decDeinit(&out);
     return .{ .exact = decToString(koru_allocator(), &out) catch @panic("std/num:pow: out of memory") };
+}
+
+// a truncated to `prec` significant digits (floor-magnitude); unchanged if it already has <= prec.
+~pub tor trunc { a: string<!exact>, prec: i64 } -> string<exact!>
+
+~proc trunc|zig {
+    defer numFree(a);
+    var da = decParse(koru_allocator(), a) catch @panic("std/num:trunc: malformed operand");
+    defer decDeinit(&da);
+    var r = decTrunc(koru_allocator(), &da, prec) catch @panic("std/num:trunc: out of memory");
+    defer decDeinit(&r);
+    return decToString(koru_allocator(), &r) catch @panic("std/num:trunc: out of memory");
 }
 
 // sqrt(a^2 + b^2) to `prec` significant digits — quadrature addition. The

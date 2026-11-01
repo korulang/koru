@@ -90,30 +90,31 @@ fn dimParse(s: []const u8, d: *Dim) bool {
     return i == 7;
 }
 
-// Unit-name -> (dim, value scale). `g` scales by 1e-3 — the plex source mapped
-// g to raw MASS without scaling; that is a preserved bug, not a law. Scale it.
-const UnitDef = struct { dim: Dim, scale: f64 };
+// Unit-name -> (dim, value scale as a decimal exponent k: 10^k). `g` is -3 —
+// the plex source mapped g to raw MASS without scaling; that is a preserved
+// bug, not a law. Scale it.
+const UnitDef = struct { dim: Dim, scale: i32 };
 
 fn unitLookup(name: []const u8) ?UnitDef {
     const M = Dim{ 0, 0, 1, 0, 0, 0, 0 };
     const table = .{
-        .{ "m", UnitDef{ .dim = .{ 1, 0, 0, 0, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "s", UnitDef{ .dim = .{ 0, 1, 0, 0, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "kg", UnitDef{ .dim = M, .scale = 1.0 } },
-        .{ "g", UnitDef{ .dim = M, .scale = 1e-3 } },
-        .{ "A", UnitDef{ .dim = .{ 0, 0, 0, 1, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "K", UnitDef{ .dim = .{ 0, 0, 0, 0, 1, 0, 0 }, .scale = 1.0 } },
-        .{ "mol", UnitDef{ .dim = .{ 0, 0, 0, 0, 0, 1, 0 }, .scale = 1.0 } },
-        .{ "cd", UnitDef{ .dim = .{ 0, 0, 0, 0, 0, 0, 1 }, .scale = 1.0 } },
-        .{ "Hz", UnitDef{ .dim = .{ 0, -1, 0, 0, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "N", UnitDef{ .dim = .{ 1, -2, 1, 0, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "J", UnitDef{ .dim = .{ 2, -2, 1, 0, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "W", UnitDef{ .dim = .{ 2, -3, 1, 0, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "Pa", UnitDef{ .dim = .{ -1, -2, 1, 0, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "V", UnitDef{ .dim = .{ 2, -3, 1, -1, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "C", UnitDef{ .dim = .{ 0, 1, 0, 1, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "F", UnitDef{ .dim = .{ -2, 4, -1, 2, 0, 0, 0 }, .scale = 1.0 } },
-        .{ "Ohm", UnitDef{ .dim = .{ 2, -3, 1, -2, 0, 0, 0 }, .scale = 1.0 } },
+        .{ "m", UnitDef{ .dim = .{ 1, 0, 0, 0, 0, 0, 0 }, .scale = 0 } },
+        .{ "s", UnitDef{ .dim = .{ 0, 1, 0, 0, 0, 0, 0 }, .scale = 0 } },
+        .{ "kg", UnitDef{ .dim = M, .scale = 0 } },
+        .{ "g", UnitDef{ .dim = M, .scale = -3 } },
+        .{ "A", UnitDef{ .dim = .{ 0, 0, 0, 1, 0, 0, 0 }, .scale = 0 } },
+        .{ "K", UnitDef{ .dim = .{ 0, 0, 0, 0, 1, 0, 0 }, .scale = 0 } },
+        .{ "mol", UnitDef{ .dim = .{ 0, 0, 0, 0, 0, 1, 0 }, .scale = 0 } },
+        .{ "cd", UnitDef{ .dim = .{ 0, 0, 0, 0, 0, 0, 1 }, .scale = 0 } },
+        .{ "Hz", UnitDef{ .dim = .{ 0, -1, 0, 0, 0, 0, 0 }, .scale = 0 } },
+        .{ "N", UnitDef{ .dim = .{ 1, -2, 1, 0, 0, 0, 0 }, .scale = 0 } },
+        .{ "J", UnitDef{ .dim = .{ 2, -2, 1, 0, 0, 0, 0 }, .scale = 0 } },
+        .{ "W", UnitDef{ .dim = .{ 2, -3, 1, 0, 0, 0, 0 }, .scale = 0 } },
+        .{ "Pa", UnitDef{ .dim = .{ -1, -2, 1, 0, 0, 0, 0 }, .scale = 0 } },
+        .{ "V", UnitDef{ .dim = .{ 2, -3, 1, -1, 0, 0, 0 }, .scale = 0 } },
+        .{ "C", UnitDef{ .dim = .{ 0, 1, 0, 1, 0, 0, 0 }, .scale = 0 } },
+        .{ "F", UnitDef{ .dim = .{ -2, 4, -1, 2, 0, 0, 0 }, .scale = 0 } },
+        .{ "Ohm", UnitDef{ .dim = .{ 2, -3, 1, -2, 0, 0, 0 }, .scale = 0 } },
     };
     inline for (table) |entry| {
         if (std.mem.eql(u8, name, entry[0])) return entry[1];
@@ -124,9 +125,9 @@ fn unitLookup(name: []const u8) ?UnitDef {
 // Parse a unit expression into a Dim: "kg", "m/s", "m/s^2", "kg·m·s^-2",
 // "m²", "m·s⁻¹". Factors left of '/' contribute +exp, right of '/' -exp.
 // UTF-8 superscripts are normalized to ASCII first.
-fn unitScan(alloc: std.mem.Allocator, expr_in: []const u8, d: *Dim, scale: *f64) bool {
+fn unitScan(alloc: std.mem.Allocator, expr_in: []const u8, d: *Dim, scale: *i32) bool {
     d.* = DIM_ZERO;
-    scale.* = 1.0;
+    scale.* = 0;
     const expr = std.mem.trim(u8, expr_in, " \t");
     if (expr.len == 0) return true;
 
@@ -189,11 +190,7 @@ fn unitScan(alloc: std.mem.Allocator, expr_in: []const u8, d: *Dim, scale: *f64)
             for (0..7) |k| {
                 d[k] += signed_exp * ud.dim[k];
             }
-            var j: i32 = 0;
-            const ae: i32 = if (exp < 0) -exp else exp;
-            while (j < ae) : (j += 1) {
-                scale.* *= if (neg) 1.0 / ud.scale else ud.scale;
-            }
+            scale.* += signed_exp * ud.scale;
         }
     }
     return true;
@@ -230,9 +227,10 @@ fn qtyJoin(alloc: std.mem.Allocator, mag: []const u8, dim_txt: []const u8, unc: 
 // Fields are RAW strings — num:parse canonicalizes them in `canon`.
 // ============================================================================
 
-const PI_DIGITS = "3.14159265358979323846264338327950288";
-const PHI_DIGITS = "1.61803398874989484820458683436563811";
-const E_DIGITS = "2.71828182845904523536028747135266249";
+// 10^k in num canon: "1e0", "1e-3", "1e3".
+fn scaleCanon(buf: []u8, k: i32) ![]const u8 {
+    return std.fmt.bufPrint(buf, "1e{d}", .{k});
+}
 
 const SplitFields = struct {
     mag: []const u8,
@@ -279,22 +277,14 @@ fn qtySplitText(alloc: std.mem.Allocator, s_in: []const u8, out: *SplitFields) !
         unit_str = std.mem.trim(u8, s[sp..], " \t");
     }
 
-    // magnitude: literal, or a named constant folded to digits at the boundary
-    var mag_str: []const u8 = value_str;
-    if (std.mem.eql(u8, value_str, "π") or std.mem.eql(u8, value_str, "pi")) {
-        mag_str = PI_DIGITS;
-    } else if (std.mem.eql(u8, value_str, "φ") or std.mem.eql(u8, value_str, "phi")) {
-        mag_str = PHI_DIGITS;
-    } else if (std.mem.eql(u8, value_str, "e")) {
-        mag_str = E_DIGITS;
-    }
+    const mag_str: []const u8 = constSym(value_str) orelse value_str;
 
     var dim: Dim = DIM_ZERO;
-    var scale: f64 = 1.0;
+    var scale: i32 = 0;
     if (!unitScan(alloc, unit_str, &dim, &scale)) return error.BadQuantity;
 
     var sbuf: [40]u8 = undefined;
-    const scale_str = std.fmt.bufPrint(&sbuf, "{d}", .{scale}) catch return error.BadQuantity;
+    const scale_str = scaleCanon(&sbuf, scale) catch return error.BadQuantity;
 
     out.* = .{
         .mag = try alloc.dupe(u8, mag_str),
@@ -305,12 +295,13 @@ fn qtySplitText(alloc: std.mem.Allocator, s_in: []const u8, out: *SplitFields) !
     };
 }
 
-// Fold a named constant to digits; plain decimal text passes through
-// unchanged (num:parse validates it downstream, same as the text lane).
-fn constFold(tok: []const u8) ?[]const u8 {
-    if (std.mem.eql(u8, tok, "π") or std.mem.eql(u8, tok, "pi")) return PI_DIGITS;
-    if (std.mem.eql(u8, tok, "φ") or std.mem.eql(u8, tok, "phi")) return PHI_DIGITS;
-    if (std.mem.eql(u8, tok, "e")) return E_DIGITS;
+// A named constant's symbolic atom ("π", "φ", "e"); anything else is null
+// and passes through as plain decimal text (num:parse validates it
+// downstream).
+fn constSym(tok: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, tok, "π") or std.mem.eql(u8, tok, "pi")) return "π";
+    if (std.mem.eql(u8, tok, "φ") or std.mem.eql(u8, tok, "phi")) return "φ";
+    if (std.mem.eql(u8, tok, "e")) return "e";
     return null;
 }
 
@@ -340,7 +331,7 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
     var mag_str: []const u8 = "1e0";
     var mag_seen = false;
     var dim: Dim = DIM_ZERO;
-    var scale: f64 = 1.0;
+    var scale: i32 = 0;
     var denom = false;
     while (i < t.len) {
         var j = i;
@@ -351,25 +342,25 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
             if (denom or mag_seen) return error.BadQuantity;
             mag_seen = true;
             mag_str = tok;
-        } else if (constFold(tok)) |digits| {
+        } else if (constSym(tok)) |atom| {
             if (denom or mag_seen) return error.BadQuantity;
             mag_seen = true;
-            mag_str = digits;
+            mag_str = atom;
         } else {
             const ud = unitLookup(tok) orelse return error.BadQuantity;
             const sgn: i32 = if (denom) -1 else 1;
             for (0..7) |k| dim[k] += sgn * ud.dim[k];
-            scale = if (denom) scale / ud.scale else scale * ud.scale;
+            scale += sgn * ud.scale;
         }
         if (j >= t.len) break;
         if (t[j] == '/') denom = true;
         i = j + 1;
     }
 
-    const unc_str = if (constFold(unc_in)) |digits| digits else unc_in;
+    const unc_str = unc_in;
     const cov_str = if (cov_in.len == 0) "-" else cov_in;
     var sbuf: [40]u8 = undefined;
-    const scale_str = std.fmt.bufPrint(&sbuf, "{d}", .{scale}) catch return error.BadQuantity;
+    const scale_str = scaleCanon(&sbuf, scale) catch return error.BadQuantity;
 
     out.* = .{
         .mag = if (mag_neg) try std.fmt.allocPrint(alloc, "-{s}", .{mag_str}) else try alloc.dupe(u8, mag_str),
@@ -419,6 +410,26 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
     } };
 }
 
+// Magnitude lane split: a named constant (π, φ, e, optionally negated)
+// stays symbolic and discharges through std/sym:parse; everything else is
+// decimal text for std/num:parse.
+~tor mag-lane { s: string<std/num:!external> }
+| dec string<std/num:external!>
+| sym string<std/sym:sexpr-external!>
+
+~proc mag-lane|zig {
+    defer qtyFree(s);
+    const body = if (s.len > 0 and s[0] == '-') s[1..] else s;
+    if (constSym(body)) |atom| {
+        if (s.len > body.len) {
+            const neg = std.fmt.allocPrint(koru_allocator(), "-{s}", .{atom}) catch @panic("std/quantity: out of memory");
+            return .{ .sym = neg };
+        }
+        return .{ .sym = ownedCopy(atom) };
+    }
+    return .{ .dec = ownedCopy(s) };
+}
+
 // The canonicalizer: external field text -> canonical pack. num:parse does
 // the decimal work; the unit scale multiplies through magnitude AND
 // uncertainty (2 g ± 0.1 g -> 2e-3 kg ± 1e-4).
@@ -426,13 +437,21 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
 | exact string<exact!>
 | bad string<std/io:allocated!>
 
-~canon = std/num:parse(s: mag)
-| bad e |> std/num:drop(s: unc) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
-| exact pm |> std/num:parse(s: unc)
-    | bad e |> std/num:free(n: pm) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
-    | exact pu |> std/num:parse(s: scale)
-        | bad e |> std/num:free(n: pm) |> std/num:free(n: pu) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
-        | exact ps |> std/num:dup(n: ps): sd |> std/num:mul(a: pm, b: sd.a): ms |> std/num:mul(a: pu, sd.b): us |> pack(mag: ms, unc: us, dim, cov): q => exact q
+~canon = mag-lane(s: mag)
+| dec dm |> std/num:parse(s: dm)
+    | bad e |> std/num:drop(s: unc) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
+    | exact pm |> std/num:parse(s: unc)
+        | bad e |> std/num:free(n: pm) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
+        | exact pu |> std/num:parse(s: scale)
+            | bad e |> std/num:free(n: pm) |> std/num:free(n: pu) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
+            | exact ps |> std/num:dup(n: ps): sd |> std/num:mul(a: pm, b: sd.a): ms |> std/num:mul(a: pu, sd.b): us |> pack(mag: ms, unc: us, dim, cov): q => exact q
+| sym sm |> std/sym:parse(s: sm)
+    | bad e |> std/num:drop(s: unc) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
+    | exact sy |> std/num:parse(s: unc)
+        | bad e |> std/sym:free(n: sy) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
+        | exact pu |> std/num:parse(s: scale)
+            | bad e |> std/sym:free(n: sy) |> std/num:free(n: pu) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
+            | exact ps |> std/num:dup(n: ps): sd |> std/sym:of-dec(n: sd.a): ss |> std/sym:mul(a: sy, b: ss): ms |> std/num:mul(a: pu, sd.b): us |> pack-sym(mag: ms, unc: us, dim, cov): q => exact q
 
 ~pub tor parse { s: string<!external> }
 | exact string<exact!>
@@ -589,10 +608,10 @@ fn magIsDec(m: []const u8) bool {
 
 ~proc unit-dim|zig {
     var d: Dim = undefined;
-    var sc: f64 = 1.0;
+    var sc: i32 = 0;
     if (!unitScan(koru_allocator(), s, &d, &sc)) return .{ .bad_unit = .{} };
     var sbuf: [64]u8 = undefined;
-    const scale_str = std.fmt.bufPrint(&sbuf, "{d}", .{sc}) catch return .{ .bad_unit = .{} };
+    const scale_str = scaleCanon(&sbuf, sc) catch return .{ .bad_unit = .{} };
     const dc = dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
     return .{ .ok = .{ .scale = ownedCopy(scale_str), .dim = dc } };
 }
@@ -725,6 +744,42 @@ fn magIsDec(m: []const u8) bool {
 // std/num call, and the uncertainty formula is spelled in the open.
 // ============================================================================
 
+// Precision rule: P = max(significant mantissa digits over every num input
+// of the operation) + 2, counted as std/num:length counts — every division
+// and root in the uncertainty path runs at P.
+fn sigmaPrec(a: []const u8, b: []const u8) i64 {
+    return @max(mantissaDigits(a), mantissaDigits(b)) + 2;
+}
+
+fn sigmaPrec4(a: []const u8, b: []const u8, c: []const u8, d: []const u8) i64 {
+    return @max(@max(mantissaDigits(a), mantissaDigits(b)), @max(mantissaDigits(c), mantissaDigits(d))) + 2;
+}
+
+fn mantissaDigits(canon: []const u8) i64 {
+    const end = std.mem.indexOfScalar(u8, canon, 'e') orelse canon.len;
+    var n: i64 = 0;
+    var lead = true;
+    for (canon[0..end]) |ch| {
+        if (ch < '0' or ch > '9') continue;
+        if (lead and ch == '0') continue;
+        lead = false;
+        n += 1;
+    }
+    return if (n == 0) 1 else n;
+}
+
+~tor sigma-prec { a: string<std/num:exact>, b: string<std/num:exact> } -> i64
+
+~proc sigma-prec|zig {
+    return sigmaPrec(a, b);
+}
+
+~tor sigma-prec4 { a: string<std/num:exact>, b: string<std/num:exact>, c: string<std/num:exact>, d: string<std/num:exact> } -> i64
+
+~proc sigma-prec4|zig {
+    return sigmaPrec4(a, b, c, d);
+}
+
 // Free every field of two unpacked quantities — the dim-mismatch/mixed-cov
 // discharge path.
 ~tor free-fields { am: string<std/num:!exact>, au: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bm: string<std/num:!exact>, bu: string<std/num:!exact>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated> }
@@ -752,7 +807,7 @@ fn magIsDec(m: []const u8) bool {
 | diff |> free-fields-s(am, au, ad, ac, bm, bu, bd, bc) => dim-mismatch
 | same |> cov-join(a: ac, b: bc)
     | mixed |> free-fields-s(am, au, ad, ac, bm, bu, bd, bc) => mixed-cov
-    | indep g |> std/num:qadd(a: au, b: bu, prec: 15): sig |> add-finish-s(sig, am, bm, ad, ac, bd, bc, g): q => exact q
+    | indep g |> sigma-prec(a: au, b: bu): sp |> std/num:qadd(a: au, b: bu, prec: sp): sig |> add-finish-s(sig, am, bm, ad, ac, bd, bc, g): q => exact q
     | corr g |> std/num:add(a: au, b: bu): sig |> add-finish-s(sig, am, bm, ad, ac, bd, bc, g): q => exact q
     | opp g |> std/num:sub(a: au, b: bu): sd |> std/num:abs(a: sd): sig |> add-finish-s(sig, am, bm, ad, ac, bd, bc, g): q => exact q
 
@@ -776,7 +831,7 @@ fn magIsDec(m: []const u8) bool {
         | diff |> free-fields(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov) => dim-mismatch
         | same |> cov-join(a: fa.cov, b: fb.cov)
             | mixed |> free-fields(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov) => mixed-cov
-            | indep g |> std/num:qadd(a: fa.unc, b: fb.unc, prec: 15): sig |> add-finish(sig, am: fa.mag, bm: fb.mag, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+            | indep g |> sigma-prec(a: fa.unc, b: fb.unc): sp |> std/num:qadd(a: fa.unc, b: fb.unc, prec: sp): sig |> add-finish(sig, am: fa.mag, bm: fb.mag, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
             | corr g |> std/num:add(a: fa.unc, b: fb.unc): sig |> add-finish(sig, am: fa.mag, bm: fb.mag, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
             | opp g |> std/num:sub(a: fa.unc, b: fb.unc): sd |> std/num:abs(a: sd): sig |> add-finish(sig, am: fa.mag, bm: fb.mag, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
     | sym fb |> std/sym:of-dec(n: fa.mag): sm |> add-sym(am: sm, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov)
@@ -815,30 +870,30 @@ fn magIsDec(m: []const u8) bool {
 // rel-term: u / |m| — a factor's relative sigma. u == "0e0" contributes zero
 // even at |m| == 0 (the 0·∞ case resolves to the zero limit); only a nonzero
 // sigma over a zero magnitude lands on | undef.
-~tor rel-term { u: string<std/num:!exact>, m: string<std/num:!exact> }
+~tor rel-term { u: string<std/num:!exact>, m: string<std/num:!exact>, prec: i64 }
 | ok string<std/num:exact!>
 | undef
 
 ~rel-term = std/num:dup(n: u): du |> std/num:is-zero(n: du.a)
 | zero |> std/num:free(n: du.a) |> std/num:free(n: m) => ok du.b
-| nonzero |> std/num:free(n: du.a) |> std/num:abs(a: m): am |> std/num:div(a: du.b, b: am, prec: 15)
+| nonzero |> std/num:free(n: du.a) |> std/num:abs(a: m): am |> std/num:div(a: du.b, b: am, prec)
     | exact r => ok r
     | div-zero => undef
 
 // mul/div shared prep: result magnitude + both relative sigmas.
-~tor mul-prep { am: string<std/num:!exact>, au: string<std/num:!exact>, bm: string<std/num:!exact>, bu: string<std/num:!exact> }
+~tor mul-prep { am: string<std/num:!exact>, au: string<std/num:!exact>, bm: string<std/num:!exact>, bu: string<std/num:!exact>, prec: i64 }
 | ok { rm: string<std/num:exact!>, ra: string<std/num:exact!>, rb: string<std/num:exact!> }
 | undef
 
-~mul-prep = std/num:dup(n: am): da |> std/num:dup(n: bm): db |> std/num:mul(da.a, b: db.a): rm |> rel-term(u: au, m: da.b)
+~mul-prep = std/num:dup(n: am): da |> std/num:dup(n: bm): db |> std/num:mul(da.a, b: db.a): rm |> rel-term(u: au, m: da.b, prec)
 | undef |> std/num:free(n: rm) |> std/num:free(n: db.b) |> std/num:free(n: bu) => undef
-| ok ra |> rel-term(u: bu, m: db.b)
+| ok ra |> rel-term(u: bu, m: db.b, prec)
     | undef |> std/num:free(n: rm) |> std/num:free(n: ra) => undef
     | ok rb => ok { rm, ra, rb }
 
-~tor mul-finish { rel: string<std/num:!exact>, rm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
+~tor mul-finish { prec: i64, rel: string<std/num:!exact>, rm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
 
-~mul-finish = dim-compose(a: ad, b: bd): rd |> std/num:dup(n: rm): dr |> std/num:abs(dr.a): ar |> std/num:mul(a: ar, b: rel): sig |> pack(mag: dr.b, unc: sig, dim: rd, cov: g): q |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+~mul-finish = dim-compose(a: ad, b: bd): rd |> std/num:dup(n: rm): dr |> std/num:abs(dr.a): ar |> std/num:mul(a: ar, b: rel): sg |> std/num:trunc(a: sg, prec): sig |> pack(mag: dr.b, unc: sig, dim: rd, cov: g): q |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
 
 // Dimensions compose under multiplication (the free abelian group adds).
 // Sigma law on the RELATIVE uncertainties — same four cov cases as add:
@@ -883,15 +938,15 @@ fn magIsDec(m: []const u8) bool {
 | num fa |> unpack(n: b)
     | num fb |> cov-join(a: fa.cov, b: fb.cov)
         | mixed |> free-fields(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov) => mixed-cov
-        | indep g |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc)
+        | indep g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec: sp)
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:mul: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:qadd(a: p.ra, b: p.rb, prec: 15): rel |> mul-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
-        | corr g |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc)
+            | ok p |> std/num:qadd(a: p.ra, b: p.rb, prec: sp): rel |> mul-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+        | corr g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec: sp)
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:mul: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:add(a: p.ra, b: p.rb): rel |> mul-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
-        | opp g |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc)
+            | ok p |> std/num:add(a: p.ra, b: p.rb): rel |> mul-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+        | opp g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec: sp)
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:mul: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:sub(a: p.ra, b: p.rb): sd |> std/num:abs(a: sd): rel |> mul-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+            | ok p |> std/num:sub(a: p.ra, b: p.rb): sd |> std/num:abs(a: sd): rel |> mul-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
     | sym fb |> std/sym:of-dec(n: fa.mag): sm |> mul-sym(am: sm, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov)
         | exact q => exact q
         | mixed-cov => mixed-cov
@@ -906,22 +961,22 @@ fn magIsDec(m: []const u8) bool {
         | mixed-cov => mixed-cov
         | sym-unc => sym-unc
 
-~tor div-prep { am: string<std/num:!exact>, au: string<std/num:!exact>, bm: string<std/num:!exact>, bu: string<std/num:!exact>, prec: i64 }
+~tor div-prep { am: string<std/num:!exact>, au: string<std/num:!exact>, bm: string<std/num:!exact>, bu: string<std/num:!exact>, prec: i64, uprec: i64 }
 | ok { rm: string<std/num:exact!>, ra: string<std/num:exact!>, rb: string<std/num:exact!> }
 | undef
 | div-zero
 
 ~div-prep = std/num:dup(n: am): da |> std/num:dup(n: bm): db |> std/num:div(da.a, b: db.a, prec)
 | div-zero |> std/num:free(n: da.b) |> std/num:free(n: db.b) |> std/num:free(n: au) |> std/num:free(n: bu) => div-zero
-| exact rm |> rel-term(u: au, m: da.b)
+| exact rm |> rel-term(u: au, m: da.b, prec: uprec)
     | undef |> std/num:free(n: rm) |> std/num:free(n: db.b) |> std/num:free(n: bu) => undef
-    | ok ra |> rel-term(u: bu, m: db.b)
+    | ok ra |> rel-term(u: bu, m: db.b, prec: uprec)
         | undef |> std/num:free(n: rm) |> std/num:free(n: ra) => undef
         | ok rb => ok { rm, ra, rb }
 
-~tor div-finish { rel: string<std/num:!exact>, rm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
+~tor div-finish { prec: i64, rel: string<std/num:!exact>, rm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
 
-~div-finish = dim-invert(a: bd): ibd |> dim-compose(a: ad, b: ibd): rd |> std/io:free(content: ibd) |> std/num:dup(n: rm): dr |> std/num:abs(dr.a): ar |> std/num:mul(a: ar, b: rel): sig |> pack(mag: dr.b, unc: sig, dim: rd, cov: g): q |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+~div-finish = dim-invert(a: bd): ibd |> dim-compose(a: ad, b: ibd): rd |> std/io:free(content: ibd) |> std/num:dup(n: rm): dr |> std/num:abs(dr.a): ar |> std/num:mul(a: ar, b: rel): sg |> std/num:trunc(a: sg, prec): sig |> pack(mag: dr.b, unc: sig, dim: rd, cov: g): q |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
 
 // Dimensions subtract under division (compose with the inverse). Same
 // relative-sigma law as mul.
@@ -970,18 +1025,18 @@ fn magIsDec(m: []const u8) bool {
 | num fa |> unpack(n: b)
     | num fb |> cov-join(a: fa.cov, b: fb.cov)
         | mixed |> free-fields(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov) => mixed-cov
-        | indep g |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec)
+        | indep g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec, uprec: sp)
             | div-zero |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => div-zero
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:div: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:qadd(a: p.ra, b: p.rb, prec: 15): rel |> div-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
-        | corr g |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec)
+            | ok p |> std/num:qadd(a: p.ra, b: p.rb, prec: sp): rel |> div-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+        | corr g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec, uprec: sp)
             | div-zero |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => div-zero
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:div: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:add(a: p.ra, b: p.rb): rel |> div-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
-        | opp g |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec)
+            | ok p |> std/num:add(a: p.ra, b: p.rb): rel |> div-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+        | opp g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec, uprec: sp)
             | div-zero |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => div-zero
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:div: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:sub(a: p.ra, b: p.rb): sd |> std/num:abs(a: sd): rel |> div-finish(rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+            | ok p |> std/num:sub(a: p.ra, b: p.rb): sd |> std/num:abs(a: sd): rel |> div-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
     | sym fb |> std/sym:of-dec(n: fa.mag): sm |> div-sym(am: sm, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov)
         | exact q => exact q
         | div-zero => div-zero
@@ -1006,9 +1061,9 @@ fn magIsDec(m: []const u8) bool {
 // helpers — and route to the defect sink, loudly.
 ~tor pow-pos { mag: string<std/num:!exact>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated>, e: i64 } -> string<exact!>
 
-~pow-pos = std/num:dup(n: mag): dm |> std/num:abs(a: dm.b): am |> std/num:pow(a: am, n: e - 1)
+~pow-pos = sigma-prec(a: mag, b: unc): sp |> std/num:dup(n: mag): dm |> std/num:abs(a: dm.b): am |> std/num:pow(a: am, n: e - 1)
 | neg-exp |> std/num:free(n: dm.a) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r -> r
-| exact p1 |> std/num:from-int(i: e): en |> std/num:mul(a: en, b: unc): t |> std/num:mul(a: t, b: p1): sig |> std/num:pow(dm.a, n: e)
+| exact p1 |> std/num:from-int(i: e): en |> std/num:mul(a: en, b: unc): t |> std/num:mul(a: t, b: p1): sg |> std/num:trunc(a: sg, prec: sp): sig |> std/num:pow(dm.a, n: e)
     | neg-exp |> std/num:free(n: sig) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r -> r
     | exact rm |> dim-scale(a: dim, n: e): rd |> std/io:free(content: dim) |> pack(mag: rm, unc: sig, dim: rd, cov): q -> q
 
@@ -1016,13 +1071,13 @@ fn magIsDec(m: []const u8) bool {
 | exact string<exact!>
 | div-zero
 
-~pow-neg = std/num:dup(n: mag): dm |> std/num:abs(a: dm.b): am |> std/num:dup(n: am): da |> std/num:pow(dm.a, n: e)
+~pow-neg = sigma-prec(a: mag, b: unc): sp |> std/num:dup(n: mag): dm |> std/num:abs(a: dm.b): am |> std/num:dup(n: am): da |> std/num:pow(dm.a, n: e)
 | neg-exp |> std/num:free(n: da.a) |> std/num:free(n: da.b) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
 | exact pfull |> std/num:pow(da.a, n: e)
     | neg-exp |> std/num:free(n: pfull) |> std/num:free(n: da.b) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
-    | exact pe |> std/num:mul(a: pe, da.b): den |> std/num:from-int(i: e): en |> std/num:mul(a: en, b: unc): t |> std/num:div(a: t, b: den, prec: 15)
+    | exact pe |> std/num:mul(a: pe, da.b): den |> std/num:from-int(i: e): en |> std/num:mul(a: en, b: unc): t |> std/num:div(a: t, b: den, prec: sp)
         | div-zero |> std/num:free(n: pfull) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
-        | exact sig |> std/num:from-int(i: 1): one |> std/num:div(a: one, b: pfull, prec: 15)
+        | exact sig |> std/num:from-int(i: 1): one |> std/num:div(a: one, b: pfull, prec: sp)
             | div-zero |> std/num:free(n: sig) |> std/io:free(content: dim) |> std/io:free(content: cov) => div-zero
             | exact rm |> dim-scale(a: dim, n: 0 - e): rd |> std/io:free(content: dim) |> pack(mag: rm, unc: sig, dim: rd, cov): q => exact q
 
