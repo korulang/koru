@@ -1,5 +1,5 @@
 {
-  "purpose": "Fire log — one entry per challenge-generator firing. Records yield, not just occurrence: a generator is replayable while yield > commission cost. Saturation signals: contestants report no novel task, findings return zero new defects, quench returns zero convertible reds.",
+  "purpose": "Fire log \u2014 one entry per challenge-generator firing. Records yield, not just occurrence: a generator is replayable while yield > commission cost. Saturation signals: contestants report no novel task, findings return zero new defects, quench returns zero convertible reds. Convention (ruled 2026-11-03): the file stays a flat ledger \u2014 one appended row per fire, no rollup/analytics layer inside the file. Git history carries the trend; the reader scans yield across rows. A fire writes its row at judging time, same discipline as queue items.",
   "schema": {
     "generator": "challenge generator id (koru-demonstration, koru-program, koru-quench, quirk-hunt, tighten, ...)",
     "ts": "fire date",
@@ -12,7 +12,7 @@
       "pins_greened": "existing reds converted green",
       "novel": "did the fire surface something new? true/false/partial"
     },
-    "note": "one line — what the fire taught"
+    "note": "one line \u2014 what the fire taught"
   },
   "fires": [
     {
@@ -20,7 +20,13 @@
       "ts": "2026-10-12",
       "seat": "meteor-harp",
       "contestants": 3,
-      "yield": { "landed": 5, "evaporated": 0, "pins_added": 5, "pins_greened": 0, "novel": true },
+      "yield": {
+        "landed": 5,
+        "evaporated": 0,
+        "pins_added": 5,
+        "pins_greened": 0,
+        "novel": true
+      },
       "note": "first replay, 3/3 pristine-green; catalog 0->5 (hanoi, crc, access-log, word-freq, mail-merge) + 800_010 deadbolt"
     },
     {
@@ -28,23 +34,41 @@
       "ts": "2026-11-03",
       "seat": "flaxen-cricket",
       "contestants": 3,
-      "yield": { "landed": 3, "evaporated": 0, "pins_added": 3, "pins_greened": 0, "novel": true },
-      "note": "replay #2 — 3/3 landed (kv_protocol, top_words, base64); catalog 5->8; first stateful session proof + first codec; 3 side findings gardened"
+      "yield": {
+        "landed": 3,
+        "evaporated": 0,
+        "pins_added": 3,
+        "pins_greened": 0,
+        "novel": true
+      },
+      "note": "replay #2 \u2014 3/3 landed (kv_protocol, top_words, base64); catalog 5->8; first stateful session proof + first codec; 3 side findings gardened"
     },
     {
       "generator": "koru-quench",
       "ts": "2026-11-03",
       "seat": "flaxen-cricket",
       "contestants": 3,
-      "yield": { "landed": 3, "evaporated": 0, "pins_added": 0, "pins_greened": 12, "novel": true },
-      "note": "first quench day — 12 reds converted (4 quirk-pins via argv-honesty, 4 via injected-env-machinery, 2 repins, 1 flip, 1 compiler fix); two new concepts gardened"
+      "yield": {
+        "landed": 3,
+        "evaporated": 0,
+        "pins_added": 0,
+        "pins_greened": 12,
+        "novel": true
+      },
+      "note": "first quench day \u2014 12 reds converted (4 quirk-pins via argv-honesty, 4 via injected-env-machinery, 2 repins, 1 flip, 1 compiler fix); two new concepts gardened"
     },
     {
       "generator": "quirk-hunt",
       "ts": "2026-10-11",
       "seat": "unjudged until 2026-11-03 (flaxen-cricket)",
       "contestants": 1,
-      "yield": { "landed": 8, "evaporated": 0, "pins_added": 8, "pins_greened": 0, "novel": true },
+      "yield": {
+        "landed": 8,
+        "evaporated": 0,
+        "pins_added": 8,
+        "pins_greened": 0,
+        "novel": true
+      },
       "note": "8 findings stranded in worktree 3 weeks; judged+landed as red pins 310_145-152; all 8 quenched same day by quench-a/b"
     },
     {
@@ -52,15 +76,27 @@
       "ts": "2026-10-27",
       "seat": "unjudged until 2026-11-03 (flaxen-cricket)",
       "contestants": 3,
-      "yield": { "landed": 3, "evaporated": 0, "pins_added": 11, "pins_greened": 0, "novel": true },
-      "note": "3 trees (dup-field walls, [parallel]for KORU212, store/index KORU161 gates); stranded a week unjudged — the seat's first salvage lesson"
+      "yield": {
+        "landed": 3,
+        "evaporated": 0,
+        "pins_added": 11,
+        "pins_greened": 0,
+        "novel": true
+      },
+      "note": "3 trees (dup-field walls, [parallel]for KORU212, store/index KORU161 gates); stranded a week unjudged \u2014 the seat's first salvage lesson"
     },
     {
       "generator": "koru-program",
       "ts": "2026-10-11",
       "seat": "meteor-harp era",
       "contestants": "multiple (ch-program tree had 3+ submissions)",
-      "yield": { "landed": 1, "evaporated": 2, "pins_added": 1, "pins_greened": 0, "novel": true },
+      "yield": {
+        "landed": 1,
+        "evaporated": 2,
+        "pins_added": 1,
+        "pins_greened": 0,
+        "novel": true
+      },
       "note": "800_010 deadbolt won; switchyard + 800_013/014 judged losers evaporated 2026-11-03; last fired 10-11, unreplayed since"
     }
   ],
@@ -68,6 +104,6 @@
     "catalog_generator": "yield.novel=false twice consecutively -> standing (rerunnable, dormant)",
     "findings_generator": "one fire returning zero new defects -> converge-check; two -> retired",
     "quench": "zero convertible reds -> standing; re-fires whenever the board grows reds",
-    "note": "a catalog that stops growing has either achieved coverage or stopped asking hard questions — the log is how you tell which"
+    "note": "a catalog that stops growing has either achieved coverage or stopped asking hard questions \u2014 the log is how you tell which"
   }
 }
