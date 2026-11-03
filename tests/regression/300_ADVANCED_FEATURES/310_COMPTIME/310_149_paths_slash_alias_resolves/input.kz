@@ -1,0 +1,16 @@
+// A `paths` key may be a module prefix — koru.json has accepted
+// `"vend/pkg": "./lib"` since longestAliasMatch landed (src/module_resolver.zig:
+// "koru/vaxis beats koru", segment-boundary matching). The source-level
+// directive refuses the same key, and its refusal text cites the premise the
+// longest match falsified: "every use site splits on the first /". Two
+// spellings of one declaration, one refusing what the other accepts.
+// Red today: KORU172 on the paths block. Green when source-level aliases get
+// the grammar koru.json already has (isUsableModulePrefix exists for it).
+
+~std/compiler:paths {
+    vend/pkg: {{ ENTRY }}/lib
+}
+
+~import vend/pkg/greet
+
+~vend/pkg/greet:greet()

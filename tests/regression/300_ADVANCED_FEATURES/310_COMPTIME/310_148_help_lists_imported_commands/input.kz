@@ -1,0 +1,15 @@
+// `koruc <file> help` prints "No commands defined in <file>" even when the
+// program's imports declare commands that DO dispatch — `install`/`i` from
+// std/package runs on this very file. The enumerator scans the pre-merge
+// entry AST while the dispatcher resolves post-merge, so help reports a
+// command surface that is not the real one. The tool claims something false
+// about its own verbs.
+
+~import std/package
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

@@ -1,0 +1,15 @@
+// `koruc <file> glance` is the declaration surface of the program — but on a
+// hello world it lists ~15 modules the program never imported: std.compiler's
+// pipeline internals (coordinate, elaborate, emission), std.optimizer,
+// std.rules, std.template. The injected compiler env is presented
+// indistinguishably from declarations the author made — a user cannot tell
+// what their program declares from what the machine rides inside it.
+
+~import std/io
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()

@@ -1,0 +1,16 @@
+// The command position after the input file must resolve or refuse — never
+// vanish. On main, unclaimed WORDS there already refuse (310_144); the
+// still-open arm is unknown bare FLAGS — `koruc --depp-check <file>` is
+// byte-identical to `koruc <file>`: a clean build, exit 0, the typo'd flag
+// swallowed by compiler_config.addFlag (Q14 in
+// challenges/018_FIX_QUEUE.md, re-measured 2026-11-03 — the word arms
+// refuse; the flag arm still swallows).
+// `deps` already refuses a stray argument with a teaching diagnostic
+// (310_115); this pins the same contract for the flag position too.
+
+~tor main {}
+
+~proc main|zig {
+}
+
+~main()
