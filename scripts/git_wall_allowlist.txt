@@ -4,3 +4,4 @@
 #
 # ADD seed snapshots — tracked deliberately under .claude/.add/
 .claude/.add/
+tests/regression/fires.json
