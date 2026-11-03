@@ -1274,6 +1274,18 @@ pub const Resolution = struct {
     source: ResolutionSource,
 };
 
+/// Per-invocation audit sink for CLI flag atoms. When a gate resolves a
+/// flag — bare atom, flag()/cflag(), comparison LHS — the matched flag
+/// string lands here so koruc can tell `--profile` (a gate claimed it) from
+/// `--depp-check` (nothing did; the typo used to vanish into addFlag,
+/// 310_145). Set by koruc for the duration of one compile; null under unit
+/// tests and CCP, where the audit does not run.
+pub var claimed_cli_flags: ?*std.StringHashMap(void) = null;
+
+fn claimCliFlag(f: []const u8) void {
+    if (claimed_cli_flags) |sink| sink.put(f, {}) catch {};
+}
+
 /// Reader-side provenance: the entry author writes the terse intent-shaped
 /// atom; resolution answers "where did this value come from this build".
 pub const Provider = struct {
@@ -1295,9 +1307,14 @@ pub const Provider = struct {
 
     pub fn resolveFlag(self: *const Provider, atom: []const u8) ?Value {
         for (self.flags) |f| {
-            if (std.mem.eql(u8, f, atom)) return .{ .boolean = true };
-            if (f.len > atom.len and f[atom.len] == '=' and std.mem.startsWith(u8, f, atom))
+            if (std.mem.eql(u8, f, atom)) {
+                claimCliFlag(f);
+                return .{ .boolean = true };
+            }
+            if (f.len > atom.len and f[atom.len] == '=' and std.mem.startsWith(u8, f, atom)) {
+                claimCliFlag(f);
                 return coerce(f[atom.len + 1 ..]);
+            }
         }
         return null;
     }

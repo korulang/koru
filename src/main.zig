@@ -37,6 +37,7 @@ const liquid = @import("liquid");
 const struct_literal = @import("struct_literal");
 const emitter_helpers = @import("emitter_helpers");
 const site_hash = @import("site_hash");
+const comptime_eval = @import("comptime_eval");
 
 /// Native-only link steps (OpenSSL, etc.) must not run on wasm reactor builds.
 fn buildRequireSkippedOnWasm(req: []const u8) bool {
@@ -7737,6 +7738,11 @@ pub fn main() !void {
     // Initialize compiler configuration
     var compiler_config = try CompilerConfig.init(allocator);
     defer compiler_config.deinit();
+
+    // Bare unknown flags seen before the command word — audited post-merge
+    // against what the program actually claims (310_145).
+    var audited_bare_flags = try std.ArrayList([]const u8).initCapacity(allocator, 4);
+    defer audited_bare_flags.deinit(allocator);
     // `koruc lib` is a compilation MODE, decided before any flag parsing: it
     // changes what counts as a root, not how anything is spelled.
     compiler_config.library = build_library;
@@ -7862,6 +7868,17 @@ pub fn main() !void {
                 arg;
 
             try compiler_config.addFlag(flag_name);
+
+            // A bare atom (no `=`) that reaches this slot is a provider
+            // candidate — a gate or flag.declare must claim it, else it is
+            // dead input indistinguishable from a typo'd koruc flag
+            // (310_145). `name=value` always passes through. Args after the
+            // command word belong to the command, not this audit.
+            if (command_candidate == null and
+                std.mem.indexOfScalar(u8, flag_name, '=') == null)
+            {
+                try audited_bare_flags.append(allocator, arg);
+            }
         }
     }
 
@@ -8089,6 +8106,13 @@ pub fn main() !void {
         }
         break :blk source;
     };
+
+    // The bare-flag audit sink: every flag a gate resolves during this
+    // parse (entry AND imported modules — the sink is process-wide) is a
+    // claimed atom; the post-merge audit refuses the rest (310_145).
+    var claimed_cli_flags = std.StringHashMap(void).init(allocator);
+    defer claimed_cli_flags.deinit();
+    comptime_eval.claimed_cli_flags = &claimed_cli_flags;
 
     // Parse the file
     log.debug("DEBUG: About to parse file: {s}, ast_json_mode = {}\n", .{ input, ast_json_mode });
@@ -8454,56 +8478,9 @@ pub fn main() !void {
                     break;
                 }
 
-                // Handle "help" command - list all available commands
-                if (std.mem.eql(u8, potential_command, "help")) {
-                    if (shell_commands.len == 0 and zig_commands.len == 0 and koru_commands.len == 0) {
-                        try printStdout(allocator, "No commands defined in {s}\n", .{input});
-                        std.process.exit(0);
-                    }
-
-                    try printStdout(allocator, "\nAvailable commands:\n", .{});
-
-                    // Calculate max command name length for alignment
-                    var max_name_len: usize = 0;
-                    for (shell_commands) |cmd| {
-                        if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
-                    }
-                    for (zig_commands) |cmd| {
-                        if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
-                    }
-                    for (koru_commands) |cmd| {
-                        if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
-                    }
-
-                    // Print shell commands
-                    for (shell_commands) |cmd| {
-                        try printPaddedName(allocator, cmd.name, max_name_len);
-                        if (cmd.description.len > 0) {
-                            try printStdout(allocator, "{s}\n", .{cmd.description});
-                        } else {
-                            try printStdout(allocator, "(no description)\n", .{});
-                        }
-                    }
-
-                    // Print zig commands
-                    for (zig_commands) |cmd| {
-                        try printPaddedName(allocator, cmd.name, max_name_len);
-                        try printStdout(allocator, "(zig command)\n", .{});
-                    }
-
-                    // Print koru commands
-                    for (koru_commands) |cmd| {
-                        try printPaddedName(allocator, cmd.name, max_name_len);
-                        if (cmd.description.len > 0) {
-                            try printStdout(allocator, "{s}\n", .{cmd.description});
-                        } else {
-                            try printStdout(allocator, "(koru command)\n", .{});
-                        }
-                    }
-
-                    try printStdout(allocator, "\nUsage: koruc {s} <command>\n", .{input});
-                    std.process.exit(0);
-                }
+                // `help` is NOT resolved here — the listing must describe the
+                // merged command surface (imported [comptime|command] events
+                // included), so it runs after combineImports below (310_148).
 
                 // Search for matching shell command
                 for (shell_commands) |cmd| {
@@ -8766,6 +8743,96 @@ pub fn main() !void {
     if (potential_command_arg) |potential_command| {
         const comptime_cmd_result = try collectCommands(parse_allocator, &source_file);
 
+        // `koruc <file> help` — the REAL command surface: entry-file
+        // shell/zig/koru commands plus every [comptime|command] the merged
+        // imports carried in. The pre-merge scan used to print "No commands
+        // defined" while `install` from std/package dispatched on the same
+        // file — the enumerator and the dispatcher read different ASTs
+        // (310_148).
+        if (std.mem.eql(u8, potential_command, "help")) {
+            const decls = collectCommandDeclarations(allocator, &source_file) catch &[_]CommandDeclaration{};
+            defer {
+                for (decls) |*d| {
+                    var m = d.*;
+                    m.deinit(allocator);
+                }
+                if (decls.len > 0) allocator.free(decls);
+            }
+
+            var max_name_len: usize = 0;
+            for (shell_commands) |cmd| {
+                if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
+            }
+            for (zig_commands) |cmd| {
+                if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
+            }
+            for (koru_commands) |cmd| {
+                if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
+            }
+            for (comptime_cmd_result.commands[0..comptime_cmd_result.count]) |cmd| {
+                if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
+            }
+
+            try printStdout(allocator, "\nAvailable commands:\n", .{});
+
+            for (shell_commands) |cmd| {
+                try printPaddedName(allocator, cmd.name, max_name_len);
+                if (cmd.description.len > 0) {
+                    try printStdout(allocator, "{s}\n", .{cmd.description});
+                } else {
+                    try printStdout(allocator, "(no description)\n", .{});
+                }
+            }
+
+            for (zig_commands) |cmd| {
+                try printPaddedName(allocator, cmd.name, max_name_len);
+                try printStdout(allocator, "(zig command)\n", .{});
+            }
+
+            for (koru_commands) |cmd| {
+                try printPaddedName(allocator, cmd.name, max_name_len);
+                if (cmd.description.len > 0) {
+                    try printStdout(allocator, "{s}\n", .{cmd.description});
+                } else {
+                    try printStdout(allocator, "(koru command)\n", .{});
+                }
+            }
+
+            for (comptime_cmd_result.commands[0..comptime_cmd_result.count]) |cmd| {
+                // Match the declaration by CLI name or alias so the row can
+                // show the author's description (`install` finds the "i"
+                // declare through its alias field).
+                const decl: ?*const CommandDeclaration = blk: {
+                    for (decls) |*d| {
+                        if (std.mem.eql(u8, d.name, cmd.name)) break :blk d;
+                        if (d.alias) |a| {
+                            if (std.mem.eql(u8, a, cmd.name)) break :blk d;
+                        }
+                    }
+                    break :blk null;
+                };
+                try printPaddedName(allocator, cmd.name, max_name_len);
+                if (decl) |d| {
+                    if (d.alias != null and !std.mem.eql(u8, d.name, cmd.name)) {
+                        if (d.description.len > 0) {
+                            try printStdout(allocator, "(alias: {s}) {s}\n", .{ d.name, d.description });
+                        } else {
+                            try printStdout(allocator, "(alias: {s})\n", .{d.name});
+                        }
+                    } else if (d.description.len > 0) {
+                        try printStdout(allocator, "{s}\n", .{d.description});
+                    } else {
+                        try printStdout(allocator, "(no description)\n", .{});
+                    }
+                } else {
+                    try printStdout(allocator, "(no description)\n", .{});
+                }
+            }
+
+            try printStdout(allocator, "\nUsage: koruc {s} <command>\n", .{input});
+            std.process.exit(0);
+        }
+
         // Resolve command aliases (e.g., "i" -> "install")
         // TODO: Parse these from command.declare dynamically
         const resolved_command = if (std.mem.eql(u8, potential_command, "i"))
@@ -8842,6 +8909,42 @@ pub fn main() !void {
             }
             try printStderr(allocator, "koruc: '{s}' is not a command {s} declares\n\n  The word after the input file names a command the program declares — `koruc {s} help` lists them.\n  To build and run the program: `koruc run {s}`.\n", .{ potential_command, input, input_file.?, input_file.? });
             std.process.exit(1);
+        }
+    }
+
+    // Bare-flag audit (310_145): every `-x`/`--x` token the arg loop could
+    // not name went into compiler_config as a provider atom — but a bare
+    // atom is only meaningful when the program CLAIMS it: a flag()/cflag()
+    // gate resolved it (recorded in claimed_cli_flags during this parse,
+    // entry and imported modules alike) or a flag.declare names it. An
+    // atom nothing claimed is a typo'd flag the old code swallowed
+    // byte-identically to a clean build. `name=value` never reaches here —
+    // provider flags carry their own proof. Runs after the command block so
+    // misplaced-flag and dead-word diagnostics keep their better message.
+    if (audited_bare_flags.items.len > 0) {
+        const flag_decls = collectFlagDeclarations(allocator, &source_file) catch &[_]FlagDeclaration{};
+        defer {
+            for (flag_decls) |*d| {
+                var m = d.*;
+                m.deinit(allocator);
+            }
+            if (flag_decls.len > 0) allocator.free(flag_decls);
+        }
+        for (audited_bare_flags.items) |flag_arg| {
+            const flag_name = std.mem.trimLeft(u8, flag_arg, "-");
+            var claimed = claimed_cli_flags.contains(flag_name);
+            if (!claimed) {
+                for (flag_decls) |*d| {
+                    if (std.mem.eql(u8, d.name, flag_name)) {
+                        claimed = true;
+                        break;
+                    }
+                }
+            }
+            if (!claimed) {
+                try printStderr(allocator, "koruc: '{s}' is not a flag this program or the toolchain claims\n\n  Bare flag atoms need a consumer — a flag()/cflag() gate or a flag.declare. Provider flags carry a value: {s}=<value>.\n", .{ flag_arg, flag_arg });
+                std.process.exit(1);
+            }
         }
     }
 
