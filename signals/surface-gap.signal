@@ -1,0 +1,12 @@
+name: surface-gap
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a missing verb or surface was discovered by a task that needed it —
+  the work routed around the absence and the absence is now named, so the
+  next session that greps the module finds the gap already measured.
+  Distinct from capability-pinned (a boundary recorded by a test) and
+  frontier-red (a wished-for spelling that fails to compile): here the
+  green shipped, the gap is a README/concept line, and the signal marks
+  that a stdlib surface is smaller than its task.
