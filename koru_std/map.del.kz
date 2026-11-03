@@ -1,0 +1,21 @@
+// Koru Standard Library: the `del` part of map.kz.
+// Joined via `~part del` in map.kz; merged into the module at load.
+
+// ============================================
+// Deletion (borrow — obligation untouched)
+// ============================================
+
+// Remove key from the table. `value` delivers the evicted payload on a hit,
+// `missing` on absence — `get`'s shape, minus the read. i64 keys carry no
+// ownership, so removal is the table's business alone (string-map's sibling
+// also frees the duped key bytes).
+~pub tor del { m: *Map_i64_i64<map>, k: i64 }
+| value i64
+| missing
+
+~proc del|zig {
+    if (m.map.fetchRemove(k)) |kv| {
+        return .{ .value = kv.value };
+    }
+    return .missing;
+}

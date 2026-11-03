@@ -1,0 +1,23 @@
+// Koru Standard Library: the `del` part of string-map.kz.
+// Joined via `~part del` in string-map.kz; merged into the module at load.
+
+// ============================================
+// Deletion (borrow — obligation untouched)
+// ============================================
+
+// Remove key from the table. `value` delivers the evicted payload on a hit,
+// `missing` on absence — `get`'s shape, minus the read. The map owns its
+// duped keys, so a hit frees the stored key bytes here rather than leaving
+// them for `free` to sweep; a delete is real removal, not a tombstone the
+// program has to spell in band.
+~pub tor del { m: *Map_string_i64<map>, k: string<*@scoped> }
+| value i64
+| missing
+
+~proc del|zig {
+    if (m.map.fetchRemove(k)) |kv| {
+        m.allocator.free(kv.key);
+        return .{ .value = kv.value };
+    }
+    return .missing;
+}

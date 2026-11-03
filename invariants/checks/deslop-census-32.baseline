@@ -296,3 +296,12 @@ members=2557
 # class, documented 2026-10-31).
 clusters=1981
 members=2558
+# Re-pinned 1981/2558 -> 1982/2559 (2026-11-03): the roll fired on the
+# stdlib-gap `del` commit — zero src/ files staged (koru_std part files,
+# two regression dirs, this baseline + a concept evolve). +1 cluster/+1
+# member of foreign drift accumulated under rolls that missed; the census
+# names the documented emitter_test/visitor_emitter_test decl-literal
+# scaffolding and the flow_checker/shape_checker fn_decl twin (the
+# KORU030 cross-checker class, documented 2026-10-31).
+clusters=1982
+members=2559

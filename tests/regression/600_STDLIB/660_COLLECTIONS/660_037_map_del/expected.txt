@@ -1,0 +1,5 @@
+absent
+del=100
+keys=1
+gone
+reset=300

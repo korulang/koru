@@ -1,38 +1,34 @@
 ---
 type: belief
 id: frag-string-map-deletion-is-a-tombstone
-provenance: 820_006_kv_protocol — a KV line-protocol proof needed `DEL` to
-  drop an index entry; `std/string-map` has `new set get contains count
-  each free` and no `del`, measured by reading the module 2026-11-03
+provenance: evolved 2026-11-03 (seat w1C:p5A, koru-stdlib-gap commission) —
+  `del` landed on both hash maps; the in-band tombstone idiom this file
+  documented is retired. Prior provenance: 820_006_kv_protocol's -1 DEL
+  sentinel, first instance of the workaround.
 ts: 2026-11-03
 ---
 
-# Deletion in a std/string-map is a tombstone, not a removal (belief)
+# Deletion in a std/string-map is `del` — the in-band tombstone is retired (belief)
 
-`std/string-map` cannot delete a key. There is no `del`/`remove` verb —
-the map surface is `new set get contains count each free`, read on the
-2026-11-03 tree. A program that must forget a key spells absence **in
-band**: write a sentinel the value domain can distinguish (`-1`, since
-row handles are 1-based brands), and every reader checks the sign before
-acting on the payload.
+`std/string-map` has a deletion verb: `std/string-map:del(m, k)` evicts the
+key and answers `| value` the evicted payload on a hit, `| missing` on
+absence — `get`'s shape, minus the read. `std/map:del` is the i64-keyed
+sibling with the identical contract. A hit is real removal: Zig's
+`fetchRemove` drops the slot, and string-map's proc frees the map-owned
+duped key bytes at eviction rather than leaving them for `free` to sweep
+(map's sibling frees nothing — i64 keys carry no ownership). Both land as
+`~part del` sibling files because each primary sits at its line pin.
 
-This is safe to do against store-row payloads precisely because of the
-handle contract: handles are generation-stable across another row's
-swap-removing take (690_092), so a parked handle never names the wrong
-row — and reads through a *stale* handle trap while `take` is the one
-verb with a graceful `| empty` arm (690_070). The tombstone exists to
-keep readers off the trap path, not to keep the index honest; the store
-already keeps identity honest.
+This file previously recorded the opposite: no `del` existed on the
+2026-11-03 module surface (`new set get contains count each free`), so
+820_006 spelled absence in band — a -1 tombstone every reader sign-checked
+before dereferencing the row handle. That reading was correct when written;
+the workaround it documented is now retired. New "delete from a map" proofs
+write `del`; the -1 spelling in 820_006 is legacy, not convention. Note
+`del` governs the index entry only — 820_006 still takes the kv store row
+itself, which is `std/store`'s business, not the map's.
 
-Why this is worth a belief rather than a comment: the sentinel spelling
-is a workaround for a surface gap, and it is easy to mistake for design.
-The natural pristine spelling — `std/string-map:del(m, k)` — does not
-exist, so every "delete from a map" proof will independently reinvent
-the sentinel. 820_006 is the first instance.
-
-Open question: should `del` exist? The store already has `take` as its
-deletion verb with a two-arm contract (`| item` / `| empty`); a map `del`
-would presumably mirror `get`'s shape (`| value` the evicted payload /
-`| missing`). Until it lands, the tombstone idiom is the only spelling —
-call it out in writeups so it does not fossilize into convention by
-accident.
+The shape `del` took mirrors `get` (`| value` / `| missing`) rather than
+store's `take` (`| item` / `| empty`): the store owns rows and hands them
+out; the map owns entries and hands back only the payload — the key stays
+internal. Pinned at 660_036 (string-map) and 660_037 (map).

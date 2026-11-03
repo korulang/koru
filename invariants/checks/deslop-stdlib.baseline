@@ -1,3 +1,11 @@
+# Re-pinned 330/333/119 -> 332/336/120 (2026-11-03): the roll fired on the
+# stdlib-gap `del` commit (string-map.del.kz + map.del.kz staged — new part
+# files). The +4 clusters/+4 members is this commit's own delta (measured
+# 328/332 with the two part files removed): each `del` event_decl twins
+# its primary's `get` shape — | value / | missing shared by design, the
+# documented part-file decl-shell category. The +1 spelling is foreign
+# drift — the concurrent seat's uncommitted cmp tor in string.kz, counted
+# per the row's uncommitted-work clause.
 # Re-pinned 146/221/59 -> 330/333/119 (2026-11-01): the roll fired on the
 # source-block respell commit (rel-seed name: Expression). The delta is the
 # merged contributor wave — sym.cert*/num/quantity/sym.rel modules landed
@@ -67,10 +75,10 @@
 # rings.home, runtime.obtainvia, supervisor.decl, store.bulkjoin
 # import_decl quad named by the census) — the documented decl-shell
 # protocol category. Measured 2026-10-28 on the working tree.
-clusters=330
-members=333
+clusters=332
+members=336
 skipped=2
-spellings=119
+spellings=120
 # 70/111: store.keyed.kz joined io.blk-style import preamble clone w/ interpreter.select.kz (3 shared compiler-module imports, boilerplate)
 # 71/113: bulkjoin's import-preamble clone (joined 2026-10-14) + in-flight
 # pump/channel work in the shared checkout; re-pinning records the working

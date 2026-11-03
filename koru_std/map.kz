@@ -103,8 +103,8 @@ pub const Map_i64_i64 = struct {
     return @intCast(m.map.count());
 }
 
-// Iteration and teardown live in sibling parts — this file is at its line
-// pin, so growth splits by surface: `each` streams `! pair {k, v}` per
-// entry (map.each.kz); `free` discharges <!map> (map.free.kz).
+// Growth splits by surface — this file is at its line pin: each
+// (map.each.kz), del (map.del.kz), free (map.free.kz).
 ~part each
+~part del
 ~part free
