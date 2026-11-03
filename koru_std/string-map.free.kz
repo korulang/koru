@@ -1,0 +1,12 @@
+// Koru Standard Library: the `free` part of string-map.kz.
+// Joined via `~part free` in string-map.kz; merged into the module at load.
+
+// ============================================
+// Teardown (consume — discharges <!map>)
+// ============================================
+
+~pub tor free { m: *Map_string_i64<!map> }
+
+~proc free|zig {
+    m.deinit();
+}

@@ -1,0 +1,1 @@
+pairs: 4 words: 22 keybytes: 9

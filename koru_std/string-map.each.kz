@@ -1,0 +1,34 @@
+// Koru Standard Library: the `each` part of string-map.kz.
+// Joined via `~part each` in string-map.kz; merged into the module at load.
+
+// ============================================
+// Iteration (borrow — stream every pair)
+// ============================================
+
+// Traverse every key→value pair — the EFFECT SHAPE (the corpus idiom:
+// std/fs:read-lines' `! line`, std/string:split's `! piece`,
+// std/control:for's `! each`). `! pair {k, v}` fires once per entry,
+// `| done` delivers the pair count after.
+// `k` is a BORROWED view into the table's owned key bytes and `v` is a copy —
+// no allocation, no ownership, valid for the handler's extent only (same as
+// `split`'s pieces). Mutating `m` inside the arm is unsafe: `set` can grow
+// the table and invalidate the Zig iterator under this traversal — insert
+// after the sweep, not during it. (`free` inside the arm is already
+// unspellable — the handle stays `<map>` borrowed for the whole extent.)
+// Iteration order is hash order — not stable, never pin output on it.
+~pub tor each { m: *Map_string_i64<map> }
+! pair { k: string, v: i64 }
+| done usize
+
+~proc each|zig {
+    // HYGIENE: this body INLINES into the consumer's frame (effect
+    // lowering), so locals are __koru-prefixed to never collide with
+    // user bindings in the surrounding flow.
+    var __koru_e_it = m.map.iterator();
+    var __koru_e_n: usize = 0;
+    while (__koru_e_it.next()) |__koru_e_entry| {
+        pair(.{ .k = __koru_e_entry.key_ptr.*, .v = __koru_e_entry.value_ptr.* });
+        __koru_e_n += 1;
+    }
+    return .{ .done = __koru_e_n };
+}

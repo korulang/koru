@@ -1,3 +1,8 @@
+# Re-pinned 1246/1119 -> 1256/1127 (2026-11-03): measured on the merged
+# ch-tighten-c + map-each tree — igate's refusal shells join the store.new
+# catch-shell family (clusters #1/#4) and the map.each/string-map.each
+# landings add their own twins; decl-shell category, no new cluster shape.
+# Re-pinning to measured.
 # Re-pinned 1177/1069 -> 1246/1119 (2026-11-01): roll fired on the lit-revert
 # commit (expr:/source: split). Named growth is store.new.kz catch twins —
 # uncommitted WIP in the shared checkout, counted per the row's
@@ -65,8 +70,8 @@
 # io.blk.kz shared shapes) now fingerprint cross-file instead of
 # same-file. The +7/+9 is the file-boundary relabel; the new size-parse
 # code is under the token floor. Re-pinned to measured.
-clusters=1246
-members=1119
+clusters=1256
+members=1127
 # 1039/915: the roll fired on the |? coverage commit ("coverage: |? no
 # longer suppresses panic arms, and refuses where no union exists") —
 # that commit touches src/ checkers, in-repo tests, and a concept frag;
@@ -123,5 +128,5 @@ members=1119
 # documented). control.for.kz's synthetic stays unparseable both
 # sides of this diff (37 -> 39 errors — nested template arms; it was
 # already in the escaped set, so its host text never counted).
-clusters=1246
-members=1119
+clusters=1256
+members=1127
