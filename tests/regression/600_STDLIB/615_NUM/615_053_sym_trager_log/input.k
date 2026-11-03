@@ -159,3 +159,12 @@ std/sym:lit(atan(0))
 std/sym:lit(log(x))
 | exact s7 |> std/io:print.ln("C:{{ s7:s }}") |> std/sym:free(n: s7)
 | bad |> std/io:print.ln("bad-lit")
+
+// atan(+-1) folds to +-(pi/4) — the sign rides the dec coefficient
+std/sym:lit(atan(1))
+| exact s8 |> std/io:print.ln("C:{{ s8:s }}") |> std/sym:free(n: s8)
+| bad |> std/io:print.ln("bad-lit")
+
+std/sym:lit(atan((0-1)))
+| exact s9 |> std/io:print.ln("C:{{ s9:s }}") |> std/sym:free(n: s9)
+| bad |> std/io:print.ln("bad-lit")

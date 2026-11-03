@@ -750,174 +750,121 @@ fn fracText(alloc: std.mem.Allocator, out: *std.ArrayList(u8), f: *const Frac) !
 // derivatives must equal C/D exactly, before anything is emitted.
 // ============================================================================
 
-fn ratPow(alloc: std.mem.Allocator, r: *const Rat, k: usize) !Rat {
-    var out = try ratFromInt(alloc, 1);
-    errdefer ratDeinit(&out);
-    var i: usize = 0;
-    while (i < k) : (i += 1) {
-        const t = try ratMul(alloc, &out, r);
-        ratDeinit(&out);
-        out = t;
-    }
-    return out;
-}
-
-// res(f,g) over Q. Euclidean recursion:
-//   deg g = 0            -> g^deg f        (res(c,c') conventionally 1)
-//   f mod g = 0, deg g>0 -> 0              (common factor)
-//   else                 -> (-1)^{mn} lc(g)^{deg f - deg r} res(g, r)
-fn polyResultant(alloc: std.mem.Allocator, f_in: []const Rat, g_in: []const Rat) !Rat {
-    if (polyIsZero(f_in) or polyIsZero(g_in)) return ratFromInt(alloc, 0);
-    var f = try polyClone(alloc, f_in);
-    var g = try polyClone(alloc, g_in);
-    defer {
-        polyFree(alloc, f);
-        polyFree(alloc, g);
-    }
-    var acc = try ratFromInt(alloc, 1);
-    errdefer ratDeinit(&acc);
-    var neg = false;
-    while (true) {
-        var m = polyDegIdx(f);
-        var n = polyDegIdx(g);
-        if (m < n) {
-            const tp = f;
-            f = g;
-            g = tp;
-            const td = m;
-            m = n;
-            n = td;
-            if ((m * n) % 2 == 1) neg = !neg;
-        }
-        if (n == 0) {
-            var pw = try ratPow(alloc, &g[0], m);
-            defer ratDeinit(&pw);
-            var out = try ratMul(alloc, &acc, &pw);
-            if (neg) out.n.negate();
-            ratDeinit(&acc);
-            return out;
-        }
-        const dm = try polyDivMod(alloc, f, g);
-        polyFree(alloc, dm.q);
-        if (polyIsZero(dm.r)) {
-            polyFree(alloc, dm.r);
-            ratDeinit(&acc);
-            return ratFromInt(alloc, 0);
-        }
-        if ((m * n) % 2 == 1) neg = !neg;
-        const kr = polyDegIdx(dm.r);
-        var pw = try ratPow(alloc, &g[n], m - kr);
-        defer ratDeinit(&pw);
-        const acc2 = try ratMul(alloc, &acc, &pw);
-        ratDeinit(&acc);
-        acc = acc2;
-        polyFree(alloc, f);
-        f = g;
-        g = dm.r;
-    }
-}
-
-// Divided-difference interpolation through (ts[i], ys[i]) -> coeff list.
-fn newtonInterp(alloc: std.mem.Allocator, ts: []const Rat, ys: []const Rat) ![]Rat {
-    const n = ts.len;
-    const dd = try alloc.alloc(Rat, n);
-    var di: usize = 0;
-    errdefer {
-        for (dd[0..di]) |*r| ratDeinit(r);
-        alloc.free(dd);
-    }
-    while (di < n) : (di += 1) dd[di] = try ratClone(&ys[di]);
-    defer {
-        for (dd) |*r| ratDeinit(r);
-        alloc.free(dd);
-    }
-    var j: usize = 1;
-    while (j < n) : (j += 1) {
-        var i: usize = n;
-        while (i > j) {
-            i -= 1;
-            var dn = try ratSub(alloc, &dd[i], &dd[i - 1]);
-            defer ratDeinit(&dn);
-            var dd2 = try ratSub(alloc, &ts[i], &ts[i - j]);
-            defer ratDeinit(&dd2);
-            const v = try ratDiv(alloc, &dn, &dd2);
-            ratDeinit(&dd[i]);
-            dd[i] = v;
-        }
-    }
-    var out = try polyEmpty(alloc);
-    errdefer polyFree(alloc, out);
-    var basis = try polyOne(alloc);
-    defer polyFree(alloc, basis);
-    var k: usize = 0;
-    while (k < n) : (k += 1) {
-        const term = try polyScal(alloc, basis, &dd[k]);
-        const no = try polyAdd(alloc, out, term);
-        polyFree(alloc, term);
-        polyFree(alloc, out);
-        out = no;
-        if (k + 1 < n) {
-            const lin = try alloc.alloc(Rat, 2);
-            defer alloc.free(lin);
-            lin[0] = try ratNeg(&ts[k]);
-            lin[1] = try ratFromInt(alloc, 1);
-            defer {
-                ratDeinit(&lin[0]);
-                ratDeinit(&lin[1]);
-            }
-            const nb = try polyMul(alloc, basis, lin);
-            polyFree(alloc, basis);
-            basis = nb;
-        }
-    }
-    return out;
-}
-
-// R(t) = res_x(C - t*D', D), computed by interpolation: deg_t R <= deg D
-// (the Sylvester matrix carries deg-D rows of t-affine entries). The
-// formal-degree convention: where C - t_j*D' drops below the formal
-// degree m1 = max(deg C, deg D'), the sampled resultant is corrected by
-// lc(D)^{m1 - deg_j} — that is what the formal Sylvester determinant
-// evaluates to there.
+// R(t) = res_x(C - t*D', D) — the formal Sylvester determinant over
+// Q[t], computed exactly by Bareiss fraction-free elimination. A's
+// x-coefficients are t-affine (a_j = C_j - D'_j * t) at formal degree
+// m1 = max(deg C, deg D'); D's are constants. The determinant IS the
+// resultant — no evaluation points, no degree bound, no interpolation.
+// Bareiss guarantees each intermediate division is exact; a nonzero
+// remainder would be an elimination bug, not bad luck.
 fn rtResultant(alloc: std.mem.Allocator, C: []const Rat, D: []const Rat) ![]Rat {
     const dD = try polyDer(alloc, D);
     defer polyFree(alloc, dD);
     const m1 = @max(polyDegIdx(C), if (polyIsZero(dD)) @as(usize, 0) else polyDegIdx(dD));
-    const n2 = polyDegIdx(D);
-    const need = n2 + 1;
-    var ts = try std.ArrayList(Rat).initCapacity(alloc, need);
+    const n = polyDegIdx(D);
+    const N = m1 + n;
+    // Sylvester matrix over Q[t]: cell[r*N+c] = ?[]Rat, null = zero poly.
+    const cell = try alloc.alloc(?[]Rat, N * N);
+    for (cell) |*cl| cl.* = null;
     defer {
-        for (ts.items) |*r| ratDeinit(r);
-        ts.deinit(alloc);
+        for (cell) |*cl| if (cl.*) |clp| polyFree(alloc, clp);
+        alloc.free(cell);
     }
-    var ys = try std.ArrayList(Rat).initCapacity(alloc, need);
-    defer {
-        for (ys.items) |*r| ratDeinit(r);
-        ys.deinit(alloc);
-    }
-    const lcD = &D[n2];
-    var j: i64 = 0;
-    while (ys.items.len < need) : (j += 1) {
-        var tj = try ratFromInt(alloc, j);
-        defer ratDeinit(&tj);
-        const sd = try polyScal(alloc, dD, &tj);
-        defer polyFree(alloc, sd);
-        const Cj = try polySub(alloc, C, sd);
-        defer polyFree(alloc, Cj);
-        const mj = if (polyIsZero(Cj)) @as(usize, 0) else polyDegIdx(Cj);
-        var y = try polyResultant(alloc, Cj, D);
-        errdefer ratDeinit(&y);
-        if (mj < m1) {
-            var pw = try ratPow(alloc, lcD, m1 - mj);
-            defer ratDeinit(&pw);
-            const y2 = try ratMul(alloc, &y, &pw);
-            ratDeinit(&y);
-            y = y2;
+    // n rows of t-affine A coeffs, each shifted right by the row index.
+    var r: usize = 0;
+    while (r < n) : (r += 1) {
+        var j: usize = 0;
+        while (j <= m1) : (j += 1) {
+            const z0 = j >= C.len or ratIsZero(&C[j]);
+            const z1 = j >= dD.len or ratIsZero(&dD[j]);
+            if (z0 and z1) continue;
+            const pl = try alloc.alloc(Rat, 2);
+            pl[0] = if (z0) try ratFromInt(alloc, 0) else try ratClone(&C[j]);
+            pl[1] = if (z1) try ratFromInt(alloc, 0) else try ratNeg(&dD[j]);
+            cell[r * N + r + j] = pl;
         }
-        try ts.append(alloc, try ratClone(&tj));
-        try ys.append(alloc, y);
     }
-    return newtonInterp(alloc, ts.items, ys.items);
+    // m1 rows of constant D coeffs.
+    r = 0;
+    while (r < m1) : (r += 1) {
+        var j: usize = 0;
+        while (j <= n) : (j += 1) {
+            if (ratIsZero(&D[j])) continue;
+            const pl = try alloc.alloc(Rat, 1);
+            pl[0] = try ratClone(&D[j]);
+            cell[(n + r) * N + r + j] = pl;
+        }
+    }
+    // Bareiss fraction-free elimination: M[i][j] <- (M[k][k]*M[i][j] -
+    // M[i][k]*M[k][j]) / M[k-1][k-1], exact in Q[t] by construction.
+    var neg = false;
+    var prev: ?[]Rat = null; // (k-1)-th pivot; null acts as divisor 1
+    defer if (prev) |pp| polyFree(alloc, pp);
+    var k: usize = 0;
+    while (k + 1 < N) : (k += 1) {
+        if (cell[k * N + k] == null) {
+            var ir2 = k + 1;
+            while (ir2 < N and cell[ir2 * N + k] == null) ir2 += 1;
+            if (ir2 == N) return polyEmpty(alloc); // det = 0
+            var c2: usize = 0;
+            while (c2 < N) : (c2 += 1) {
+                const tmp = cell[k * N + c2];
+                cell[k * N + c2] = cell[ir2 * N + c2];
+                cell[ir2 * N + c2] = tmp;
+            }
+            neg = !neg;
+        }
+        var i: usize = k + 1;
+        while (i < N) : (i += 1) {
+            var j: usize = k + 1;
+            while (j < N) : (j += 1) {
+                var tA = try polyEmpty(alloc);
+                defer polyFree(alloc, tA);
+                var tB = try polyEmpty(alloc);
+                defer polyFree(alloc, tB);
+                if (cell[k * N + k]) |pk| {
+                    if (cell[i * N + j]) |pij| {
+                        polyFree(alloc, tA);
+                        tA = try polyMul(alloc, pk, pij);
+                    }
+                }
+                if (cell[i * N + k]) |pik| {
+                    if (cell[k * N + j]) |pkj| {
+                        polyFree(alloc, tB);
+                        tB = try polyMul(alloc, pik, pkj);
+                    }
+                }
+                const num = try polySub(alloc, tA, tB);
+                defer polyFree(alloc, num);
+                if (polyIsZero(num)) {
+                    if (cell[i * N + j]) |old| polyFree(alloc, old);
+                    cell[i * N + j] = null;
+                    continue;
+                }
+                var nv: []Rat = undefined;
+                if (prev) |pp| {
+                    const dm = try polyDivMod(alloc, num, pp);
+                    defer polyFree(alloc, dm.r);
+                    if (!polyIsZero(dm.r)) {
+                        polyFree(alloc, dm.q);
+                        @panic("std/sym: bareiss inexact division — elimination bug");
+                    }
+                    nv = dm.q;
+                } else {
+                    nv = try polyClone(alloc, num);
+                }
+                if (cell[i * N + j]) |old| polyFree(alloc, old);
+                cell[i * N + j] = nv;
+            }
+        }
+        // the pivot becomes next step's exact divisor
+        if (prev) |pp| polyFree(alloc, pp);
+        prev = try polyClone(alloc, cell[k * N + k].?);
+    }
+    const det = cell[(N - 1) * N + (N - 1)] orelse try polyEmpty(alloc);
+    cell[(N - 1) * N + (N - 1)] = null;
+    if (neg) for (det) |*cc| cc.n.negate();
+    return det;
 }
 
 // Divisors of |a| by trial division up to sqrt; CAP keeps a huge

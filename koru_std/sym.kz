@@ -770,6 +770,19 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     inner_live = false;
                     return nodeDec(alloc, try decZero(alloc));
                 }
+                var dabs = inner.dec;
+                dabs.neg = false;
+                if (try decIsOne(alloc, &dabs)) {
+                    // atan(+-1) -> +-(pi/4): the sign rides the dec coeff.
+                    var q = Dec{ .neg = inner.dec.neg, .m = try BI.initSet(alloc, 25), .e = -2 };
+                    defer decDeinit(&q);
+                    const pin = try nodeAtom(alloc, 0);
+                    defer nodeFree(alloc, pin);
+                    const t = try termWithCoeff(alloc, &q, pin);
+                    nodeFree(alloc, inner);
+                    inner_live = false;
+                    return t;
+                }
                 if (inner.dec.neg) {
                     // atan(-d) -> -1*atan(|d|): odd function, sign on coeff.
                     inner.dec.neg = false;
