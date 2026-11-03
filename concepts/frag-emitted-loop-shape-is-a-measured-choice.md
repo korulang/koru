@@ -36,6 +36,21 @@ emit site — because a later reader "cleaning it up" into the idiomatic form
 will silently revert the optimization, and nothing at the Koru source level
 will tell them the shape was load-bearing.
 
+2026-11-03 sharpened the failure mode: the revert does not have to edit the
+measured site. A mid-refactor park (`2ec2be329`) added a second emitter
+(`BulkEmit.emit`) that re-implemented the indexed bulk join while the real
+one (`hostemit.bulkEmit`/`BulkJoin.row`, register-tail `bl`/`bp`/`_bc`
+committed on key switch) stayed wired — the caller was switched and the
+original went dead in place. No comment at the emit site guards that path:
+the only wall that saw it was the emitted-code oracle (`690_342`'s
+post.sh greps `output_emitted.zig` for the register-tail tokens). The
+duplicate had also drifted semantically — it dropped the `__koru_fk`
+rehash guard on the just-left bucket cache, a latent dangling value_ptr
+the cycle keys in `690_342` never dereferenced. So the rule now reads:
+a measured emitted shape needs a pin on the OUTPUT, because the revert
+arrives as a parallel implementation, not an edit — and it will not be
+a faithful copy.
+
 Open question: whether `while` is systematically better or nest-shape-specific.
 Measured once, on one benchmark; other kernel workloads may land differently —
 re-measure before extending the choice to `self`/`step`/`reduce` emissions.

@@ -194,7 +194,7 @@ const Bulk = struct {
         if (reactive_min) |m| {
             if (each.location.line > m) return null;
         }
-        const text = BulkEmit.emit(alloc, prog, store, cap, range, bind, flds, handles, icol);
+        const text = BulkEmit.emitFor(alloc, prog, store, cap, range, bind, flds, handles, icol) orelse return null;
         // The bulk block carries the loop — the `each` arm is consumed
         // DATA now, not a live handler. The flag keeps the emitter's
         // Handlers-struct bridge from re-emitting the per-row insert
