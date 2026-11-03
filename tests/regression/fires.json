@@ -105,5 +105,19 @@
     "findings_generator": "one fire returning zero new defects -> converge-check; two -> retired",
     "quench": "zero convertible reds -> standing; re-fires whenever the board grows reds",
     "note": "a catalog that stops growing has either achieved coverage or stopped asking hard questions \u2014 the log is how you tell which"
+  },
+  "template": {
+    "generator": "<id>",
+    "ts": "<date>",
+    "seat": "<session-name or 'unjudged until ...'>",
+    "contestants": 0,
+    "yield": {
+      "landed": 0,
+      "evaporated": 0,
+      "pins_added": 0,
+      "pins_greened": 0,
+      "novel": true
+    },
+    "note": "<one line \u2014 what the fire taught>"
   }
 }
