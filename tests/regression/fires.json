@@ -98,6 +98,20 @@
         "novel": true
       },
       "note": "800_010 deadbolt won; switchyard + 800_013/014 judged losers evaporated 2026-11-03; last fired 10-11, unreplayed since"
+    },
+    {
+      "generator": "koru-stdlib-gap",
+      "ts": "2026-11-03",
+      "seat": "flaxen-cricket",
+      "contestants": 3,
+      "yield": {
+        "landed": 0,
+        "evaporated": 0,
+        "pins_added": 0,
+        "pins_greened": 0,
+        "novel": "pending"
+      },
+      "note": "FIRST FIRE of new generator \u2014 surface-gap.signal as catalog: gap-del (string-map del verb, w1C:p5Q), gap-lt (string ordering, w1C:p5R), gap-detach (fmt.blk split finding, w1C:p5S). Row finalizes at judging."
     }
   ],
   "end_of_road": {
