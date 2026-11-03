@@ -1061,10 +1061,8 @@
             id_requests: []const []const u8 = &.{},
             body: ast.Continuation,
         };
-        var inserted_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
-        var removed_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
-        var updated_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
-        var cleared_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 1) catch unreachable;
+        var inserted_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable; var removed_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable;
+        var updated_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 2) catch unreachable; var cleared_arms = std.ArrayList(LifecycleArm).initCapacity(allocator, 1) catch unreachable;
         // The drain handler (690_057): `! discharge item |> ...` on the store
         // declaration. Collected as a WHOLE continuation and re-attached to
         // the synthesized teardown flow (the 400_105 effect-branch shape) —
@@ -1100,6 +1098,8 @@
                 // author to write `item.<field>` would send them at a record
                 // that no longer exists.
                 const disch_identity = field_names.len == 1 and field_owned_info[0] != null;
+                // RULED (2026-07-29, 690_108): `_` is refused — the arm exists BECAUSE the column has no drain path the store can insert on its own, so discarding the element is the one thing the construct cannot mean. Bare (690_109) is the legal no-name: the thread mints a holder and the column still reaches the call.
+                if (ic.binding) |db| { if (std.mem.eql(u8, db, "_")) return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `! discharge` may not discard its element - the arm exists because the column has no drain path the store can insert on its own, so `_` has nothing to escape from. Name it `! discharge item |> ...`, or drop the binder `! discharge |> ...` and let the column thread into the drain call", .{store_name}) } }; }
                 if (ic.binding == null or ic.destructure.len != 0) {
                     if (disch_identity) {
                         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): `! discharge` binds the column itself - spell it `! discharge item |> ...(<param>: item)`", .{store_name}) } };
