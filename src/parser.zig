@@ -10419,6 +10419,33 @@ pub const Parser = struct {
             for (fname) |fc| {
                 if (!(std.ascii.isAlphanumeric(fc) or fc == '_' or fc == '-')) return null;
             }
+            // A field list takes each emitted name once — the same law
+            // PARSE010 enforces on tor inputs and branch payloads. A second
+            // `x`, or `a-b` beside `a_b` (kebab mangles to snake at emit),
+            // reaches Zig as `duplicate struct member name` — host noise
+            // naming a symbol the author never wrote (rung 3). Refuse at
+            // the author's text; `fname` is a subslice of the line `scan`
+            // tracks, so the caret lands on the second field's name.
+            for (fields.items) |earlier| {
+                if (!struct_literal.emittedFieldNameEql(earlier.name, fname)) continue;
+                const fcol = @intFromPtr(fname.ptr) - @intFromPtr(self.lines[scan].ptr) + 1;
+                if (std.mem.eql(u8, earlier.name, fname)) {
+                    return self.fail(
+                        .PARSE010,
+                        scan + 1,
+                        fcol,
+                        "field '{s}' is bound twice in host struct '{s}' — a field list takes each name once",
+                        .{ fname, name },
+                    );
+                }
+                return self.fail(
+                    .PARSE010,
+                    scan + 1,
+                    fcol,
+                    "fields '{s}' and '{s}' in host struct '{s}' write the same member — '-' and '_' are one identifier in the emitted struct; rename one",
+                    .{ earlier.name, fname, name },
+                );
+            }
             const tstart = colon + 1;
             var tend = tstart;
             while (tend < cursor.len) {

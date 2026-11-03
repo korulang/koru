@@ -1,0 +1,15 @@
+// PINS: a lifted host struct decl takes each field name once. The
+// `module/path:Type` field makes the structured parse own the field list —
+// a second `x` reaches Zig as `duplicate struct member name 'x'`, host
+// noise naming a symbol the author never wrote.
+const std = @import("std");
+
+pub const Pair = struct {
+    x: i32,
+    x: i64,
+    link: std/compiler:Item,
+};
+
+~tor start {}
+~proc start|zig {}
+~start()

@@ -263,6 +263,23 @@ the ReleaseFast output build). Pinned at `248_label_fold_arm_exit_
 without_produce_panics`; found by the benchmark-revisit session, not by
 the suite.
 
+## A rule's enumeration is also position-vs-spelling (2026-10-27)
+
+"A field list takes each name once" was enforced — on source spellings.
+The collision lives one level down: identifier formation mangles kebab
+`-` to `_`, so `{ a-b: i32, a_b: i64 }` in a branch payload was the same
+program the rule exists to refuse, spelled the untested way — it reached
+Zig as `duplicate struct member name 'a_b'` (rung 3). Every seen-set
+compared `std.mem.eql` on raw names; the rule's real predicate is
+emitted-name equality. The fix is not a wider enumeration of surfaces —
+it is the predicate moved to the spelling the rule actually cares about
+(`struct_literal.emittedFieldNameEql`), adopted by checkFieldsBindOnce,
+checkDestructureBindOnce, checkJumpArgsBindOnce, and the host-struct
+lift's own loop. The measured tell: whenever a rule names names, ask
+which representation the downstream consumer sees — the untested half is
+usually the rewritten one. Pinned by 210_333; sibling 220_058 covers the
+host-struct lift's missing seen-set.
+
 ## Recurrence — the constructor half of the record-payload rule (2026-10-29)
 
 The record-payload rule has a bind side and a construct side. The bind side

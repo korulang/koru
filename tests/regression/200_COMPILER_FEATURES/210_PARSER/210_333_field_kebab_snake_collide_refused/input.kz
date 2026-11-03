@@ -1,0 +1,12 @@
+// PINS: two field names that differ only in `-` vs `_` collide in the
+// emitted struct — kebab mangles to snake at identifier formation on every
+// target, so `a-b` and `a_b` write one member downstream and the field
+// list must refuse the pair at declaration.
+const std = @import("std");
+~tor scan {}
+| found { a-b: i32, a_b: i64 }
+| miss
+~scan => miss
+~scan()
+| found f |> _
+| miss |> _
