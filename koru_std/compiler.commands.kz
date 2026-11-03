@@ -1,0 +1,19 @@
+// Command surface — gated command imports and flag declarations for the
+// CLI-facing verbs every program carries (310_146, 310_145).
+
+
+// The `explain` command rides along under its own gate: every program can
+// run `koruc <file> explain` (and see it in `help`) without a user-side
+// import — the command= provider atom decides, not the file (310_146).
+~[command(explain) or command(help)]import std/explain
+
+
+// Release mode — the [prototype] hole gate only fires here (check-release-gate
+// reads it backend-side). Declared so the bare atom is a claimed flag, not a
+// dead one (310_145).
+~flag.declare {
+  "name": "release",
+  "description": "Release build: enforce [prototype] rejection and release checks",
+  "type": "boolean"
+}
+

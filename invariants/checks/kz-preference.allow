@@ -16,6 +16,7 @@
 koru_std/index.kz | module index — a .k index flips every .kz sibling's ~pub into KORU111 contract violations
 koru_std/bridge.run.kz | part file of the bridge module — a lone .k part puts the module in contract-split mode (KORU111)
 koru_std/compiler.directives.kz | part file of the compiler module — same contract-split trigger as bridge.run
+koru_std/compiler.commands.kz | part file of the compiler module — same contract-split trigger as compiler.directives
 koru_std/runtime.parsewire.kz | part file of the runtime module — same contract-split trigger as bridge.run
 koru_std/interpreter.args.kz | part file of the interpreter module — a lone .k part puts the module in contract-split mode (KORU111)
 koru_std/interpreter.defined.kz | part file of the interpreter module — same contract-split trigger as interpreter.args

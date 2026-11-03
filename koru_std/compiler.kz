@@ -4,8 +4,8 @@
 ~import std/deps
 ~import std/optimizer
 ~import std/rules
-
 ~part flags
+~part commands
 ~part control
 ~part paths
 ~part context

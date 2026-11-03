@@ -39,3 +39,12 @@ token looks like a real spelling on the wrong side of the file (`<file> run`,
 The one exception that keeps the rule honest is the provider channel:
 `--name=value` is a program-defined atom by design, not a claim on the
 toolchain. Unclaimed *bare* flags and unclaimed *words* have no such charter.
+
+**Evolved 2026-11-03 (310_145):** the flag arm is now enforced, not just
+named. `name=value` providers pass unconditionally; a bare atom must be
+*claimed* — resolved by a `flag()`/`cflag()`/bare-atom gate during the parse
+(recorded in `comptime_eval.claimed_cli_flags`, a per-invocation sink) or
+named by a `flag.declare` in the merged AST (`release` gained one —
+backend-consumed flags were invisible to the audit's first enumeration).
+An unclaimed bare flag refuses naming the token. Command-position args after
+the command word stay out of the audit — they belong to the command.
