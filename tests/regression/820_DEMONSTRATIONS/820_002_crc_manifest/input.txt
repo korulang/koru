@@ -1,0 +1,5 @@
+tests/regression/820_DEMONSTRATIONS/820_002_crc_manifest/data/alpha.data 3569446927
+tests/regression/820_DEMONSTRATIONS/820_002_crc_manifest/data/beta.data 1074917418
+tests/regression/820_DEMONSTRATIONS/820_002_crc_manifest/data/gamma.data 1749818897
+tests/regression/820_DEMONSTRATIONS/820_002_crc_manifest/data/delta.data 999999999
+tests/regression/820_DEMONSTRATIONS/820_002_crc_manifest/data/ghost.data 12345

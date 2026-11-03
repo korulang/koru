@@ -1,6 +1,0 @@
-tests/regression/820_PROOFS/820_002_crc_manifest/data/alpha.data OK
-tests/regression/820_PROOFS/820_002_crc_manifest/data/beta.data OK
-tests/regression/820_PROOFS/820_002_crc_manifest/data/gamma.data OK
-tests/regression/820_PROOFS/820_002_crc_manifest/data/delta.data FAILED got 2215736044 want 999999999
-tests/regression/820_PROOFS/820_002_crc_manifest/data/ghost.data UNREADABLE
-3 ok, 2 bad

@@ -15,7 +15,7 @@ std/store:new(totals) { req: 0[i64], bytes: 0[i64], errs: 0[i64], posts: 0[i64] 
 std/store:new(eps, capacity: 16) { label: *std/string:String<std/string:instance!>, hits: i64, bytes: i64 }
 
 std/string-map:new()
-| map idx |> std/fs:read-lines(path: "tests/regression/820_PROOFS/820_003_access_log/input.txt")
+| map idx |> std/fs:read-lines(path: "tests/regression/820_DEMONSTRATIONS/820_003_access_log/input.txt")
     ! line l |> std/regex:match(l)
         | `(?<m>[A-Z]+) (?<p>[a-z/]+) (?<st>[0-9]+) (?<by>[0-9]+)` { m, p, st: i64, by: i64 }
             |> std/store:stored {

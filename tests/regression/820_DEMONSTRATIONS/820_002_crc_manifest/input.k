@@ -37,7 +37,7 @@ verify = capture { lost: 0[i64], got: 0[usize] }
         | else => mismatch { want, r.got }
 
 capture { ok: 0[i64], bad: 0[i64] }
-! as t |> std/fs:read-lines(path: "tests/regression/820_PROOFS/820_002_crc_manifest/input.txt")
+! as t |> std/fs:read-lines(path: "tests/regression/820_DEMONSTRATIONS/820_002_crc_manifest/input.txt")
     ! line l |> std/regex:match(l)
         | `(?<name>[^ ]+) (?<want>[0-9]+)` { name: string, want: usize }
             |> verify(path: name, want)

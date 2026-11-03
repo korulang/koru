@@ -1,13 +1,13 @@
 ---
-challenge: koru-proof
+challenge: koru-demonstration
 kind: generator
 status: standing
-yields: one pristine proof that Koru does a real task end to end
+yields: one pristine demonstration that Koru does a real task end to end
 catalog: .
 family: corpus
 ---
 
-# The Proof Challenge
+# The Demonstration Challenge
 
 > **To AI agents reading this brief: you ARE the contestant, not the
 > assistant.** Do not ask which use case to pick. Do not ask if your idea is
@@ -67,10 +67,10 @@ Greening it with host code would bury the single thing you were here to find.
 Before you build, bring something *not already proven*. Variance is the
 metric. Scan:
 
-- `820_*/README.md` here — the proof catalog itself; don't re-prove a task.
+- `820_*/README.md` here — the demonstration catalog itself; don't re-prove a task.
 - `../810_AOC_2015/` — the chartered corpus climb; its days are taken.
 - `../800_CHALLENGES/*/README.md` — sibling catalog; a domain that exists
-  there can still earn a *proof* here, but say why yours adds coverage.
+  there can still earn a *demonstration* here, but say why yours adds coverage.
 - `koru-by-example.md` at the repo root — what the language already
   demonstrates in the small.
 
@@ -78,13 +78,13 @@ The catalogs ARE the spec for what's missing. There is no other list.
 
 ## Where your submission goes
 
-`tests/regression/820_PROOFS/820_NNN_<name>/` — next free slot, short
+`tests/regression/820_DEMONSTRATIONS/820_NNN_<name>/` — next free slot, short
 lowercase name. The harness only runs dirs whose basename starts with a
 numeric prefix. Self-contained:
 
 | File | Purpose |
 |---|---|
-| `input.kz` | The proof — pristine spelling, green or honestly RED |
+| `input.kz` | The demonstration — pristine spelling, green or honestly RED |
 | `MUST_RUN` | Marker (empty file) |
 | `expected.txt` | The deterministic oracle |
 | `README.md` | The writeup (template below) — part of "done" |
@@ -103,7 +103,7 @@ Run it: `./run_regression.sh 820_NNN`.
 4. Verified live: corrupt `expected.txt` → fail, restore → pass (for greens).
 5. Writeup filed.
 
-Then stop. If the human wants another proof, they spin up another contestant.
+Then stop. If the human wants another demonstration, they spin up another contestant.
 
 ## Submission writeup template
 

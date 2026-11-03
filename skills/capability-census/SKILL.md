@@ -1,6 +1,6 @@
 ---
 name: capability-census
-description: Run a progressive capability census — prove Koru can do real tasks of increasing complexity, pristinely, or pin the precise frontier that blocks it. Use when climbing a proof corpus (e.g. tests/regression/810_AOC_2015), authoring or judging a proof submission (tests/regression/820_PROOFS), or deciding whether a task solution is "done" — the pristine bar lives here.
+description: Run a progressive capability census — prove Koru can do real tasks of increasing complexity, pristinely, or pin the precise frontier that blocks it. Use when climbing a proof corpus (e.g. tests/regression/810_AOC_2015), authoring or judging a demonstration submission (tests/regression/820_DEMONSTRATIONS), or deciding whether a task solution is "done" — the pristine bar lives here.
 ---
 
 # Capability census — pristine or frontier, nothing in between
@@ -88,9 +88,9 @@ leaves are legal, undocumented host structure is not.
 - **`tests/regression/810_AOC_2015/`** — the chartered corpus climb (AoC 2015,
   in order). Charter: days 1–5 green is milestone 1; success metric is "every
   attempted rung either pristine green or a named frontier," never stars.
-- **`tests/regression/820_PROOFS/`** — the open generator: contestants pick
+- **`tests/regression/820_DEMONSTRATIONS/`** — the open generator: contestants pick
   their own use cases to expand the proof catalog. Brief at
-  `820_PROOFS/CHALLENGE.md`.
+  `820_DEMONSTRATIONS/CHALLENGE.md`.
 - **`tests/regression/800_CHALLENGES/`** — the sibling organ: pressure programs
   that hunt cockroaches in feature *combinations*. Different selection axis:
   800 selects for language-corner stress, the census selects for use-case

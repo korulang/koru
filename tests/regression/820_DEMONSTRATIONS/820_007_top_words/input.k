@@ -77,7 +77,7 @@ top = pick() |> if(best.row == -1)
 
 std/string-map:new()
 | map m |> capture { words: 0[i64] }
-    ! as acc |> std/fs:read-lines(path: "tests/regression/820_PROOFS/820_007_top_words/input.txt")
+    ! as acc |> std/fs:read-lines(path: "tests/regression/820_DEMONSTRATIONS/820_007_top_words/input.txt")
         ! line l |> std/regex:scan(input: l)
             ! `[a-z]+` w |> std/string-map:get(m, k: w)
                 | value c |> std/string-map:set(m, k: w, v: c + 1) |> captured { words: acc.words + 1 }

@@ -28,7 +28,7 @@ three verdicts fire.
 
 ## Gap filled
 
-First `820_PROOFS` entry. Codec lane: the catalogs had gzip *emission*
+First `820_DEMONSTRATIONS` entry. Codec lane: the catalogs had gzip *emission*
 pins (643_00x) but no checksum-*verification* consumer task — nothing
 drove `crc32` against external data through nested file effects with an
 owned accumulator. `810_081` (AoC day 8) counts escape bytes but reads

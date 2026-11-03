@@ -44,7 +44,7 @@ put = std/string:from-page(text: k)
 | err _ |> _
 
 std/string-map:new()
-| map m |> std/fs:read-lines(path: "tests/regression/820_PROOFS/820_006_kv_protocol/input.txt")
+| map m |> std/fs:read-lines(path: "tests/regression/820_DEMONSTRATIONS/820_006_kv_protocol/input.txt")
     ! line l |> if(session.stage < 2)
         | then |> std/regex:match(l)
             | `PING` _ |> std/io:print.ln("PONG")
