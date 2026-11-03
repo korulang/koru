@@ -13,9 +13,9 @@
 // the item carries the owned word out, it prints, free discharges. `top`
 // recurses N times.
 //
-// `lex-before` is spelled in pure Koru because a string `<` does not
-// lower (comptime-checked, backend-refused) — byte indexing on the .data
-// slices gives the lexicographic order a real sort needs.
+// Ordering rides `std/string:cmp` — the three-way byte-lexicographic tor
+// (| lt | eq | gt) the stdlib grew for exactly this tie-break; a bare
+// string `<` still does not lower (backend refuses `<` on []u8).
 import std/io
 import std/fs
 import std/regex
@@ -25,22 +25,6 @@ import std/store
 
 std/store:new(ranked, capacity: 64) { word: *std/string:String<std/string:instance!>, cnt: i64 }
 std/store:new(best) { row: 0[i64], cnt: 0[i64] }
-
-// First position where a and b differ, -1 when they are equal through the
-// shorter length. Pure subflow — recursion, no effect arms.
-tor lex-at { a: string, b: string, i: usize, m: usize } -> i64
-lex-at = if(i >= m)
-    | then -> -1
-    | else |> if(a[i] != b[i])
-        | then -> @as(i64, @intCast(i))
-        | else |> lex-at(a, b, i: i + 1, m): p -> p
-
-// a strictly before b, byte order with shorter-prefix-first.
-tor lex-before { a: string, b: string } -> bool
-lex-before = lex-at(a, b, i: 0, m: @min(a.len, b.len)): p
-    |> if(p == -1)
-        | then -> a.len < b.len
-        | else -> a[@as(usize, @intCast(p))] < b[@as(usize, @intCast(p))]
 
 // Sweep ranked; leave the winning row's handle and count in `best`
 // (best.row == -1 when the store is empty). Order: count desc, then
@@ -54,9 +38,10 @@ pick = std/store:stored { best.row: -1, best.cnt: -1 }
             | else |> if(e.cnt > best.cnt)
                 | then |> std/store:stored { best.row: e, best.cnt: e.cnt }
                 | else |> if(e.cnt == best.cnt)
-                    | then |> lex-before(a: e.word.data, b: ranked[best.row].word.data): lt
-                        |> if(lt)
-                            | then |> std/store:stored { best.row: e, best.cnt: e.cnt }
+                    | then |> std/string:cmp(a: e.word.data, b: ranked[best.row].word.data)
+                        | lt |> std/store:stored { best.row: e, best.cnt: e.cnt }
+                        | eq |> _
+                        | gt |> _
 
 // Take the winning row; `| item` carries the row's fields out including
 // the owned word — print, then free discharges the instance obligation.

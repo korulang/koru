@@ -27,3 +27,28 @@ never a program the sugar could mean.
 Corollary for the next wart of this shape: when a caller-side cast
 shows up in *showcase* code (the dice entry on X needed one), treat
 it as a lowering defect first and a user problem never.
+
+---
+
+**Evolved 2026-11-03 (string `<` — the defect without a lowering site).**
+820_007's top-N demonstration hand-spelled a recursive byte comparator
+in showcase code because `a < b` on strings doesn't lower — Zig refuses
+`operator < not allowed for type '[]u8'` at Stage D. Same shape as the
+`for`-bound cast: the host's type rule wearing a user-surface costume.
+But this instance exposed the doctrine's boundary: the codegen rewrite
+that would fix the glyph (`a < b` → `std.mem.order`) carries no type
+oracle — it can only act on the syntactically decidable subset, which is
+why `==` already rewrites only when a string *literal* is an operand and
+`==` on two string-typed names is documented NEEDS_RULING. `<` sits in
+that same unserved class: refusing loudly, not silently wrong, and the
+fix is a ruling about a type oracle, not a one-place emit change.
+
+So the surface answer shipped namespaced instead: `std/string:cmp`
+(`| lt | eq | gt`, the `std/num:cmp` shape, pure-Koru recursion over the
+slices, `string<*>` operands per the string frag's pure-read ruling).
+Pinned by 610_025; 820_007 respelled onto it. The rule gains a second
+half: **when the glyph fix needs an oracle that doesn't exist, the
+namespaced tor is the ruled surface — not a workaround to apologize
+for — while the glyph question waits on Lars.** A future `<`-on-strings
+lowering would occlude this only for call sites that prefer the glyph;
+the tor stays the explicit-order spelling either way.

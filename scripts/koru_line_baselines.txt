@@ -351,8 +351,9 @@ koru_std/store.watch.kz	291
 koru_std/string-map.each.kz	34
 koru_std/string-map.free.kz	12
 koru_std/string-map.kz	122
+koru_std/string.compare.kz	74
 koru_std/string.kjs	147
-koru_std/string.kz	298
+koru_std/string.kz	277
 koru_std/string.owning.kz	38
 koru_std/supervisor.decl.kz	63
 koru_std/supervisor.explain.kz	490

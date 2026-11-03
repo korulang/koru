@@ -9,8 +9,11 @@
 // Parts:
 // - `~part owning` (string.owning.kz): the ownership hand-offs —
 //   `snapshot` copies out, `detach` moves out.
+// - `~part compare` (string.compare.kz): the comparisons — `contains`,
+//   `index-of` predicates and `cmp`, the byte-lexicographic total order.
 
 ~part owning
+~part compare
 const std = @import("std");
 
 pub const String = struct {
@@ -140,30 +143,6 @@ pub const String = struct {
     };
     s.* = .{ .data = data, .allocator = allocator };
     return .{ .ok = s };
-}
-
-// Does the string contain `needle`?
-~pub tor contains { s: *String<view|instance>, needle: string }
-| yes
-| no
-
-~proc contains|zig {
-    if (std.mem.indexOf(u8, s.data, needle) != null) {
-        return .yes;
-    }
-    return .no;
-}
-
-// First index of `needle`, or not-found.
-~pub tor index-of { s: *String<view|instance>, needle: string }
-| found usize
-| not-found
-
-~proc index-of|zig {
-    if (std.mem.indexOf(u8, s.data, needle)) |idx| {
-        return .{ .found = idx };
-    }
-    return .not_found;
 }
 
 // Extract [start, end) as a NEW owned String<view!> (a fresh copy, not a

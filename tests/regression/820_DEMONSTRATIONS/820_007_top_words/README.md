@@ -25,16 +25,17 @@ so the tie-break decides what rank 5 even is.
 - Hash order is declared unstable, so ranking is **selection by
   max-extraction**, all in flows: `pick` sweeps `ranked` with
   `std/store:query`, tracking the winner in a `best` singleton —
-  count desc, ties by `lex-before`. `report` runs
+  count desc, ties by `std/string:cmp`. `report` runs
   `std/store:take(ranked[best.row])`; the `| item` branch carries the
   row's fields out, prints, and `std/string:free` discharges the owned
   word's obligation. `top` is a recursive subflow doing it N times.
-- `lex-before` is pure Koru — `lex-at` recurses to the first differing
-  byte on the `.data` slices, shorter-prefix-first settles equality.
-  Spelled by hand because string `<` does not lower (it survives Koru's
-  own check and the backend refuses `operator < not allowed for type
-  '[]u8'`), and `std/string` has no compare tor. Noted as a surfaced
-  constraint, not a pin: the task is green.
+- Ordering is `std/string:cmp` — three-way byte-lexicographic
+  (`| lt | eq | gt`), pure-Koru recursion over the `.data` slices,
+  shorter-prefix-first on equality. This entry originally spelled the
+  comparator by hand because string `<` does not lower (it survives
+  Koru's own check and the backend refuses `operator < not allowed for
+  type '[]u8'`) and `std/string` had no compare tor; the gap is now
+  closed (pinned by 610_025) and the demonstration rides the surface.
 
 Procs are leaves only (`from-page`/`take`/`insert`/`free`, the
 regex/map/store chain steps). Ordering, selection, recursion, and

@@ -1,0 +1,8 @@
+ant lt bee
+cat eq cat
+dog gt bee
+app lt apple
+apple gt app
+ lt a
+ eq 
+Zebra lt apple

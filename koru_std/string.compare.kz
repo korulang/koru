@@ -1,0 +1,74 @@
+// Koru Standard Library: the `compare` part of string.kz.
+// Joined via `~part compare` in string.kz; merged into the module at load.
+
+// ============================================
+// Predicates — substring containment
+// ============================================
+
+// Does the string contain `needle`?
+~pub tor contains { s: *String<view|instance>, needle: string }
+| yes
+| no
+
+~proc contains|zig {
+    if (std.mem.indexOf(u8, s.data, needle) != null) {
+        return .yes;
+    }
+    return .no;
+}
+
+// First index of `needle`, or not-found.
+~pub tor index-of { s: *String<view|instance>, needle: string }
+| found usize
+| not-found
+
+~proc index-of|zig {
+    if (std.mem.indexOf(u8, s.data, needle)) |idx| {
+        return .{ .found = idx };
+    }
+    return .not_found;
+}
+
+// ============================================
+// Ordering — total byte-lexicographic order
+// ============================================
+
+// First index where a and b differ, -1 when equal through the shorter
+// length. Pure recursion over the slices — the shape 820_007 spelled by
+// hand for its alphabetical tie-break; it lives here so callers get the
+// module's tor instead of re-deriving it.
+~tor cmp-at { a: string<*>, b: string<*>, i: usize, m: usize } -> i64
+~cmp-at = if(i >= m)
+    | then -> -1
+    | else |> if(a[i] != b[i])
+        | then -> @as(i64, @intCast(i))
+        | else |> cmp-at(a, b, i: i + 1, m): p -> p
+
+// Total order over raw text: | lt | eq | gt — the std/num:cmp shape.
+// Operands are slices (string<*>), not *String handles — a `.data` borrow
+// or any string passes directly, same as `split`, so ordering composes
+// without wrapping. Byte order; shorter-prefix-first settles equality
+// through the shared prefix — the alphabetical tie-break a sort or
+// rank-by-key needs. Pure subflow, no allocation, no host call.
+//
+// A bare `a < b` on strings does NOT lower: the glyph survives Koru's own
+// check and Zig refuses `operator < not allowed for type '[]u8'` at
+// Stage D — same unserved class as `==` on two string-typed names, which
+// needs a type oracle the codegen rewrite site doesn't carry
+// (codegen_utils.zig). Whether `<` should route here is Lars's ruling;
+// this tor is the namespaced answer meanwhile.
+~pub tor cmp { a: string<*>, b: string<*> }
+| lt
+| eq
+| gt
+
+~cmp = cmp-at(a, b, i: 0, m: @min(a.len, b.len)): p
+    |> if(p == -1)
+        | then |> if(a.len == b.len)
+            | then => eq
+            | else |> if(a.len < b.len)
+                | then => lt
+                | else => gt
+        | else |> if(a[@as(usize, @intCast(p))] < b[@as(usize, @intCast(p))])
+            | then => lt
+            | else => gt
