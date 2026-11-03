@@ -1,0 +1,29 @@
+// Koru Standard Library: the `each` part of map.kz.
+// Joined via `~part each` in map.kz; merged into the module at load.
+
+// ============================================
+// Iteration (borrow — stream every pair)
+// ============================================
+
+// Traverse every key→value pair — the EFFECT SHAPE, same surface and same
+// ruling as std/string-map:each. `! pair {k, v}` fires once per entry,
+// `| done` delivers the pair count after. Mutating `m` inside the arm is
+// unsafe (`set` can grow the table and invalidate the iterator); `free` is
+// unspellable — the handle stays `<map>` borrowed for the whole extent.
+// Iteration order is hash order — not stable, never pin output on it.
+~pub tor each { m: *Map_i64_i64<map> }
+! pair { k: i64, v: i64 }
+| done usize
+
+~proc each|zig {
+    // HYGIENE: this body INLINES into the consumer's frame (effect
+    // lowering), so locals are __koru-prefixed to never collide with
+    // user bindings in the surrounding flow.
+    var __koru_e_it = m.map.iterator();
+    var __koru_e_n: usize = 0;
+    while (__koru_e_it.next()) |__koru_e_entry| {
+        pair(.{ .k = __koru_e_entry.key_ptr.*, .v = __koru_e_entry.value_ptr.* });
+        __koru_e_n += 1;
+    }
+    return .{ .done = __koru_e_n };
+}

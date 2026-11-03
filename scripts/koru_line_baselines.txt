@@ -208,7 +208,9 @@ koru_std/list.pop.kz	28
 koru_std/list.protos.kz	403
 koru_std/list.push.kz	30
 koru_std/list.synth.kz	281
-koru_std/map.kz	114
+koru_std/map.each.kz	29
+koru_std/map.free.kz	12
+koru_std/map.kz	110
 koru_std/net.kz	63
 koru_std/node.fleetretain.kz	46
 koru_std/node.kz	546
@@ -345,7 +347,9 @@ koru_std/store.uncrossable.kz	61
 koru_std/store.view.kz	77
 koru_std/store.wait.kz	133
 koru_std/store.watch.kz	291
-koru_std/string-map.kz	126
+koru_std/string-map.each.kz	34
+koru_std/string-map.free.kz	12
+koru_std/string-map.kz	122
 koru_std/string.kjs	147
 koru_std/string.kz	298
 koru_std/string.owning.kz	38
