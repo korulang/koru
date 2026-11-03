@@ -1,0 +1,142 @@
+// The `igate` part — declaration gates on the `new` site: the ONE-`new`-PER-
+// NAME rule and the std/indexes dead-claim enumeration. Split out of
+// store.new.kz (line-pinned): `new`'s transform calls each gate once per
+// site and stays under its pin; the enumeration machinery lives here.
+//
+// Both gates guard the same family as the second-index-decl wall
+// (690_328): a declaration the program cannot serve is refused at its own
+// location, loudly, before it can mint broken Zig or be blamed on a
+// downstream consumer.
+const IndexGate = struct {
+    const ast = @import("ast");
+
+    /// A `std/store:new` flow naming `want` (same spelling test
+    /// qmiss/StoreIndexDecls run: `std.store` qualifier + `new` + the expr
+    /// arg). Untransformed `new` flows count as declared — QueryMiss's
+    /// later-create read, applied to the declaration gate.
+    fn isNewDecl(pi: *const ast.Item, want: []const u8) bool {
+        if (pi.* != .flow) return false;
+        const inv = pi.flow.inv();
+        const mq = inv.path.module_qualifier orelse return false;
+        if (!std.mem.eql(u8, mq, "std.store")) return false;
+        if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "new")) return false;
+        for (inv.args) |a| {
+            if (std.mem.eql(u8, a.name, "expr")) {
+                var n = a.value;
+                if (n.len >= 2 and n[0] == '"' and n[n.len - 1] == '"') n = n[1 .. n.len - 1];
+                return std.mem.eql(u8, n, want);
+            }
+        }
+        return false;
+    }
+
+    /// The emitted markers a transformed store leaves behind — the
+    /// apply/write tors both tiers mint.
+    fn isStoreMarker(pi: *const ast.Item, apply_ev: []const u8, write_ev: []const u8) bool {
+        if (pi.* != .event_decl) return false;
+        const ed = &pi.event_decl;
+        if (ed.path.segments.len != 1) return false;
+        return std.mem.eql(u8, ed.path.segments[0], apply_ev) or std.mem.eql(u8, ed.path.segments[0], write_ev);
+    }
+
+    /// One `new` per name per module — the store name mints
+    /// `__KoruStoreT_<name>`/`__koru_store_<name>` at one emitted scope. A
+    /// second declaration on the same name re-mints the symbols (the program
+    /// dies in Zig on duplicate-member errors the author never wrote) or,
+    /// when the columns differ, the FIRST decl wins silently and a later
+    /// checker blames a legal insert — KORU161 at the wrong site, the same
+    /// wrong-tree fault 690_328's second-index wall was built to kill. The
+    /// LATER declaration is the offender: an earlier-line same-name `new`
+    /// flow, or an already-emitted marker of one that already transformed,
+    /// makes THIS site the second claim. Same name in another module is a
+    /// different store — module-private, never a duplicate (pin 690_381).
+    fn dupNewRefusal(
+        alloc: std.mem.Allocator,
+        reporter: anytype,
+        program: *const ast.Program,
+        store_name: []const u8,
+        flow: *const ast.Flow,
+    ) ?ast.Item {
+        const apply_ev = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{store_name}) catch unreachable;
+        const write_ev = std.fmt.allocPrint(alloc, "__store_write_{s}", .{store_name}) catch unreachable;
+        for (flatItems(alloc, program.items)) |pi| {
+            if (pi.* == .event_decl) {
+                if (!std.mem.eql(u8, pi.event_decl.module, flow.module)) continue;
+                if (isStoreMarker(pi, apply_ev, write_ev)) {
+                    return ast.refusal(alloc, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): '{s}' is already declared — a second `new` on one store name re-mints `__KoruStoreT_{s}` and `__koru_store_{s}`; rename it or drop the earlier declaration", .{ store_name, store_name, store_name, store_name });
+                }
+            } else if (pi.* == .flow) {
+                const f2 = &pi.flow;
+                if (f2 == flow) continue;
+                if (!std.mem.eql(u8, f2.module, flow.module)) continue;
+                if (!isNewDecl(pi, store_name)) continue;
+                if (f2.location.line < flow.location.line or
+                    (f2.location.line == flow.location.line and f2.location.column < flow.location.column)) {
+                    return ast.refusal(alloc, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): '{s}' is already declared — a second `new` on one store name re-mints `__KoruStoreT_{s}` and `__koru_store_{s}`; rename it or drop the earlier declaration", .{ store_name, store_name, store_name, store_name });
+                }
+            }
+        }
+        return null;
+    }
+
+    /// The dead-claim enumeration for `std/indexes:*` declarations — only
+    /// servable while a plural container claims the name AND a `new` exists
+    /// for it at all. `fieldSpec` runs inside the named store's own emit,
+    /// so a decl that misses either condition is discovered by nothing: it
+    /// sits in the AST forever — no field, no machinery, no diagnostic —
+    /// while the author believes the column is indexed. The same silent
+    /// drop the second-declaration wall was built to kill (690_328), one
+    /// enumeration wider. `new` is the decls' only owner; every refusal
+    /// points at the DECLARATION's own location, not this site (pins
+    /// 690_379/690_380). Orphan first: an untransformed `new` flow still
+    /// counts as declared; an already-refused `new` for the name stays
+    /// quiet — one mistake, one error; a prior refusal of this decl stops
+    /// a second store's transform re-reporting the identical diagnostic.
+    /// The value-tier arm: machinery is minted on the plural path only,
+    /// and the decl's readers (query / ! first) refuse on this tier anyway
+    /// (690_354). Name-scope matches declsOf — a decl binds any store of
+    /// that name. Residual: a lone decl with ZERO `new` sites in the
+    /// program still slips — no `new` transform ever fires to gate it.
+    fn servableRefusal(
+        alloc: std.mem.Allocator,
+        reporter: anytype,
+        program: *const ast.Program,
+        store_name: []const u8,
+        is_plural: bool,
+    ) ?ast.Item {
+        for (flatItems(alloc, program.items)) |pi| {
+            if (pi.* != .flow) continue;
+            const inv = pi.flow.inv();
+            const mq = inv.path.module_qualifier orelse continue;
+            if (!std.mem.eql(u8, mq, "std.indexes")) continue;
+            if (inv.path.segments.len != 1 or (!std.mem.eql(u8, inv.path.segments[0], "store") and !std.mem.eql(u8, inv.path.segments[0], "ordered"))) continue;
+            var d_name: ?[]const u8 = null; var d_col: ?[]const u8 = null;
+            for (inv.args) |a| {
+                if (std.mem.eql(u8, a.name, "expr")) {
+                    d_name = a.value;
+                } else if (!std.mem.eql(u8, a.name, "source")) {
+                    d_col = a.value;
+                }
+            }
+            const d = d_name orelse continue;
+            if (ast.declarationRefused(alloc, program, pi.flow.module, "std/indexes:", .{})) break;
+            if (ast.declarationRefused(alloc, program, pi.flow.module, "std/store:new({s}):", .{d})) continue;
+            const apply_nm = std.fmt.allocPrint(alloc, "__store_apply_{s}", .{d}) catch unreachable;
+            const write_nm = std.fmt.allocPrint(alloc, "__store_write_{s}", .{d}) catch unreachable;
+            var declared = false;
+            for (flatItems(alloc, program.items)) |qi| {
+                if (declared) break;
+                if (isNewDecl(qi, d) or isStoreMarker(qi, apply_nm, write_nm)) declared = true;
+            }
+            if (!declared) {
+                return ast.refusal(alloc, reporter, .KORU161, pi.flow.location, pi.flow.module, "std/indexes:{s}({s}, {s}): '{s}' is not a declared store — an index keys one container's rows; declare `std/store:new({s}, capacity: N)` first or fix the name", .{ inv.path.segments[0], d, d_col orelse "?", d, d });
+            }
+            // The value-tier arm: this decl names a real store, but a
+            // capacity-1 `new` can never mint machinery for it.
+            if (!is_plural and std.mem.eql(u8, d, store_name)) {
+                return ast.refusal(alloc, reporter, .KORU161, pi.flow.location, pi.flow.module, "std/indexes:{s}({s}, {s}): '{s}' is a capacity-1 value store — an index keys a plural container's rows; declare `std/store:new({s}, capacity: N)` or drop the index", .{ inv.path.segments[0], d, d_col orelse "?", store_name, store_name });
+            }
+        }
+        return null;
+    }
+};

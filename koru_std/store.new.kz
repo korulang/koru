@@ -189,11 +189,11 @@
     if (store_name.len == 0 or seed_text == null) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new requires a name and a seed block: create(name) {{ field: value[type] }}", .{}) } };
     }
-    // `__KoruStoreT_<name>` is pasted verbatim into emitted Zig — the name is
-    // a Zig decl, so non-identifiers refuse here, at the author's text.
+    // `__KoruStoreT_<name>` is pasted verbatim into emitted Zig — the name is a Zig decl, so non-identifiers refuse here, at the author's text.
     if (!isStoreName(store_name)) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): '{s}' is not a store name — the name mints `__KoruStoreT_<name>` in the emitted program, so it is one identifier (letter or `_`, then letters/digits/`_`)", .{ store_name, store_name }) } };
     }
+    if (IndexGate.dupNewRefusal(allocator, reporter, program, store_name, flow)) |r| return .{ .transformed = .{ .replacement = r } };
 
     // The namespace synthesized units are ADDRESSED under. `flow.module` is the
     // file-derived name (`lib`); every cross-module path in the program resolves
@@ -546,10 +546,10 @@
     }
     const CAP: usize = cap_buf;
     const is_plural = CAP > 1;
+    if (IndexGate.servableRefusal(allocator, reporter, program, store_name, is_plural)) |r| return .{ .transformed = .{ .replacement = r } };
     if (want_kind and !is_plural) {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU161, flow.location, flow.module, "std/store:new({s}): kinds need a container store - declare a capacity (`capacity: N`, N > 1); a capacity-1 value has no rows to tag", .{store_name}) } };
     }
-
     // [tree] sits on the container substrate — a capacity-1 value has no
     // rows to arrange into a forest.
     if (is_tree and !is_plural) {

@@ -300,6 +300,7 @@ koru_std/store.gate.kz	523
 koru_std/store.hostemit.kz	246
 koru_std/store.hstruct.kz	74
 koru_std/store.idecls.kz	104
+koru_std/store.igate.kz	142
 koru_std/store.index.kz	175
 koru_std/store.indexwalk.kz	222
 koru_std/store.insert.kz	418
