@@ -13,7 +13,7 @@
 //   allocator                    absent — GC is the implementation
 //
 // The handle is a `__KoruBox` (the emitter's mutable carrier class) with a
-// `data` field because the declarative tors (`~read -> s.data`, `~take -> s`)
+// `data` field because the declarative tors (`~len -> s.data.len`, `~take -> s`)
 // emit `s.data` verbatim on every host — `s` arrives as `dynamic`, so member
 // access resolves at runtime against whatever shape the creator produced.
 // NOT an anonymous object: C# anonymous members are read-only, and

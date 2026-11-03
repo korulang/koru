@@ -66,6 +66,7 @@ koru_std/compiler_context.kz	253
 koru_std/compiler_types.kz	53
 koru_std/compiler_visitor.kz	505
 koru_std/compiler.ccp.kz	58
+koru_std/compiler.commands.kz	19
 koru_std/compiler.context.kz	57
 koru_std/compiler.control.kz	31
 koru_std/compiler.desugars.kz	70
@@ -299,7 +300,7 @@ koru_std/store.emitnames.kz	53
 koru_std/store.expand.kz	130
 koru_std/store.explain.kz	389
 koru_std/store.gate.kz	523
-koru_std/store.hostemit.kz	246
+koru_std/store.hostemit.kz	182
 koru_std/store.hstruct.kz	74
 koru_std/store.idecls.kz	104
 koru_std/store.igate.kz	142
@@ -354,6 +355,8 @@ koru_std/string-map.kz	122
 koru_std/string.kjs	147
 koru_std/string.kz	298
 koru_std/string.owning.kz	38
+koru_std/string.read.kjs	7
+koru_std/string.read.kz	23
 koru_std/supervisor.decl.kz	63
 koru_std/supervisor.explain.kz	490
 koru_std/supervisor.fold.kz	1086

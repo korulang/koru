@@ -6,11 +6,11 @@
 //
 // The String struct carries its allocator, so it can be freed anywhere.
 //
-// Parts:
-// - `~part owning` (string.owning.kz): the ownership hand-offs —
-//   `snapshot` copies out, `detach` moves out.
-
+// Parts — `~part owning` (ownership hand-offs: copy/move out); `~part
+// read`: `read` lends the bytes as an unqualified borrow for the call —
+// the produced-text exit.
 ~part owning
+~part read
 const std = @import("std");
 
 pub const String = struct {
