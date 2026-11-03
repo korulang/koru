@@ -1,6 +1,8 @@
 // std/sym rung 3 — named refusals and the taint boundary: outside text rides
-// <sexpr-external!> until parse discharges it; div by a zero canon and a
-// negative-decimal radicand refuse on named arms, never silently.
+// <sexpr-external!> until parse discharges it; div by a zero canon refuses on
+// a named arm. sqrt(-4) used to refuse neg-root — post-B2 the Q(i) constant
+// ring answers 2i, so the exact lane carries it (neg-root arm kept for a
+// future real-only surface; it is unreachable for dec radicands now).
 import std/io
 import std/sym
 

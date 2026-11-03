@@ -28,6 +28,9 @@
 //     for a value is the reduced fraction: 4*inv(6e1) -> inv(1.5e1),
 //     which is what a fresh "1/15" produces
 //   - inv(-d) -> -1*inv(d): the sign lives on the coefficient
+//   - i is the imaginary atom (index 4); Q(i) constants form a ring:
+//     i*i -> -1, (a+bi)(c+di) folds to its Q(i) product, inv(a+bi) is
+//     conjugate over norm, sqrt(-d) -> i*sqrt(|d|)
 //
 // What NF does NOT do: no distributive factoring, no trig/ident tables,
 // no power node (π*π stays a product — a pow canon is a later rung).
@@ -304,7 +307,7 @@ const NodeKind = enum { dec, atom, sq, inv, log, atan, add, mul };
 const SNode = struct {
     kind: NodeKind,
     dec: Dec = undefined,            // kind == .dec
-    atom: u8 = 0,                    // kind == .atom: 0=pi, 1=e, 2=phi
+    atom: u8 = 0,                    // kind == .atom: 0=pi, 1=e, 2=phi, 3=x, 4=i; >=5 named generators
     kids: []*SNode = &.{},           // kind == .add/.mul
     kid: *SNode = undefined,         // kind == .sq/.inv
 };
@@ -377,7 +380,7 @@ fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
 // Canon render
 // ============================================================================
 
-const ATOMS = [_][]const u8{ "π", "e", "φ", "x" };
+const ATOMS = [_][]const u8{ "π", "e", "φ", "x", "i" };
 
 fn canonWrite(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(u8)) !void {
     return canonWriteG(alloc, n, null, out);
@@ -391,15 +394,15 @@ fn canonWriteG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg, ou
             try out.appendSlice(alloc, s);
         },
         .atom => {
-            if (n.atom < 4) {
+            if (n.atom < 5) {
                 try out.appendSlice(alloc, ATOMS[n.atom]);
             } else if (greg) |g| {
                 try out.appendSlice(alloc, "g(");
-                try out.appendSlice(alloc, g.names.items[n.atom - 4]);
+                try out.appendSlice(alloc, g.names.items[n.atom - 5]);
                 try out.append(alloc, ')');
             } else {
                 var buf: [16]u8 = undefined;
-                const ds = std.fmt.bufPrint(&buf, "g#{d}", .{n.atom - 4}) catch unreachable;
+                const ds = std.fmt.bufPrint(&buf, "g#{d}", .{n.atom - 5}) catch unreachable;
                 try out.appendSlice(alloc, ds);
             }
         },
@@ -596,7 +599,7 @@ fn parseFactor(c: *ParseCtx) anyerror!*SNode {
         c.i += 1;
         if (c.greg) |g| {
             for (g.names.items, 0..) |n2, i| {
-                if (std.mem.eql(u8, n2, nm)) return nodeAtom(c.alloc, @as(u8, @intCast(4 + i)));
+                if (std.mem.eql(u8, n2, nm)) return nodeAtom(c.alloc, @as(u8, @intCast(5 + i)));
             }
         }
         return error.UnknownGenerator;
@@ -647,6 +650,10 @@ fn parseFactor(c: *ParseCtx) anyerror!*SNode {
         if (c.i >= c.s.len or c.s[c.i] != ')') return error.Bad;
         c.i += 1;
         return nodeUnary(c.alloc, .inv, inner);
+    }
+    if (cp == 'i' and (c.i + 1 >= c.s.len or !std.ascii.isAlphanumeric(c.s[c.i + 1]))) {
+        c.i += 1;
+        return nodeAtom(c.alloc, 4);
     }
     return error.Bad;
 }
@@ -721,6 +728,99 @@ fn termWithCoeff(alloc: std.mem.Allocator, coeff: *const Dec, base: *const SNode
     return nodeList(alloc, .mul, try list2(alloc, cn, try nodeClone(alloc, base)));
 }
 
+// Q(i) constants: re + im*i with owned Dec limbs. qiConstOf classifies a
+// normalized node that provably lives in Q(i): a dec, bare i, c*i, or a sum
+// of those. Used by the mul ring-fold and the conjugate lane of inv.
+const Qi = struct {
+    re: Dec,
+    im: Dec,
+    fn deinit(z: *Qi) void {
+        z.re.m.deinit();
+        z.im.m.deinit();
+    }
+};
+
+fn qiConstOf(alloc: std.mem.Allocator, n: *const SNode) !?Qi {
+    switch (n.kind) {
+        .dec => return .{ .re = .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }, .im = try decZero(alloc) },
+        .atom => {
+            if (n.atom != 4) return null;
+            return .{ .re = try decZero(alloc), .im = try decOneN(alloc, false) };
+        },
+        .mul => {
+            if (n.kids.len == 2 and n.kids[0].kind == .dec and n.kids[1].kind == .atom and n.kids[1].atom == 4) {
+                return .{ .re = try decZero(alloc), .im = .{ .neg = n.kids[0].dec.neg, .m = try n.kids[0].dec.m.clone(), .e = n.kids[0].dec.e } };
+            }
+            return null;
+        },
+        .add => {
+            var acc = Qi{ .re = try decZero(alloc), .im = try decZero(alloc) };
+            errdefer acc.deinit();
+            for (n.kids) |k| {
+                var z = (try qiConstOf(alloc, k)) orelse {
+                    acc.deinit();
+                    return null;
+                };
+                defer z.deinit();
+                const nr = try decAdd(alloc, &acc.re, &z.re);
+                const ni = try decAdd(alloc, &acc.im, &z.im);
+                acc.re.m.deinit();
+                acc.im.m.deinit();
+                acc.re = nr;
+                acc.im = ni;
+            }
+            return acc;
+        },
+        else => return null,
+    }
+}
+
+// (ar+ai*i)(br+bi*i) = (ar*br - ai*bi) + (ar*bi + ai*br)*i
+fn qiMul(alloc: std.mem.Allocator, a: *const Qi, b: *const Qi) !Qi {
+    var p1 = try decMul(alloc, &a.re, &b.re);
+    var p2 = try decMul(alloc, &a.im, &b.im);
+    var p3 = try decMul(alloc, &a.re, &b.im);
+    var p4 = try decMul(alloc, &a.im, &b.re);
+    if (!p2.m.eqlZero()) p2.neg = !p2.neg;
+    defer {
+        p1.m.deinit();
+        p2.m.deinit();
+        p3.m.deinit();
+        p4.m.deinit();
+    }
+    var re = try decAdd(alloc, &p1, &p2);
+    errdefer re.m.deinit();
+    const im = try decAdd(alloc, &p3, &p4);
+    return .{ .re = re, .im = im };
+}
+
+// |z|^2 = re^2 + im^2 — always a positive dec for a nonzero Q(i) value.
+fn qiNormSq(alloc: std.mem.Allocator, z: *const Qi) !Dec {
+    var p1 = try decMul(alloc, &z.re, &z.re);
+    defer p1.m.deinit();
+    var p2 = try decMul(alloc, &z.im, &z.im);
+    defer p2.m.deinit();
+    return decAdd(alloc, &p1, &p2);
+}
+
+// Emit the canonical node for a Q(i) value. Borrows re/im: dec when im==0,
+// c*i (bare i at c=+-1) when re==0, else a const-first two-term sum.
+fn qiToNode(alloc: std.mem.Allocator, re: *const Dec, im: *const Dec) !*SNode {
+    if (im.m.eqlZero()) {
+        return nodeDec(alloc, .{ .neg = re.neg, .m = try re.m.clone(), .e = re.e });
+    }
+    const in2 = try nodeAtom(alloc, 4);
+    defer nodeFree(alloc, in2);
+    const it = try termWithCoeff(alloc, im, in2);
+    if (re.m.eqlZero()) return it;
+    errdefer nodeFree(alloc, it);
+    const dn = try nodeDec(alloc, .{ .neg = re.neg, .m = try re.m.clone(), .e = re.e });
+    errdefer nodeFree(alloc, dn);
+    const pair = try list2(alloc, dn, it);
+    errdefer alloc.free(pair);
+    return nodeList(alloc, .add, pair);
+}
+
 fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
     switch (n.kind) {
         .dec => return nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
@@ -730,7 +830,22 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             var inner_live = true;
             errdefer if (inner_live) nodeFree(alloc, inner);
             if (inner.kind == .dec) {
-                if (inner.dec.neg) return error.NegRadicand;
+                if (inner.dec.neg) {
+                    // sqrt(-d) -> i*sqrt(|d|): the radicand re-enters through
+                    // the Q(i) constant ring. decSqrtExact still folds squares
+                    // (sqrt(-4) -> 2i); sqrt(-1) lands on bare i.
+                    inner.dec.neg = false;
+                    const in2 = try nodeAtom(alloc, 4);
+                    errdefer nodeFree(alloc, in2);
+                    const sqn = try nodeUnary(alloc, .sq, inner);
+                    inner_live = false;
+                    errdefer nodeFree(alloc, sqn);
+                    const pair = try list2(alloc, in2, sqn);
+                    errdefer alloc.free(pair);
+                    const pr = try nodeList(alloc, .mul, pair);
+                    defer nodeFree(alloc, pr);
+                    return norm(alloc, pr);
+                }
                 if (try decSqrtExact(alloc, &inner.dec)) |sqd| {
                     nodeFree(alloc, inner);
                     inner_live = false;
@@ -821,6 +936,44 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     const pair = try list2(alloc, mn, iv);
                     errdefer alloc.free(pair);
                     return nodeList(alloc, .mul, pair);
+                }
+            }
+            if (inner.kind == .atom and inner.atom == 4) {
+                // inv(i) = -i — the sign rides a -1 coefficient on i.
+                nodeFree(alloc, inner);
+                inner_live = false;
+                const mn = try nodeDec(alloc, try decOneN(alloc, true));
+                errdefer nodeFree(alloc, mn);
+                const in2 = try nodeAtom(alloc, 4);
+                errdefer nodeFree(alloc, in2);
+                const pair = try list2(alloc, mn, in2);
+                errdefer alloc.free(pair);
+                return nodeList(alloc, .mul, pair);
+            }
+            if (inner.kind == .add or inner.kind == .mul) {
+                if (try qiConstOf(alloc, inner)) |zc| {
+                    // inv(a+bi) = (a-bi)*inv(a^2+b^2): conjugate times the
+                    // norm's reciprocal. Raw tree through one norm — inv(4e0)
+                    // folds 25e-2, non-2/5 norms stay symbolic inv facs.
+                    var zv = zc;
+                    defer zv.deinit();
+                    var nim = zv.im;
+                    nim.neg = !nim.neg;
+                    if (nim.m.eqlZero()) nim.neg = false;
+                    const s = try qiNormSq(alloc, &zv);
+                    var sv = s;
+                    defer sv.m.deinit();
+                    const cn = try qiToNode(alloc, &zv.re, &nim);
+                    errdefer nodeFree(alloc, cn);
+                    const iv = try nodeUnary(alloc, .inv, try nodeDec(alloc, .{ .neg = sv.neg, .m = try sv.m.clone(), .e = sv.e }));
+                    errdefer nodeFree(alloc, iv);
+                    const pair = try list2(alloc, cn, iv);
+                    errdefer alloc.free(pair);
+                    const pr = try nodeList(alloc, .mul, pair);
+                    defer nodeFree(alloc, pr);
+                    nodeFree(alloc, inner);
+                    inner_live = false;
+                    return norm(alloc, pr);
                 }
             }
             if (inner.kind == .inv) {
@@ -1121,6 +1274,54 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     ii += 1;
                 }
             }
+            // Q(i) constant ring fold: every factor that provably lives in
+            // Q(i) — bare i, c*i, or a sum re+c*i — multiplies inside the ring.
+            // >=2 participants collapse to one canonical Q(i) node; a dec
+            // result joins coeff, im-only becomes c*i, re+im a two-term sum.
+            // i*i -> -1e0 is the smallest case; i*i*x -> -1e0*x rides coeff.
+            var qi_idx = std.ArrayList(usize){};
+            defer qi_idx.deinit(alloc);
+            var qi_vals = std.ArrayList(Qi){};
+            defer {
+                for (qi_vals.items) |*z| z.deinit();
+                qi_vals.deinit(alloc);
+            }
+            for (facs.items, 0..) |f, idx| {
+                if (try qiConstOf(alloc, f)) |z| {
+                    try qi_idx.append(alloc, idx);
+                    try qi_vals.append(alloc, z);
+                }
+            }
+            if (qi_vals.items.len >= 2) {
+                var acc = Qi{ .re = try decOneN(alloc, false), .im = try decZero(alloc) };
+                defer acc.deinit();
+                for (qi_vals.items) |*z| {
+                    const na = try qiMul(alloc, &acc, z);
+                    acc.deinit();
+                    acc = na;
+                }
+                var ri = qi_idx.items.len;
+                while (ri > 0) {
+                    ri -= 1;
+                    nodeFree(alloc, facs.items[qi_idx.items[ri]]);
+                    _ = facs.orderedRemove(qi_idx.items[ri]);
+                }
+                const qn = try qiToNode(alloc, &acc.re, &acc.im);
+                if (qn.kind == .dec) {
+                    const nc = try decMul(alloc, &coeff, &qn.dec);
+                    coeff.m.deinit();
+                    coeff = nc;
+                    nodeFree(alloc, qn);
+                    if (coeff.m.eqlZero()) {
+                        for (facs.items) |f| nodeFree(alloc, f);
+                        facs.clearRetainingCapacity();
+                        coeff.m.deinit();
+                        return nodeDec(alloc, try decZero(alloc));
+                    }
+                } else {
+                    try facs.append(alloc, qn);
+                }
+            }
             // pair-cancel f with inv(f): scan, on hit remove both, restart
             var ci: usize = 0;
             while (ci < facs.items.len) {
@@ -1237,8 +1438,8 @@ fn deriveNodeG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg) an
         .dec => return nodeDec(alloc, try decZero(alloc)),
         .atom => {
             if (n.atom == 3) return nodeDec(alloc, try decOneN(alloc, false));
-            if (n.atom < 4) return nodeDec(alloc, try decZero(alloc));
-            const gi = n.atom - 4;
+            if (n.atom < 5) return nodeDec(alloc, try decZero(alloc));
+            const gi = n.atom - 5;
             if (greg) |g| {
                 if (gi < g.laws.items.len) {
                     if (g.laws.items[gi]) |law| return nodeClone(alloc, law);

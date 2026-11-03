@@ -3,7 +3,7 @@
 //
 // A generator is a named function of x declared in a `rel:v1` registry:
 //   rel:v1;exp=;sin=g(cos);cos=(-1e0*g(sin))
-// Entry i internes atom 4+i; `g(name)` in an expression resolves against the
+// Entry i internes atom 5+i; `g(name)` in an expression resolves against the
 // registry's names. A law is a canonical sexpr (over x, decimals, √/inv and
 // other generators) giving D(g_i) — attached after declaration so cyclic
 // law pairs (sin <-> cos) and self-laws (exp' = exp) both work.
