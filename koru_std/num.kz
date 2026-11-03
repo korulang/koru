@@ -1554,7 +1554,7 @@ fn fxConst(alloc: std.mem.Allocator, v: i64, w: i64) !Fx {
 
 // ============================================================================
 // A2.2 — algorithm upgrades: binary splitting (pi, e, ln2), AGM ln,
-// Newton exp. The Fx error contract is unchanged; exact-integer product
+// head/tail split exp. The Fx error contract is unchanged; exact-integer product
 // trees make these bounds tighter than the Taylor loops they replace.
 // ============================================================================
 
@@ -1946,49 +1946,76 @@ fn fxLnAgm(alloc: std.mem.Allocator, x: *const Fx, w: i64, c: *const AgmConsts) 
     return fxRescale(alloc, &res, wA, w);
 }
 
-// exp(x) * 10^w for |x| <= ~1/16 by Newton inversion of ln — Brent's
-// doubling ladder: y <- y*(1 + x - ln y), precision doubling each level.
-// The residual |ln y - x| IS the error certificate, so ln is evaluated
-// on a zero-error clone of y (input uncertainty is irrelevant to the
-// certificate — it would only contaminate the instrument bound).
-fn fxExpN(alloc: std.mem.Allocator, x: *const Fx, w: i64, c: *const AgmConsts) !Fx {
-    var wi: i64 = 48;
-    var x0 = try fxRescale(alloc, x, w, wi);
-    var y = try fxExpSmall(alloc, &x0, wi);
-    fxDeinit(&x0);
-    errdefer fxDeinit(&y);
-    while (wi < w) {
-        const w2 = @min(w, @min(2 * wi, wi + 250));
-        var y2 = try fxRescale(alloc, &y, wi, w2);
-        fxDeinit(&y);
-        var xi = try fxRescale(alloc, x, w, w2);
-        defer fxDeinit(&xi);
-        var yl = Fx{ .v = try y2.v.clone(), .e = 0 };
-        defer yl.v.deinit();
-        var c2 = try agmConstsAt(alloc, c, w, w2);
-        defer agmConstsDeinit(&c2);
-        var l = try fxLnAgm(alloc, &yl, w2, &c2);
-        defer fxDeinit(&l);
-        var res = Fx{ .v = try BI.init(alloc), .e = l.e + xi.e };
-        defer fxDeinit(&res);
-        try res.v.sub(&l.v, &xi.v);
-        var unit = try pow10(alloc, w2);
-        defer unit.deinit();
-        var d = Fx{ .v = try BI.init(alloc), .e = res.e };
-        defer fxDeinit(&d);
-        try d.v.sub(&unit, &res.v);
-        const y3 = try fxMul(alloc, &y2, &d, w2);
-        fxDeinit(&y2);
-        y = y3;
-        const w2f: f64 = @floatFromInt(w2);
-        const resulp = fxP10(fxMag(&res.v, w2) + w2f) + res.e;
-        const ymag = fxMag(&y.v, w2);
-        // |y_new - y*|/|y| <= e_instr + res^2 (Newton's ln relation).
-        y.e = fxP10(ymag) * res.e +
-            2 * fxP10(ymag + 2 * @log10(resulp) - w2f) + 4;
-        wi = w2;
+const ExpHiCtx = struct { x: *const BI, m10: *const BI };
+
+// exp(x_hi) leaves for the head of the reduced argument, x_hi = X_hi/10^m:
+// term_0 = 1, term_k/term_{k-1} = X_hi/(k * 10^m).
+fn leafExpHi(alloc: std.mem.Allocator, ctx: *const ExpHiCtx, k: usize) error{OutOfMemory}!BsT {
+    var p = try BI.initSet(alloc, 1);
+    errdefer p.deinit();
+    if (k > 0) {
+        p.deinit();
+        p = try ctx.x.clone();
     }
-    return y;
+    var q = try BI.initSet(alloc, 1);
+    errdefer q.deinit();
+    if (k > 0) {
+        q.deinit();
+        q = try BI.initSet(alloc, @as(i64, @intCast(k)));
+        try mulFast(&q, &q, ctx.m10);
+    }
+    var t = try p.clone();
+    errdefer t.deinit();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// exp(r) * SCALE for |r| <= 1/16 by head/tail split: X = r*10^w splits
+// into X_hi (~m digits, exp via exact binary splitting over small leaves)
+// and X_lo (< 10^{-m}, exp via self-terminating truncated Taylor).
+// O((w/m) * M(w) + M(w) log N_hi) — the generic-x analogue of the
+// small-rational split: the head's intermediates stay ~w digits because
+// m*N_hi ~ w. Input error lives entirely in the tail (the head digits
+// are exact).
+fn fxExpBs(alloc: std.mem.Allocator, r: *const Fx, w: i64) !Fx {
+    const wf: f64 = @floatFromInt(w);
+    // head width m: measured plateau ~10-14 for w <= 32k — smaller m
+    // inflates N_hi (more BS levels), larger m inflates the intermediates
+    // (~m*N_hi digits). The optimum drifts up slowly with w; 10 holds the
+    // shallow minimum across the measured range.
+    const m: i64 = 10;
+    var p1 = try pow10(alloc, w - m);
+    defer p1.deinit();
+    var xhi = try BI.init(alloc);
+    defer xhi.deinit();
+    var xlo = try BI.init(alloc);
+    defer xlo.deinit();
+    try divFast(&xhi, &xlo, &r.v, &p1);
+    var e_hi = try fxConst(alloc, 1, w);
+    errdefer fxDeinit(&e_hi);
+    if (!xhi.eqlZero()) {
+        var m10 = try pow10(alloc, m);
+        defer m10.deinit();
+        const ctx = ExpHiCtx{ .x = &xhi, .m10 = &m10 };
+        // tail (1/16)^n / n! < 10^{-(w+8)}: n*(log10 16 + log10(n/e)) > w+8
+        var n: usize = 2;
+        while (@as(f64, @floatFromInt(n)) *
+            (1.2041199826559248 + @log10(@as(f64, @floatFromInt(n)) * 0.36787944117144233)) < wf + 8) n += 1;
+        var bs = try bsSum(alloc, 0, n, leafExpHi, &ctx);
+        defer bsDeinit(&bs);
+        fxDeinit(&e_hi);
+        e_hi = try bsToFx(alloc, &bs, w, 4);
+    }
+    if (xlo.eqlZero()) {
+        e_hi.e += r.e;
+        return e_hi;
+    }
+    var lo = Fx{ .v = try xlo.clone(), .e = r.e };
+    defer lo.v.deinit();
+    var e_lo = try fxExpSmall(alloc, &lo, w);
+    defer fxDeinit(&e_lo);
+    const out = try fxMul(alloc, &e_hi, &e_lo, w);
+    fxDeinit(&e_hi);
+    return out;
 }
 
 // exp(r) * SCALE for |r| <= 1/16 by Taylor; terms truncate to zero to stop.
@@ -2079,17 +2106,16 @@ fn decExpW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec 
     }
     var r = try fxTruncDiv(alloc, &x, &p2);
     defer fxDeinit(&r);
-    // Crossover gate — measured, not proved: GMP-style tuning constants
-    // trade time only, never correctness (both arms are proved at the
-    // emit cut). MPFR/Arb keep exp series-based at all widths; our
-    // Newton win above ~4000 is likely an artifact of fxExpSmall being
-    // a term-at-a-time O(terms*M(w)) loop — binary-splitting the reduced
-    // series would be O(M(w)*log w) and would move or erase this gate.
+    // Lane choice is a measured tuning constant, not a correctness
+    // question (both arms are proved at the emit cut). The head/tail
+    // split beats Newton-inversion-of-AGM-ln 18-25x at every width we
+    // can measure (4500-16000): each ladder level pays a 2w-wide AGM
+    // ln, and that constant only amortizes around w~10^6 — out of
+    // range for this layer. MPFR/Arb made the same call: series-based
+    // exp at all widths.
     var e: Fx = undefined;
-    if (w > 4000) {
-        var c = try agmConsts(alloc, w);
-        defer agmConstsDeinit(&c);
-        e = try fxExpN(alloc, &r, w, &c);
+    if (w > 96) {
+        e = try fxExpBs(alloc, &r, w);
     } else {
         e = try fxExpSmall(alloc, &r, w);
     }
