@@ -307,3 +307,30 @@ constructor names ⊆ declared, declared ⊆ constructor names — pinned at
 record surfaces that still compare nothing (a `-> { }` bare return's
 plain_value against `return_type` text, and record-typed invocation
 arguments) are the enumeration's remaining untested halves.
+## 2026-10-27 — the fold law's enumeration ended at the top-level op
+
+The `[parallel]for` combine check (`classifyCellWrite`) proved the OUTERMOST
+shape of a captured write — `cell.f <op> rest` with `op ∈ {+, *}` — and
+nothing else. The enumeration stopped one token short in two places at
+once: the non-cell operand was never read (`a.acc + i*a.acc` classified
+`+` and partitioned; serial 9! = 362880, the join silently emitted 1),
+and a second `captured` write to the same field was dedupe-skipped past
+the classifier entirely (`+i` then `*2`; serial 1004, join 72). Both are
+the same form: a rule enforced on the shape the author was expected to
+write, absent on every sibling shape the grammar admits. The check now
+reads the operand for a cell mention and refuses a repeated field write —
+the conservative branch the law already declared ("anything the check
+can't see is refused, not miscombined") — and the refusal lands as
+KORU212 with a caret, not the rendered @compileError that was the only
+enforcement path.
+
+## 2026-10-27 (2) — the walk's reach was the same half again
+
+Same day, same surface, second enumeration: the partition walk recursed
+`cont.continuations` and nothing else — so a nested `[parallel]` scope
+inside a `[parallel]for` body reached Zig as shadow errors on
+`__koru_par_*` names, and a write inside a conditional arm was neither
+classified nor retargeted. The fix is not a second wall — it is the same
+walk made to see the positions it claims to audit: every nested
+invocation's annotations, every node-carried branch body. 400_233 pins
+the nested-scope refusal.

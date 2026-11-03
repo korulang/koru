@@ -968,9 +968,55 @@ fn collectParallelCells(
     allocator: std.mem.Allocator,
     cont: *const ast.Continuation,
     cells: *std.StringArrayHashMap(ParallelCellSpec),
+    in_branch: bool,
 ) !void {
     if (cont.node) |*step| {
-        if (step.* == .assignment) {
+        switch (step.*) {
+            // A [parallel] scope cannot nest inside a [parallel] body —
+            // the lowering emits one worker fn per for, and a second
+            // fork inside it reaches Zig as shadow/member errors on
+            // names the author never wrote (400_233). Same wall whether
+            // the nested scope sits under a conditional arm or inline.
+            .invocation => |*inv| {
+                for (inv.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "parallel")) {
+                        emitLocatedDiagAndExit(.KORU212, cont.location, std.fmt.allocPrint(allocator, "[parallel]for: a [parallel] scope cannot nest inside a [parallel] body — the worker fn emits no second fork; hoist the inner [parallel] out of the loop or drop the annotation", .{}) catch "[parallel]for: a [parallel] scope cannot nest inside a [parallel] body — drop the inner annotation");
+                    }
+                }
+            },
+            .label_with_invocation => |*li| {
+                for (li.invocation.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "parallel")) {
+                        emitLocatedDiagAndExit(.KORU212, cont.location, std.fmt.allocPrint(allocator, "[parallel]for: a [parallel] scope cannot nest inside a [parallel] body — the worker fn emits no second fork; hoist the inner [parallel] out of the loop or drop the annotation", .{}) catch "[parallel]for: a [parallel] scope cannot nest inside a [parallel] body — drop the inner annotation");
+                    }
+                }
+            },
+            // Conditional/switch/foreach arms carry their bodies on the
+            // NODE, not the continuation — an earlier walk only saw
+            // `cont.continuations`, so a write inside an arm was neither
+            // classified nor retargeted and reached the worker fn as a
+            // reference to a cell Zig cannot see (400_234). Collecting
+            // them is a ruling the partition hasn't made; refuse loudly.
+            .conditional => |*cond| {
+                for (cond.branches) |*br| {
+                    for (br.body) |*bc| try collectParallelCells(allocator, bc, cells, true);
+                }
+            },
+            .switch_result => |*sr| {
+                for (sr.branches) |*br| {
+                    for (br.body) |*bc| try collectParallelCells(allocator, bc, cells, true);
+                }
+            },
+            .foreach => |*fe| {
+                for (fe.branches) |*br| {
+                    for (br.body) |*bc| try collectParallelCells(allocator, bc, cells, true);
+                }
+            },
+            .assignment => {
+                if (in_branch) {
+                    emitLocatedDiagAndExit(.KORU212, cont.location, std.fmt.allocPrint(allocator, "[parallel]for: a `captured` write inside a conditional arm cannot be partitioned — the combine law is proved per field on the body's own steps; hoist the write out of the arm or drop [parallel]", .{}) catch "[parallel]for: a `captured` write inside a conditional arm cannot be partitioned — drop [parallel]");
+                }
+                {
             const asgn = @constCast(&step.assignment);
             // Writes under [parallel] retarget to a synthesized worker-local
             // name (`__koru_parcell_<cell>`): inside the spawned worker fn the
@@ -1000,7 +1046,14 @@ fn collectParallelCells(
                         }
                     }
                 }
-                if (dup) continue;
+                if (dup) {
+                    // The partition replays ONE combine per field — a
+                    // second write composes something no single fold
+                    // proves (`acc+i` then `acc*2` miscombines, 400_231),
+                    // and the check cannot tell a benign composition
+                    // from a wrong one. Refuse, never dedupe-skip.
+                    emitLocatedDiagAndExit(.KORU212, cont.location, std.fmt.allocPrint(allocator, "[parallel]for: second write to `{s}.{s}` under [parallel] — the join replays one combine per field; fold the writes into a single `captured {{ … }}` expression or drop [parallel]", .{ real, f.name }) catch "[parallel]for: a second write to the same capture field is not a provable fold — drop [parallel]");
+                }
                 const fc = try allocator.create(liquid.Context);
                 fc.* = liquid.Context.init(allocator);
                 // The fold law is classified against whatever name the
@@ -1009,6 +1062,11 @@ fn collectParallelCells(
                 // already-retargeted node. `op == 0` means no provable
                 // combine: the field refuses rather than miscombines.
                 const law = classifyCellWrite(allocator, expr, asgn.target, f.name);
+                if (law.op == 0) {
+                    // Refuse here, at Koru level, before the rendered
+                    // @compileError would be Zig's word on our rule.
+                    emitLocatedDiagAndExit(.KORU212, cont.location, std.fmt.allocPrint(allocator, "[parallel]for: `{s}` is not a provably additive write to `{s}.{s}` — partition needs a combine law (provable monoid); write `{s}: {s}.{s} + <expr>` (or `*` / `@rem` fold) or drop [parallel]", .{ expr, real, f.name, f.name, real, f.name }) catch "[parallel]for: a captured write is not a provably additive write — drop [parallel]");
+                }
                 try fc.put("name", .{ .string = f.name });
                 try fc.put("expr", .{ .string = expr });
                 try fc.put("ok", .{ .string = if (law.op != 0) "1" else "" });
@@ -1027,9 +1085,12 @@ fn collectParallelCells(
                 }
                 asgn.target = par_name;
             }
+                }
+            },
+            else => {},
         }
     }
-    for (cont.continuations) |*nested| try collectParallelCells(allocator, nested, cells);
+    for (cont.continuations) |*nested| try collectParallelCells(allocator, nested, cells, in_branch);
 }
 
 /// The monoid combine law a `cell.f = <expr>` write proves, or none.
@@ -1044,20 +1105,50 @@ const FoldLaw = struct {
     wrap: []const u8 = "",
 };
 
+/// Identifier-boundary mention of `name` inside `text`, skipping
+/// string/char literals — the same boundary rule `renameCellRef` rewrites
+/// by. Used to prove a fold's non-cell operand is cell-free.
+fn exprMentionsName(text: []const u8, name: []const u8) bool {
+    if (name.len == 0) return false;
+    var i: usize = 0;
+    while (i < text.len) {
+        const ch = text[i];
+        if (ch == '"' or ch == '\'') {
+            i += 1;
+            while (i < text.len and text[i] != ch) {
+                if (text[i] == '\\' and i + 1 < text.len) i += 1;
+                i += 1;
+            }
+            if (i < text.len) i += 1;
+            continue;
+        }
+        const left_ok = i == 0 or !(std.ascii.isAlphanumeric(text[i - 1]) or text[i - 1] == '_');
+        if (left_ok and std.mem.startsWith(u8, text[i..], name)) {
+            const after = i + name.len;
+            if (after >= text.len or !(std.ascii.isAlphanumeric(text[after]) or text[after] == '_')) return true;
+        }
+        i += 1;
+    }
+    return false;
+}
+
+const FoldSplit = struct { op: u8, rest: []const u8 };
+
 /// Is `inner` shaped `cellRef <op> rest` or `rest <op> cellRef` at the top
-/// level? Returns the op byte, or null. The cell's own field must be a
-/// direct operand of the OUTERMOST op in the remaining text — `a.acc + p`
-/// and `p + a.acc` qualify, `a.acc * (x + y)` and bare `p` do not.
-fn splitFoldOp(inner: []const u8, cellRef: []const u8) ?u8 {
+/// level? Returns the op byte plus the non-cell operand text, or null. The
+/// cell's own field must be a direct operand of the OUTERMOST op in the
+/// remaining text — `a.acc + p` and `p + a.acc` qualify,
+/// `a.acc * (x + y)` and bare `p` do not.
+fn splitFoldOp(inner: []const u8, cellRef: []const u8) ?FoldSplit {
     if (std.mem.startsWith(u8, inner, cellRef)) {
         const rest = std.mem.trimLeft(u8, inner[cellRef.len..], " \t");
-        if (rest.len >= 2 and rest[0] == '+' and rest[1] != '+' and rest[1] != '=') return '+';
-        if (rest.len >= 2 and rest[0] == '*' and rest[1] != '*') return '*';
+        if (rest.len >= 2 and rest[0] == '+' and rest[1] != '+' and rest[1] != '=') return .{ .op = '+', .rest = std.mem.trim(u8, rest[1..], " \t") };
+        if (rest.len >= 2 and rest[0] == '*' and rest[1] != '*') return .{ .op = '*', .rest = std.mem.trim(u8, rest[1..], " \t") };
     }
     if (std.mem.endsWith(u8, inner, cellRef)) {
         const pre = std.mem.trimRight(u8, inner[0 .. inner.len - cellRef.len], " \t");
-        if (pre.len >= 2 and pre[pre.len - 1] == '+' and pre[pre.len - 2] != '+' and pre[pre.len - 2] != '=') return '+';
-        if (pre.len >= 2 and pre[pre.len - 1] == '*' and pre[pre.len - 2] != '*') return '*';
+        if (pre.len >= 2 and pre[pre.len - 1] == '+' and pre[pre.len - 2] != '+' and pre[pre.len - 2] != '=') return .{ .op = '+', .rest = std.mem.trim(u8, pre[0 .. pre.len - 1], " \t") };
+        if (pre.len >= 2 and pre[pre.len - 1] == '*' and pre[pre.len - 2] != '*') return .{ .op = '*', .rest = std.mem.trim(u8, pre[0 .. pre.len - 1], " \t") };
     }
     return null;
 }
@@ -1143,8 +1234,15 @@ fn classifyCellWrite(allocator: std.mem.Allocator, expr: []const u8, target: []c
         }
     }
     const cell_ref = std.fmt.allocPrint(allocator, "{s}.{s}", .{ target, field }) catch return .{};
-    const op = splitFoldOp(inner, cell_ref) orelse return .{};
-    return .{ .op = op, .init = if (op == '*') "1" else "0", .wrap = wrap };
+    const split = splitFoldOp(inner, cell_ref) orelse return .{};
+    // The non-cell operand may not read the folded field again —
+    // `acc + i*acc` keeps the fold's top-level shape while its `e_i`
+    // secretly depends on the accumulator, so the join's `+=` replays a
+    // write that was never a fold (serial 9! vs a silently dead cell,
+    // 400_230). A sibling-field read (`a.other`) stays legal: unwritten
+    // fields inherit the fork's value.
+    if (exprMentionsName(split.rest, cell_ref)) return .{};
+    return .{ .op = split.op, .init = if (split.op == '*') "1" else "0", .wrap = wrap };
 }
 
 /// `for(lo..hi)` under `[parallel]` splits the range arithmetically — a
@@ -1309,7 +1407,7 @@ pub fn renderTemplateInvocation(
         if (parallel_text.len > 0) {
             for (continuations) |*cont| {
                 if (cont.kind != .effect) continue;
-                try collectParallelCells(allocator, cont, &par_cells);
+                try collectParallelCells(allocator, cont, &par_cells, false);
             }
         }
         const arr = try allocator.alloc(*liquid.Context, par_cells.count());

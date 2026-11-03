@@ -175,6 +175,7 @@ pub const ErrorCode = enum(u16) {
     KORU209, // `dir:` relocates the emitted artifact while the program declares build:requires — generated build_output.zig stages output_emitted.zig in cwd. Printed by the host-build-zig tor in koru_std/compiler.materialize.kz.
     KORU210, // A std/build:app declaration is malformed — the Source block did not parse as `name: "…", id: "…"` plus optional `version: "…"`, `icon: "…"`, or carried a key the collector does not know. An identity is whole or refused; never defaulted. Emitted by src/compiler_requires.zig at requirement collection.
     KORU211, // A `#label` anchors a call that never exists at runtime — a keyword/comptime/transform invocation is consumed at compile time, so the anchor emits no `label:` block, every `@label` jump dangles into Zig as `continue :label` against a missing label, and the jump's args get declared with AST-level types (Expression) that do not exist at runtime. A label may only anchor a runtime tor invocation. Emitted by src/flow_checker.zig (040_CONTROL_FLOW/249).
+    KORU212, // A `captured` write under `[parallel]for` is not a provable fold — the non-cell operand reads the partitioned cell, the field is written a second time, or the write sits where the partition walk cannot reach it (a conditional arm, a nested [parallel] scope). Partition without a combine law is a wrong answer. Emitted by src/template_processor.zig at template render — for is a [template] proc, so its refusal surfaces through the render path.
 };
 
 pub const SourceLocation = struct {
