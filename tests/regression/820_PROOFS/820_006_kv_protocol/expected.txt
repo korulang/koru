@@ -1,0 +1,21 @@
+PONG
+ERR NOAUTH
+ERR invalid password
+OK
+OK
+"ada"
+OK
+"koru"
+(integer) 1
+(integer) 2
+"2"
+OK
+"grace"
+ERR value is not an integer
+(integer) 1
+(nil)
+(integer) 0
+(integer) 1
+ERR already authenticated
+ERR unknown command
+bye

@@ -1,0 +1,23 @@
+PING
+SET name ada
+AUTH nope
+AUTH s3cr3t
+SET name ada
+GET name
+SET lang koru
+GET lang
+INCR hits
+INCR hits
+GET hits
+SET name grace
+GET name
+INCR name
+DEL name
+GET name
+DEL name
+INCR name
+AUTH s3cr3t
+WAT is this
+QUIT
+PING
+GET lang
