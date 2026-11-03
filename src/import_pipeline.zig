@@ -91,10 +91,14 @@ fn probeImportExtensions(
     if (resolver.resolveBoth(stem, base_file)) |resolved0| {
         var resolved = resolved0;
         defer resolved.deinit(allocator);
-        if (resolved.file_path != null) {
+        // Early-return only an unambiguous file hit. A dir hit — or an
+        // ambiguous file+dir coexistence (the auto-import parent shape,
+        // `testlib/mymod.kz` beside `testlib/mymod/`) — must fall through
+        // to extension probing so the queued path names a FILE: handing
+        // back the bare stem re-resolves into KORU200 ambiguity.
+        if (resolved.file_path != null and resolved.dir_path == null) {
             return try allocator.dupe(u8, stem);
         }
-        if (resolved.dir_path != null) return null;
     } else |_| {}
     for (file_types.koru_extensions) |ext| {
         const candidate = try std.fmt.allocPrint(allocator, "{s}{s}", .{ stem, ext });
@@ -507,6 +511,7 @@ fn loadKoruFile(
     compiler_flags: []const []const u8,
     report_gates: bool,
 ) !LoadedFile {
+    _ = report_gates; // entry-file-scoped now: imported modules never print gate notices
     const file = try std.fs.cwd().openFile(file_path, .{});
     defer file.close();
 
@@ -519,7 +524,10 @@ fn loadKoruFile(
     const source = try file.readToEndAlloc(parse_allocator, 1024 * 1024);
     var parser = try Parser.init(parse_allocator, source, file_path_owned, compiler_flags, null);
     parser.fail_fast = false;
-    parser.report_gates = report_gates;
+    // Gate notices report the ENTRY file's own conditional imports. An
+    // imported module's internal gates are machinery — printing them leaks
+    // compiler-commands noise into every compile's stderr (broke 110_002/008).
+    parser.report_gates = false;
     defer parser.deinit();
 
     const parse_result = try parser.parse();
