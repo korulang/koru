@@ -11,7 +11,7 @@ decide(layer=elementary)|antiderivative=((-1e0*log((1e0+x)))+inv((1e0+x))+log(x)
 D:inv((1e0+x))
 D:inv((1e0+(x*x)))
 bad-lit
-bad-lit
+C:(i*π)
 C:0e0
 C:0e0
 C:log(x)

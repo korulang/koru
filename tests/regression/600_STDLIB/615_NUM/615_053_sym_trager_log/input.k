@@ -137,7 +137,8 @@ std/sym:lit(atan(x))
 | exact s2 |> std/sym:deriv(a: s2): r |> std/io:print.ln("D:{{ r:s }}") |> std/sym:free(n: r)
 | bad |> std/io:print.ln("bad")
 
-// log(0) and log of a negative literal are named norm errors -> bad literal
+// log(0) stays a named norm error -> bad literal; log(-1) used to refuse
+// LogNeg — post-B3a the principal complex branch answers i*pi
 std/sym:lit(log(0))
 | exact s3 |> std/io:print.ln("C:{{ s3:s }}") |> std/sym:free(n: s3)
 | bad |> std/io:print.ln("bad-lit")

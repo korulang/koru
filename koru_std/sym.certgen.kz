@@ -23,7 +23,7 @@
 // under-determined carrying the (unpackageable) rec for diagnostics.
 // ============================================================================
 
-const CertgenErr = error{ InvHighOrder, SqrtNonPoly, LogNonPoly, AtanNonPoly };
+const CertgenErr = error{ InvHighOrder, SqrtNonPoly, LogNonPoly, AtanNonPoly, ExpNonPoly };
 
 fn biSlice(alloc: std.mem.Allocator, vals: []const i64) ![]BI {
     const out = try alloc.alloc(BI, vals.len);
@@ -174,7 +174,7 @@ fn polyOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!?[]Rat {
             }
             return acc;
         },
-        .sq, .inv, .log, .atan => return null,
+        .sq, .inv, .log, .atan, .exp => return null,
     }
 }
 
@@ -268,6 +268,20 @@ fn certOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!OdeCert {
             const tp = try polyScal(alloc, p, &two);
             defer polyFree(alloc, tp);
             const rat_polys = [2][]const Rat{ ndp, tp };
+            const ips = try intPolysFromRats(alloc, &rat_polys);
+            return .{ .order = 1, .deg = certDegOf(ips), .polys = ips };
+        },
+        .exp => {
+            // y = exp p for poly p:  y' - p' y = 0  ->  p0 = -p', p1 = 1
+            const p = (try polyOfNode(alloc, n.kid)) orelse return CertgenErr.ExpNonPoly;
+            defer polyFree(alloc, p);
+            const dp = try polyDer(alloc, p);
+            defer polyFree(alloc, dp);
+            const ndp = try polyNeg(alloc, dp);
+            defer polyFree(alloc, ndp);
+            const one = try polyOne(alloc);
+            defer polyFree(alloc, one);
+            const rat_polys = [2][]const Rat{ ndp, one };
             const ips = try intPolysFromRats(alloc, &rat_polys);
             return .{ .order = 1, .deg = certDegOf(ips), .polys = ips };
         },
@@ -565,7 +579,7 @@ fn ratFuncOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!?Frac {
             if (fracIsZero(&kf)) return null;
             return try fracInv(alloc, &kf);
         },
-        .sq, .log, .atan => return null,
+        .sq, .log, .atan, .exp => return null,
     }
 }
 
@@ -1644,6 +1658,7 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
             CertgenErr.SqrtNonPoly => structural_refusal = "sqrt-nonpoly",
             CertgenErr.LogNonPoly => structural_refusal = "log-nonpoly",
             CertgenErr.AtanNonPoly => structural_refusal = "atan-nonpoly",
+            CertgenErr.ExpNonPoly => structural_refusal = "exp-nonpoly",
             else => @panic("std/sym:decide-integral"),
         }
         // discovery fallback within declared bounds (witness-grade seed)

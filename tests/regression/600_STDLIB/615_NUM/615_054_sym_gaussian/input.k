@@ -4,7 +4,7 @@ import std/sym
 // B2: the imaginary atom i and the Q(i) constant ring. i*i -> -1e0 is the
 // smallest fold; (a+bi)(c+di) collapses through the ring even beside
 // non-constant factors (i*x*i -> -x); inv is conjugate over norm;
-// sqrt(-d) -> i*sqrt(|d|). log(i) stays symbolic — the complex log is B3.
+// sqrt(-d) -> i*sqrt(|d|). log(i) folds to i*pi/2 — the principal complex log landed in B3a.
 
 std/sym:lit(i)
 | exact a |> std/io:print.ln("{{ a:s }}") |> std/sym:free(n: a)
