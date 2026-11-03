@@ -1,0 +1,9 @@
+words 27
+distinct 7
+top 5:
+1. the 6
+2. of 5
+3. cat 4
+4. dog 4
+5. ant 3
+5 shown

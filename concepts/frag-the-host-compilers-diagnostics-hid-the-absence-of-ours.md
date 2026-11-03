@@ -275,3 +275,25 @@ carried it, so the hole was invisible until a tor tried. The exemption
 predicate described an older version of the injection contract — a
 *checker* borrow, not a diagnostic one: the rule "what counts as injected
 machinery" lived in one place, the contract in another.
+
+## A spelled operator borrows an operand contract that was never declared (2026-11-03)
+
+Every cell above has a rule-shaped hole: a check skipped, a graft that
+crossed a boundary, a feature whose gate lived elsewhere. The binary
+operators add a cell where there was never a rule to begin with. `a < b`
+on `[]u8` operands — and on string literals — clears the frontend, clears
+shape check, and reaches emitted Zig, where `operator < not allowed for
+type '[]u8'` is the first verdict anything renders. Koru owns scalar
+comparisons and has no ordering vocabulary for slices — no compare event,
+no `<` lowering — so the only diagnostic the construct can produce is the
+host's. The distinction that makes it worth a cell of its own: this is not
+a wall Koru built somewhere and failed to place on this path, and not a
+delegation somebody pinned as acceptable — the operand contract of the
+binary operators is *undeclared*, so each combination's verdict is
+whatever the host happens to say about it. It surfaced the same way the
+rest of the family does — a green `-c` and a raw Zig death — while
+spelling top-N word frequency (820_007), where alphabetical tie-break
+wants exactly this primitive. The audit question stretches one more
+notch: not only "where does the refusal come from" but *"was the operand
+space ever declared anywhere"* — an operator whose contract is nowhere is
+a rule every call site borrows from the host.

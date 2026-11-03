@@ -287,3 +287,12 @@ members=2557
 # visitor_emitter_test scaffolding). This commit's only src/ edit is a
 # two-branch guard inside substituteParamNamesInPlainValue
 # (emitter_helpers.zig) — it names no census member.
+# Re-pinned 1981/2557 -> 1981/2558 (2026-11-03): the roll fired on the
+# 820_007 top_words proof commit — zero src/ files staged (a regression
+# test dir + a concept evolve). +1 member of foreign drift accumulated
+# under rolls that missed; the census names the documented
+# emitter_test/visitor_emitter_test decl-literal residual and the
+# flow_checker/shape_checker fn_decl twin (the KORU030 cross-checker
+# class, documented 2026-10-31).
+clusters=1981
+members=2558
