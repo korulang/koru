@@ -1,0 +1,7 @@
+// Koru Standard Library: the `read` part of string.kz — C# facet.
+// One `! text` firing with the whole buffer, valid for the call; GC owns
+// the lifetime question the Zig facet's allocator answers explicitly.
+~proc read|cs {
+    text(s.data);
+    return new Output { tag = "done", done = s.data.Length };
+}

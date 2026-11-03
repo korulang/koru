@@ -26,13 +26,26 @@ round-trip-safe exit:
   (`pop-char` mutates, returns nothing; `contains`/`index-of`/`substring` are
   the only reads).
 
-Why it matters: detach looks like the canonical answer to "how do I get the
-text back out" and silently writes a leak. Its doc says "tracked no further"
-— true of the obligation checker, false of the allocator counter. Programs
-that need produced text back into `for` should reach for the fmt.blk+split
-bridge, not detach; a real `*String → string` read-out leaf (or a disposer
-for detached slices) would retire the detour and is a named gap.
+Evolved 2026-11-03 (gap-detach, same day): the named gap is filled —
+`std/string:read { s: *String<view|instance> } ! text string | done usize`
+lends `s.data` to the arm as an unqualified `string` for the call's duration;
+`for`, `split`, `parse-int` take it directly, one hop, no copy, no ownership
+move (`610_025`). `read` retired as `-> s.data` because up-borrows are
+unpoliceable (KORU095); the `! text` arm is the policeable direction — same
+shape `split` uses for its `! piece` views. The fmt.blk + `split("")` bridge
+still works (820_008 stays green) but is no longer the only exit.
 
-Open question: whether the leak is detach's intended contract ("the next
-holder owns it outright" — but no holder can) or a missing `free` leaf for
-unlabeled owned slices.
+The open question resolves toward "detach's contract is real but host-only":
+its next holder is host machinery (`body_allocated`'s post-send free in
+orisha's `respond-plain`, whose `body: string` param is unqualified — the
+`allocated!` label cannot ride that surface), not a Koru leaf. The leak fires
+when detach is used as a *read-out* — the motive `read` now removes. A
+Koru-level disposer for unlabeled owned slices remains unspellable: `free`
+cannot distinguish an owned slice from a literal, which is what the
+`allocated!` label exists to say.
+
+Measured extras: `s.data` projection on `*String` already reached `for` and
+`split` mechanically (borrow-down) — the gap was first-class surface, not
+capability. `split(s: *String)` still escapes as a raw Zig type error
+(`[]const u8` vs `*String`) rather than a Koru diagnostic — a separate
+checker hole (`string<*>` wildcard admits non-slice base types), unclosed.

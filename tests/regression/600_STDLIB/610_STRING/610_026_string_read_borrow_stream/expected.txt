@@ -1,0 +1,6 @@
+piece a
+piece b
+piece c
+pieces=3
+len=5
+bytes=5

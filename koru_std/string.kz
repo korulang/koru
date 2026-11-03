@@ -6,14 +6,11 @@
 //
 // The String struct carries its allocator, so it can be freed anywhere.
 //
-// Parts:
-// - `~part owning` (string.owning.kz): the ownership hand-offs —
-//   `snapshot` copies out, `detach` moves out.
-// - `~part compare` (string.compare.kz): the comparisons — `contains`,
-//   `index-of` predicates and `cmp`, the byte-lexicographic total order.
-
+// Parts: `~part owning` (hand-offs: copy/move out); `~part compare`
+// (`contains`, `index-of`, `cmp`); `~part read` (lend bytes unqualified).
 ~part owning
 ~part compare
+~part read
 const std = @import("std");
 
 pub const String = struct {

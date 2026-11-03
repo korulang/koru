@@ -1,0 +1,23 @@
+// Koru Standard Library: the `read` part of string.kz.
+// Joined via `~part read` in string.kz; merged into the module at load.
+//
+// `read` retired as `-> s.data` because a returned borrow is unpoliceable:
+// the owner can still discharge or mutate the buffer the borrow points
+// into (KORU095 — borrows flow down, never up). It returns here in the
+// policeable direction: `! text` lends `s.data` to the arm as an
+// unqualified `string` for the call's duration — `for`, `split`,
+// `parse-int` all take it — with no copy (`snapshot`) and no ownership
+// move (`detach`, whose unlabeled owned slice no Koru leaf can dispose:
+// its contract is a custody hand-off to HOST machinery, `body_allocated`'s
+// post-send free — reaching for it to *read* produced text writes the
+// leak the runtime counter catches). This is the produced-text exit the
+// fmt.blk + `split("")` bridge was standing in for (820_008, gap-detach):
+// `*String -> string` in one hop, `for`-acceptable.
+~pub tor read { s: *String<view|instance> }
+! text string
+| done usize
+
+~proc read|zig {
+    text(s.data);
+    return .{ .done = s.data.len };
+}
