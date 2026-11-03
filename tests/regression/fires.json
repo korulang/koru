@@ -105,13 +105,13 @@
       "seat": "flaxen-cricket",
       "contestants": 3,
       "yield": {
-        "landed": 0,
+        "landed": 3,
         "evaporated": 0,
-        "pins_added": 0,
+        "pins_added": 3,
         "pins_greened": 0,
-        "novel": "pending"
+        "novel": true
       },
-      "note": "FIRST FIRE of new generator \u2014 surface-gap.signal as catalog: gap-del (string-map del verb, w1C:p5Q), gap-lt (string ordering, w1C:p5R), gap-detach (fmt.blk split finding, w1C:p5S). Row finalizes at judging."
+      "note": "3/3 landed: string:cmp (eeee53fb4), string-map:del+map:del (8837646df), string:read (merge 94d9567fb). Each closed a gap the demonstrations surfaced days earlier \u2014 self-feeding loop proven. Residuals: '<'-on-strings NEEDS_RULING; split(*String) raw-Zig-error not Koru diagnostic; 820_006 -1 respell owed."
     }
   ],
   "end_of_road": {
