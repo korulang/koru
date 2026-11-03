@@ -7,8 +7,11 @@
 ~import std/io
 
 const req_hit = "GET /t HTTP/1.1\r\n\r\n";
+var exchange_hit = koru_orisha.koru_pump.Exchange{ .fd = 0, .raw = req_hit };
 const req_get = "GET /miss HTTP/1.1\r\n\r\n";
+var exchange_get = koru_orisha.koru_pump.Exchange{ .fd = 0, .raw = req_get };
 const req_post = "POST /miss HTTP/1.1\r\n\r\n";
+var exchange_post = koru_orisha.koru_pump.Exchange{ .fd = 0, .raw = req_post };
 
 ~orisha:handler = orisha:router(req)
 ! [GET /t] -> { status: 200, body: "t", content_type: "text/plain" }
@@ -16,6 +19,9 @@ const req_post = "POST /miss HTTP/1.1\r\n\r\n";
     | c m when m == "POST" -> { status: 405, body: "post", content_type: "text/plain" }
     | c _ -> { status: 404, body: "other", content_type: "text/plain" }
 
-~orisha:answer(raw: req_hit, fd: 0): a |> std/io:print.ln("{{ a.body:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)
-~orisha:answer(raw: req_get, fd: 0): b |> std/io:print.ln("{{ b.body:s }}") |> orisha:release-body(b.body, allocated: b.body_allocated)
-~orisha:answer(raw: req_post, fd: 0): c |> std/io:print.ln("{{ c.body:s }}") |> orisha:release-body(c.body, allocated: c.body_allocated)
+// [GET /t] is request-free — the router collects literal '->' arms into
+// handler-lite and a lite hit ships the complete pre-rendered response
+// head-carried (a.body is empty by design), so this answer reads a.head.
+~orisha:answer(x: &exchange_hit): a |> std/io:print.ln("{{ a.head:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)
+~orisha:answer(x: &exchange_get): b |> std/io:print.ln("{{ b.body:s }}") |> orisha:release-body(b.body, allocated: b.body_allocated)
+~orisha:answer(x: &exchange_post): c |> std/io:print.ln("{{ c.body:s }}") |> orisha:release-body(c.body, allocated: c.body_allocated)

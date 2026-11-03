@@ -7,6 +7,7 @@
 ~import std/io
 
 const raw = "GET / HTTP/1.1\r\n\r\n";
+var exchange = koru_orisha.koru_pump.Exchange{ .fd = 0, .raw = raw };
 
 ~pub tor label {} -> string
 
@@ -18,4 +19,4 @@ const raw = "GET / HTTP/1.1\r\n\r\n";
 ! [GET /] |> label(): c -> { status: 200, body: c, content_type: "text/plain" }
 ! [*] -> { status: 404, body: "miss", content_type: "text/plain" }
 
-~orisha:answer(raw, fd: 0): a |> std/io:print.ln("{{ a.body:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)
+~orisha:answer(x: &exchange): a |> std/io:print.ln("{{ a.body:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)

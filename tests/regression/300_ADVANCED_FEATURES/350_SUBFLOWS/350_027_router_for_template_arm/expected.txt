@@ -1,3 +1,9 @@
+HTTP/1.1 200 OK
+Content-Length: 1
+Content-Type: text/plain
+X-Powered-By: koru/orisha
+X-Orisha: reactor
+
 t
 tick
 tick

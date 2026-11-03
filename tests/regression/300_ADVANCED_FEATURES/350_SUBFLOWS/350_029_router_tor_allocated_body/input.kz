@@ -12,6 +12,7 @@
 const std = @import("std");
 
 const raw = "GET / HTTP/1.1\r\n\r\n";
+var exchange = koru_orisha.koru_pump.Exchange{ .fd = 0, .raw = raw };
 
 ~tor render {} -> string<std/io:allocated!>
 
@@ -24,4 +25,4 @@ const raw = "GET / HTTP/1.1\r\n\r\n";
 ! [GET /] |> render(): b -> { status: 200, body: b, content_type: "text/html" }
 ! [*] -> { status: 404, body: "miss", content_type: "text/plain" }
 
-~orisha:answer(raw, fd: 0): a |> std/io:print.ln("{{ a.body:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)
+~orisha:answer(x: &exchange): a |> std/io:print.ln("{{ a.body:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)
