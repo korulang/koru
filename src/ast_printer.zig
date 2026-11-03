@@ -31,14 +31,21 @@ pub const PrintError = error{
     UnprintableNode,
 };
 
-pub fn printProgram(allocator: std.mem.Allocator, program: *const ast.Program) PrintError![]u8 {
-    var p = Printer{ .allocator = allocator };
+pub const PrintOptions = struct {
+    /// The sigil that opens a Koru construct: `~` in host-embedded facets
+    /// (.kz/.kjs), empty in a pure-Koru `.k` where the sigil cannot appear.
+    tilde: []const u8 = "~",
+};
+
+pub fn printProgram(allocator: std.mem.Allocator, program: *const ast.Program, opts: PrintOptions) PrintError![]u8 {
+    var p = Printer{ .allocator = allocator, .tilde = opts.tilde };
     errdefer p.buf.deinit(allocator);
 
     // Module-level annotations: a bare `~[comptime]` line at the top (210_010).
     // The tree holds them as a program-level list, order-free wrt items.
     if (program.module_annotations.len != 0) {
-        try p.write("~[");
+        try p.write(p.tilde);
+        try p.write("[");
         for (program.module_annotations, 0..) |ann, i| {
             if (i > 0) try p.write("|");
             try p.write(ann);
@@ -87,6 +94,9 @@ fn isCommentLine(content: []const u8) bool {
 const Printer = struct {
     allocator: std.mem.Allocator,
     buf: std.ArrayList(u8) = .{},
+    /// `~` in host-embedded facets, empty under `.k` — same role as
+    /// `Parser.tilde()`, keyed the opposite direction (print vs parse).
+    tilde: []const u8 = "~",
 
     fn write(self: *Printer, s: []const u8) PrintError!void {
         try self.buf.appendSlice(self.allocator, s);
@@ -184,7 +194,7 @@ const Printer = struct {
             if (!aliasIsDerived(ln, imp.path))
                 return self.unprintable("import alias (spelling not grounded)");
         }
-        try self.print("~import {s}\n", .{imp.path});
+        try self.print("{s}import {s}\n", .{ self.tilde, imp.path });
     }
 
     fn aliasIsDerived(local: []const u8, path: []const u8) bool {
@@ -236,7 +246,7 @@ const Printer = struct {
     }
 
     fn printEventDecl(self: *Printer, ev: *const ast.EventDecl) PrintError!void {
-        try self.write("~");
+        try self.write(self.tilde);
         try self.printAnnotationBlock(ev.annotations, ev.prose);
         if (ev.is_public) try self.write("pub ");
         try self.write("tor ");
@@ -347,7 +357,7 @@ const Printer = struct {
     // ── proc declarations ────────────────────────────────────────────────
 
     fn printProcDecl(self: *Printer, pr: *const ast.ProcDecl) PrintError!void {
-        try self.write("~");
+        try self.write(self.tilde);
         try self.printAnnotationBlock(pr.annotations, pr.prose);
         if (pr.is_public) try self.write("pub ");
         try self.write("proc ");
@@ -365,7 +375,7 @@ const Printer = struct {
     fn printImmediateImpl(self: *Printer, imm: *const ast.ImmediateImpl) PrintError!void {
         if (imm.annotations.len > 0)
             return self.unprintable("immediate_impl annotations (spelling not grounded)");
-        try self.write("~");
+        try self.write(self.tilde);
         try self.writePath(&imm.event_path);
         try self.printCtor(&imm.value);
         try self.write("\n");
@@ -419,7 +429,7 @@ const Printer = struct {
         // super_shape is derived during parse for inline flows; reparse of the
         // printed source recomputes it — nothing to print.
 
-        try self.write("~");
+        try self.write(self.tilde);
         // Flow annotations: `~[comptime] validateConventions()` (210_030).
         if (fl.annotations.len > 0) {
             try self.write("[");
@@ -783,12 +793,12 @@ fn expectRoundTrip(source: []const u8) !void {
     var parser1 = try Parser.init(a, source, "test.kz", &[_][]const u8{}, null);
     var result1 = try parser1.parse();
     const canon1 = try ast_json.serializeCanon(a, &result1.source_file);
-    const print1 = try printProgram(a, &result1.source_file);
+    const print1 = try printProgram(a, &result1.source_file, .{});
 
     var parser2 = try Parser.init(a, print1, "test.kz", &[_][]const u8{}, null);
     var result2 = try parser2.parse();
     const canon2 = try ast_json.serializeCanon(a, &result2.source_file);
-    const print2 = try printProgram(a, &result2.source_file);
+    const print2 = try printProgram(a, &result2.source_file, .{});
 
     try std.testing.expectEqualStrings(canon1, canon2);
     try std.testing.expectEqualStrings(print1, print2);

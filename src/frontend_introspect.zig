@@ -8,6 +8,7 @@ const TypeRegistry = @import("type_registry").TypeRegistry;
 const ModuleResolver = @import("module_resolver").ModuleResolver;
 const Config = @import("config").Config;
 const file_types = @import("file_types");
+const lexer = @import("lexer");
 const import_pipeline = @import("import_pipeline.zig");
 const frontend_diagnostics = @import("frontend_diagnostics.zig");
 
@@ -83,8 +84,7 @@ fn prepareSourceWithCompilerInject(
     inject_compiler: bool,
 ) !struct { final_source: []const u8, user_source: []const u8, bootstrap_line_offset: usize } {
     const user_already_imported_compiler =
-        std.mem.indexOf(u8, source, "~import std/compiler") != null or
-        std.mem.indexOf(u8, source, "import std/compiler") != null;
+        try lexer.declaresCompilerImport(parse_allocator, source);
 
     if (inject_compiler and !user_already_imported_compiler) {
         const input_basename = std.fs.path.basename(file_path);

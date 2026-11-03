@@ -84,11 +84,26 @@ fn probeImportExtensions(
     stem: []const u8,
     base_file: []const u8,
 ) !?[]u8 {
+    // Resolve the bare stem first: a multi-segment alias (`vend/pkg`, the
+    // grammar koru.json and std/compiler:paths share) only matches at a `/`
+    // boundary, so appending `.kz` to the spelling would defeat the alias.
+    // resolveKoruFile inside resolveBoth already probes every extension.
+    if (resolver.resolveBoth(stem, base_file)) |resolved0| {
+        var resolved = resolved0;
+        defer resolved.deinit(allocator);
+        if (resolved.file_path != null) {
+            return try allocator.dupe(u8, stem);
+        }
+        if (resolved.dir_path != null) return null;
+    } else |_| {}
     for (file_types.koru_extensions) |ext| {
         const candidate = try std.fmt.allocPrint(allocator, "{s}{s}", .{ stem, ext });
         var maybe = resolver.resolveBoth(candidate, base_file) catch |err| {
             allocator.free(candidate);
-            if (err == error.ModuleNotFound) continue;
+            // A probe is speculative: an unregistered alias is a miss, the
+            // same as a registered one with no file. The import itself
+            // reports an unregistered alias at its own resolve site.
+            if (err == error.ModuleNotFound or err == error.UnknownImportAlias) continue;
             return err;
         };
         defer maybe.deinit(allocator);
@@ -188,9 +203,11 @@ fn queueIndexImport(
     // If import_path starts with `./` or `/`, it's not an aliased import
     if (std.mem.startsWith(u8, import_path, "./") or std.mem.startsWith(u8, import_path, "/") or import_path.len == 0) return;
 
-    // Find the alias part
+    // The alias is the LONGEST registered prefix (`vend/pkg`), not the first
+    // segment — first-segment splitting predates multi-segment aliases and
+    // probes an index (`vend/index`) in a root the import never named.
     const slash_pos = std.mem.indexOf(u8, import_path, "/") orelse return;
-    const alias = import_path[0..slash_pos]; // e.g., "std"
+    const alias = resolver.longestAlias(import_path) orelse import_path[0..slash_pos];
 
     // Build index stem and probe each Koru extension (alias/index.kz,
     // alias/index.kjs, ...). First hit wins.
@@ -217,10 +234,9 @@ fn queueIndexImport(
         }
     }
 
-    // Namespace is just the alias name (e.g., "std")
-    const alias_name = alias;
+    // Namespace is the dotted alias name (e.g., "std", "vend.pkg")
     const index_path_owned = try allocator.dupe(u8, index_path);
-    const index_local_name = try allocator.dupe(u8, alias_name);
+    const index_local_name = try deriveCanonicalName(allocator, alias);
 
     log.debug("AUTO-IMPORT: Queueing index '{s}' (namespace: {s})\n", .{ index_path_owned, index_local_name });
 

@@ -388,6 +388,37 @@ pub fn stripLineComments(allocator: std.mem.Allocator, text: []const u8) ![]cons
     return out.toOwnedSlice(allocator);
 }
 
+/// True when `source` declares the compiler-env import — a line whose first
+/// token (after optional whitespace and the host-embedded `~`) is `import`,
+/// followed by exactly `std/compiler`. A comment or a string that merely
+/// mentions the text does not count (310_152: the env injection keys off
+/// this predicate, and a comment naming the import suppressed it, stranding
+/// every `std/compiler:` host-type reference in the stdlib).
+pub fn declaresCompilerImport(allocator: std.mem.Allocator, source: []const u8) !bool {
+    const stripped = try stripLineComments(allocator, source);
+    defer if (stripped.ptr != source.ptr) allocator.free(stripped);
+
+    var lines = std.mem.splitScalar(u8, stripped, '\n');
+    while (lines.next()) |line| {
+        var rest = std.mem.trimLeft(u8, line, " \t");
+        if (rest.len > 0 and rest[0] == '~') rest = std.mem.trimLeft(u8, rest[1..], " \t");
+        if (!std.mem.startsWith(u8, rest, "import")) continue;
+        rest = rest["import".len..];
+        if (rest.len == 0 or (rest[0] != ' ' and rest[0] != '\t')) continue;
+        rest = std.mem.trimLeft(u8, rest, " \t");
+        if (!std.mem.startsWith(u8, rest, "std/compiler")) continue;
+        rest = rest["std/compiler".len..];
+        // `std/compilerx` or `std/compiler/sub` is a different module — only a
+        // boundary after `compiler` counts as declaring the env import. `.`
+        // is a boundary: `std/compiler.kz` is the same module spelled with an
+        // explicit extension (406_import_explicit_extension).
+        if (rest.len > 0 and
+            (std.ascii.isAlphanumeric(rest[0]) or rest[0] == '_' or rest[0] == '/' or rest[0] == '-')) continue;
+        return true;
+    }
+    return false;
+}
+
 /// Count the net brace depth change in a string, skipping braces inside strings and comments.
 /// Returns positive for net opens, negative for net closes.
 /// Use this instead of naive `for (line) |c| if (c == '{') depth += 1` patterns.

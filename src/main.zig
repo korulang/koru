@@ -3229,12 +3229,49 @@ fn glancePrintEvent(ed: *const ast.EventDecl, sites: []const site_hash.Site) voi
     std.debug.print("  {s}:{d}\n", .{ base, ed.location.line });
 }
 
-fn runGlance(source_file: *const ast.Program, app_only: bool) void {
+/// The dotted namespace an import decl names (`std/io` → `std.io`), the same
+/// derivation the parser puts in local_name.
+fn importNamespace(alloc: std.mem.Allocator, imp: *const ast.ImportDecl) ![]const u8 {
+    // local_name/path are AST-owned (parse_allocator) — borrowed, never freed.
+    if (imp.local_name) |ln| return ln;
+    var base = imp.path;
+    if (file_types.koruExtensionOf(base)) |ext| base = base[0 .. base.len - ext.len];
+    const out = try alloc.dupe(u8, base);
+    for (out) |*c| {
+        if (c.* == '/') c.* = '.';
+    }
+    return out;
+}
+
+/// `ns` reaches `name` when it names the module, a module under it (a
+/// directory import's `ns.*` submodules), or a module above it (an import of
+/// `a/b/c` auto-pulls the `a.b` parent — its surface is in the program).
+fn namespaceCovers(ns: []const u8, name: []const u8) bool {
+    if (std.mem.eql(u8, ns, name)) return true;
+    if (std.mem.startsWith(u8, name, ns) and name.len > ns.len and name[ns.len] == '.') return true;
+    if (std.mem.startsWith(u8, ns, name) and ns.len > name.len and ns[name.len] == '.') return true;
+    return false;
+}
+
+/// A module belongs to the program's declaration surface when the entry file
+/// imports it — directly, as a directory (`ns.*` submodules), or as an
+/// auto-pulled ancestor (`import a/b/c` queues `a.b`). Modules that only ride
+/// inside another module's imports — including the whole injected
+/// compiler-env subtree — are not the program's surface (310_151).
+fn moduleInProgramSurface(mod_name: []const u8, program_imports: []const []const u8) bool {
+    for (program_imports) |ns| {
+        if (namespaceCovers(ns, mod_name)) return true;
+    }
+    return false;
+}
+
+fn runGlance(source_file: *const ast.Program, app_only: bool, program_imports: []const []const u8) void {
     std.debug.print("📄 glance\n", .{});
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const sites = site_hash.collectSites(arena.allocator(), source_file) catch &.{};
+    const alloc = arena.allocator();
+    const sites = site_hash.collectSites(alloc, source_file) catch &.{};
 
     var main_count: usize = 0;
     for (source_file.items) |item| {
@@ -3252,6 +3289,7 @@ fn runGlance(source_file: *const ast.Program, app_only: bool) void {
         const mod = item.module_decl;
         if (app_only and (std.mem.startsWith(u8, mod.logical_name, "std") or
             std.mem.startsWith(u8, mod.logical_name, "koru"))) continue;
+        if (!moduleInProgramSurface(mod.logical_name, program_imports)) continue;
         var n: usize = 0;
         for (mod.items) |mi| {
             if (mi == .event_decl) n += 1;
@@ -8027,10 +8065,11 @@ pub fn main() !void {
     // Detect the actual IMPORT statement — not any `std/compiler` occurrence.
     // `~std/compiler:requires { .. }` is a directive, not an import; matching bare
     // `std/compiler` there falsely skipped the bootstrap inject under the `/`
-    // namespace (it didn't under the old `std.compiler` spelling).
+    // namespace (it didn't under the old `std.compiler` spelling). A comment or
+    // string mentioning the text is not a declaration either (310_152), so the
+    // predicate is lexical: `import std/compiler` must open a line's statement.
     const user_already_imported_compiler =
-        std.mem.indexOf(u8, source, "~import std/compiler") != null or
-        std.mem.indexOf(u8, source, "import std/compiler") != null;
+        try lexer.declaresCompilerImport(parse_allocator, source);
     const final_source = if (inject_compiler and !user_already_imported_compiler) blk: {
         log.debug("DEBUG: Auto-injecting compiler import\n", .{});
         // Pure `.k` synthesizes `~` on `import`; host-embedded `.k*` files need `~import`.
@@ -8137,7 +8176,29 @@ pub fn main() !void {
     if (print_mode) {
         try exitOnUnparseable(&parser.reporter, &source_file);
         const ast_printer = @import("ast_printer");
-        const printed = try ast_printer.printProgram(compile_allocator, &source_file);
+        // Canonical source is what the file says: the injected env import is a
+        // line nobody wrote, and a `.k` print carries no `~` sigils — the
+        // output must re-parse in the source's own facet (310_150).
+        var print_program = source_file;
+        if (inject_compiler and !user_already_imported_compiler) {
+            var filtered = try std.ArrayList(ast.Item).initCapacity(compile_allocator, print_program.items.len);
+            var dropped = false;
+            for (print_program.items) |item| {
+                if (!dropped and item == .import_decl and
+                    item.import_decl.location.line <= parser.reporter.injection_line_count and
+                    std.mem.eql(u8, item.import_decl.path, "std/compiler"))
+                {
+                    dropped = true;
+                    continue;
+                }
+                try filtered.append(compile_allocator, item);
+            }
+            print_program.items = filtered.items;
+        }
+        const print_ext = file_types.koruExtensionOf(std.fs.path.basename(input));
+        const printed = try ast_printer.printProgram(compile_allocator, &print_program, .{
+            .tilde = if (print_ext != null and std.mem.eql(u8, print_ext.?, ".k")) "" else "~",
+        });
         try printStdout(allocator, "{s}", .{printed});
         return;
     }
@@ -8245,7 +8306,7 @@ pub fn main() !void {
         // mode off the extension), with the same compiler import a real .k
         // compile synthesizes. A refusal here is a tool bug, not a file bug —
         // the AST already proved the content.
-        const needs_import = std.mem.indexOf(u8, stripped.items, "import std/compiler") == null;
+        const needs_import = !try lexer.declaresCompilerImport(parse_allocator, stripped.items);
         const verify_source = if (needs_import)
             try std.fmt.allocPrint(parse_allocator, "import std/compiler\n{s}", .{stripped.items})
         else
@@ -8602,6 +8663,20 @@ pub fn main() !void {
         }
     }
 
+    // Capture the namespaces the entry file imports, skipping the injected
+    // compiler-env import — glance filters the merged tree down to modules
+    // the program itself names (310_151), and combineImports consumes these
+    // decls, so the capture has to happen while they are still visible.
+    var program_import_namespaces = std.ArrayList([]const u8){};
+    defer program_import_namespaces.deinit(allocator);
+    for (source_file.items) |item| {
+        if (item != .import_decl) continue;
+        const imp = item.import_decl;
+        if (imp.location.line <= parser.reporter.injection_line_count and
+            std.mem.eql(u8, imp.path, "std/compiler")) continue;
+        try program_import_namespaces.append(allocator, try importNamespace(parse_allocator, &imp));
+    }
+
     // Process imports - extract public events from imported modules
     const combine_result = try import_pipeline.combineImports(
         allocator,
@@ -8661,7 +8736,7 @@ pub fn main() !void {
             for (args) |a| {
                 if (std.mem.eql(u8, a, "--app")) glance_app_only = true;
             }
-            runGlance(&source_file, glance_app_only);
+            runGlance(&source_file, glance_app_only, program_import_namespaces.items);
             return;
         }
         if (std.mem.eql(u8, cmd, "at")) {

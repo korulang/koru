@@ -587,6 +587,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("validate_contract_impl", validate_contract_impl_module);
     exe.root_module.addImport("resolve_abstract_impl", resolve_abstract_impl_module);
     exe.root_module.addImport("flow_parser", flow_parser_module);
+    exe.root_module.addImport("comptime_eval", comptime_eval_module);
     exe.root_module.addImport("flow_checker", flow_checker_module);
     exe.root_module.addImport("branch_checker", branch_checker_module);
     exe.root_module.addImport("codegen_utils", codegen_utils_module);

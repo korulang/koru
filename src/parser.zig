@@ -4071,9 +4071,10 @@ pub const Parser = struct {
         return if (self.is_k) "" else "~";
     }
 
-    /// An import alias has to be a bare identifier, because every use site is
-    /// `alias/rest` and the first segment is split on `/`. Same rule the import
-    /// validator applies, so anything declared here is usable there.
+    /// One SEGMENT of an import alias is a bare identifier. An alias key may
+    /// itself be a module prefix (`vend/pkg`) — `isUsableModulePrefix` checks
+    /// each segment — because resolution matches the LONGEST declared prefix
+    /// (module_resolver.longestAliasMatch), not the first segment.
     fn isUsableAlias(alias: []const u8) bool {
         if (alias.len == 0) return false;
         if (!std.ascii.isAlphabetic(alias[0]) and alias[0] != '_') return false;
@@ -4125,10 +4126,11 @@ pub const Parser = struct {
             const alias = lexer.trim(line[0..colon]);
             const target = lexer.trim(line[colon + 1 ..]);
 
-            if (!isUsableAlias(alias)) {
-                return self.fail(.KORU172, directive_line, 1, "std/compiler:paths - `{s}` cannot be an import alias; an alias is a bare identifier (letters, digits, `_`), because every use site splits on the first `/`", .{alias});
+            if (!isUsableModulePrefix(alias)) {
+                return self.fail(.KORU172, directive_line, 1, "std/compiler:paths - `{s}` cannot be an import alias; each segment is a bare identifier (letters, digits, `_`) separated by `/`", .{alias});
             }
-            if (std.mem.eql(u8, alias, "main")) {
+            const first_segment = if (std.mem.indexOfScalar(u8, alias, '/')) |s| alias[0..s] else alias;
+            if (std.mem.eql(u8, first_segment, "main")) {
                 return self.fail(.KORU172, directive_line, 1, "std/compiler:paths - the alias `main` is reserved for the entry module", .{});
             }
             if (target.len == 0) {

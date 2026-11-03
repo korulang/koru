@@ -588,6 +588,14 @@ pub const ModuleResolver = struct {
     ///
     /// Single-segment keys keep their exact old meaning (`std` still covers
     /// `std/io`), so this is a pure widening of what koru.json can say.
+    /// The registered alias covering `import_path` (longest prefix at a `/`
+    /// boundary) — public so import_pipeline can build probes (index, parent)
+    /// against the REAL alias instead of the first segment, which diverges
+    /// the moment an alias is itself a module prefix (`vend/pkg`).
+    pub fn longestAlias(self: *ModuleResolver, import_path: []const u8) ?[]const u8 {
+        return self.longestAliasMatch(import_path);
+    }
+
     fn longestAliasMatch(self: *ModuleResolver, import_path: []const u8) ?[]const u8 {
         var best: ?[]const u8 = null;
         var iter = self.config.paths.iterator();

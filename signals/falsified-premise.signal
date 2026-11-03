@@ -1,0 +1,6 @@
+name: falsified-premise
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: folded into `defect` — declare that name. (orphan drained 2026-11-03)
