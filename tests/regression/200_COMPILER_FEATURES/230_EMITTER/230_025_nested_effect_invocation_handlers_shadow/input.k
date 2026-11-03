@@ -1,9 +1,13 @@
-// PINS: a nested effectful invocation inside an effect arm body emits
-// `const Handlers_0` at the same block scope as the enclosing chain's
-// `Handlers_0` — the result_counter that names synthesized handler
-// structs restarts per emission context but the Zig block scope is
-// shared, so the inner site shadows the outer and the emitted file
-// dies on 'local constant shadows' in the backing compiler.
+// PINS: a nested effectful invocation inside an effect arm body gets its
+// own `Handlers_N` — the counter that names synthesized handler structs is
+// unique across emission contexts, so a `query()` inside `! tick` emits
+// `Handlers_1` beside the enclosing chain's `Handlers_0` and the emitted
+// file compiles.
+//
+// This was pinned as MUST_ERROR against the 'local constant shadows' death
+// (result_counter restarted per emission context while the Zig block scope
+// was shared); 660b2b4ba made the numbering unique and the pin is now the
+// positive form: it compiles AND runs — `w 42 d 1 n 5`.
 //
 // Surfaced by koru-libs/clay/tests/gallery_comp.k: a `clay:each` inside
 // `! frame` collided with `frames`' own Handlers as two module-level
