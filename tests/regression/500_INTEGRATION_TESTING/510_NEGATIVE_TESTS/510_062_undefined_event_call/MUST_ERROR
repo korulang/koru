@@ -1,0 +1,10 @@
+VALIDATION TEST: calling a tor that does not exist MUST FAIL.
+
+`nonexistent(x: 1)` names nothing in the program. The refusal must say WHICH
+tor is unknown — a bare "unknown event" sent the author hunting (the original
+pin's complaint). The diagnostic today is
+
+    error[KORU040]: unknown tor 'input:nonexistent'
+
+which carries the qualified name — exactly what the pin asked for. If this
+test PASSES, undefined-call rejection is BROKEN.

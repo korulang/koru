@@ -1,0 +1,8 @@
+VALIDATION TEST: a jump to a label that was never opened MUST FAIL.
+
+`foo() |> @loop` targets `@loop` with no matching `#loop` in the program. The
+refusal must name the label — the diagnostic today is
+
+    error[KORU041]: unknown label '@loop'
+
+If this test PASSES, orphan-jump rejection is BROKEN.

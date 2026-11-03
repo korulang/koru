@@ -1,1 +1,1 @@
-Unknown tor referenced
+error[KORU040]: unknown tor 'input:nonexistent'
