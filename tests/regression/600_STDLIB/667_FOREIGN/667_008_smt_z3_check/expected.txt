@@ -1,0 +1,13 @@
+sat smt:v1;x=4;y=7
+unsat
+sat smt:v1;b=true;x=1
+sat smt:v1;x=3
+sat smt:v1;x=123456789012345678901234567890
+sat smt:v1;x=2
+sat smt:v1;x=-4
+bad:unknown-var:y
+sat smt:v1
+bad:toplevel-not-check:frobnicate
+bad:declare-sort:real
+bad:cmp-int-expected:<
+bad:trailing-input
