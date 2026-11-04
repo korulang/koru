@@ -1,0 +1,11 @@
+hs:decide(layer=holonomic-special)|note=risch-de-proven-non-elementary:no-rational-R:simple-pole;integrand-cert-theorem-grade|integrand=ode(k=1,d=1,via=of)|p0=[1,-1]|p1=[0,1]|antiderivative=ode(k=2,d=1,via=shift)|p0=[0]|p1=[1,-1]|p2=[0,1]
+hs:decide(layer=holonomic-special)|note=risch-de-proven-non-elementary:no-rational-R:degree-argument;integrand-cert-theorem-grade|integrand=ode(k=1,d=1,via=of)|p0=[2,-1]|p1=[0,1]|antiderivative=ode(k=2,d=1,via=shift)|p0=[0]|p1=[2,-1]|p2=[0,1]
+decide(layer=elementary)|antiderivative=(exp(x)*inv(x))|note=risch-exp-monomial-den-bound;checked-exact
+decide(layer=elementary)|antiderivative=(exp(x)*inv((1e0+(x*x))))|note=risch-exp-monomial-den-bound;checked-exact
+hs:decide(layer=holonomic-special)|note=risch-de-proven-non-elementary:no-rational-R:degree-argument;integrand-cert-theorem-grade|integrand=ode(k=1,d=1,via=of)|p0=[3,-1]|p1=[0,1]|antiderivative=ode(k=2,d=1,via=shift)|p0=[0]|p1=[3,-1]|p2=[0,1]
+decide(layer=elementary)|antiderivative=((5e-1*x*x)+exp(x))|note=risch-sum-split-constructed;terms=2
+decide(layer=elementary)|antiderivative=((-1e0*exp((-1e0*x)))+exp(x))|note=risch-sum-split-constructed;terms=2
+decide(layer=elementary)|antiderivative=((5e-1*x*x)+(exp(x)*inv(x)))|note=risch-sum-split-constructed;terms=2
+hs:decide(layer=holonomic-special)|note=no-risch-elementary-form-not-constructed;integrand-cert-theorem-grade;lane=sum-term-holonomic-special:0|integrand=ode(k=2,d=3,via=of)|p0=[2,0,4]|p1=[0,-2,0,-4]|p2=[-1,0,2]|antiderivative=ode(k=3,d=3,via=shift)|p0=[0]|p1=[2,0,4]|p2=[0,-2,0,-4]|p3=[-1,0,2]
+decide(layer=elementary)|antiderivative=(((5e-1*x*x)+exp(x))*i)|note=risch-sum-split-constructed;terms=2
+decide(layer=elementary)|antiderivative=((5e-1*x*x)+log(x))|note=hermite+trager-constructed;checked-exact
