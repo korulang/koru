@@ -3,9 +3,11 @@
 //
 // Port source: isa-physics `plex/lib/structural_arithmetic/tensor_quantity.py`
 // (Q = dimension + magnitude + uncertainty) and the isar-proofs
-// `ISAR/QuantityKernel.lean` (DimExpr free abelian group over the 7 SI bases,
-// MetricExpr exact-rational layer, propagateVarAdd/Mul linearized variance
-// laws plus the shared-source covariance term).
+// `ISAR/QuantityKernel.lean`. In that file DimExpr is a syntax tree — no
+// normalization to exponent vectors and no group theorem; addQ compares
+// trees syntactically, and quantity equivalence is carried by the named
+// quantityToNat axioms. The zig Dim = [7]i32 IS the normalized exponent
+// vector the Lean side does not construct.
 //
 // A `qty` is ONE canonical marked string:
 //     "<num>|<dim>|<unc>[@<cov>]"

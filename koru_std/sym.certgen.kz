@@ -5,8 +5,10 @@
 //   certWrite/OdeCert), certcomp (Poly/Frac closure algebra, certBridge,
 //   recWrite, certClosure).
 //
-// cert-of derives the ODE STRUCTURALLY — theorem-level, no series
-// witness (HolonomicClosure.lean semantics):
+// cert-of derives the ODE STRUCTURALLY — each rule a math identity, no
+// series witness. Lean coverage is narrower than this file:
+// HolonomicClosure.lean proves order-1 product, constant-rate sum, and
+// integral_closure_shift; the general m+n elimination is zig-only:
 //   dec        -> f' = 0
 //   x          -> x f' - f = 0
 //   a + b      -> certClosure sum
@@ -210,7 +212,7 @@ fn certLeafVar(alloc: std.mem.Allocator) !OdeCert {
     return .{ .order = 1, .deg = 1, .polys = polys };
 }
 
-// Structural (theorem-level) ODE derivation.
+// Structural ODE derivation — rule-per-node-kind; output is not minimal-order.
 fn certOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!OdeCert {
     switch (n.kind) {
         .dec => return certLeafConst(alloc),
@@ -407,7 +409,7 @@ fn cserWrite(alloc: std.mem.Allocator, total: usize, coeffs: []const Rat, ode_te
 // Tors.
 // ============================================================================
 
-// Structural ODE derivation — theorem-level, no series witness.
+// Structural ODE derivation — no series witness; see certClosure for order caveats.
 ~pub tor cert-of { a: string<!sexpr> }
 | exact string<std/io:allocated!>
 | not-holonomic string<std/io:allocated!>
@@ -1704,7 +1706,7 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
 
 // decide-integral: elementary construction for polynomial integrands;
 // otherwise the holonomic-special lane — structural cert-of preferred
-// (theorem-grade), bounded derive-ode as the discovery fallback
+// (each rule a math identity), bounded derive-ode as the discovery fallback
 // (witness-grade seed, flagged). Matches the artifact's layer order:
 // elementary-construct first, certified antiderivative via
 // integral-shift second, unresolved with named evidence last.
@@ -2192,17 +2194,17 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
     var note_buf: ?[]u8 = null;
     defer if (note_buf) |b| alloc.free(b);
     const note: []const u8 = if (de_proven) |p| blk: {
-        note_buf = std.fmt.allocPrint(alloc, "risch-de-proven-non-elementary:{s};integrand-cert-theorem-grade", .{p}) catch @panic("std/sym:decide-integral");
+        note_buf = std.fmt.allocPrint(alloc, "risch-de-proven-non-elementary:{s};integrand-cert-structural", .{p}) catch @panic("std/sym:decide-integral");
         break :blk note_buf.?;
     } else if (lane_extra) |x| blk: {
         const base = if (structural_refusal == null)
-            "no-risch-elementary-form-not-constructed;integrand-cert-theorem-grade"
+            "no-risch-elementary-form-not-constructed;integrand-cert-structural"
         else
             "no-risch-elementary-form-not-constructed;seed-finite-witness";
         note_buf = std.fmt.allocPrint(alloc, "{s};lane={s}", .{ base, x }) catch @panic("std/sym:decide-integral");
         break :blk note_buf.?;
     } else if (structural_refusal == null)
-        "no-risch-elementary-form-not-constructed;integrand-cert-theorem-grade"
+        "no-risch-elementary-form-not-constructed;integrand-cert-structural"
     else
         "no-risch-elementary-form-not-constructed;seed-finite-witness";
     const blob = decideIntegNote("holonomic-special", note, odet, st) catch @panic("std/sym:decide-integral");

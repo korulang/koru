@@ -22,10 +22,11 @@
 //   rel-norm   reg, expr      -> exact text | unknown-generator | bad
 //
 // rel-derive applies the declared laws mechanically (chain rule) and returns
-// the normalized canonical text — theorem-grade, since each step is the
-// derivative rule or a declared law substitution. rel-norm gives the canonical
-// form: two expressions provably-equal under the laws iff their canonical
-// texts match (the equality-check primitive is caller-side text compare).
+// the normalized canonical text — each step is the derivative rule or a
+// declared law substitution. rel-norm gives the canonical form: matching
+// canonical texts IMPLY provable equality under the laws (soundness); the
+// converse fails — sin^2+cos^2 and 1 are law-equal but normalize
+// differently (the equality-check primitive is caller-side text compare).
 // ============================================================================
 
 fn relNameOk(nm: []const u8) bool {

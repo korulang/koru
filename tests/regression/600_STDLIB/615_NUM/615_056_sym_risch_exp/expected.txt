@@ -1,12 +1,12 @@
 decide(layer=elementary)|antiderivative=exp(x)|note=risch-exp-monomial-constructed;checked-exact
 decide(layer=elementary)|antiderivative=((-1e0+x)*exp(x))|note=risch-exp-monomial-constructed;checked-exact
 decide(layer=elementary)|antiderivative=(5e-1*exp((x*x)))|note=risch-exp-monomial-constructed;checked-exact
-hs:decide(layer=holonomic-special)|note=risch-de-proven-non-elementary:no-rational-R:degree-argument;integrand-cert-theorem-grade|integrand=ode(k=1,d=1,via=of)|p0=[0,-2]|p1=[1]|antiderivative=ode(k=2,d=1,via=shift)|p0=[0]|p1=[0,-2]|p2=[1]
+hs:decide(layer=holonomic-special)|note=risch-de-proven-non-elementary:no-rational-R:degree-argument;integrand-cert-structural|integrand=ode(k=1,d=1,via=of)|p0=[0,-2]|p1=[1]|antiderivative=ode(k=2,d=1,via=shift)|p0=[0]|p1=[0,-2]|p2=[1]
 decide(layer=elementary)|antiderivative=(-1e0*exp((-1e0*x)))|note=risch-exp-monomial-constructed;checked-exact
 decide(layer=elementary)|antiderivative=(((-2e0*inv(9e0)*x)+(2e0*inv(2.7e1))+(inv(3e0)*x*x))*exp((3e0*x)))|note=risch-exp-monomial-constructed;checked-exact
-hs:decide(layer=holonomic-special)|note=risch-de-proven-non-elementary:no-rational-R:simple-pole;integrand-cert-theorem-grade|integrand=ode(k=1,d=1,via=of)|p0=[1,-1]|p1=[0,1]|antiderivative=ode(k=2,d=1,via=shift)|p0=[0]|p1=[1,-1]|p2=[0,1]
+hs:decide(layer=holonomic-special)|note=risch-de-proven-non-elementary:no-rational-R:simple-pole;integrand-cert-structural|integrand=ode(k=1,d=1,via=of)|p0=[1,-1]|p1=[0,1]|antiderivative=ode(k=2,d=1,via=shift)|p0=[0]|p1=[1,-1]|p2=[0,1]
 nr
-hs:decide(layer=holonomic-special)|note=risch-de-proven-non-elementary:no-rational-R:degree-argument;integrand-cert-theorem-grade|integrand=ode(k=2,d=4,via=of)|p0=[0,-6,0,0,9]|p1=[0,0,-6]|p2=[1]|antiderivative=ode(k=3,d=4,via=shift)|p0=[0]|p1=[0,-6,0,0,9]|p2=[0,0,-6]|p3=[1]
+hs:decide(layer=holonomic-special)|note=risch-de-proven-non-elementary:no-rational-R:degree-argument;integrand-cert-structural|integrand=ode(k=2,d=4,via=of)|p0=[0,-6,0,0,9]|p1=[0,0,-6]|p2=[1]|antiderivative=ode(k=3,d=4,via=shift)|p0=[0]|p1=[0,-6,0,0,9]|p2=[0,0,-6]|p3=[1]
 decide(layer=elementary)|antiderivative=(i*log(x))|note=hermite+trager-constructed;checked-exact
 decide(layer=elementary)|antiderivative=(5e-1*i*x*x)|note=polynomial-termwise-constructed;const-factored
 decide(layer=elementary)|antiderivative=(5e-1*exp(2e0)*x*x)|note=polynomial-termwise-constructed;const-factored
