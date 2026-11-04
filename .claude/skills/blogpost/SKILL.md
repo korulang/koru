@@ -189,6 +189,12 @@ alone.** Lead with the concrete subject — the feature or concept, by name.
      the post's RegressionTestLinks stay blank until that same ceremony
      refreshes `status.json` with the new test rows.
 
+   **Video:** when a post's story wants a film, production lives in
+   `~/src/fframes-hello` (scene-pitch + Rust renderer, its own AGENTS.md) —
+   storyboard via the `catalog-storyboard` skill. Commission after the
+   verdict, not before: an honest-arc post whose ending is still unmeasured
+   (a benchmark number, a merge) waits for it.
+
 ## Voice
 
 - **Title opens with the subject by name and describes the post — no hooks.**
