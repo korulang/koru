@@ -265,6 +265,18 @@
     "check": "node ../../korulang_org/scripts/check-publishable-static.js ../../korulang_org"
 }
 
+// The flow kernel is ONE source with ONE re-typed mirror:
+// verify/semantics/FlowKernel.lean here, isar-proofs
+// src/ISAR/FlowDialect.lean renamed-grammatically identical there.
+// Vendored by hash rather than lake-dep (upstream should not absorb
+// the isar-proofs tree): the pin forces port+re-pin in the same commit.
+~std/invariants:inferred {
+    "name": "flowkernel-mirror-not-drift",
+    "tags": ["git-gate"],
+    "rule": "verify/semantics/FlowKernel.lean's LF-normalized sha256 must equal the pin in checks/flowkernel_mirror.pin. The kernel has exactly one source (this file) and exactly one re-typed mirror (isar-proofs src/ISAR/FlowDialect.lean) — vendored by hash, not a lake dependency, so upstream is not asked to absorb the proof repo. Any edit to the kernel fires this row until the delta is ported to FlowDialect.lean and the pin is re-set in the same commit; the check hashes CR-stripped bytes because checkouts disagree on line endings.",
+    "check": "python3 checks/check_flowkernel_mirror.py checks/flowkernel_mirror.pin ../verify/semantics/FlowKernel.lean"
+}
+
 ~tor main {}
 
 ~proc main|zig {
