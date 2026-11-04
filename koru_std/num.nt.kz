@@ -1,0 +1,639 @@
+// ============================================================================
+// std/num part: nt — number theory over the module's own arbitrary-
+// precision Int (limbs + sign).  Inputs and outputs are decimal texts;
+// nothing here approximates — every result is exact or named.
+//
+//   nt-gcd     a, b      -> exact <dec> | bad
+//   nt-extgcd  a, b      -> exact "nt:v1;<g>;<s>;<t>"  (g = a s + b t) | bad
+//   nt-divmod  a, b      -> exact "nt:v1;<q>;<r>" Euclidean (0 <= r < |b|)
+//                        | div-by-zero | bad
+//   nt-mod     a, m      -> exact <dec> Euclidean remainder | bad-modulus | bad
+//   nt-modmul  a, b, m   -> exact | bad-modulus | bad       (m > 0 required)
+//   nt-modpow  a, e, m   -> exact | bad-modulus | bad       (m > 0, e >= 0)
+//   nt-modinv  a, m      -> exact | no-inverse "nt:v1;<g>" | bad-modulus | bad
+//   nt-pow     a, n      -> exact | bad                     (n >= 0)
+//   nt-isqrt   a         -> exact "nt:v1;<r>;<0|1>" | negative | bad
+//   nt-is-prime n        -> prime | probable-prime | composite | bad
+//   nt-factor  n         -> exact <dec factor> | prime | open | bad
+//
+// Primality is Miller-Rabin on the 12-base set {2..37}: deterministic for
+// n < 3317044064679887385961981; larger survivors answer probable-prime,
+// never "prime".  nt-factor trial-divides the small primes, declares a
+// prime cofactor by name, and runs capped Pollard-rho otherwise — a cap
+// exhaustion is named |open, not silently wrapped.
+// ============================================================================
+
+// ---------- Int-level helpers ----------
+
+// decimal text -> Int, or null on malformed.  Accepts a leading '-';
+// "-0" normalizes to +0 by the Int invariant.
+fn ntFromString(alloc: std.mem.Allocator, s: []const u8) !?Int {
+    var t = s;
+    var pos = true;
+    if (t.len > 0 and t[0] == '-') {
+        pos = false;
+        t = t[1..];
+    }
+    if (t.len == 0) return null;
+    while (t.len > 1 and t[0] == '0') t = t[1..];
+    for (t) |c| {
+        if (c < '0' or c > '9') return null;
+    }
+    // digitsToLimbs drops recursion intermediates on its allocator —
+    // callers hand it an arena (same convention as Int.toString).
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const mag = try digitsToLimbs(arena.allocator(), t);
+    return try Int.fromMag(alloc, mag, pos);
+}
+
+fn ntDec(alloc: std.mem.Allocator, x: *const Int) ![]u8 {
+    return x.toString(alloc, 10, .lower);
+}
+
+const NtQR = struct { q: Int, r: Int };
+
+// |a| / |b| on magnitudes, signs applied truncated: q sign = a^b,
+// r sign = a.  Caller owns both results.  b must be nonzero.
+fn ntDivTrunc(alloc: std.mem.Allocator, a: *const Int, b: *const Int) !NtQR {
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const dm = try divAnyL(arena.allocator(), a.magL(), b.magL());
+    var q = try Int.fromMag(alloc, dm.q, a.positive == b.positive);
+    errdefer q.deinit();
+    const r = try Int.fromMag(alloc, dm.r, a.positive);
+    return .{ .q = q, .r = r };
+}
+
+// Euclidean division: a = b*q + r with 0 <= r < |b|.
+fn ntDivEuclid(alloc: std.mem.Allocator, a: *const Int, b: *const Int) !NtQR {
+    var qr = try ntDivTrunc(alloc, a, b);
+    errdefer qr.q.deinit();
+    errdefer qr.r.deinit();
+    if (!qr.r.positive and !qr.r.eqlZero()) {
+        // r += |b|; q -= sign(b)
+        var bm = try Int.fromMag(alloc, b.magL(), true);
+        defer bm.deinit();
+        var nr = try Int.init(alloc);
+        errdefer nr.deinit();
+        try Int.add(&nr, &qr.r, &bm);
+        var step = try Int.initSet(alloc, if (b.positive) @as(i64, 1) else -1);
+        defer step.deinit();
+        var nq = try Int.init(alloc);
+        errdefer nq.deinit();
+        try Int.sub(&nq, &qr.q, &step);
+        qr.q.deinit();
+        qr.r.deinit();
+        qr = .{ .q = nq, .r = nr };
+    }
+    return qr;
+}
+
+fn ntGcd(alloc: std.mem.Allocator, a: *const Int, b: *const Int) !Int {
+    var x = try Int.fromMag(alloc, a.magL(), true);
+    errdefer x.deinit();
+    var y = try Int.fromMag(alloc, b.magL(), true);
+    errdefer y.deinit();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    while (!y.eqlZero()) {
+        _ = arena.reset(.retain_capacity);
+        const dm = try divAnyL(ar, x.magL(), y.magL());
+        const t = try Int.fromMag(alloc, dm.r, true);
+        x.deinit();
+        x = y;
+        y = t;
+    }
+    y.deinit();
+    return x;
+}
+
+const NtExt = struct { g: Int, s: Int, t: Int };
+
+// Extended Euclid on signed ints: returns g >= 0 with a*s + b*t = g.
+fn ntGcdExt(alloc: std.mem.Allocator, a: *const Int, b: *const Int) !NtExt {
+    var r0 = try a.clone();
+    errdefer r0.deinit();
+    var r1 = try b.clone();
+    errdefer r1.deinit();
+    var s0 = try Int.initSet(alloc, @as(i64, 1));
+    errdefer s0.deinit();
+    var s1 = try Int.init(alloc);
+    errdefer s1.deinit();
+    var t0 = try Int.init(alloc);
+    errdefer t0.deinit();
+    var t1 = try Int.initSet(alloc, @as(i64, 1));
+    errdefer t1.deinit();
+    while (!r1.eqlZero()) {
+        const qr = try ntDivTrunc(alloc, &r0, &r1);
+        var q = qr.q;
+        defer q.deinit();
+        const nr = qr.r;
+        var qs = try Int.init(alloc);
+        defer qs.deinit();
+        try Int.mul(&qs, &q, &s1);
+        var ns = try Int.init(alloc);
+        errdefer ns.deinit();
+        try Int.sub(&ns, &s0, &qs);
+        var qt = try Int.init(alloc);
+        defer qt.deinit();
+        try Int.mul(&qt, &q, &t1);
+        var nt_ = try Int.init(alloc);
+        errdefer nt_.deinit();
+        try Int.sub(&nt_, &t0, &qt);
+        r0.deinit();
+        r0 = r1;
+        r1 = nr;
+        s0.deinit();
+        s0 = s1;
+        s1 = ns;
+        t0.deinit();
+        t0 = t1;
+        t1 = nt_;
+    }
+    r1.deinit();
+    s1.deinit();
+    t1.deinit();
+    if (!r0.positive) {
+        r0.negate();
+        s0.negate();
+        t0.negate();
+    }
+    return .{ .g = r0, .s = s0, .t = t0 };
+}
+
+// a^e over Int by square-multiply; e >= 0.
+fn ntPow(alloc: std.mem.Allocator, a: *const Int, e0: u64) !Int {
+    var base = try a.clone();
+    defer base.deinit();
+    var acc = try Int.initSet(alloc, @as(i64, 1));
+    errdefer acc.deinit();
+    var e = e0;
+    while (e > 0) {
+        if (e & 1 == 1) {
+            var na = try Int.init(alloc);
+            errdefer na.deinit();
+            try Int.mul(&na, &acc, &base);
+            acc.deinit();
+            acc = na;
+        }
+        e >>= 1;
+        if (e > 0) {
+            var nb = try Int.init(alloc);
+            errdefer nb.deinit();
+            try Int.mul(&nb, &base, &base);
+            base.deinit();
+            base = nb;
+        }
+    }
+    return acc;
+}
+
+// a*e mod m by square-multiply; m > 0 required by callers.
+fn ntModPow(alloc: std.mem.Allocator, a: *const Int, e: *const Int, m: *const Int) !Int {
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var base_qr = try ntDivEuclid(alloc, a, m);
+    defer base_qr.q.deinit();
+    var base = base_qr.r;
+    defer base.deinit();
+    var acc = try Int.initSet(alloc, @as(i64, 1));
+    errdefer acc.deinit();
+    var acc_qr = try ntDivEuclid(alloc, &acc, m);
+    acc.deinit();
+    acc_qr.q.deinit();
+    acc = acc_qr.r;
+    var bits = try e.clone();
+    defer bits.deinit();
+    var two = try Int.initSet(alloc, @as(i64, 2));
+    defer two.deinit();
+    while (!bits.eqlZero()) {
+        if (bits.magL()[0] & 1 == 1) {
+            var na = try Int.init(alloc);
+            defer na.deinit();
+            try Int.mul(&na, &acc, &base);
+            var qrn = try ntDivEuclid(alloc, &na, m);
+            qrn.q.deinit();
+            acc.deinit();
+            acc = qrn.r;
+        }
+        _ = arena.reset(.retain_capacity);
+        const hb = try divAnyL(ar, bits.magL(), &[1]Limb{2});
+        const nbits = try Int.fromMag(alloc, hb.q, true);
+        bits.deinit();
+        bits = nbits;
+        if (!bits.eqlZero()) {
+            var nb = try Int.init(alloc);
+            defer nb.deinit();
+            try Int.mul(&nb, &base, &base);
+            var qrb = try ntDivEuclid(alloc, &nb, m);
+            qrb.q.deinit();
+            base.deinit();
+            base = qrb.r;
+        }
+    }
+    return acc;
+}
+
+// Miller-Rabin round: n odd > 3, n1 = n-1 = d*2^s.
+fn ntMrPass(alloc: std.mem.Allocator, a: u64, n: *const Int, d: *const Int, s: usize, n1: *const Int) !bool {
+    var ai = try Int.initSet(alloc, a);
+    defer ai.deinit();
+    var x = try ntModPow(alloc, &ai, d, n);
+    defer x.deinit();
+    var one = try Int.initSet(alloc, @as(i64, 1));
+    defer one.deinit();
+    if (Int.order(&x, one) == .eq or Int.order(&x, n1.*) == .eq) return true;
+    var i: usize = 1;
+    while (i < s) : (i += 1) {
+        var nx = try Int.init(alloc);
+        defer nx.deinit();
+        try Int.mul(&nx, &x, &x);
+        var qr = try ntDivEuclid(alloc, &nx, n);
+        qr.q.deinit();
+        x.deinit();
+        x = qr.r;
+        if (Int.order(&x, n1.*) == .eq) return true;
+        if (Int.order(&x, one) == .eq) return false;
+    }
+    return false;
+}
+
+const NtPrime = enum { prime, probable, composite };
+
+// Deterministic under the 12-base bound; probable-prime above it.
+fn ntIsPrime(alloc: std.mem.Allocator, n: *const Int) !NtPrime {
+    if (!n.positive) return .composite;
+    if (n.eqlZero()) return .composite;
+    var three = try Int.initSet(alloc, @as(i64, 3));
+    defer three.deinit();
+    if (Int.order(n, three) != .gt) {
+        const v = n.toConst().toInt(u64) catch unreachable;
+        return if (v >= 2) .prime else .composite;
+    }
+    if (n.magL()[0] & 1 == 0) return .composite;
+    var one = try Int.initSet(alloc, @as(i64, 1));
+    defer one.deinit();
+    var n1 = try Int.init(alloc);
+    defer n1.deinit();
+    try Int.sub(&n1, n, &one);
+    // n1 = d * 2^s
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const n1m = n1.magL();
+    var s: usize = 0;
+    outer: while (true) {
+        for (n1m, 0..) |limb, i| {
+            const tz = @ctz(limb);
+            if (tz < 64) {
+                s = i * 64 + tz;
+                break :outer;
+            }
+        } else break :outer;
+    }
+    const limb_sh = s / 64;
+    const bit_sh: u6 = @intCast(s % 64);
+    const dm = try shrBitsL(ar, n1m[limb_sh..], bit_sh);
+    var d = try Int.fromMag(alloc, dm, true);
+    defer d.deinit();
+    const bases = [12]u64{ 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37 };
+    for (bases) |a| {
+        var ai = try Int.initSet(alloc, a);
+        defer ai.deinit();
+        if (Int.order(&ai, n.*) != .lt) continue;
+        if (!try ntMrPass(alloc, a, n, &d, s, &n1)) return .composite;
+    }
+    // Jaeschke bound: these bases are deterministic below 3.317e24.
+    const bound_ok = blk: {
+        const v = n.toConst().toInt(u128) catch break :blk false;
+        break :blk v < @as(u128, 3317044064679887385961981);
+    };
+    return if (bound_ok) .prime else .probable;
+}
+
+// Pollard-Brent rho, capped; returns a nontrivial factor or null.
+fn ntRho(alloc: std.mem.Allocator, n: *const Int) !?Int {
+    var one = try Int.initSet(alloc, @as(i64, 1));
+    defer one.deinit();
+    var c_i = try Int.init(alloc);
+    defer c_i.deinit();
+    var c: u64 = 1;
+    while (c <= 8) : (c += 1) {
+        c_i.deinit();
+        c_i = try Int.initSet(alloc, c);
+        var x = try Int.initSet(alloc, @as(i64, 2));
+        defer x.deinit();
+        var y = try Int.initSet(alloc, @as(i64, 2));
+        defer y.deinit();
+        var d = try Int.initSet(alloc, @as(i64, 1));
+        defer d.deinit();
+        var it: u64 = 0;
+        while (Int.order(&d, one) == .eq and it < (1 << 18)) : (it += 1) {
+            // x = f(x); y = f(f(y)); d = gcd(|x-y|, n)
+            var nx = try Int.init(alloc);
+            defer nx.deinit();
+            try Int.mul(&nx, &x, &x);
+            try Int.add(&nx, &nx, &c_i);
+            var qrx = try ntDivEuclid(alloc, &nx, n);
+            qrx.q.deinit();
+            x.deinit();
+            x = qrx.r;
+            var j: u8 = 0;
+            while (j < 2) : (j += 1) {
+                var ny = try Int.init(alloc);
+                defer ny.deinit();
+                try Int.mul(&ny, &y, &y);
+                try Int.add(&ny, &ny, &c_i);
+                var qry = try ntDivEuclid(alloc, &ny, n);
+                qry.q.deinit();
+                y.deinit();
+                y = qry.r;
+            }
+            var diff = try Int.init(alloc);
+            defer diff.deinit();
+            try Int.sub(&diff, &x, &y);
+            diff.abs();
+            d.deinit();
+            d = try ntGcd(alloc, &diff, n);
+            if (Int.order(&d, n.*) == .eq) break; // c-cycle failed
+        }
+        if (Int.order(&d, one) == .gt and Int.order(&d, n.*) == .lt) {
+            return try d.clone();
+        }
+    }
+    return null;
+}
+
+// ---------- tors ----------
+
+~pub tor nt-gcd { a: string, b: string }
+| exact string<std/io:allocated!>
+| bad
+
+~proc nt-gcd|zig {
+    const alloc = koru_allocator();
+    var ia = (ntFromString(alloc, a) catch @panic("std/num:nt-gcd")) orelse return .{ .bad = .{} };
+    defer ia.deinit();
+    var ib = (ntFromString(alloc, b) catch @panic("std/num:nt-gcd")) orelse return .{ .bad = .{} };
+    defer ib.deinit();
+    var g = ntGcd(alloc, &ia, &ib) catch @panic("std/num:nt-gcd");
+    defer g.deinit();
+    const s = ntDec(alloc, &g) catch @panic("std/num:nt-gcd");
+    return .{ .exact = s };
+}
+
+~pub tor nt-extgcd { a: string, b: string }
+| exact string<std/io:allocated!>
+| bad
+
+~proc nt-extgcd|zig {
+    const alloc = koru_allocator();
+    var ia = (ntFromString(alloc, a) catch @panic("std/num:nt-extgcd")) orelse return .{ .bad = .{} };
+    defer ia.deinit();
+    var ib = (ntFromString(alloc, b) catch @panic("std/num:nt-extgcd")) orelse return .{ .bad = .{} };
+    defer ib.deinit();
+    var eg = ntGcdExt(alloc, &ia, &ib) catch @panic("std/num:nt-extgcd");
+    defer eg.g.deinit();
+    defer eg.s.deinit();
+    defer eg.t.deinit();
+    const gs = ntDec(alloc, &eg.g) catch @panic("std/num:nt-extgcd");
+    defer alloc.free(gs);
+    const ss = ntDec(alloc, &eg.s) catch @panic("std/num:nt-extgcd");
+    defer alloc.free(ss);
+    const ts = ntDec(alloc, &eg.t) catch @panic("std/num:nt-extgcd");
+    defer alloc.free(ts);
+    const blob = std.fmt.allocPrint(alloc, "nt:v1;{s};{s};{s}", .{ gs, ss, ts }) catch @panic("std/num:nt-extgcd");
+    return .{ .exact = blob };
+}
+
+~pub tor nt-divmod { a: string, b: string }
+| exact string<std/io:allocated!>
+| div-by-zero
+| bad
+
+~proc nt-divmod|zig {
+    const alloc = koru_allocator();
+    var ia = (ntFromString(alloc, a) catch @panic("std/num:nt-divmod")) orelse return .{ .bad = .{} };
+    defer ia.deinit();
+    var ib = (ntFromString(alloc, b) catch @panic("std/num:nt-divmod")) orelse return .{ .bad = .{} };
+    defer ib.deinit();
+    if (ib.eqlZero()) return .{ .div_by_zero = .{} };
+    var qr = ntDivEuclid(alloc, &ia, &ib) catch @panic("std/num:nt-divmod");
+    defer qr.q.deinit();
+    defer qr.r.deinit();
+    const qs = ntDec(alloc, &qr.q) catch @panic("std/num:nt-divmod");
+    defer alloc.free(qs);
+    const rs = ntDec(alloc, &qr.r) catch @panic("std/num:nt-divmod");
+    defer alloc.free(rs);
+    const blob = std.fmt.allocPrint(alloc, "nt:v1;{s};{s}", .{ qs, rs }) catch @panic("std/num:nt-divmod");
+    return .{ .exact = blob };
+}
+
+~pub tor nt-mod { a: string, m: string }
+| exact string<std/io:allocated!>
+| bad-modulus
+| bad
+
+~proc nt-mod|zig {
+    const alloc = koru_allocator();
+    var ia = (ntFromString(alloc, a) catch @panic("std/num:nt-mod")) orelse return .{ .bad = .{} };
+    defer ia.deinit();
+    var im = (ntFromString(alloc, m) catch @panic("std/num:nt-mod")) orelse return .{ .bad = .{} };
+    defer im.deinit();
+    if (im.eqlZero() or !im.positive) return .{ .bad_modulus = .{} };
+    var qr = ntDivEuclid(alloc, &ia, &im) catch @panic("std/num:nt-mod");
+    defer qr.q.deinit();
+    defer qr.r.deinit();
+    const s = ntDec(alloc, &qr.r) catch @panic("std/num:nt-mod");
+    return .{ .exact = s };
+}
+
+// shared modmul/modpow body: op 0 = mul, 1 = pow
+fn ntModOp(alloc: std.mem.Allocator, a: []const u8, e: []const u8, m: []const u8, op: u8) !?[]u8 {
+    var ia = (try ntFromString(alloc, a)) orelse return error.Bad;
+    defer ia.deinit();
+    var ie = (try ntFromString(alloc, e)) orelse return error.Bad;
+    defer ie.deinit();
+    var im = (try ntFromString(alloc, m)) orelse return error.Bad;
+    defer im.deinit();
+    if (im.eqlZero() or !im.positive) return null;
+    var r: Int = undefined;
+    if (op == 0) {
+        var prod = try Int.init(alloc);
+        defer prod.deinit();
+        try Int.mul(&prod, &ia, &ie);
+        var qr = try ntDivEuclid(alloc, &prod, &im);
+        qr.q.deinit();
+        r = qr.r;
+    } else {
+        if (!ie.positive) return error.Bad;
+        r = try ntModPow(alloc, &ia, &ie, &im);
+    }
+    defer r.deinit();
+    return try ntDec(alloc, &r);
+}
+
+~pub tor nt-modmul { a: string, b: string, m: string }
+| exact string<std/io:allocated!>
+| bad-modulus
+| bad
+
+~proc nt-modmul|zig {
+    const alloc = koru_allocator();
+    const s = (ntModOp(alloc, a, b, m, 0) catch |err| switch (err) {
+        error.Bad => return .{ .bad = .{} },
+        else => @panic("std/num:nt-modmul"),
+    }) orelse return .{ .bad_modulus = .{} };
+    return .{ .exact = s };
+}
+
+~pub tor nt-modpow { a: string, e: string, m: string }
+| exact string<std/io:allocated!>
+| bad-modulus
+| bad
+
+~proc nt-modpow|zig {
+    const alloc = koru_allocator();
+    const s = (ntModOp(alloc, a, e, m, 1) catch |err| switch (err) {
+        error.Bad => return .{ .bad = .{} },
+        else => @panic("std/num:nt-modpow"),
+    }) orelse return .{ .bad_modulus = .{} };
+    return .{ .exact = s };
+}
+
+~pub tor nt-modinv { a: string, m: string }
+| exact string<std/io:allocated!>
+| no-inverse string<std/io:allocated!>
+| bad-modulus
+| bad
+
+~proc nt-modinv|zig {
+    const alloc = koru_allocator();
+    var ia = (ntFromString(alloc, a) catch @panic("std/num:nt-modinv")) orelse return .{ .bad = .{} };
+    defer ia.deinit();
+    var im = (ntFromString(alloc, m) catch @panic("std/num:nt-modinv")) orelse return .{ .bad = .{} };
+    defer im.deinit();
+    if (im.eqlZero() or !im.positive) return .{ .bad_modulus = .{} };
+    var aqr = ntDivEuclid(alloc, &ia, &im) catch @panic("std/num:nt-modinv");
+    aqr.q.deinit();
+    var am = aqr.r;
+    defer am.deinit();
+    var eg = ntGcdExt(alloc, &am, &im) catch @panic("std/num:nt-modinv");
+    defer eg.g.deinit();
+    defer eg.s.deinit();
+    defer eg.t.deinit();
+    var one = Int.initSet(alloc, @as(i64, 1)) catch @panic("std/num:nt-modinv");
+    defer one.deinit();
+    if (Int.order(&eg.g, one) != .eq) {
+        const gs = ntDec(alloc, &eg.g) catch @panic("std/num:nt-modinv");
+        defer alloc.free(gs);
+        const blob = std.fmt.allocPrint(alloc, "nt:v1;{s}", .{gs}) catch @panic("std/num:nt-modinv");
+        return .{ .no_inverse = blob };
+    }
+    var iqr = ntDivEuclid(alloc, &eg.s, &im) catch @panic("std/num:nt-modinv");
+    iqr.q.deinit();
+    var inv = iqr.r;
+    defer inv.deinit();
+    const s = ntDec(alloc, &inv) catch @panic("std/num:nt-modinv");
+    return .{ .exact = s };
+}
+
+~pub tor nt-pow { a: string, n: i64 }
+| exact string<std/io:allocated!>
+| bad
+
+~proc nt-pow|zig {
+    const alloc = koru_allocator();
+    if (n < 0) return .{ .bad = .{} };
+    var ia = (ntFromString(alloc, a) catch @panic("std/num:nt-pow")) orelse return .{ .bad = .{} };
+    defer ia.deinit();
+    var r = ntPow(alloc, &ia, @intCast(n)) catch @panic("std/num:nt-pow");
+    defer r.deinit();
+    const s = ntDec(alloc, &r) catch @panic("std/num:nt-pow");
+    return .{ .exact = s };
+}
+
+~pub tor nt-isqrt { a: string }
+| exact string<std/io:allocated!>
+| negative
+| bad
+
+~proc nt-isqrt|zig {
+    const alloc = koru_allocator();
+    var ia = (ntFromString(alloc, a) catch @panic("std/num:nt-isqrt")) orelse return .{ .bad = .{} };
+    defer ia.deinit();
+    if (!ia.positive) return .{ .negative = .{} };
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const rm = isqrtL(arena.allocator(), ia.magL()) catch @panic("std/num:nt-isqrt");
+    var r = Int.fromMag(alloc, rm, true) catch @panic("std/num:nt-isqrt");
+    defer r.deinit();
+    var sq = Int.init(alloc) catch @panic("std/num:nt-isqrt");
+    defer sq.deinit();
+    Int.mul(&sq, &r, &r) catch @panic("std/num:nt-isqrt");
+    const exact_bit: u8 = if (Int.order(&sq, ia) == .eq) '1' else '0';
+    const rs = ntDec(alloc, &r) catch @panic("std/num:nt-isqrt");
+    defer alloc.free(rs);
+    const blob = std.fmt.allocPrint(alloc, "nt:v1;{s};{c}", .{ rs, exact_bit }) catch @panic("std/num:nt-isqrt");
+    return .{ .exact = blob };
+}
+
+~pub tor nt-is-prime { n: string }
+| prime
+| probable-prime
+| composite
+| bad
+
+~proc nt-is-prime|zig {
+    const alloc = koru_allocator();
+    var i_n = (ntFromString(alloc, n) catch @panic("std/num:nt-is-prime")) orelse return .{ .bad = .{} };
+    defer i_n.deinit();
+    return switch (ntIsPrime(alloc, &i_n) catch @panic("std/num:nt-is-prime")) {
+        .prime => .{ .prime = .{} },
+        .probable => .{ .probable_prime = .{} },
+        .composite => .{ .composite = .{} },
+    };
+}
+
+// primes below this bound are handled by trial division before rho.
+const NT_SMALL_PRIMES = [54]u64{ 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251 };
+
+~pub tor nt-factor { n: string }
+| exact string<std/io:allocated!>
+| prime
+| open
+| bad
+
+~proc nt-factor|zig {
+    const alloc = koru_allocator();
+    var i_n = (ntFromString(alloc, n) catch @panic("std/num:nt-factor")) orelse return .{ .bad = .{} };
+    defer i_n.deinit();
+    var two = Int.initSet(alloc, @as(i64, 2)) catch @panic("std/num:nt-factor");
+    defer two.deinit();
+    if (Int.order(&i_n, two) == .lt) return .{ .bad = .{} };
+    // small-prime trial division on the magnitude — cheap and exact.
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var rem = i_n.clone() catch @panic("std/num:nt-factor");
+    defer rem.deinit();
+    for (NT_SMALL_PRIMES) |p| {
+        if (rem.eqlZero()) break;
+        const qr = div1L(ar, rem.magL(), @intCast(p)) catch @panic("std/num:nt-factor");
+        if (qr.r == 0) {
+            const out = std.fmt.allocPrint(alloc, "{}", .{p}) catch @panic("std/num:nt-factor");
+            return .{ .exact = out };
+        }
+    }
+    switch (ntIsPrime(alloc, &rem) catch @panic("std/num:nt-factor")) {
+        .prime, .probable => return .{ .prime = .{} },
+        .composite => {},
+    }
+    var f = (ntRho(alloc, &rem) catch @panic("std/num:nt-factor")) orelse return .{ .open = .{} };
+    defer f.deinit();
+    const s = ntDec(alloc, &f) catch @panic("std/num:nt-factor");
+    return .{ .exact = s };
+}

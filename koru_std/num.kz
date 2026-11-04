@@ -31,6 +31,7 @@
 // std/quantity.
 
 ~import std/io
+~part nt
 
 const std = @import("std");
 const Limb = u64;
