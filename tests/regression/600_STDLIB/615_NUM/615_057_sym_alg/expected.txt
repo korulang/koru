@@ -1,0 +1,14 @@
+algm:v1;(-2e0+(x*x))
+alg:v1;(-2e0+(x*x));x
+alg:v1;(-2e0+(x*x));(2e0*x)
+alg:v1;(-2e0+(x*x));2e0
+alg:v1;(-2e0+(x*x));-1e0
+alg:v1;(-2e0+(x*x));(5e-1*x)
+alg:v1;(-2e0+(x*x));(-1e0+x)
+zd:alg:v1;(-1e0+(x*x));(-1e0+x)
+mm
+alg:v1;(-2e0+(x*x));4e0
+alg:v1;(-2e0+(x*x));(5e-1*x)
+alg:v1;(-2e0+(x*x));(1e0+(5e-1*x))
+bad-mod-const
+bad-mod-nonpoly

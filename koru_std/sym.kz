@@ -51,6 +51,7 @@
 ~part certreg
 ~part certgen
 ~part rel
+~part alg
 
 const std = @import("std");
 const BI = std.math.big.int.Managed;
