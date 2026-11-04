@@ -1511,6 +1511,120 @@ fn logPartConstruct(alloc: std.mem.Allocator, C: []const Rat, D: []const Rat, te
     return null;
 }
 
+// ============ Risch exp-monomial: F*exp(G) -> R*exp(G) ============
+// The ansatz integral = R*exp(G) yields the adjoint equation R' + G'R = F.
+// For polynomial F, G with G' != 0 a rational R is forced polynomial: a
+// pole of order m in R appears at order m+1 in R' and cannot cancel
+// against G'R's order m.  Degree then forces deg R = deg F - deg G',
+// coefficients solve top-down from the equation at degree k + deg G',
+// and the equations at degrees < deg G' are residual consistency checks:
+// a failure proves no R exists, hence a non-elementary integrand.
+
+// True iff the subtree carries the integration variable (atom 3) or a
+// named generator (atom >= 5); anything else is a constant factor for
+// the integration lanes.
+fn nodeHasVar(n: *const SNode) bool {
+    switch (n.kind) {
+        .atom => return n.atom == 3 or n.atom >= 5,
+        .dec => return false,
+        .add, .mul => {
+            for (n.kids) |k| if (nodeHasVar(k)) return true;
+            return false;
+        },
+        .sq, .inv, .log, .atan, .exp => return nodeHasVar(n.kid),
+    }
+}
+
+// Multiply an emitted antiderivative text by the stripped constant
+// factors (canon "(anti*consts)"); consumes `anti` either way.
+fn antiWithConst(alloc: std.mem.Allocator, anti: []u8, ct: ?[]const u8) ![]u8 {
+    const c = ct orelse return anti;
+    defer alloc.free(anti);
+    var buf = std.ArrayList(u8){};
+    defer buf.deinit(alloc);
+    try buf.append(alloc, '(');
+    try buf.appendSlice(alloc, anti);
+    try buf.append(alloc, '*');
+    try buf.appendSlice(alloc, c);
+    try buf.append(alloc, ')');
+    return normCanon(alloc, buf.items);
+}
+
+// Exact triangular solve of R' + G'R = F for polynomial R.  Returns
+// null when the degree bound or a residual equation fails — a proof
+// that no rational R exists.  G' == 0 degenerates to R' = F.
+fn rischDESolve(alloc: std.mem.Allocator, F: []const Rat, dG: []const Rat) !?[]Rat {
+    if (polyIsZero(dG)) return try polyIntegral(alloc, F);
+    const dd = polyDegIdx(dG);
+    const df = polyDegIdx(F);
+    if (df < dd) return null;
+    const dr = df - dd;
+    const R = try alloc.alloc(Rat, dr + 1);
+    var lo: usize = dr + 1; // R[lo..dr+1] is the filled region (descending fill)
+    errdefer {
+        for (R[lo .. dr + 1]) |*r| ratDeinit(r);
+        alloc.free(R);
+    }
+    const lead = &dG[dd];
+    var k: usize = dr + 1;
+    while (k > 0) {
+        k -= 1;
+        const m = k + dd;
+        var acc = try ratClone(&F[m]);
+        errdefer ratDeinit(&acc);
+        if (m + 1 <= dr) {
+            var t = try ratMulInt(alloc, &R[m + 1], @intCast(m + 1));
+            defer ratDeinit(&t);
+            const acc2 = try ratSub(alloc, &acc, &t);
+            ratDeinit(&acc);
+            acc = acc2;
+        }
+        var j = k + 1;
+        const jhi = @min(dr, m);
+        while (j <= jhi) : (j += 1) {
+            var t1 = try ratMul(alloc, &dG[m - j], &R[j]);
+            defer ratDeinit(&t1);
+            const acc2 = try ratSub(alloc, &acc, &t1);
+            ratDeinit(&acc);
+            acc = acc2;
+        }
+        R[k] = try ratDiv(alloc, &acc, lead);
+        ratDeinit(&acc);
+        lo = k;
+    }
+    // residual equations at degrees m < dd: all r are already determined,
+    // so these must hold as identities or there is no solution at all.
+    var m: usize = 0;
+    while (m < dd) : (m += 1) {
+        var acc = try ratFromInt(alloc, 0);
+        defer ratDeinit(&acc);
+        if (m + 1 <= dr) {
+            var t = try ratMulInt(alloc, &R[m + 1], @intCast(m + 1));
+            defer ratDeinit(&t);
+            const acc2 = try ratAdd(alloc, &acc, &t);
+            ratDeinit(&acc);
+            acc = acc2;
+        }
+        var j: usize = 0;
+        const jhi = @min(dr, m);
+        while (j <= jhi) : (j += 1) {
+            var t1 = try ratMul(alloc, &dG[m - j], &R[j]);
+            defer ratDeinit(&t1);
+            const acc2 = try ratAdd(alloc, &acc, &t1);
+            ratDeinit(&acc);
+            acc = acc2;
+        }
+        var diff = try ratSub(alloc, &acc, &F[m]);
+        defer ratDeinit(&diff);
+        if (!ratIsZero(&diff)) {
+            for (R[lo .. dr + 1]) |*r| ratDeinit(r);
+            alloc.free(R);
+            return null;
+        }
+    }
+    return R;
+}
+
 // decide(layer=L)|field=value|field=value — fixed set of decision-level
 // segment names; decide-field extracts one by name.
 const DECIDE_FIELDS = [_][]const u8{ "integral", "integrand", "antiderivative", "rational-part", "log-integrand", "seed", "note", "r", "form" };
@@ -1579,7 +1693,59 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
     defer nodeFree(alloc, t);
     const nt = norm(alloc, t) catch return .{ .bad = .{} };
     defer nodeFree(alloc, nt);
-    const maybe_poly = polyOfNode(alloc, nt) catch @panic("std/sym:decide-integral poly");
+    // Constant-factor split: factors that do not carry the integration
+    // variable (i, exp(2), pi, sqrt(2), Q(i) sums, ...) are pulled out and
+    // multiplied back onto the emitted antiderivative — i*(1/x) then
+    // integrates as i*log(x) and exp(2)*x as exp(2)*x^2/2.
+    var const_txt: ?[]u8 = null;
+    defer if (const_txt) |ct| alloc.free(ct);
+    var nt_var: *SNode = nt;
+    var nt_var_owned: ?*SNode = null;
+    defer if (nt_var_owned) |v| nodeFree(alloc, v);
+    if (!nodeHasVar(nt)) {
+        const xn = nodeAtom(alloc, 3) catch @panic("std/sym:decide-integral");
+        const prod = nodePair(alloc, .mul, nodeClone(alloc, nt) catch @panic("std/sym:decide-integral"), xn) catch @panic("std/sym:decide-integral");
+        defer nodeFree(alloc, prod);
+        const anti = canonOf(alloc, prod) catch @panic("std/sym:decide-integral");
+        defer alloc.free(anti);
+        const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=constant-integrand", .{anti}) catch @panic("std/sym:decide-integral");
+        return .{ .elementary = blob };
+    }
+    if (nt.kind == .mul) {
+        var const_kids = std.ArrayList(*SNode){};
+        defer const_kids.deinit(alloc);
+        var var_kids = std.ArrayList(*SNode){};
+        defer var_kids.deinit(alloc);
+        for (nt.kids) |k| {
+            if (nodeHasVar(k)) {
+                var_kids.append(alloc, k) catch @panic("std/sym:decide-integral");
+            } else {
+                const_kids.append(alloc, k) catch @panic("std/sym:decide-integral");
+            }
+        }
+        if (const_kids.items.len > 0 and var_kids.items.len > 0) {
+            var ck_owned: ?*SNode = null;
+            defer if (ck_owned) |v| nodeFree(alloc, v);
+            const ck: *SNode = if (const_kids.items.len == 1) const_kids.items[0] else blk: {
+                var cl = std.ArrayList(*SNode){};
+                defer cl.deinit(alloc);
+                for (const_kids.items) |k| cl.append(alloc, nodeClone(alloc, k) catch @panic("std/sym:decide-integral")) catch @panic("std/sym:decide-integral");
+                ck_owned = nodeList(alloc, .mul, cl.items) catch @panic("std/sym:decide-integral");
+                break :blk ck_owned.?;
+            };
+            const_txt = canonOf(alloc, ck) catch @panic("std/sym:decide-integral");
+            if (var_kids.items.len == 1) {
+                nt_var = var_kids.items[0];
+            } else {
+                var cl = std.ArrayList(*SNode){};
+                defer cl.deinit(alloc);
+                for (var_kids.items) |k| cl.append(alloc, nodeClone(alloc, k) catch @panic("std/sym:decide-integral")) catch @panic("std/sym:decide-integral");
+                nt_var_owned = nodeList(alloc, .mul, cl.items) catch @panic("std/sym:decide-integral");
+                nt_var = nt_var_owned.?;
+            }
+        }
+    }
+    const maybe_poly = polyOfNode(alloc, nt_var) catch @panic("std/sym:decide-integral poly");
     if (maybe_poly) |p| {
         defer polyFree(alloc, p);
         const integ = polyIntegral(alloc, p) catch @panic("std/sym:decide-integral");
@@ -1589,13 +1755,20 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
         }
         const csv = ratJoinCsv(alloc, integ) catch @panic("std/sym:decide-integral");
         defer alloc.free(csv);
+        if (const_txt != null) {
+            const ptxt = polyTextOf(alloc, integ) catch @panic("std/sym:decide-integral");
+            const anti = antiWithConst(alloc, ptxt, const_txt) catch @panic("std/sym:decide-integral");
+            defer alloc.free(anti);
+            const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=polynomial-termwise-constructed;const-factored", .{anti}) catch @panic("std/sym:decide-integral");
+            return .{ .elementary = blob };
+        }
         const colon = std.mem.indexOfScalar(u8, csv, ':') orelse csv.len;
         const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|integral=[{s}]|note=polynomial-termwise-constructed", .{csv[colon + 1 ..]}) catch @panic("std/sym:decide-integral");
         return .{ .elementary = blob };
     }
     // Rational integrand: always elementary (Liouville). Hermite builds the
     // full rational part; a nonzero squarefree remainder is the log part.
-    if (ratFuncOfNode(alloc, nt) catch @panic("std/sym:decide-integral rf")) |rf_in| {
+    if (ratFuncOfNode(alloc, nt_var) catch @panic("std/sym:decide-integral rf")) |rf_in| {
         var rf = rf_in;
         defer fracFree(alloc, &rf);
         var hr = hermiteReduce(alloc, &rf) catch @panic("std/sym:decide-integral hermite");
@@ -1613,7 +1786,8 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
         polyText(alloc, &txt, pint) catch @panic("std/sym:decide-integral");
         txt.append(alloc, '+') catch @panic("std/sym:decide-integral");
         fracText(alloc, &txt, &hr.rat) catch @panic("std/sym:decide-integral");
-        const anti = normCanon(alloc, txt.items) catch @panic("std/sym:decide-integral canon");
+        const anti0 = normCanon(alloc, txt.items) catch @panic("std/sym:decide-integral canon");
+        const anti = antiWithConst(alloc, anti0, const_txt) catch @panic("std/sym:decide-integral canon");
         defer alloc.free(anti);
         if (fracIsZero(&hr.log)) {
             const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=hermite-constructed;checked-exact", .{anti}) catch @panic("std/sym:decide-integral");
@@ -1633,7 +1807,8 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
             var l2txt = std.ArrayList(u8){};
             defer l2txt.deinit(alloc);
             fracText(alloc, &l2txt, &hr.log) catch @panic("std/sym:decide-integral");
-            const logc = normCanon(alloc, l2txt.items) catch @panic("std/sym:decide-integral canon");
+            const logc0 = normCanon(alloc, l2txt.items) catch @panic("std/sym:decide-integral canon");
+            const logc = antiWithConst(alloc, logc0, const_txt) catch @panic("std/sym:decide-integral canon");
             defer alloc.free(logc);
             const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|rational-part={s}|log-integrand={s}|note=hermite-reduced;checked-exact;log-part-{s}", .{ anti, logc, reason }) catch @panic("std/sym:decide-integral");
             return .{ .elementary = blob };
@@ -1646,9 +1821,96 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
         ftxt.appendSlice(alloc, anti) catch @panic("std/sym:decide-integral");
         ftxt.appendSlice(alloc, ltxt.items) catch @panic("std/sym:decide-integral");
         ftxt.append(alloc, ')') catch @panic("std/sym:decide-integral");
-        const full = normCanon(alloc, ftxt.items) catch @panic("std/sym:decide-integral canon");
+        const full0 = normCanon(alloc, ftxt.items) catch @panic("std/sym:decide-integral canon");
+        const full = antiWithConst(alloc, full0, const_txt) catch @panic("std/sym:decide-integral canon");
         defer alloc.free(full);
         const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=hermite+trager-constructed;checked-exact", .{full}) catch @panic("std/sym:decide-integral");
+        return .{ .elementary = blob };
+    }
+    // Risch exp-monomial lane: integrand F*exp(G) with F rational and G
+    // polynomial integrates as R*exp(G) exactly when R' + G'R = F has a
+    // solution — rischDESolve either constructs it or proves none exists.
+    // Other exp shapes fall through to the certificate path with a named
+    // lane tag rather than a wrong answer.
+    var de_proven: ?[]const u8 = null;
+    var lane_extra: ?[]const u8 = null;
+    exp_lane: {
+        var exk: ?*SNode = null;
+        var fnode: ?*SNode = null;
+        var fnode_owned: ?*SNode = null;
+        defer if (fnode_owned) |v| nodeFree(alloc, v);
+        if (nt_var.kind == .exp) {
+            exk = nt_var;
+        } else if (nt_var.kind == .mul) {
+            var others = std.ArrayList(*SNode){};
+            defer others.deinit(alloc);
+            for (nt_var.kids) |k| {
+                if (k.kind == .exp) {
+                    exk = k;
+                } else {
+                    others.append(alloc, k) catch break :exp_lane;
+                }
+            }
+            if (exk == null or others.items.len == 0) break :exp_lane;
+            if (others.items.len == 1) {
+                fnode = others.items[0];
+            } else {
+                var cl = std.ArrayList(*SNode){};
+                defer cl.deinit(alloc);
+                for (others.items) |k| cl.append(alloc, nodeClone(alloc, k) catch @panic("std/sym:decide-integral")) catch break :exp_lane;
+                fnode_owned = nodeList(alloc, .mul, cl.toOwnedSlice(alloc) catch break :exp_lane) catch break :exp_lane;
+                fnode = fnode_owned.?;
+            }
+        } else break :exp_lane;
+        const ex = exk.?;
+        var rf = if (fnode) |f| (ratFuncOfNode(alloc, f) catch @panic("std/sym:decide-integral")) orelse break :exp_lane else fracOne(alloc) catch @panic("std/sym:decide-integral");
+        defer fracFree(alloc, &rf);
+        const Gp = polyOfNode(alloc, ex.kid) catch @panic("std/sym:decide-integral") orelse {
+            lane_extra = "risch-exp-inner-nonpoly";
+            break :exp_lane;
+        };
+        defer polyFree(alloc, Gp);
+        if (polyDegIdx(rf.d) != 0) {
+            lane_extra = "risch-de-rational-denominator";
+            break :exp_lane;
+        }
+        var d0inv = ratInv(alloc, &rf.d[0]) catch @panic("std/sym:decide-integral");
+        defer ratDeinit(&d0inv);
+        const Fp = polyScal(alloc, rf.n, &d0inv) catch @panic("std/sym:decide-integral");
+        defer polyFree(alloc, Fp);
+        const dG = polyDer(alloc, Gp) catch @panic("std/sym:decide-integral");
+        defer polyFree(alloc, dG);
+        const R = (rischDESolve(alloc, Fp, dG) catch @panic("std/sym:decide-integral")) orelse {
+            de_proven = "no-rational-R:degree-argument";
+            break :exp_lane;
+        };
+        defer polyFree(alloc, R);
+        // exact check: R' + G'R == F as polynomials — internal-impossible
+        // class (panic, not a named refusal) if the solver lied.
+        const dR = polyDer(alloc, R) catch @panic("std/sym:decide-integral");
+        defer polyFree(alloc, dR);
+        const gR = polyMul(alloc, dG, R) catch @panic("std/sym:decide-integral");
+        defer polyFree(alloc, gR);
+        const lhs = polyAdd(alloc, dR, gR) catch @panic("std/sym:decide-integral");
+        defer polyFree(alloc, lhs);
+        const res = polySub(alloc, lhs, Fp) catch @panic("std/sym:decide-integral");
+        defer polyFree(alloc, res);
+        if (!polyIsZero(res)) @panic("std/sym:decide-integral: risch DE failed its exact check");
+        const rtxt = polyTextOf(alloc, R) catch @panic("std/sym:decide-integral");
+        defer alloc.free(rtxt);
+        const etxt = canonOf(alloc, ex) catch @panic("std/sym:decide-integral");
+        defer alloc.free(etxt);
+        var buf = std.ArrayList(u8){};
+        defer buf.deinit(alloc);
+        buf.append(alloc, '(') catch @panic("std/sym:decide-integral");
+        buf.appendSlice(alloc, rtxt) catch @panic("std/sym:decide-integral");
+        buf.append(alloc, '*') catch @panic("std/sym:decide-integral");
+        buf.appendSlice(alloc, etxt) catch @panic("std/sym:decide-integral");
+        buf.append(alloc, ')') catch @panic("std/sym:decide-integral");
+        const anti0 = normCanon(alloc, buf.items) catch @panic("std/sym:decide-integral canon");
+        const anti = antiWithConst(alloc, anti0, const_txt) catch @panic("std/sym:decide-integral canon");
+        defer alloc.free(anti);
+        const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=risch-exp-monomial-constructed;checked-exact", .{anti}) catch @panic("std/sym:decide-integral");
         return .{ .elementary = blob };
     }
     var structural_refusal: ?[]const u8 = null;
@@ -1667,7 +1929,9 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
             error.NonRational => return .{ .non_rational = .{} },
             else => @panic("std/sym:decide-integral derive"),
         } orelse {
-            const msg = std.fmt.allocPrint(alloc, "decide(layer=unresolved)|note=no-holonomic-certificate-within-bounds(order<={d},deg<={d});structural={s}", .{ max_order, max_deg, structural_refusal.? }) catch @panic("std/sym:decide-integral");
+            const lane_suffix = if (lane_extra) |x| (std.fmt.allocPrint(alloc, ";lane={s}", .{x}) catch @panic("std/sym:decide-integral")) else ownedCopy("");
+            defer alloc.free(lane_suffix);
+            const msg = std.fmt.allocPrint(alloc, "decide(layer=unresolved)|note=no-holonomic-certificate-within-bounds(order<={d},deg<={d});structural={s}{s}", .{ max_order, max_deg, structural_refusal.?, lane_suffix }) catch @panic("std/sym:decide-integral");
             return .{ .unresolved = msg };
         };
         defer alloc.free(found);
@@ -1683,7 +1947,19 @@ fn decideIntegNote(layer: []const u8, note: []const u8, integrand: ?[]const u8, 
     defer alloc.free(odet);
     const st = certWrite(alloc, shifted.order, shifted.deg, "shift", shifted.polys) catch @panic("std/sym:decide-integral");
     defer alloc.free(st);
-    const note = if (structural_refusal == null)
+    var note_buf: ?[]u8 = null;
+    defer if (note_buf) |b| alloc.free(b);
+    const note: []const u8 = if (de_proven) |p| blk: {
+        note_buf = std.fmt.allocPrint(alloc, "risch-de-proven-non-elementary:{s};integrand-cert-theorem-grade", .{p}) catch @panic("std/sym:decide-integral");
+        break :blk note_buf.?;
+    } else if (lane_extra) |x| blk: {
+        const base = if (structural_refusal == null)
+            "no-risch-elementary-form-not-constructed;integrand-cert-theorem-grade"
+        else
+            "no-risch-elementary-form-not-constructed;seed-finite-witness";
+        note_buf = std.fmt.allocPrint(alloc, "{s};lane={s}", .{ base, x }) catch @panic("std/sym:decide-integral");
+        break :blk note_buf.?;
+    } else if (structural_refusal == null)
         "no-risch-elementary-form-not-constructed;integrand-cert-theorem-grade"
     else
         "no-risch-elementary-form-not-constructed;seed-finite-witness";
