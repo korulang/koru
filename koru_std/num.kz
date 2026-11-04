@@ -2662,6 +2662,7 @@ fn numFree(s: []const u8) void {
 ~pub tor pow { a: string<!exact>, n: i64 }
 | exact string<exact!>
 | neg-exp
+| exp-too-large
 
 ~proc pow|zig {
     defer numFree(a);
@@ -2671,7 +2672,7 @@ fn numFree(s: []const u8) void {
     // mantissa^n, e*n — then renorm through the digit string.
     var r = BI.initSet(koru_allocator(), 1) catch @panic("std/num:pow: out of memory");
     defer r.deinit();
-    if (n > std.math.maxInt(u32)) @panic("std/num:pow: exponent too large");
+    if (n > std.math.maxInt(u32)) return .{ .exp_too_large = .{} };
     {
         const pr = biPowFast(koru_allocator(), &d.m, @intCast(n)) catch @panic("std/num:pow: out of memory");
         r.deinit();

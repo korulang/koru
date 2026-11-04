@@ -94,6 +94,8 @@ std/sym:lit(π)
         | exact r |> std/quantity:render(n: r): tf |> std/io:print.ln("{{ tf:s }}") |> std/io:free(content: tf)
         | div-zero |> std/io:print.ln("div-zero")
         | sym-unc |> std/io:print.ln("sym-unc")
+        | exp-too-large |> std/io:print.ln("exp-too-large")
+        | bad x |> std/io:print.ln("{{ x:s }}")
     | bad-lit x |> std/io:print.ln("{{ x:s }}")
 | bad |> std/io:print.ln("bad-sym")
 

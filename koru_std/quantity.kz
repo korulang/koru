@@ -444,14 +444,18 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
         | bad e |> std/num:free(n: pm) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
         | exact pu |> std/num:parse(s: scale)
             | bad e |> std/num:free(n: pm) |> std/num:free(n: pu) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
-            | exact ps |> std/num:dup(n: ps): sd |> std/num:mul(a: pm, b: sd.a): ms |> std/num:mul(a: pu, sd.b): us |> pack(mag: ms, unc: us, dim, cov): q => exact q
+            | exact ps |> std/num:dup(n: ps): sd |> std/num:mul(a: pm, b: sd.a): ms |> std/num:mul(a: pu, sd.b): us |> pack(mag: ms, unc: us, dim, cov)
+                | exact q => exact q
+                | bad |> unreachable(): q => exact q
 | sym sm |> std/sym:parse(s: sm)
     | bad e |> std/num:drop(s: unc) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
     | exact sy |> std/num:parse(s: unc)
         | bad e |> std/sym:free(n: sy) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
         | exact pu |> std/num:parse(s: scale)
             | bad e |> std/sym:free(n: sy) |> std/num:free(n: pu) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad e
-            | exact ps |> std/num:dup(n: ps): sd |> std/sym:of-dec(n: sd.a): ss |> std/sym:mul(a: sy, b: ss): ms |> std/num:mul(a: pu, sd.b): us |> pack-sym(mag: ms, unc: us, dim, cov): q => exact q
+            | exact ps |> std/num:dup(n: ps): sd |> std/sym:of-dec(n: sd.a): ss |> std/sym:mul(a: sy, b: ss): ms |> std/num:mul(a: pu, sd.b): us |> pack-sym(mag: ms, unc: us, dim, cov)
+                | exact q => exact q
+                | bad |> unreachable(): q => exact q
 
 ~pub tor parse { s: string<!external> }
 | exact string<exact!>
@@ -519,16 +523,22 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
         | bad e |> std/io:free(content: e) |> std/io:free(content: u.dim) |> std/sym:free(n: mag) |> std/num:free(n: pu) => bad-lit "bad unit scale"
         | exact sc |> cov-tag(s: cov)
             | bad-tag |> std/num:free(n: pu) |> std/num:free(n: sc) |> std/io:free(content: u.dim) |> std/sym:free(n: mag) => bad-lit "bad cov tag"
-            | ok cv |> std/sym:of-dec(n: sc): ss |> std/sym:mul(a: mag, b: ss): rm |> pack-sym(mag: rm, unc: pu, u.dim, cov: cv): q => exact q
+            | ok cv |> std/sym:of-dec(n: sc): ss |> std/sym:mul(a: mag, b: ss): rm |> pack-sym(mag: rm, unc: pu, u.dim, cov: cv)
+                | exact q => exact q
+                | bad |> unreachable(): q => exact q
 
 // Pack canonical fields into the qty string. Consumes all four inputs —
 // dim/cov are discharged by the pack itself (their bytes land in the pack).
 // dim must be canonical: a malformed dim is an internal defect, panicked.
-fn packEmit(alloc: std.mem.Allocator, mag: []const u8, unc: []const u8, dim: []const u8, cov: []const u8) []u8 {
-    var d: Dim = undefined;
-    if (!dimParse(dim, &d)) @panic("std/quantity:pack: malformed dim operand");
+fn packEmit(alloc: std.mem.Allocator, mag: []const u8, unc: []const u8, dim: []const u8, cov: []const u8) ?[]u8 {
     defer qtyFree(dim);
     defer qtyFree(cov);
+    var d: Dim = undefined;
+    if (!dimParse(dim, &d)) {
+        qtyFree(mag);
+        qtyFree(unc);
+        return null;
+    }
     const dc = dimCanon(alloc, d) catch @panic("std/quantity: out of memory");
     defer alloc.free(dc);
     const joined = qtyJoin(alloc, mag, dc, unc, cov) catch @panic("std/quantity: out of memory");
@@ -537,18 +547,24 @@ fn packEmit(alloc: std.mem.Allocator, mag: []const u8, unc: []const u8, dim: []c
     return joined;
 }
 
-~pub tor pack { mag: string<std/num:!exact>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated> } -> string<exact!>
+~pub tor pack { mag: string<std/num:!exact>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated> }
+| exact string<exact!>
+| bad
 
 ~proc pack|zig {
-    return packEmit(koru_allocator(), mag, unc, dim, cov);
+    const q = packEmit(koru_allocator(), mag, unc, dim, cov) orelse return .{ .bad = .{} };
+    return .{ .exact = q };
 }
 
 // Same pack, symbolic lane: the mag field holds sexpr canon — identical
 // pack shape, a different mark at the boundary.
-~pub tor pack-sym { mag: string<std/sym:!sexpr>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated> } -> string<exact!>
+~pub tor pack-sym { mag: string<std/sym:!sexpr>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated> }
+| exact string<exact!>
+| bad
 
 ~proc pack-sym|zig {
-    return packEmit(koru_allocator(), mag, unc, dim, cov);
+    const q = packEmit(koru_allocator(), mag, unc, dim, cov) orelse return .{ .bad = .{} };
+    return .{ .exact = q };
 }
 
 // Decimal canon shape: -?d+(.d+)?e-?d+ — the numeric-leaf alphabet.
@@ -647,36 +663,57 @@ fn magIsDec(m: []const u8) bool {
 // The free abelian group: compose adds, invert negates, scale multiplies.
 // ============================================================================
 
-~pub tor dim-compose { a: string<std/io:allocated>, b: string<std/io:allocated> } -> string<std/io:allocated!>
+~pub tor dim-compose { a: string<std/io:allocated>, b: string<std/io:allocated> }
+| ok string<std/io:allocated!>
+| bad
 
 ~proc dim-compose|zig {
     var da: Dim = undefined;
     var db: Dim = undefined;
-    if (!dimParse(a, &da)) @panic("std/quantity:dim-compose: malformed dim");
-    if (!dimParse(b, &db)) @panic("std/quantity:dim-compose: malformed dim");
+    if (!dimParse(a, &da)) return .{ .bad = .{} };
+    if (!dimParse(b, &db)) return .{ .bad = .{} };
     var d: Dim = DIM_ZERO;
-    for (0..7) |i| d[i] = da[i] + db[i];
-    return dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
+    for (0..7) |i| {
+        const p = @as(i64, da[i]) + @as(i64, db[i]);
+        if (p > std.math.maxInt(i32) or p < std.math.minInt(i32)) return .{ .bad = .{} };
+        d[i] = @intCast(p);
+    }
+    const out = dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
+    return .{ .ok = out };
 }
 
-~pub tor dim-invert { a: string<std/io:allocated> } -> string<std/io:allocated!>
+~pub tor dim-invert { a: string<std/io:allocated> }
+| ok string<std/io:allocated!>
+| bad
 
 ~proc dim-invert|zig {
     var da: Dim = undefined;
-    if (!dimParse(a, &da)) @panic("std/quantity:dim-invert: malformed dim");
+    if (!dimParse(a, &da)) return .{ .bad = .{} };
     var d: Dim = DIM_ZERO;
-    for (0..7) |i| d[i] = -da[i];
-    return dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
+    for (0..7) |i| {
+        const p = -@as(i64, da[i]);
+        if (p > std.math.maxInt(i32) or p < std.math.minInt(i32)) return .{ .bad = .{} };
+        d[i] = @intCast(p);
+    }
+    const out = dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
+    return .{ .ok = out };
 }
 
-~pub tor dim-scale { a: string<std/io:allocated>, n: i64 } -> string<std/io:allocated!>
+~pub tor dim-scale { a: string<std/io:allocated>, n: i64 }
+| ok string<std/io:allocated!>
+| bad
 
 ~proc dim-scale|zig {
     var da: Dim = undefined;
-    if (!dimParse(a, &da)) @panic("std/quantity:dim-scale: malformed dim");
+    if (!dimParse(a, &da)) return .{ .bad = .{} };
     var d: Dim = DIM_ZERO;
-    for (0..7) |i| d[i] = da[i] * @as(i32, @intCast(n));
-    return dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
+    for (0..7) |i| {
+        const p = @as(i64, da[i]) * n;
+        if (p > std.math.maxInt(i32) or p < std.math.minInt(i32)) return .{ .bad = .{} };
+        d[i] = @intCast(p);
+    }
+    const out = dimCanon(koru_allocator(), d) catch @panic("std/quantity: out of memory");
+    return .{ .ok = out };
 }
 
 ~pub tor dim-eq { a: string<std/io:allocated>, b: string<std/io:allocated> }
@@ -796,7 +833,9 @@ fn mantissaDigits(canon: []const u8) i64 {
 // join linearly and quadrature still applies.
 ~tor add-finish-s { sig: string<std/num:!exact>, am: string<std/sym:!sexpr>, bm: string<std/sym:!sexpr>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
 
-~add-finish-s = std/sym:add(a: am, b: bm): rm |> pack-sym(mag: rm, unc: sig, dim: ad, cov: g): q |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+~add-finish-s = std/sym:add(a: am, b: bm): rm |> pack-sym(mag: rm, unc: sig, dim: ad, cov: g)
+| exact q |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+| bad |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> unreachable(): q -> q
 
 ~tor add-sym { am: string<std/sym:!sexpr>, au: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bm: string<std/sym:!sexpr>, bu: string<std/num:!exact>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated> }
 | exact string<exact!>
@@ -818,7 +857,9 @@ fn mantissaDigits(canon: []const u8) i64 {
 //   opp:   σ  = |u_a − u_b|           (anti-correlated — bias cancels)
 ~tor add-finish { sig: string<std/num:!exact>, am: string<std/num:!exact>, bm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
 
-~add-finish = std/num:add(a: am, b: bm): rm |> pack(mag: rm, unc: sig, dim: ad, cov: g): q |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+~add-finish = std/num:add(a: am, b: bm): rm |> pack(mag: rm, unc: sig, dim: ad, cov: g)
+| exact q |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+| bad |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> unreachable(): q -> q
 
 ~pub tor add { a: string<!exact>, b: string<!exact> }
 | exact string<exact!>
@@ -854,8 +895,12 @@ fn mantissaDigits(canon: []const u8) i64 {
 ~pub tor neg { n: string<!exact> } -> string<exact!>
 
 ~neg = unpack(n)
-| num f |> cov-flip(c: f.cov): nc |> std/num:neg(a: f.mag): nm |> pack(mag: nm, f.unc, f.dim, cov: nc): q |> std/io:free(content: f.cov) -> q
-| sym f |> cov-flip(c: f.cov): nc |> std/sym:neg(a: f.mag): nm |> pack-sym(mag: nm, f.unc, f.dim, cov: nc): q |> std/io:free(content: f.cov) -> q
+| num f |> cov-flip(c: f.cov): nc |> std/num:neg(a: f.mag): nm |> pack(mag: nm, f.unc, f.dim, cov: nc)
+    | exact q |> std/io:free(content: f.cov) -> q
+    | bad |> std/io:free(content: f.cov) |> unreachable(): q -> q
+| sym f |> cov-flip(c: f.cov): nc |> std/sym:neg(a: f.mag): nm |> pack-sym(mag: nm, f.unc, f.dim, cov: nc)
+    | exact q |> std/io:free(content: f.cov) -> q
+    | bad |> std/io:free(content: f.cov) |> unreachable(): q -> q
 
 ~pub tor sub { a: string<!exact>, b: string<!exact> }
 | exact string<exact!>
@@ -891,9 +936,15 @@ fn mantissaDigits(canon: []const u8) i64 {
     | undef |> std/num:free(n: rm) |> std/num:free(n: ra) => undef
     | ok rb => ok { rm, ra, rb }
 
-~tor mul-finish { prec: i64, rel: string<std/num:!exact>, rm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
+~tor mul-finish { prec: i64, rel: string<std/num:!exact>, rm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> }
+| exact string<exact!>
+| bad
 
-~mul-finish = dim-compose(a: ad, b: bd): rd |> std/num:dup(n: rm): dr |> std/num:abs(dr.a): ar |> std/num:mul(a: ar, b: rel): sg |> std/num:trunc(a: sg, prec): sig |> pack(mag: dr.b, unc: sig, dim: rd, cov: g): q |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+~mul-finish = dim-compose(a: ad, b: bd)
+| bad |> std/num:free(n: rel) |> std/num:free(n: rm) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) => bad
+| ok rd |> std/num:dup(n: rm): dr |> std/num:abs(dr.a): ar |> std/num:mul(a: ar, b: rel): sg |> std/num:trunc(a: sg, prec): sig |> pack(mag: dr.b, unc: sig, dim: rd, cov: g)
+    | exact q |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) => exact q
+    | bad |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> unreachable(): q => exact q
 
 // Dimensions compose under multiplication (the free abelian group adds).
 // Sigma law on the RELATIVE uncertainties — same four cov cases as add:
@@ -904,29 +955,38 @@ fn mantissaDigits(canon: []const u8) i64 {
 ~tor mul-sym-fin { am: string<std/sym:!sexpr>, au: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bm: string<std/sym:!sexpr>, bu: string<std/num:!exact>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> }
 | exact string<exact!>
 | sym-unc
+| bad
 
 ~mul-sym-fin = std/num:is-zero(n: au)
 | nonzero |> std/num:free(n: au) |> std/num:free(n: bu) |> std/sym:free(n: am) |> std/sym:free(n: bm) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) => sym-unc
 | zero |> std/num:free(n: au) |> std/num:is-zero(n: bu)
     | nonzero |> std/num:free(n: bu) |> std/sym:free(n: am) |> std/sym:free(n: bm) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) => sym-unc
-    | zero |> std/num:free(n: bu) |> std/sym:mul(a: am, b: bm): rm |> dim-compose(a: ad, b: bd): rd |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/num:from-int(i: 0): z |> pack-sym(mag: rm, unc: z, dim: rd, cov: g): q => exact q
+    | zero |> std/num:free(n: bu) |> std/sym:mul(a: am, b: bm): rm |> dim-compose(a: ad, b: bd)
+        | bad |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) |> std/sym:free(n: rm) => bad
+        | ok rd |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/num:from-int(i: 0): z |> pack-sym(mag: rm, unc: z, dim: rd, cov: g)
+            | exact q => exact q
+            | bad |> unreachable(): q => exact q
 
 ~tor mul-sym { am: string<std/sym:!sexpr>, au: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bm: string<std/sym:!sexpr>, bu: string<std/num:!exact>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated> }
 | exact string<exact!>
 | mixed-cov
 | sym-unc
+| bad
 
 ~mul-sym = cov-join(a: ac, b: bc)
 | mixed |> free-fields-s(am, au, ad, ac, bm, bu, bd, bc) => mixed-cov
 | indep g |> mul-sym-fin(am, au, ad, ac, bm, bu, bd, bc, g)
     | exact q => exact q
     | sym-unc => sym-unc
+    | bad => bad
 | corr g |> mul-sym-fin(am, au, ad, ac, bm, bu, bd, bc, g)
     | exact q => exact q
     | sym-unc => sym-unc
+    | bad => bad
 | opp g |> mul-sym-fin(am, au, ad, ac, bm, bu, bd, bc, g)
     | exact q => exact q
     | sym-unc => sym-unc
+    | bad => bad
 
 ~pub tor mul { a: string<!exact>, b: string<!exact> }
 | exact string<exact!>
@@ -940,26 +1000,36 @@ fn mantissaDigits(canon: []const u8) i64 {
         | mixed |> free-fields(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov) => mixed-cov
         | indep g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec: sp)
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:mul: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:qadd(a: p.ra, b: p.rb, prec: sp): rel |> mul-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+            | ok p |> std/num:qadd(a: p.ra, b: p.rb, prec: sp): rel |> mul-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g)
+                | exact q => exact q
+                | bad => bad "qty:mul: dimension exponent overflow"
         | corr g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec: sp)
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:mul: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:add(a: p.ra, b: p.rb): rel |> mul-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+            | ok p |> std/num:add(a: p.ra, b: p.rb): rel |> mul-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g)
+                | exact q => exact q
+                | bad => bad "qty:mul: dimension exponent overflow"
         | opp g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> mul-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec: sp)
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:mul: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:sub(a: p.ra, b: p.rb): sd |> std/num:abs(a: sd): rel |> mul-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+            | ok p |> std/num:sub(a: p.ra, b: p.rb): sd |> std/num:abs(a: sd): rel |> mul-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g)
+                | exact q => exact q
+                | bad => bad "qty:mul: dimension exponent overflow"
     | sym fb |> std/sym:of-dec(n: fa.mag): sm |> mul-sym(am: sm, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov)
         | exact q => exact q
         | mixed-cov => mixed-cov
         | sym-unc => sym-unc
+        | bad => bad "qty:mul: dimension exponent overflow"
 | sym fa |> unpack(n: b)
     | num fb |> std/sym:of-dec(n: fb.mag): sm |> mul-sym(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: sm, bu: fb.unc, bd: fb.dim, bc: fb.cov)
         | exact q => exact q
         | mixed-cov => mixed-cov
         | sym-unc => sym-unc
+        | bad => bad "qty:mul: dimension exponent overflow"
     | sym fb |> mul-sym(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov)
         | exact q => exact q
         | mixed-cov => mixed-cov
         | sym-unc => sym-unc
+        | bad => bad "qty:mul: dimension exponent overflow"
+
 
 ~tor div-prep { am: string<std/num:!exact>, au: string<std/num:!exact>, bm: string<std/num:!exact>, bu: string<std/num:!exact>, prec: i64, uprec: i64 }
 | ok { rm: string<std/num:exact!>, ra: string<std/num:exact!>, rb: string<std/num:exact!> }
@@ -974,9 +1044,17 @@ fn mantissaDigits(canon: []const u8) i64 {
         | undef |> std/num:free(n: rm) |> std/num:free(n: ra) => undef
         | ok rb => ok { rm, ra, rb }
 
-~tor div-finish { prec: i64, rel: string<std/num:!exact>, rm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> } -> string<exact!>
+~tor div-finish { prec: i64, rel: string<std/num:!exact>, rm: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated>, g: string<std/io:!allocated> }
+| exact string<exact!>
+| bad
 
-~div-finish = dim-invert(a: bd): ibd |> dim-compose(a: ad, b: ibd): rd |> std/io:free(content: ibd) |> std/num:dup(n: rm): dr |> std/num:abs(dr.a): ar |> std/num:mul(a: ar, b: rel): sg |> std/num:trunc(a: sg, prec): sig |> pack(mag: dr.b, unc: sig, dim: rd, cov: g): q |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) -> q
+~div-finish = dim-invert(a: bd)
+| bad |> std/num:free(n: rel) |> std/num:free(n: rm) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) => bad
+| ok ibd |> dim-compose(a: ad, b: ibd)
+    | bad |> std/io:free(content: ibd) |> std/num:free(n: rel) |> std/num:free(n: rm) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) => bad
+    | ok rd |> std/io:free(content: ibd) |> std/num:dup(n: rm): dr |> std/num:abs(dr.a): ar |> std/num:mul(a: ar, b: rel): sg |> std/num:trunc(a: sg, prec): sig |> pack(mag: dr.b, unc: sig, dim: rd, cov: g)
+        | exact q |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) => exact q
+        | bad |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> unreachable(): q => exact q
 
 // Dimensions subtract under division (compose with the inverse). Same
 // relative-sigma law as mul.
@@ -984,6 +1062,7 @@ fn mantissaDigits(canon: []const u8) i64 {
 | exact string<exact!>
 | div-zero
 | sym-unc
+| bad
 
 ~div-sym-fin = std/num:is-zero(n: au)
 | nonzero |> std/num:free(n: au) |> std/num:free(n: bu) |> std/sym:free(n: am) |> std/sym:free(n: bm) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) => sym-unc
@@ -991,13 +1070,20 @@ fn mantissaDigits(canon: []const u8) i64 {
     | nonzero |> std/num:free(n: bu) |> std/sym:free(n: am) |> std/sym:free(n: bm) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) => sym-unc
     | zero |> std/num:free(n: bu) |> std/sym:div(a: am, b: bm)
         | div-zero |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) => div-zero
-        | exact rm |> dim-invert(a: bd): ibd |> dim-compose(a: ad, b: ibd): rd |> std/io:free(content: ibd) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/num:from-int(i: 0): z |> pack-sym(mag: rm, unc: z, dim: rd, cov: g): q => exact q
+        | exact rm |> dim-invert(a: bd)
+            | bad |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) |> std/sym:free(n: rm) => bad
+            | ok ibd |> dim-compose(a: ad, b: ibd)
+                | bad |> std/io:free(content: ibd) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: g) |> std/sym:free(n: rm) => bad
+                | ok rd |> std/io:free(content: ibd) |> std/io:free(content: ad) |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/num:from-int(i: 0): z |> pack-sym(mag: rm, unc: z, dim: rd, cov: g)
+                    | exact q => exact q
+                    | bad |> unreachable(): q => exact q
 
 ~tor div-sym { am: string<std/sym:!sexpr>, au: string<std/num:!exact>, ad: string<std/io:!allocated>, ac: string<std/io:!allocated>, bm: string<std/sym:!sexpr>, bu: string<std/num:!exact>, bd: string<std/io:!allocated>, bc: string<std/io:!allocated> }
 | exact string<exact!>
 | div-zero
 | mixed-cov
 | sym-unc
+| bad
 
 ~div-sym = cov-join(a: ac, b: bc)
 | mixed |> free-fields-s(am, au, ad, ac, bm, bu, bd, bc) => mixed-cov
@@ -1005,14 +1091,17 @@ fn mantissaDigits(canon: []const u8) i64 {
     | exact q => exact q
     | div-zero => div-zero
     | sym-unc => sym-unc
+    | bad => bad
 | corr g |> div-sym-fin(am, au, ad, ac, bm, bu, bd, bc, g)
     | exact q => exact q
     | div-zero => div-zero
     | sym-unc => sym-unc
+    | bad => bad
 | opp g |> div-sym-fin(am, au, ad, ac, bm, bu, bd, bc, g)
     | exact q => exact q
     | div-zero => div-zero
     | sym-unc => sym-unc
+    | bad => bad
 
 ~pub tor div { a: string<!exact>, b: string<!exact>, prec: i64 }
 | exact string<exact!>
@@ -1028,79 +1117,123 @@ fn mantissaDigits(canon: []const u8) i64 {
         | indep g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec, uprec: sp)
             | div-zero |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => div-zero
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:div: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:qadd(a: p.ra, b: p.rb, prec: sp): rel |> div-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+            | ok p |> std/num:qadd(a: p.ra, b: p.rb, prec: sp): rel |> div-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g)
+                | exact q => exact q
+                | bad => bad "qty:div: dimension exponent overflow"
         | corr g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec, uprec: sp)
             | div-zero |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => div-zero
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:div: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:add(a: p.ra, b: p.rb): rel |> div-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+            | ok p |> std/num:add(a: p.ra, b: p.rb): rel |> div-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g)
+                | exact q => exact q
+                | bad => bad "qty:div: dimension exponent overflow"
         | opp g |> sigma-prec4(a: fa.mag, b: fa.unc, c: fb.mag, d: fb.unc): sp |> div-prep(am: fa.mag, au: fa.unc, bm: fb.mag, bu: fb.unc, prec, uprec: sp)
             | div-zero |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => div-zero
             | undef |> std/io:free(content: fa.dim) |> std/io:free(content: fa.cov) |> std/io:free(content: fb.dim) |> std/io:free(content: fb.cov) |> std/io:free(content: g) => bad "qty:div: relative uncertainty undefined at zero magnitude"
-            | ok p |> std/num:sub(a: p.ra, b: p.rb): sd |> std/num:abs(a: sd): rel |> div-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g): q => exact q
+            | ok p |> std/num:sub(a: p.ra, b: p.rb): sd |> std/num:abs(a: sd): rel |> div-finish(prec: sp, rel, p.rm, ad: fa.dim, ac: fa.cov, bd: fb.dim, bc: fb.cov, g)
+                | exact q => exact q
+                | bad => bad "qty:div: dimension exponent overflow"
     | sym fb |> std/sym:of-dec(n: fa.mag): sm |> div-sym(am: sm, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov)
         | exact q => exact q
         | div-zero => div-zero
         | mixed-cov => mixed-cov
         | sym-unc => sym-unc
+        | bad => bad "qty:div: dimension exponent overflow"
 | sym fa |> unpack(n: b)
     | num fb |> std/sym:of-dec(n: fb.mag): sm |> div-sym(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: sm, bu: fb.unc, bd: fb.dim, bc: fb.cov)
         | exact q => exact q
         | div-zero => div-zero
         | mixed-cov => mixed-cov
         | sym-unc => sym-unc
+        | bad => bad "qty:div: dimension exponent overflow"
     | sym fb |> div-sym(am: fa.mag, au: fa.unc, ad: fa.dim, ac: fa.cov, bm: fb.mag, bu: fb.unc, bd: fb.dim, bc: fb.cov)
         | exact q => exact q
         | div-zero => div-zero
         | mixed-cov => mixed-cov
         | sym-unc => sym-unc
+        | bad => bad "qty:div: dimension exponent overflow"
+
 
 // q^n for integer n. n = 0 -> dimensionless 1 (sigma 0); n < 0 -> reciprocal,
 // dims negate. Sigma law: σ = |n|·|mag|^(n-1)·u  (n > 0),
 //                     σ = |n|·u / |mag|^(|n|+1)  (n < 0).
 // The neg-exp arms below are unreachable by construction — e > 0 in both
 // helpers — and route to the defect sink, loudly.
-~tor pow-pos { mag: string<std/num:!exact>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated>, e: i64 } -> string<exact!>
+~tor pow-pos { mag: string<std/num:!exact>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated>, e: i64 }
+| exact string<exact!>
+| bad
 
 ~pow-pos = sigma-prec(a: mag, b: unc): sp |> std/num:dup(n: mag): dm |> std/num:abs(a: dm.b): am |> std/num:pow(a: am, n: e - 1)
-| neg-exp |> std/num:free(n: dm.a) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r -> r
+| neg-exp |> std/num:free(n: dm.a) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
+| exp-too-large |> std/num:free(n: dm.a) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
 | exact p1 |> std/num:from-int(i: e): en |> std/num:mul(a: en, b: unc): t |> std/num:mul(a: t, b: p1): sg |> std/num:trunc(a: sg, prec: sp): sig |> std/num:pow(dm.a, n: e)
-    | neg-exp |> std/num:free(n: sig) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r -> r
-    | exact rm |> dim-scale(a: dim, n: e): rd |> std/io:free(content: dim) |> pack(mag: rm, unc: sig, dim: rd, cov): q -> q
+    | neg-exp |> std/num:free(n: sig) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
+    | exp-too-large |> std/num:free(n: sig) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
+    | exact rm |> dim-scale(a: dim, n: e)
+        | bad |> std/num:free(n: rm) |> std/num:free(n: sig) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad
+        | ok rd |> std/io:free(content: dim) |> pack(mag: rm, unc: sig, dim: rd, cov)
+            | exact q => exact q
+            | bad |> unreachable(): q => exact q
 
 ~tor pow-neg { mag: string<std/num:!exact>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated>, e: i64 }
 | exact string<exact!>
 | div-zero
+| bad
 
 ~pow-neg = sigma-prec(a: mag, b: unc): sp |> std/num:dup(n: mag): dm |> std/num:abs(a: dm.b): am |> std/num:dup(n: am): da |> std/num:pow(dm.a, n: e)
 | neg-exp |> std/num:free(n: da.a) |> std/num:free(n: da.b) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
+| exp-too-large |> std/num:free(n: da.a) |> std/num:free(n: da.b) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
 | exact pfull |> std/num:pow(da.a, n: e)
     | neg-exp |> std/num:free(n: pfull) |> std/num:free(n: da.b) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
+    | exp-too-large |> std/num:free(n: pfull) |> std/num:free(n: da.b) |> std/num:free(n: unc) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
     | exact pe |> std/num:mul(a: pe, da.b): den |> std/num:from-int(i: e): en |> std/num:mul(a: en, b: unc): t |> std/num:div(a: t, b: den, prec: sp)
         | div-zero |> std/num:free(n: pfull) |> std/io:free(content: dim) |> std/io:free(content: cov) |> unreachable(): r => exact r
         | exact sig |> std/num:from-int(i: 1): one |> std/num:div(a: one, b: pfull, prec: sp)
             | div-zero |> std/num:free(n: sig) |> std/io:free(content: dim) |> std/io:free(content: cov) => div-zero
-            | exact rm |> dim-scale(a: dim, n: 0 - e): rd |> std/io:free(content: dim) |> pack(mag: rm, unc: sig, dim: rd, cov): q => exact q
+            | exact rm |> dim-scale(a: dim, n: 0 - e)
+                | bad |> std/num:free(n: rm) |> std/num:free(n: sig) |> std/io:free(content: dim) |> std/io:free(content: cov) => bad
+                | ok rd |> std/io:free(content: dim) |> pack(mag: rm, unc: sig, dim: rd, cov)
+                    | exact q => exact q
+                    | bad |> unreachable(): q => exact q
 
 ~pub tor pow { a: string<!exact>, n: i64 }
 | exact string<exact!>
 | div-zero
 | sym-unc
+| exp-too-large
+| bad string
 
-~pow = unpack(n: a)
-| num f |> if(n == 0)
-    | then |> dim-scale(a: f.dim, n: 0): rd |> std/num:free(n: f.mag) |> std/num:free(n: f.unc) |> std/io:free(content: f.dim) |> std/num:from-int(i: 1): one |> std/num:from-int(i: 0): z |> pack(mag: one, unc: z, dim: rd, f.cov): q => exact q
-    | else |> if(n < 0)
-        | then |> pow-neg(f.mag, f.unc, f.dim, f.cov, e: 0 - n)
-            | exact q => exact q
-            | div-zero => div-zero
-        | else |> pow-pos(f.mag, f.unc, f.dim, f.cov, e: n): q => exact q
-| sym f |> if(n == 0)
-    | then |> dim-scale(a: f.dim, n: 0): rd |> std/sym:free(n: f.mag) |> std/num:free(n: f.unc) |> std/io:free(content: f.dim) |> std/num:from-int(i: 1): one |> std/num:from-int(i: 0): z |> pack(mag: one, unc: z, dim: rd, f.cov): q => exact q
-    | else |> std/num:is-zero(n: f.unc)
-        | nonzero |> std/num:free(n: f.unc) |> std/sym:free(n: f.mag) |> std/io:free(content: f.dim) |> std/io:free(content: f.cov) => sym-unc
-        | zero |> std/num:free(n: f.unc) |> std/sym:pow(a: f.mag, n)
-            | div-zero |> std/io:free(content: f.dim) |> std/io:free(content: f.cov) => div-zero
-            | exact rm |> dim-scale(a: f.dim, n): rd |> std/io:free(content: f.dim) |> std/num:from-int(i: 0): z |> pack-sym(mag: rm, unc: z, dim: rd, f.cov): q => exact q
+~pow = if(n > 2147483647 or n < 0 - 2147483647)
+| then |> free(n: a) => exp-too-large
+| else |> unpack(n: a)
+    | num f |> if(n == 0)
+        | then |> dim-scale(a: f.dim, n: 0)
+            | bad |> std/num:free(n: f.mag) |> std/num:free(n: f.unc) |> std/io:free(content: f.dim) |> std/io:free(content: f.cov) |> unreachable(): q => exact q
+            | ok rd |> std/num:free(n: f.mag) |> std/num:free(n: f.unc) |> std/io:free(content: f.dim) |> std/num:from-int(i: 1): one |> std/num:from-int(i: 0): z |> pack(mag: one, unc: z, dim: rd, f.cov)
+                | exact q => exact q
+                | bad |> unreachable(): q => exact q
+        | else |> if(n < 0)
+            | then |> pow-neg(f.mag, f.unc, f.dim, f.cov, e: 0 - n)
+                | exact q => exact q
+                | div-zero => div-zero
+                | bad => bad "qty:pow: dimension exponent overflow"
+            | else |> pow-pos(f.mag, f.unc, f.dim, f.cov, e: n)
+                | exact q => exact q
+                | bad => bad "qty:pow: dimension exponent overflow"
+    | sym f |> if(n == 0)
+        | then |> dim-scale(a: f.dim, n: 0)
+            | bad |> std/sym:free(n: f.mag) |> std/num:free(n: f.unc) |> std/io:free(content: f.dim) |> std/io:free(content: f.cov) |> unreachable(): q => exact q
+            | ok rd |> std/sym:free(n: f.mag) |> std/num:free(n: f.unc) |> std/io:free(content: f.dim) |> std/num:from-int(i: 1): one |> std/num:from-int(i: 0): z |> pack(mag: one, unc: z, dim: rd, f.cov)
+                | exact q => exact q
+                | bad |> unreachable(): q => exact q
+        | else |> std/num:is-zero(n: f.unc)
+            | nonzero |> std/num:free(n: f.unc) |> std/sym:free(n: f.mag) |> std/io:free(content: f.dim) |> std/io:free(content: f.cov) => sym-unc
+            | zero |> std/num:free(n: f.unc) |> std/sym:pow(a: f.mag, n)
+                | div-zero |> std/io:free(content: f.dim) |> std/io:free(content: f.cov) => div-zero
+                | exact rm |> dim-scale(a: f.dim, n)
+                    | bad |> std/io:free(content: f.dim) |> std/io:free(content: f.cov) |> std/sym:free(n: rm) => bad "qty:pow: dimension exponent overflow"
+                    | ok rd |> std/io:free(content: f.dim) |> std/num:from-int(i: 0): z |> pack-sym(mag: rm, unc: z, dim: rd, f.cov)
+                        | exact q => exact q
+                        | bad |> unreachable(): q => exact q
 
 // ============================================================================
 // Accessors and linearity

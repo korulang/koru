@@ -1,0 +1,86 @@
+// E1 uniform refusal lane: every user-reachable failure names an arm.
+// (Internal-impossible states — phantom-mark-protected formats like the
+// qty pack's mag|dim|cov shape — keep panic, because firing means a bug,
+// not bad input.)
+import std/io
+import std/num
+import std/quantity
+
+// dim-compose on non-dim allocated text -> bad (was: panic)
+std/num:lit(s: "5e3")
+| exact a |> std/num:render(n: a): t |> std/quantity:dim-compose(a: t, b: t)
+    | ok d |> std/io:print.ln("BUG-ok:{{ d:s }}") |> std/io:free(content: d)
+    | bad |> std/io:print.ln("compose-bad")
+| bad _ |> std/io:print.ln("lit-bad")
+
+// pack on non-dim allocated text -> bad (was: panic)
+std/num:lit(s: "5e3")
+| exact m |> std/num:dup(n: m): dm |> std/num:dup(n: dm.b): dm2 |> std/num:lit(s: "0e0")
+    | exact u |> std/num:render(n: dm2.a): t |> std/num:render(n: dm2.b): t2 |> std/quantity:pack(mag: dm.a, unc: u, dim: t, cov: t2)
+        | exact q |> std/io:print.ln("BUG-pack") |> std/quantity:free(n: q)
+        | bad |> std/io:print.ln("pack-bad")
+    | bad _ |> std/num:free(n: dm.a) |> std/num:free(n: dm2.a) |> std/num:free(n: dm2.b) |> std/io:print.ln("lit-bad1b")
+| bad _ |> std/io:print.ln("lit-bad1c")
+
+// dim-scale exponent overflow -> bad (was: @intCast panic)
+std/quantity:lit(2.0*kg)
+| exact m |> std/quantity:dim(q: m): d |> std/quantity:dim-scale(a: d, n: 3000000000)
+    | ok d2 |> std/io:print.ln("BUG-scale:{{ d2:s }}") |> std/io:free(content: d2)
+    | bad |> std/io:print.ln("scale-bad")
+| bad _ |> std/io:print.ln("BUG-lit3")
+
+// num:pow n > u32 -> exp-too-large (was: panic)
+std/num:lit(s: "2")
+| exact a |> std/num:pow(a, n: 5000000000)
+    | exact p |> std/io:print.ln("BUG-pow") |> std/num:free(n: p)
+    | neg-exp |> std/io:print.ln("BUG-negexp")
+    | exp-too-large |> std/io:print.ln("pow-exp-too-large")
+| bad _ |> std/io:print.ln("lit-bad4")
+
+// quantity:pow n > i32 -> exp-too-large (was: panic inside dim-scale)
+std/quantity:lit(3.0*m/s)
+| exact v |> std/quantity:pow(a: v, n: 3000000000)
+    | exact q |> std/io:print.ln("BUG-qpow") |> std/quantity:free(n: q)
+    | div-zero |> std/io:print.ln("BUG-div0")
+    | sym-unc |> std/io:print.ln("BUG-unc")
+    | exp-too-large |> std/io:print.ln("qpow-exp-too-large")
+    | bad e |> std/io:print.ln("qpow-bad:{{ e:s }}")
+| bad _ |> std/io:print.ln("BUG-lit4")
+
+// crafted dim with near-i32max exponent: mul overflows the composed dim
+// -> propagated bad (was: i32 overflow panic inside dim-compose)
+std/quantity:lit(2.0*kg)
+| exact m |> std/quantity:dim(q: m): d |> std/quantity:dim-scale(a: d, n: 2147483647)
+    | ok big |> std/num:lit(s: "2e0")
+        | exact mag |> std/num:lit(s: "0e0")
+            | exact unc |> std/num:dup(n: mag): dm |> std/num:render(n: dm.a): ctag |> std/quantity:pack(mag: dm.b, unc, dim: big, cov: ctag)
+                | exact q |> std/quantity:dup(n: q): dq |> std/quantity:mul(dq.a, dq.b)
+                    | exact r |> std/io:print.ln("BUG-ovf") |> std/quantity:free(n: r)
+                    | mixed-cov |> std/io:print.ln("BUG-mcov2")
+                    | bad e |> std/io:print.ln("ovf-bad:{{ e:s }}")
+                    | sym-unc |> std/io:print.ln("BUG-sunc2")
+                | bad |> std/io:print.ln("BUG-packbig")
+            | bad _ |> std/io:print.ln("BUG-lit8")
+        | bad _ |> std/io:print.ln("BUG-lit9")
+    | bad |> std/io:print.ln("BUG-bigscale")
+| bad _ |> std/io:print.ln("BUG-lit10")
+
+// sanity: normal ops unchanged
+std/quantity:lit(2.0*kg)
+| exact m |> std/quantity:lit(3.0*m/s)
+    | exact v |> std/quantity:mul(a: m, b: v)
+        | exact q |> std/quantity:render(n: q): t |> std/io:print.ln("{{ t:s }}") |> std/io:free(content: t)
+        | mixed-cov |> std/io:print.ln("BUG-mcov")
+        | bad e |> std/io:print.ln("BUG-mul:{{ e:s }}")
+        | sym-unc |> std/io:print.ln("BUG-sunc")
+    | bad _ |> std/io:print.ln("BUG-lit5")
+| bad _ |> std/io:print.ln("BUG-lit6")
+
+std/quantity:lit(2.0*m/s)
+| exact v |> std/quantity:pow(a: v, n: 3)
+    | exact q |> std/quantity:render(n: q): t |> std/io:print.ln("{{ t:s }}") |> std/io:free(content: t)
+    | div-zero |> std/io:print.ln("BUG-div0b")
+    | sym-unc |> std/io:print.ln("BUG-uncb")
+    | exp-too-large |> std/io:print.ln("BUG-etl")
+    | bad e |> std/io:print.ln("BUG-qb:{{ e:s }}")
+| bad _ |> std/io:print.ln("BUG-lit7")
