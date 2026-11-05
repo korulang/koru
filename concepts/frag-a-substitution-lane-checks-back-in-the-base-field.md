@@ -32,7 +32,7 @@ e^x — the lattice test is on a common *root*, because e^{k·b} is not a
 rational coefficient), bare-x factors (that is the ℚ(x)-coefficient
 lane, a real tower problem), nested exponentials, and rsum leaves in
 the t-antiderivative (S(e^{g0},α) has no payload spelling) each name
-their own refusal arm. The same skeleton — lattice pass, frac
-extractor keyed on the monomial, re-entered decider, node-wise
-substitute-back, θ-frac re-check — ports to a log-monomial lane; what
-changes is which direction the refusal arms point.
+their own refusal arm. Correction (B6): the skeleton does not port to a log-monomial lane —
+there is no rational substitution for a primitive monomial; the lane is
+a coefficient cascade with limited integration instead, told in
+frag-a-primitive-monomial-integrates-by-cascade-not-substitution.

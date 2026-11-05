@@ -748,7 +748,6 @@ fn fracText(alloc: std.mem.Allocator, out: *std.ArrayList(u8), f: *const Frac) !
     try out.append(alloc, ')');
 }
 
-
 // ============================================================================
 // Trager log part — the squarefree remainder C/D of Hermite reduction
 // integrates to a sum of logs/arctans over the roots of the
@@ -1793,7 +1792,7 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
                 var cl = std.ArrayList(*SNode){};
                 defer cl.deinit(alloc);
                 for (const_kids.items) |k| cl.append(alloc, nodeClone(alloc, k) catch @panic("std/sym:decide-integral")) catch @panic("std/sym:decide-integral");
-                ck_owned = nodeList(alloc, .mul, cl.items) catch @panic("std/sym:decide-integral");
+                ck_owned = nodeList(alloc, .mul, cl.toOwnedSlice(alloc) catch @panic("std/sym:decide-integral")) catch @panic("std/sym:decide-integral");
                 break :blk ck_owned.?;
             };
             const_txt = canonOf(alloc, ck) catch @panic("std/sym:decide-integral");
@@ -1803,7 +1802,7 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
                 var cl = std.ArrayList(*SNode){};
                 defer cl.deinit(alloc);
                 for (var_kids.items) |k| cl.append(alloc, nodeClone(alloc, k) catch @panic("std/sym:decide-integral")) catch @panic("std/sym:decide-integral");
-                nt_var_owned = nodeList(alloc, .mul, cl.items) catch @panic("std/sym:decide-integral");
+                nt_var_owned = nodeList(alloc, .mul, cl.toOwnedSlice(alloc) catch @panic("std/sym:decide-integral")) catch @panic("std/sym:decide-integral");
                 nt_var = nt_var_owned.?;
             }
         }
@@ -2066,6 +2065,9 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
     // in a single exponential element e^{c0 x + b0} reduces to a rational
     // t-integral and re-enters the decider at depth + 1.
     if (thetaLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral theta")) |o| return o;
+    // Log-monomial lane (~part logmono): an integrand polynomial in one
+    // log(u) cascades r_i = int(a_i - (i+1)(u'/u)*r_{i+1}) at depth + 1.
+    if (logLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral logmono")) |o| return o;
     // Sum lane: an .add integrand that survived the monomial lanes is
     // split termwise — each term re-enters this same decision recursively
     // (depth-bounded), and the sum is elementary exactly when every term

@@ -513,7 +513,14 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   exponential element e^{k*g0} — affine g0 = c0*x+b0 on a common root —
   substitutes t = e^{g0}, re-enters the decider on F(t)/(c0*t), and
   substitutes back node-wise, still `checked-exact` by re-extracting
-  the derivative's theta-frac. Nonlinear args, off-lattice roots,
+  the derivative's theta-frac. A polynomial in one log(u), u
+  rational, with theta-free coefficients -> the primitive-monomial
+  cascade r_i' = a_i - (i+1)(u'/u)r_{i+1}, each step re-entering
+  the decider; every free constant resolves by limited integration
+  (the computed antiderivative's theta-part must be gamma*theta,
+  gamma constant, else `log-mono-limited`), and coefficients are
+  compared as Q(x) elements rather than strings. Nonlinear args,
+  off-lattice roots,
   bare-x coefficients, nested exp, and t-antiderivatives containing
   rsum each name a refusal arm. Other non-rational integrands keep the
   structural cert + holonomic-special lane with
@@ -529,7 +536,7 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   registry_key path) without record-payload arms.
 
 615_048 pins all arms incl. (1+x)^(1/4) fallback, the bounded/unbounded/
-unclassifiable decide-ode split, and decide-field nf. 615: 40/40.
+unclassifiable decide-ode split, and decide-field nf. 615: 55/55.
 
 ## Design only — non-SI extension surface (currency et al.)
 

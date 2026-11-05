@@ -52,6 +52,7 @@
 ~part certgen
 ~part rsum
 ~part exptheta
+~part logmono
 ~part canon
 ~part rel
 ~part alg
@@ -2122,7 +2123,6 @@ fn ownedCopy(s: []const u8) []u8 {
     defer symFree(n);
     return .{ .a = ownedCopy(n), .b = ownedCopy(n) };
 }
-
 
 // ============================================================================
 // Cross-tower lanes

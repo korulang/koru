@@ -1,0 +1,431 @@
+// ============================================================================
+// ~part logmono — the primitive (logarithmic) monomial lane for
+// decide-integral.
+//
+// An integrand that is a polynomial in a single primitive monomial
+//   θ = log(u),   u rational in x,
+// with θ-free coefficients — rationals, other logs, exp/atan leaves —
+// has, when it has an elementary antiderivative at all, one of the form
+//   Σ r_j(x)·θ^j,   r_j in the same base field
+// (the structure theorem for primitive extensions — the log analog of
+// Liouville).  Differentiating and matching θ^i gives the descending
+// cascade
+//   r_i' = a_i − (i+1)·(u'/u)·r_{i+1},   i = n..0,
+// each step a base-field integration that re-enters the decider.
+// r_{i+1} is determined only up to a constant C, which enters step i as
+// the extra integrand −(i+1)·C·u'/u — and that integrates to
+// −(i+1)·C·θ.  The constant is therefore read back off the computed
+// antiderivative: its θ-part must be γ·θ with γ a constant, giving
+// C = γ/(i+1).  Any other θ-part — higher powers, or a nonconstant
+// coefficient — is the limited-integration failure and names the
+// refusal.  The assembled antiderivative is re-verified exactly: its
+// derivative's θ-coefficients must equal the integrand's.
+// ============================================================================
+
+// Every .log leaf of the tree, in walk order.
+fn collectLogKids(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(*const SNode)) !void {
+    switch (n.kind) {
+        .dec, .atom, .rsum => {},
+        .sq, .inv, .log, .atan, .exp => {
+            if (n.kind == .log) try out.append(alloc, n);
+            try collectLogKids(alloc, n.kid, out);
+        },
+        .add, .mul => for (n.kids) |k| try collectLogKids(alloc, k, out),
+    }
+}
+
+// Does n contain a .log leaf whose argument canon equals ukey?
+fn logHasU(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8) anyerror!bool {
+    switch (n.kind) {
+        .dec, .atom, .rsum => return false,
+        .log => {
+            const kt = try canonOf(alloc, n.kid);
+            defer alloc.free(kt);
+            if (std.mem.eql(u8, kt, ukey)) return true;
+            return logHasU(alloc, n.kid, ukey);
+        },
+        .sq, .inv, .atan, .exp => return logHasU(alloc, n.kid, ukey),
+        .add, .mul => {
+            for (n.kids) |k| if (try logHasU(alloc, k, ukey)) return true;
+            return false;
+        },
+    }
+}
+
+// A polynomial in θ with node coefficients: index i is the coefficient
+// of θ^i, null means zero.
+const LPoly = []?*SNode;
+
+fn lpFree(alloc: std.mem.Allocator, p: LPoly) void {
+    for (p) |c| if (c) |cn| nodeFree(alloc, cn);
+    alloc.free(p);
+}
+
+fn lpDeg(p: LPoly) usize {
+    var d = p.len;
+    while (d > 0) {
+        d -= 1;
+        if (p[d] != null) return d;
+    }
+    return 0;
+}
+
+fn lpSingle(alloc: std.mem.Allocator, c: *SNode) !LPoly {
+    const p = try alloc.alloc(?*SNode, 1);
+    p[0] = c;
+    return p;
+}
+
+fn lpConst(alloc: std.mem.Allocator, d: Dec) !LPoly {
+    return lpSingle(alloc, try nodeDec(alloc, d));
+}
+
+// c[i] = a_i + b_i, the coefficients unnormalized add-nodes (normed on
+// use — canonical emission and the exact check both normalize first).
+fn lpAdd(alloc: std.mem.Allocator, a: LPoly, b: LPoly) !LPoly {
+    const m = @max(a.len, b.len);
+    const p = try alloc.alloc(?*SNode, m);
+    var i: usize = 0;
+    errdefer {
+        for (p[0..i]) |c| if (c) |cn| nodeFree(alloc, cn);
+        alloc.free(p);
+    }
+    while (i < m) : (i += 1) {
+        const an: ?*SNode = if (i < a.len) a[i] else null;
+        const bn: ?*SNode = if (i < b.len) b[i] else null;
+        if (an == null and bn == null) {
+            p[i] = null;
+        } else if (an == null) {
+            p[i] = try nodeClone(alloc, bn.?);
+        } else if (bn == null) {
+            p[i] = try nodeClone(alloc, an.?);
+        } else {
+            const kids = try alloc.alloc(*SNode, 2);
+            kids[0] = try nodeClone(alloc, an.?);
+            kids[1] = try nodeClone(alloc, bn.?);
+            p[i] = try nodeList(alloc, .add, kids);
+        }
+    }
+    return p;
+}
+
+fn lpMul(alloc: std.mem.Allocator, a: LPoly, b: LPoly) !LPoly {
+    if (a.len == 0 or b.len == 0) return try alloc.alloc(?*SNode, 0);
+    const p = try alloc.alloc(?*SNode, a.len + b.len - 1);
+    for (p) |*c| c.* = null;
+    errdefer lpFree(alloc, p);
+    for (a, 0..) |ac, i| {
+        if (ac == null) continue;
+        for (b, 0..) |bc, j| {
+            if (bc == null) continue;
+            const kids = try alloc.alloc(*SNode, 2);
+            kids[0] = try nodeClone(alloc, ac.?);
+            kids[1] = try nodeClone(alloc, bc.?);
+            const term = try nodeList(alloc, .mul, kids);
+            if (p[i + j]) |old| {
+                const ks = try alloc.alloc(*SNode, 2);
+                ks[0] = old;
+                ks[1] = term;
+                p[i + j] = try nodeList(alloc, .add, ks);
+            } else {
+                p[i + j] = term;
+            }
+        }
+    }
+    return p;
+}
+
+// The polynomial-in-θ coefficient list of n, where θ = log(ukey).
+// Null return: a θ sits in a non-polynomial position — inside
+// inv/sq/atan/exp (the rational-in-θ lane is future work — it needs
+// Hermite reduction in the extension, not just the cascade).
+fn logPolyOf(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8) anyerror!?LPoly {
+    switch (n.kind) {
+        .dec, .atom, .rsum => return try lpSingle(alloc, try nodeClone(alloc, n)),
+        .log => {
+            const kt = try canonOf(alloc, n.kid);
+            defer alloc.free(kt);
+            if (!std.mem.eql(u8, kt, ukey)) return try lpSingle(alloc, try nodeClone(alloc, n));
+            const p = try alloc.alloc(?*SNode, 2);
+            p[0] = null;
+            p[1] = try nodeDec(alloc, try decOneN(alloc, false));
+            return p;
+        },
+        .sq, .inv, .atan, .exp => {
+            if (try logHasU(alloc, n.kid, ukey)) return null;
+            return try lpSingle(alloc, try nodeClone(alloc, n));
+        },
+        .add => {
+            var acc = try lpConst(alloc, try decZero(alloc));
+            errdefer lpFree(alloc, acc);
+            for (n.kids) |k| {
+                const kp = (try logPolyOf(alloc, k, ukey)) orelse {
+                    lpFree(alloc, acc);
+                    return null;
+                };
+                defer lpFree(alloc, kp);
+                const np = try lpAdd(alloc, acc, kp);
+                lpFree(alloc, acc);
+                acc = np;
+            }
+            return acc;
+        },
+        .mul => {
+            var acc = try lpConst(alloc, try decOneN(alloc, false));
+            errdefer lpFree(alloc, acc);
+            for (n.kids) |k| {
+                const kp = (try logPolyOf(alloc, k, ukey)) orelse {
+                    lpFree(alloc, acc);
+                    return null;
+                };
+                defer lpFree(alloc, kp);
+                const np = try lpMul(alloc, acc, kp);
+                lpFree(alloc, acc);
+                acc = np;
+            }
+            return acc;
+        },
+    }
+}
+
+fn canonIsZero(t: []const u8) bool {
+    return std.mem.eql(u8, t, "0") or std.mem.eql(u8, t, "0e0");
+}
+
+// Exact coefficient equality: canonical text first; on a mismatch, both
+// sides are tried as rational functions of x — -x/(x+1) and
+// -1+1/(x+1) canon differently but are the same element of Q(x).  A
+// side that is not rational-in-x (a surviving log/exp leaf) keeps the
+// canon verdict: different text is different.
+fn coeffNodesEql(alloc: std.mem.Allocator, a: ?*SNode, b: ?*SNode) anyerror!bool {
+    if (a == null and b == null) return true;
+    if (a == null or b == null) {
+        // One side missing: the other must be exactly zero — canon
+        // first, then the rational-function test.
+        const s2 = (if (a == null) b else a).?;
+        const st = try canonOf(alloc, s2);
+        defer alloc.free(st);
+        if (canonIsZero(st)) return true;
+        var f = (try ratFuncOfNode(alloc, s2)) orelse return false;
+        defer fracFree(alloc, &f);
+        return fracIsZero(&f);
+    }
+    const at = try canonOf(alloc, a.?);
+    defer alloc.free(at);
+    const bt = try canonOf(alloc, b.?);
+    defer alloc.free(bt);
+    if (std.mem.eql(u8, at, bt)) return true;
+    var af = (try ratFuncOfNode(alloc, a.?)) orelse return false;
+    defer fracFree(alloc, &af);
+    var bf = (try ratFuncOfNode(alloc, b.?)) orelse return false;
+    defer fracFree(alloc, &bf);
+    return fracEql(alloc, &af, &bf);
+}
+
+// The lane itself.  Returns a decision when the integrand is a
+// polynomial in one log(u) with rational u and the cascade constructs;
+// null (with a named lane tag when the refusal is structural)
+// otherwise.
+fn logLane(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    if (depth >= 6) return null;
+    var logs = std.ArrayList(*const SNode){};
+    defer logs.deinit(alloc);
+    try collectLogKids(alloc, nt_var, &logs);
+    if (logs.items.len == 0) return null;
+
+    // θ = log(u): the first log leaf fixes u; any other log is then a
+    // base-field coefficient for this lane (the cascade recurses on it).
+    const u_node = logs.items[0].kid;
+    const ukey = try canonOf(alloc, u_node);
+    defer alloc.free(ukey);
+    const up = (try polyOfNode(alloc, u_node)) orelse {
+        lane_extra.* = "log-mono-arg-nonrational";
+        return null;
+    };
+    defer polyFree(alloc, up);
+
+    const F = (try logPolyOf(alloc, nt_var, ukey)) orelse {
+        lane_extra.* = "log-mono-not-poly";
+        return null;
+    };
+    defer lpFree(alloc, F);
+    for (F) |*c| {
+        if (c.*) |cn| {
+            const nn = try norm(alloc, cn);
+            nodeFree(alloc, cn);
+            c.* = nn;
+        }
+    }
+    const n = lpDeg(F);
+    if (n == 0) return null;
+    if (n > 16) {
+        lane_extra.* = "log-mono-deg-bound";
+        return null;
+    }
+
+    // h = u'/u as integrand text; θ = log(u).
+    const du = try deriveNode(alloc, u_node);
+    defer nodeFree(alloc, du);
+    const dun = try norm(alloc, du);
+    defer nodeFree(alloc, dun);
+    const du_txt = try canonOf(alloc, dun);
+    defer alloc.free(du_txt);
+    const h_txt = try std.fmt.allocPrint(alloc, "(({s})*inv({s}))", .{ du_txt, ukey });
+    defer alloc.free(h_txt);
+    const theta_txt = try std.fmt.allocPrint(alloc, "log({s})", .{ukey});
+    defer alloc.free(theta_txt);
+
+    // The cascade.  r[j] holds the coefficient text of θ^j; r[n+1] is
+    // the still-unknown constant carried as "0e0" until step n resolves
+    // it, and each step folds C = γ/(i+1) back into r[i+1].
+    var r = try alloc.alloc(?[]u8, n + 2);
+    for (r) |*s| s.* = null;
+    defer {
+        for (r) |s| if (s) |t| alloc.free(t);
+        alloc.free(r);
+    }
+    r[n + 1] = try alloc.dupe(u8, "0e0");
+    var i: usize = n + 1;
+    while (i > 0) {
+        i -= 1;
+        const a_txt = if (i < F.len and F[i] != null)
+            try canonOf(alloc, F[i].?)
+        else
+            try alloc.dupe(u8, "0e0");
+        defer alloc.free(a_txt);
+        const itxt = try std.fmt.allocPrint(alloc, "(({s})+(-{d}e0*({s})*({s})))", .{ a_txt, i + 1, h_txt, r[i + 1].? });
+        defer alloc.free(itxt);
+        var g_anti: ?[]u8 = null;
+        defer if (g_anti) |ga| alloc.free(ga);
+        const sub = decideIntegralInner(alloc, itxt, max_order, max_deg, &g_anti, depth + 1);
+        switch (sub) {
+            .elementary => |b| {
+                defer alloc.free(b);
+                if (g_anti == null) {
+                    lane_extra.* = "log-mono-inner-no-anti";
+                    return null;
+                }
+            },
+            .holonomic_special => |b| {
+                alloc.free(b);
+                lane_extra.* = "log-mono-inner";
+                return null;
+            },
+            .unresolved => |b| {
+                alloc.free(b);
+                lane_extra.* = "log-mono-inner";
+                return null;
+            },
+            .not_holonomic => |b| {
+                alloc.free(b);
+                lane_extra.* = "log-mono-inner";
+                return null;
+            },
+            .non_rational, .non_analytic, .bad => {
+                lane_extra.* = "log-mono-inner";
+                return null;
+            },
+        }
+        const gn = parseTree(alloc, g_anti.?) catch @panic("std/sym:logmono anti parse");
+        defer nodeFree(alloc, gn);
+        const gnn = norm(alloc, gn) catch @panic("std/sym:logmono anti norm");
+        defer nodeFree(alloc, gnn);
+        const p = (try logPolyOf(alloc, gnn, ukey)) orelse {
+            lane_extra.* = "log-mono-anti-notpoly";
+            return null;
+        };
+        defer lpFree(alloc, p);
+        // Limited integration: the θ-part of ∫A_i must be γ·θ, γ
+        // constant — it fixes r_{i+1}'s free constant to γ/(i+1).
+        if (lpDeg(p) > 1) {
+            lane_extra.* = "log-mono-limited";
+            return null;
+        }
+        if (p.len > 1 and p[1] != null) {
+            const pn = try norm(alloc, p[1].?);
+            defer nodeFree(alloc, pn);
+            if (pn.kind != .dec) {
+                lane_extra.* = "log-mono-limited";
+                return null;
+            }
+            var gr = try ratFromDec(alloc, &pn.dec);
+            defer ratDeinit(&gr);
+            var iv = try ratFromInt(alloc, @as(i64, @intCast(i + 1)));
+            defer ratDeinit(&iv);
+            var cr = try ratDiv(alloc, &gr, &iv);
+            defer ratDeinit(&cr);
+            const cs = try ratToString(alloc, &cr);
+            defer alloc.free(cs);
+            const nr = try std.fmt.allocPrint(alloc, "({s}+({s}))", .{ r[i + 1].?, cs });
+            alloc.free(r[i + 1].?);
+            r[i + 1] = nr;
+        }
+        r[i] = if (p.len > 0 and p[0] != null)
+            try canonOf(alloc, p[0].?)
+        else
+            try alloc.dupe(u8, "0e0");
+    }
+
+    // anti = Σ r_j·θ^j — assembled as text, re-parsed, and verified by
+    // differentiating back and matching θ-coefficients against a_i.
+    var buf = std.ArrayList(u8){};
+    defer buf.deinit(alloc);
+    try buf.append(alloc, '(');
+    var first = true;
+    for (r, 0..) |rs, j| {
+        const t = rs orelse continue;
+        if (canonIsZero(t)) continue;
+        if (!first) try buf.append(alloc, '+');
+        first = false;
+        try buf.append(alloc, '(');
+        try buf.appendSlice(alloc, t);
+        var k: usize = 0;
+        while (k < j) : (k += 1) {
+            try buf.append(alloc, '*');
+            try buf.appendSlice(alloc, theta_txt);
+        }
+        try buf.append(alloc, ')');
+    }
+    if (first) try buf.appendSlice(alloc, "0e0");
+    try buf.append(alloc, ')');
+    const at0 = parseTree(alloc, buf.items) catch @panic("std/sym:logmono anti parse");
+    defer nodeFree(alloc, at0);
+    const ann = norm(alloc, at0) catch @panic("std/sym:logmono anti norm");
+    defer nodeFree(alloc, ann);
+    const dn = deriveNode(alloc, ann) catch @panic("std/sym:logmono derive");
+    defer nodeFree(alloc, dn);
+    const dnn = norm(alloc, dn) catch @panic("std/sym:logmono derive norm");
+    defer nodeFree(alloc, dnn);
+    const D = (try logPolyOf(alloc, dnn, ukey)) orelse
+        @panic("std/sym:logmono derivative escaped theta");
+    defer lpFree(alloc, D);
+    for (D) |*c| {
+        if (c.*) |cn| {
+            const nn = try norm(alloc, cn);
+            nodeFree(alloc, cn);
+            c.* = nn;
+        }
+    }
+    if (lpDeg(D) > n) @panic("std/sym:logmono check degree overflow");
+    var ci: usize = 0;
+    while (ci <= n) : (ci += 1) {
+        const dc: ?*SNode = if (ci < D.len) D[ci] else null;
+        const ac: ?*SNode = if (ci < F.len) F[ci] else null;
+        if (!(try coeffNodesEql(alloc, dc, ac)))
+            @panic("std/sym:logmono failed its exact check");
+    }
+    const atxt = try canonOf(alloc, ann);
+    const anti = try antiWithConst(alloc, atxt, const_txt);
+    defer alloc.free(anti);
+    const blob = try std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=risch-log-mono-constructed;checked-exact", .{anti});
+    return elemRet(blob, anti, anti_out);
+}
