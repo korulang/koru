@@ -1,0 +1,219 @@
+// Koru Standard Library: the `replace` part of regex.kz.
+// Joined via `~part replace` in regex.kz; merged into the regex
+// module at load.
+
+// ============================================================================
+// REPLACE - sed-style substitution over the compiled search fn.
+// ============================================================================
+// `std/regex:replace { input, with: "tmpl" } | `pattern` out` walks every
+// non-overlapping occurrence (the same leftmost-longest search `scan`
+// rides) and hands the arm's binding the rebuilt text: literal runs pass
+// through untouched and each match is swapped for the template's
+// expansion. Template vocabulary (Lars's ruled sed convention): `\1..\9`
+// is the Nth capture group in open order — every capture here is a
+// `(?<name>…)` group so position == named-group order — `\{name}` is a
+// named group, `\\` is a literal backslash, and a backslash before any
+// other character passes through verbatim. An unmatched optional group
+// expands empty. `with:` must be a quoted literal; no match hands the
+// input back unchanged.
+~[comptime|transform]pub tor replace { input: string, with: string, reporter: *std/compiler:ErrorReporter }
+| `*` *
+
+~[transform]proc replace|zig {
+    const ast = @import("ast");
+    const regex = @import("regex_engine");
+
+    if (item.* != .flow) @panic("regex replace transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+    const conts = flow.body.continuations;
+
+    if (invocation.args.len == 0) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:replace requires an input argument: replace(<expression>, with: \"<template>\")", .{}) } };
+    }
+    const input_expr: []const u8 = invocation.args[0].value;
+
+    // The `with:` template must be a quoted literal — the expansion is
+    // compiled per-segment, not interpreted at runtime.
+    var with_expr: ?[]const u8 = null;
+    for (invocation.args) |a| {
+        if (std.mem.eql(u8, a.name, "with")) with_expr = a.value;
+    }
+    const w = with_expr orelse {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:replace requires a `with:` template argument", .{}) } };
+    };
+    if (w.len < 2 or w[0] != '"' or w[w.len - 1] != '"') {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:replace `with:` must be a quoted template literal, got `{s}`", .{w}) } };
+    }
+    const tmpl = w[1 .. w.len - 1];
+
+    // Exactly one `|` pattern arm; its binding takes the rebuilt text.
+    var pat_idx: ?usize = null;
+    for (conts, 0..) |_, i| {
+        if (pat_idx != null) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:replace supports a single pattern arm", .{}) } };
+        }
+        pat_idx = i;
+    }
+    if (pat_idx == null) {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:replace requires a `|` pattern arm to receive the result", .{}) } };
+    }
+    const pi = pat_idx.?;
+    const pattern = conts[pi].branch;
+
+    const analysis = regex.analyze(allocator, pattern) catch |err| {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
+    };
+    const groups = analysis.group_names;
+
+    // Parse the template into segments at comptime: literal runs, `\1..\9`
+    // (Nth named group in open order — every capture is named here), and
+    // `\{name}`. `\\` is a literal backslash; any other `\x` passes through.
+    const Seg = union(enum) { lit: []const u8, ref: usize };
+    var segs = std.ArrayList(Seg){};
+    var lit_start: usize = 0;
+    var i: usize = 0;
+    var needs_caps = false;
+    while (i < tmpl.len) {
+        if (tmpl[i] != '\\' or i + 1 >= tmpl.len) {
+            i += 1;
+            continue;
+        }
+        const nx = tmpl[i + 1];
+        var ref: ?usize = null;
+        var adv: usize = 2;
+        if (nx == '\\') {
+            // literal backslash — the run up to it keeps `\\` out, emit one
+            segs.append(allocator, .{ .lit = tmpl[lit_start..i] }) catch unreachable;
+            segs.append(allocator, .{ .lit = "\\" }) catch unreachable;
+            i += 2;
+            lit_start = i;
+            continue;
+        } else if (nx >= '1' and nx <= '9') {
+            ref = nx - '0';
+        } else if (nx == '{') {
+            const close = std.mem.indexOfScalarPos(u8, tmpl, i + 2, '}') orelse {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:replace `with:` has an unterminated `\\{{name}}` reference", .{}) } };
+            };
+            const gname = tmpl[i + 2 .. close];
+            for (groups, 0..) |g, k| {
+                if (std.mem.eql(u8, g, gname)) {
+                    ref = k + 1;
+                    break;
+                }
+            }
+            if (ref == null) {
+                return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:replace `with:` references group `{s}` — pattern `{s}` has no such named group", .{ gname, pattern }) } };
+            }
+            adv = close - i + 1;
+        } else {
+            // `\<other>` — not a reference; the backslash passes through.
+            i += 1;
+            continue;
+        }
+        if (ref.? > groups.len) {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "std/regex:replace `with:` references `\\{d}` — pattern `{s}` has {d} capture group(s)", .{ ref.?, pattern, groups.len }) } };
+        }
+        segs.append(allocator, .{ .lit = tmpl[lit_start..i] }) catch unreachable;
+        segs.append(allocator, .{ .ref = ref.? - 1 }) catch unreachable;
+        needs_caps = true;
+        i += adv;
+        lit_start = i;
+    }
+    segs.append(allocator, .{ .lit = tmpl[lit_start..] }) catch unreachable;
+
+    // Site-unique names — nested replaces must not shadow each other.
+    const L = flow.location.line;
+    const C = flow.location.column;
+    const in_name = std.fmt.allocPrint(allocator, "__koru_rep_in_{d}_{d}", .{ L, C }) catch unreachable;
+    const search_fn = std.fmt.allocPrint(allocator, "__koru_rep_find_{d}_{d}", .{ L, C }) catch unreachable;
+
+    var matchers = std.ArrayList(u8){};
+    const search_src = regex.compileSearchToZig(allocator, pattern, search_fn) catch |err| {
+        return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
+    };
+    matchers.appendSlice(allocator, search_src) catch unreachable;
+    matchers.appendSlice(allocator, "\n") catch unreachable;
+
+    var caps_fn: ?[]const u8 = null;
+    if (needs_caps) {
+        const cf = std.fmt.allocPrint(allocator, "__koru_rep_caps_{d}_{d}", .{ L, C }) catch unreachable;
+        const caps_src = regex.compileCapturesToZig(allocator, pattern, cf) catch |err| {
+            return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU162, flow.location, flow.module, "regex: cannot compile pattern `{s}`: {s}", .{ pattern, @errorName(err) }) } };
+        };
+        caps_fn = cf;
+        matchers.appendSlice(allocator, caps_src) catch unreachable;
+        matchers.appendSlice(allocator, "\n") catch unreachable;
+    }
+
+    // Dispatch: rebuild the input — literal runs verbatim, each match
+    // expanded from the compiled template, then the arm gets the result.
+    var dispatch = std.ArrayList(u8){};
+    const head = std.fmt.allocPrint(allocator, "//@koru:inline_stmt\n{{ const {s}: []const u8 = ", .{in_name}) catch unreachable;
+    dispatch.appendSlice(allocator, head) catch unreachable;
+    dispatch.appendSlice(allocator, input_expr) catch unreachable;
+    const vars = std.fmt.allocPrint(allocator, "; var __koru_out = @import(\"std\").ArrayList(u8){{}}; const __koru_a = koru_allocator(); var __koru_pos: usize = 0; var __koru_last: usize = 0; while (__koru_pos <= {s}.len) {{ if ({s}({s}, __koru_pos)) |__koru_sp| {{ __koru_out.appendSlice(__koru_a, {s}[__koru_last..__koru_sp[0]]) catch @panic(\"oom\"); ", .{ in_name, search_fn, in_name, in_name }) catch unreachable;
+    dispatch.appendSlice(allocator, vars) catch unreachable;
+
+    // The expansion: literal segments append verbatim; each `\ref` appends
+    // its group's slice — unmatched optional groups expand empty.
+    if (needs_caps) {
+        const caps_open = std.fmt.allocPrint(allocator, "const __koru_m = {s}[__koru_sp[0]..__koru_sp[1]]; if ({s}(__koru_m)) |__koru_tags| {{ ", .{ in_name, caps_fn.? }) catch unreachable;
+        dispatch.appendSlice(allocator, caps_open) catch unreachable;
+    }
+    for (segs.items) |seg| {
+        switch (seg) {
+            .lit => |l| {
+                // Re-escape for the emitted Zig literal — `\` and `"` in
+                // a literal chunk must not break the emitted string.
+                var esc = std.ArrayList(u8){};
+                for (l) |ch| {
+                    if (ch == '\\' or ch == '"') esc.append(allocator, '\\') catch unreachable;
+                    esc.append(allocator, ch) catch unreachable;
+                }
+                if (esc.items.len == 0) continue;
+                const s = std.fmt.allocPrint(allocator, "__koru_out.appendSlice(__koru_a, \"{s}\") catch @panic(\"oom\"); ", .{esc.items}) catch unreachable;
+                dispatch.appendSlice(allocator, s) catch unreachable;
+            },
+            .ref => |k| {
+                const s = std.fmt.allocPrint(allocator, "if (__koru_tags[{d}] <= __koru_m.len and __koru_tags[{d}] >= __koru_tags[{d}]) __koru_out.appendSlice(__koru_a, __koru_m[__koru_tags[{d}]..__koru_tags[{d}]]) catch @panic(\"oom\"); ", .{ 2 * k, 2 * k + 1, 2 * k, 2 * k, 2 * k + 1 }) catch unreachable;
+                dispatch.appendSlice(allocator, s) catch unreachable;
+            },
+        }
+    }
+    if (needs_caps) dispatch.appendSlice(allocator, "} ") catch unreachable;
+
+    // Advance non-overlapping (empty match ⇒ step one byte, byte stays in
+    // the literal run), then the tail and the arm's delivery.
+    dispatch.appendSlice(allocator, "__koru_pos = if (__koru_sp[1] > __koru_sp[0]) __koru_sp[1] else __koru_sp[0] + 1; __koru_last = __koru_sp[1]; } else break; } ") catch unreachable;
+    // The arm borrows `r` for its body only — the buffer is owned by the
+    // loop and freed the moment the arm returns (pcre2's per-iteration
+    // borrow, same shape).
+    const tail = std.fmt.allocPrint(allocator, "__koru_out.appendSlice(__koru_a, {s}[__koru_last..]) catch @panic(\"oom\"); __koru_inline_{d}(__koru_out.items); __koru_out.deinit(__koru_a); }}", .{ in_name, pi }) catch unreachable;
+    dispatch.appendSlice(allocator, tail) catch unreachable;
+
+    const new_marks = allocator.alloc([]const u8, flow.inv().marks.len + 1) catch unreachable;
+    for (flow.inv().marks, 0..) |m, k| new_marks[k] = m;
+    new_marks[flow.inv().marks.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_inv = ast.Invocation{
+        .path = flow.inv().path,
+        .args = flow.inv().args,
+        .annotations = flow.inv().annotations,
+        .marks = new_marks,
+        .inserted_by_tap = flow.inv().inserted_by_tap,
+        .from_opaque_tap = flow.inv().from_opaque_tap,
+    };
+
+    var new_flow = flow.*;
+    new_flow.body = ast.rootSite(new_inv, flow.body.continuations, flow.location);
+    new_flow.inline_body = dispatch.toOwnedSlice(allocator) catch unreachable;
+
+    const appended = allocator.alloc(ast.Item, 1) catch unreachable;
+    appended[0] = ast.Item{ .inline_code = ast.InlineCode{
+        .code = matchers.toOwnedSlice(allocator) catch unreachable,
+        .location = flow.location,
+        .module = flow.module,
+    } };
+
+    return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow }, .appended = appended } };
+}

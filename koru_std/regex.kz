@@ -1,7 +1,7 @@
 ~[comptime]
 ~part norm
 ~part scan
-
+~part replace
 // Koru Standard Library: Regex — compile-time, DFA-based pattern matching as
 // CONTROL FLOW. Generalizes the Orisha-router idiom from routes to regex:
 //

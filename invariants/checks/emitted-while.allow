@@ -20,6 +20,7 @@ kernel.kz | while (m < mp.memoryTypeCount)    | find-first search over memory ty
 parser.kz | while (c.kids.len > 0)            | descent to the leaf of a parse tree; depth is a property of the parsed input
 regex.scan.kz | while (__koru_pos <= {s}.len)     | scanner: the cursor advances by match length, one byte on an empty match, and breaks on no-match; trip count is match-dependent
 regex.scan.kz | while (__koru_pos <= {s}.length)  | the |js variant of the same scanner — cursor advances by match length, breaks on no-match; trip count is match-dependent
+regex.replace.kz | while (__koru_pos <= {s}.len)  | replace scanner: same cursor — advances by match length (one byte on an empty match), breaks on no-match; trip count is match-dependent
 pump.run.kz | while (true)                      | drain-until-quiescent event loop (zig and |js variants): it repeats the cascade until no live event remains; the trip count is however many rounds the writes generate — a data property, not a nameable bound
 store.new.kz | while (__koru_cyc != -1)       | ancestor-chain walk by handles; chain length is data, not a nameable bound (covers all write-path emissions of the cycle guard)
 store.new.kz | while (__koru_cyc !== -1)      | the |js emission of the same ancestor-chain walk
