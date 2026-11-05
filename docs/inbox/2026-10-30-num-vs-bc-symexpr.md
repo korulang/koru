@@ -519,10 +519,15 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   the decider; every free constant resolves by limited integration
   (the computed antiderivative's theta-part must be gamma*theta,
   gamma constant, else `log-mono-limited`), and coefficients are
-  compared as Q(x) elements rather than strings. Nonlinear args,
-  off-lattice roots,
-  bare-x coefficients, nested exp, and t-antiderivatives containing
-  rsum each name a refusal arm. Other non-rational integrands keep the
+  compared as Q(x) elements rather than strings. An integrand that
+  carries a tower element's dlog factor — g'*e^g for theta = e^g (g
+  any polynomial, not just affine), u'/u for theta = log(u) —
+  substitutes t = theta and re-enters the decider on the rational
+  t-side (`checked-exact` by the chain rule over the inner check);
+  bare x atoms surviving norm mean the substitution reintroduces x.
+  Off-lattice roots,
+  bare-x coefficients without the dlog factor, nested exp, and
+  t-antiderivatives containing rsum each name a refusal arm. Other non-rational integrands keep the
   structural cert + holonomic-special lane with
   `no-risch-elementary-form-not-constructed` notes. Unresolved names the
   searched bounds + structural refusal.
@@ -536,7 +541,7 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   registry_key path) without record-payload arms.
 
 615_048 pins all arms incl. (1+x)^(1/4) fallback, the bounded/unbounded/
-unclassifiable decide-ode split, and decide-field nf. 615: 55/55.
+unclassifiable decide-ode split, and decide-field nf. 615: 56/56.
 
 ## Design only — non-SI extension surface (currency et al.)
 

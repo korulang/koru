@@ -53,6 +53,7 @@
 ~part rsum
 ~part exptheta
 ~part logmono
+~part gsub
 ~part canon
 ~part rel
 ~part alg
@@ -2153,8 +2154,7 @@ fn ownedCopy(s: []const u8) []u8 {
     return .{ .exact = r };
 }
 
-// d/dx of a canonical sexpr — structural rules over the NF, result
-// normalized through the same norm, so deriv lands canon.
+// d/dx of a canonical sexpr — structural rules over the NF, normalized.
 ~pub tor deriv { a: string<!sexpr> } -> string<sexpr!>
 
 ~proc deriv|zig {

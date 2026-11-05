@@ -27,12 +27,16 @@ not a simplification; the substitution is what lets `checked-exact`
 stay cheap.
 
 The boundary is load-bearing, not a limitation to apologize for:
-non-affine arguments (e^{x²}), off-lattice constants (e^{x+1} next to
-e^x — the lattice test is on a common *root*, because e^{k·b} is not a
-rational coefficient), bare-x factors (that is the ℚ(x)-coefficient
-lane, a real tower problem), nested exponentials, and rsum leaves in
-the t-antiderivative (S(e^{g0},α) has no payload spelling) each name
-their own refusal arm. Correction (B6): the skeleton does not port to a log-monomial lane —
+non-affine arguments (e^{x²}) refuse *this* lane — though B7 showed
+they are a lane boundary, not a substitution boundary: the affine
+condition was only the constant-θ' special case, and non-affine g
+constructs whenever the integrand carries the g'·θ factor
+(frag-a-dlog-factor-is-the-whole-substitution-condition). Off-lattice
+constants (e^{x+1} next to e^x — the lattice test is on a common
+*root*, because e^{k·b} is not a rational coefficient), bare-x factors
+(that is the ℚ(x)-coefficient lane, a real tower problem), nested
+exponentials, and rsum leaves in the t-antiderivative (S(e^{g0},α) has
+no payload spelling) each name their own refusal arm. Correction (B6): the skeleton does not port to a log-monomial lane —
 there is no rational substitution for a primitive monomial; the lane is
 a coefficient cascade with limited integration instead, told in
 frag-a-primitive-monomial-integrates-by-cascade-not-substitution.

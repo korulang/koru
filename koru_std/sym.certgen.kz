@@ -1606,8 +1606,7 @@ fn linDESolve(alloc: std.mem.Allocator, D: []const Rat, A: []const Rat, F: []con
         ratDeinit(&acc);
         lo = k;
     }
-    // residual equations at degrees m < da: all t are already determined,
-    // so these must hold as identities or there is no solution at all.
+    // degrees m < da are residual equations: they must hold as identities.
     var m: usize = 0;
     while (m < da) : (m += 1) {
         var acc = try ratFromInt(alloc, 0);
@@ -2068,6 +2067,7 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
     // Log-monomial lane (~part logmono): an integrand polynomial in one
     // log(u) cascades r_i = int(a_i - (i+1)(u'/u)*r_{i+1}) at depth + 1.
     if (logLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral logmono")) |o| return o;
+    if (gsubLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral gsub")) |o| return o;
     // Sum lane: an .add integrand that survived the monomial lanes is
     // split termwise — each term re-enters this same decision recursively
     // (depth-bounded), and the sum is elementary exactly when every term

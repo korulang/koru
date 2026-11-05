@@ -1,0 +1,395 @@
+// ============================================================================
+// ~part gsub — the generalized-substitution lane for decide-integral.
+//
+// For a tower element θ with a logarithmic-derivative factor in the
+// base field the substitution t = θ removes x entirely:
+//   θ = e^{g(x)}:   dt = g'·θ dx      so  ∫H dx = ∫ H/(g'·θ) dt,
+//   θ = log(u(x)):  dt = (u'/u) dx    so  ∫H dx = ∫ H·u/u' dt.
+// The lane fires exactly when the transformed integrand is a rational
+// function of t — that is, when H carries the dlog factor g'·θ (resp.
+// u'/u) and is otherwise rational in θ.  The test is honest: the
+// x-parts must cancel inside norm — any bare x atom that survives
+// means the substitution reintroduces x, and the candidate refuses.
+// This covers the exp-theta lane's arg-nonlinear arm (g need not be
+// affine), the logarithmic-derivative family g'θ/(a+bθ) -> log(a+bθ),
+// log-power denominators like 1/(x log x) -> log(log x), and any
+// rational t-integrand the lower lanes can construct (Trager atan
+// included).
+// ============================================================================
+
+// Scalar ratio: k when p = k*g coefficient-wise, null otherwise.  A
+// zero position of g requires a zero position in p.
+fn polyScalarRat(alloc: std.mem.Allocator, p: []const Rat, g: []const Rat) !?Rat {
+    // k is owned by the caller on success; every null return frees it —
+    // errdefer would only fire on error, not on a null exit.
+    var k: ?Rat = null;
+    const m = @max(p.len, g.len);
+    var i: usize = 0;
+    while (i < m) : (i += 1) {
+        const pz = i >= p.len or ratIsZero(&p[i]);
+        const gz = i >= g.len or ratIsZero(&g[i]);
+        if (gz) {
+            if (!pz) {
+                if (k) |*kk| ratDeinit(kk);
+                return null;
+            }
+            continue;
+        }
+        if (pz) {
+            if (k) |*kk| ratDeinit(kk);
+            return null;
+        }
+        var r = try ratDiv(alloc, &p[i], &g[i]);
+        if (k) |*kk| {
+            var d = try ratSub(alloc, kk, &r);
+            defer ratDeinit(&d);
+            ratDeinit(&r);
+            if (!ratIsZero(&d)) {
+                ratDeinit(kk);
+                return null;
+            }
+        } else {
+            k = r;
+        }
+    }
+    return k;
+}
+
+// The rational function F(t) of a node built from rationals and powers
+// of one tower element — null if anything else appears.  For an exp
+// candidate (tkind == .exp) each exp leaf's argument must be an
+// integer multiple of gp (canon-identical counts as k=1) and any log
+// leaf is a different monomial.  For a log candidate each log leaf's
+// argument must canon-equal gkey and any exp leaf refuses.  dec
+// leaves are constant coefficients; atoms (x included), sqrt, atan,
+// and rsum refuse — a bare x is exactly the not-pure-t case.
+fn fracOfT(
+    alloc: std.mem.Allocator,
+    n: *const SNode,
+    tkind: NodeKind,
+    gkey: []const u8,
+    gp: ?[]const Rat,
+) anyerror!?Frac {
+    switch (n.kind) {
+        .dec => {
+            const np = try alloc.alloc(Rat, 1);
+            errdefer alloc.free(np);
+            np[0] = try ratFromDec(alloc, &n.dec);
+            const dp = try polyOne(alloc);
+            return try fracNorm(alloc, np, dp);
+        },
+        .exp => {
+            if (tkind != .exp) return null;
+            var e: i64 = 0;
+            const ak = try canonOf(alloc, n.kid);
+            defer alloc.free(ak);
+            if (std.mem.eql(u8, ak, gkey)) {
+                e = 1;
+            } else {
+                const g = (try polyOfNode(alloc, n.kid)) orelse return null;
+                defer polyFree(alloc, g);
+                // exp(zero-arg): theta*inv(theta) folds to exp(g-g),
+                // and norm does not fold exp(0) — the leaf is the
+                // constant 1.
+                var all_zero = true;
+                for (g) |*c| {
+                    if (!ratIsZero(c)) {
+                        all_zero = false;
+                        break;
+                    }
+                }
+                if (all_zero) {
+                    const np = try alloc.alloc(Rat, 1);
+                    errdefer alloc.free(np);
+                    np[0] = try ratFromInt(alloc, 1);
+                    return try fracNorm(alloc, np, try polyOne(alloc));
+                }
+                const gpv = gp orelse return null;
+                var kr = (try polyScalarRat(alloc, g, gpv)) orelse return null;
+                defer ratDeinit(&kr);
+                var ki = ratToInt(&kr) catch |err| switch (err) {
+                    error.NonInt => return null,
+                    else => return err,
+                };
+                defer ki.deinit();
+                e = ki.toConst().toInt(i64) catch return null;
+            }
+            if (e == 0 or @abs(e) > 512) return null;
+            const mag: usize = @intCast(@abs(e));
+            const p = try alloc.alloc(Rat, mag + 1);
+            errdefer alloc.free(p);
+            var i: usize = 0;
+            errdefer while (i > 0) {
+                i -= 1;
+                ratDeinit(&p[i]);
+            };
+            while (i < mag) : (i += 1) p[i] = try ratFromInt(alloc, 0);
+            p[mag] = try ratFromInt(alloc, 1);
+            if (e > 0) return try fracNorm(alloc, p, try polyOne(alloc));
+            return try fracNorm(alloc, try polyOne(alloc), p);
+        },
+        .log => {
+            if (tkind != .log) return null;
+            const ak = try canonOf(alloc, n.kid);
+            defer alloc.free(ak);
+            if (!std.mem.eql(u8, ak, gkey)) return null;
+            const p = try alloc.alloc(Rat, 2);
+            errdefer alloc.free(p);
+            p[0] = try ratFromInt(alloc, 0);
+            p[1] = try ratFromInt(alloc, 1);
+            return try fracNorm(alloc, p, try polyOne(alloc));
+        },
+        .add => {
+            var acc = Frac{ .n = try polyEmpty(alloc), .d = try polyOne(alloc) };
+            errdefer fracFree(alloc, &acc);
+            for (n.kids) |k| {
+                var kf = (try fracOfT(alloc, k, tkind, gkey, gp)) orelse {
+                    fracFree(alloc, &acc);
+                    return null;
+                };
+                defer fracFree(alloc, &kf);
+                const nf = try fracAdd(alloc, &acc, &kf);
+                fracFree(alloc, &acc);
+                acc = nf;
+            }
+            return acc;
+        },
+        .mul => {
+            var acc = (try fracOfT(alloc, n.kids[0], tkind, gkey, gp)) orelse return null;
+            errdefer fracFree(alloc, &acc);
+            for (n.kids[1..]) |k| {
+                var kf = (try fracOfT(alloc, k, tkind, gkey, gp)) orelse {
+                    fracFree(alloc, &acc);
+                    return null;
+                };
+                defer fracFree(alloc, &kf);
+                const nf = try fracMul(alloc, &acc, &kf);
+                fracFree(alloc, &acc);
+                acc = nf;
+            }
+            return acc;
+        },
+        .inv => {
+            var kf = (try fracOfT(alloc, n.kid, tkind, gkey, gp)) orelse return null;
+            defer fracFree(alloc, &kf);
+            if (fracIsZero(&kf)) return null;
+            return try fracInv(alloc, &kf);
+        },
+        .atom, .sq, .atan, .rsum => return null,
+    }
+}
+
+// The factor-wise inverse of the dlog factor: inv(g*theta) must reach
+// norm as separate inv kids so theta cancels pairwise — a single
+// inv(mul(...)) stays opaque to the cancellation pass.
+fn appendInvFactors(
+    alloc: std.mem.Allocator,
+    dlog_node: *const SNode,
+    kids: *std.ArrayList(*SNode),
+) !void {
+    if (dlog_node.kind == .mul) {
+        for (dlog_node.kids) |k|
+            try kids.append(alloc, try nodeUnary(alloc, .inv, try nodeClone(alloc, k)));
+    } else {
+        try kids.append(alloc, try nodeUnary(alloc, .inv, try nodeClone(alloc, dlog_node)));
+    }
+}
+
+// One candidate: theta_node is the canonical tower element, tkind its
+// kind, dlog_node the factor H must carry (g'*theta for exp, u'/u for
+// log).  Returns the emitted decision or null (tag in lane_extra on a
+// structural refusal).
+fn gsubTry(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    theta_node: *const SNode,
+    tkind: NodeKind,
+    gkey: []const u8,
+    gp: ?[]const Rat,
+    dlog_node: *const SNode,
+    note: []const u8,
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    // F = H / dlog — the t-integrand, as a node first (norm does the
+    // x-cancellation), then as a Frac over Q[t].
+    var fmk = std.ArrayList(*SNode){};
+    defer fmk.deinit(alloc);
+    try fmk.append(alloc, try nodeClone(alloc, nt_var));
+    try appendInvFactors(alloc, dlog_node, &fmk);
+    const fm = try nodeList(alloc, .mul, try fmk.toOwnedSlice(alloc));
+    defer nodeFree(alloc, fm);
+    const fnn = norm(alloc, fm) catch @panic("std/sym:gsub F norm");
+    defer nodeFree(alloc, fnn);
+    var F = (try fracOfT(alloc, fnn, tkind, gkey, gp)) orelse return null;
+    defer fracFree(alloc, &F);
+    const n_txt = try polyTextOf(alloc, F.n);
+    defer alloc.free(n_txt);
+    const d_txt = try polyTextOf(alloc, F.d);
+    defer alloc.free(d_txt);
+    const itxt = try std.fmt.allocPrint(alloc, "(({s})*inv(({s})))", .{ n_txt, d_txt });
+    defer alloc.free(itxt);
+    var t_anti: ?[]u8 = null;
+    defer if (t_anti) |ta| alloc.free(ta);
+    const sub = decideIntegralInner(alloc, itxt, max_order, max_deg, &t_anti, depth + 1);
+    switch (sub) {
+        .elementary => |b| {
+            defer alloc.free(b);
+            if (t_anti == null) {
+                lane_extra.* = "gsub-inner-no-anti";
+                return null;
+            }
+        },
+        .holonomic_special => |b| {
+            alloc.free(b);
+            lane_extra.* = "gsub-inner";
+            return null;
+        },
+        .unresolved => |b| {
+            alloc.free(b);
+            lane_extra.* = "gsub-inner";
+            return null;
+        },
+        .not_holonomic => |b| {
+            alloc.free(b);
+            lane_extra.* = "gsub-inner";
+            return null;
+        },
+        .non_rational, .non_analytic, .bad => {
+            lane_extra.* = "gsub-inner";
+            return null;
+        },
+    }
+    const an = parseTree(alloc, t_anti.?) catch @panic("std/sym:gsub anti parse");
+    defer nodeFree(alloc, an);
+    const ann = norm(alloc, an) catch @panic("std/sym:gsub anti norm");
+    defer nodeFree(alloc, ann);
+    const res = (try nodeSubstTheta(alloc, ann, theta_node)) orelse {
+        lane_extra.* = "gsub-anti-rsum";
+        return null;
+    };
+    defer nodeFree(alloc, res);
+
+    // checked-exact needs no post-check: fracOfT extracted the semantic
+    // content of H/dlog, the inner call verified d/dt res = F(t), and
+    // the chain rule closes it — res(theta) differentiates to
+    // F(theta) * dlog = (H/dlog) * dlog = H.  A post-check would only
+    // re-verify trusted primitives (deriveNode, norm, subst).
+    const atxt = try canonOf(alloc, res);
+    const anti = try antiWithConst(alloc, atxt, const_txt);
+    defer alloc.free(anti);
+    const blob = try std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note={s}", .{ anti, note });
+    return elemRet(blob, anti, anti_out);
+}
+
+// Every exp-leaf argument and every log-leaf argument is a candidate
+// monomial.  First success wins; each failure leaves its own tag.
+fn gsubLane(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    if (depth >= 6) return null;
+    if (nt_var.kind == .add) return null; // sum-split recurses per term
+    var exps = std.ArrayList(*const SNode){};
+    defer exps.deinit(alloc);
+    try collectExpKids(alloc, nt_var, &exps);
+    var logs = std.ArrayList(*const SNode){};
+    defer logs.deinit(alloc);
+    try collectLogKids(alloc, nt_var, &logs);
+    if (exps.items.len == 0 and logs.items.len == 0) return null;
+
+    var seen = std.ArrayList([]u8){};
+    defer {
+        for (seen.items) |s| alloc.free(s);
+        seen.deinit(alloc);
+    }
+
+    // exp candidates: each leaf's argument g, theta = e^g, dlog = g'*theta.
+    for (exps.items) |e| {
+        const gkey = try canonOf(alloc, e.kid);
+        var dup = false;
+        for (seen.items) |s| {
+            if (std.mem.eql(u8, s, gkey)) {
+                dup = true;
+                break;
+            }
+        }
+        if (dup) {
+            alloc.free(gkey);
+            continue;
+        }
+        try seen.append(alloc, gkey);
+        const gp = (try polyOfNode(alloc, e.kid)) orelse {
+            lane_extra.* = "exp-gsub-arg-nonpoly";
+            continue;
+        };
+        defer polyFree(alloc, gp);
+        const th_txt = try std.fmt.allocPrint(alloc, "exp({s})", .{gkey});
+        defer alloc.free(th_txt);
+        const tn0 = parseTree(alloc, th_txt) catch @panic("std/sym:gsub theta parse");
+        defer nodeFree(alloc, tn0);
+        const tn = norm(alloc, tn0) catch @panic("std/sym:gsub theta norm");
+        defer nodeFree(alloc, tn);
+        const dg = try deriveNode(alloc, e.kid);
+        defer nodeFree(alloc, dg);
+        const dgn = try norm(alloc, dg);
+        defer nodeFree(alloc, dgn);
+        const dmk = try alloc.alloc(*SNode, 2);
+        dmk[0] = try nodeClone(alloc, dgn);
+        dmk[1] = try nodeClone(alloc, tn);
+        const dlog = try nodeList(alloc, .mul, dmk);
+        defer nodeFree(alloc, dlog);
+        const dlogn = try norm(alloc, dlog);
+        defer nodeFree(alloc, dlogn);
+        if (try gsubTry(alloc, nt_var, tn, .exp, gkey, gp, dlogn, "risch-exp-gsub-subst;checked-exact", max_order, max_deg, const_txt, anti_out, depth, lane_extra)) |o| return o;
+        if (lane_extra.* == null) lane_extra.* = "exp-gsub-not-rational";
+    }
+
+    // log candidates: each leaf's argument u, theta = log(u),
+    // dlog = u'/u.
+    for (logs.items) |e| {
+        const gkey = try canonOf(alloc, e.kid);
+        var dup = false;
+        for (seen.items) |s| {
+            if (std.mem.eql(u8, s, gkey)) {
+                dup = true;
+                break;
+            }
+        }
+        if (dup) {
+            alloc.free(gkey);
+            continue;
+        }
+        try seen.append(alloc, gkey);
+        const th_txt = try std.fmt.allocPrint(alloc, "log({s})", .{gkey});
+        defer alloc.free(th_txt);
+        const tn0 = parseTree(alloc, th_txt) catch @panic("std/sym:gsub theta parse");
+        defer nodeFree(alloc, tn0);
+        const tn = norm(alloc, tn0) catch @panic("std/sym:gsub theta norm");
+        defer nodeFree(alloc, tn);
+        const du = try deriveNode(alloc, e.kid);
+        defer nodeFree(alloc, du);
+        const dun = try norm(alloc, du);
+        defer nodeFree(alloc, dun);
+        const dmk = try alloc.alloc(*SNode, 2);
+        dmk[0] = try nodeClone(alloc, dun);
+        dmk[1] = try nodeUnary(alloc, .inv, try nodeClone(alloc, e.kid));
+        const dlog0 = try nodeList(alloc, .mul, dmk);
+        defer nodeFree(alloc, dlog0);
+        const dlog = try norm(alloc, dlog0);
+        defer nodeFree(alloc, dlog);
+        if (try gsubTry(alloc, nt_var, tn, .log, gkey, null, dlog, "risch-log-gsub-subst;checked-exact", max_order, max_deg, const_txt, anti_out, depth, lane_extra)) |o| return o;
+        if (lane_extra.* == null) lane_extra.* = "log-gsub-not-rational";
+    }
+    return null;
+}
