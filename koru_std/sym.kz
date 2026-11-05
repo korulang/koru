@@ -37,8 +37,7 @@
 //     (1/2)log(a^2+b^2) + i*arg on the principal branch
 //
 // What NF does NOT do: no distributive factoring, no trig/ident tables,
-// no power node (π*π stays a product — a pow canon is a later rung).
-// Those are the deriv/discovery rungs, not canon mechanics.
+// no power node (π*π stays a product — pow is a deriv rung, not canon).
 //
 // Marks: sym-owned strings ride <sexpr!>, issued by lit/parse and every op,
 // consumed linearly by ops, discharged by free, swapped to <allocated!> by
@@ -54,6 +53,7 @@
 ~part exptheta
 ~part logmono
 ~part gsub
+~part gsuba
 ~part canon
 ~part rel
 ~part alg

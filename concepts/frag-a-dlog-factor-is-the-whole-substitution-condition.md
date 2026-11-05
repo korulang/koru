@@ -1,8 +1,9 @@
 ---
 type: belief
 id: frag-a-dlog-factor-is-the-whole-substitution-condition
-provenance: sym B7, 2026-11 — the generalized-substitution lane built
-  on one condition instead of a per-monomial lattice.
+provenance: sym B7/B7b, 2026-11 — the generalized-substitution lane
+  built on one condition instead of a per-monomial lattice; widened
+  to sqrt/atan elements in the same commit-family.
 ts: 2026-11-05
 tags: [koru, stdlib, sym, risch, integration, substitution, tower]
 ---
@@ -26,13 +27,20 @@ for free: any bare x atom that survives means the substitution
 reintroduces x, and the candidate refuses by name.
 
 The same condition unifies the monomial kinds under one lane:
-θ = e^g gives dlog = g'·θ, θ = log(u) gives dlog = u'/u — two
-spellings of one mechanism. It also explains which families close for
-free once the condition is stated: logarithmic derivatives
-(g'θ/(a+bθ) → log(a+bθ) for any g), log-power denominators
-(1/(x·logᵏx) → t⁻ᵏ for every k), and atan-through-substitution
-(quadratic t-denominators ride the Trager machinery in t). What it
-does not cover is equally readable from the condition: an integrand
+θ = e^g gives dlog = g'·θ, θ = log(u) gives u'/u, θ = √(u) gives
+u'/(2θ), θ = atan(u) gives u'/(1+u²) — one mechanism per element whose
+derivative lands back in the field, primitive or not. It also explains
+which families close for free once the condition is stated:
+logarithmic derivatives (g'θ/(a+bθ) → log(a+bθ) for any g),
+log-power denominators (1/(x·logᵏx) → t⁻ᵏ for every k), radicand
+substitutions (x·√(1+x²) → t³/3), atan-power forms
+(2x·atan(x²)/(1+x⁴) → t²/2), and atan-through-substitution (quadratic
+t-denominators ride the Trager machinery in t). The algebraic element
+carries one wrinkle no other kind has: θ² = u lives *in* the base
+field, so the normalizer's pair-fold makes even powers of θ vanish
+into the u spelling — the extractor must read a canon-equal u back as
+t², or the substitution looks falsely irrational. What the lane does
+not cover is equally readable from the condition: an integrand
 missing the θ' factor, or carrying a second monomial, needs the real
 tower — that boundary moved, it did not disappear.
 

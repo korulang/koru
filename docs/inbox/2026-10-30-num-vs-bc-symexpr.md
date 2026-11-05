@@ -521,10 +521,15 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   gamma constant, else `log-mono-limited`), and coefficients are
   compared as Q(x) elements rather than strings. An integrand that
   carries a tower element's dlog factor — g'*e^g for theta = e^g (g
-  any polynomial, not just affine), u'/u for theta = log(u) —
+  any polynomial, not just affine), u'/u for theta = log(u),
+  u'/(2*theta) for theta = sqrt(u), u'/(1+u^2) for theta = atan(u) —
   substitutes t = theta and re-enters the decider on the rational
   t-side (`checked-exact` by the chain rule over the inner check);
   bare x atoms surviving norm mean the substitution reintroduces x.
+  The sqrt element alone needs a recovery: norm pairs equal radicals
+  into the radicand, so even theta powers hide inside the u spelling —
+  a canon-equal u extracts as t^2 (which also makes the nested
+  sqrt(sqrt(u)) case construct, inner = u as a factor).
   Off-lattice roots,
   bare-x coefficients without the dlog factor, nested exp, and
   t-antiderivatives containing rsum each name a refusal arm. Other non-rational integrands keep the
@@ -540,8 +545,8 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   blobs — the composition seam into cert-reg-put (the artifact's
   registry_key path) without record-payload arms.
 
-615_048 pins all arms incl. (1+x)^(1/4) fallback, the bounded/unbounded/
-unclassifiable decide-ode split, and decide-field nf. 615: 56/56.
+615_048 pins all arms incl. the bounded/unbounded/
+unclassifiable decide-ode split, and decide-field nf. 615: 57/57.
 
 ## Design only — non-SI extension surface (currency et al.)
 
