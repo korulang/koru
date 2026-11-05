@@ -749,12 +749,6 @@ fn fracText(alloc: std.mem.Allocator, out: *std.ArrayList(u8), f: *const Frac) !
 }
 
 
-
-
-
-
-
-
 // ============================================================================
 // Trager log part — the squarefree remainder C/D of Hermite reduction
 // integrates to a sum of logs/arctans over the roots of the
@@ -2068,6 +2062,10 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
         const blob = std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=risch-exp-monomial-constructed;checked-exact", .{anti}) catch @panic("std/sym:decide-integral");
         return elemRet(blob, anti, anti_out);
     }
+    // exp-theta substitution lane (~part exptheta): an integrand rational
+    // in a single exponential element e^{c0 x + b0} reduces to a rational
+    // t-integral and re-enters the decider at depth + 1.
+    if (thetaLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral theta")) |o| return o;
     // Sum lane: an .add integrand that survived the monomial lanes is
     // split termwise — each term re-enters this same decision recursively
     // (depth-bounded), and the sum is elementary exactly when every term

@@ -506,8 +506,17 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   is returned (`checked-exact`). Residue cofactors of degree 3/4 emit a
   root-sum `rsum(f;...)` node built over the residue ring Q[t]/(f)
   (zero divisors split the modulus; check via trace/norm, still exact);
-  degree >=5 names `residue-cofactor-deg{d}-beyond-extgcd-bound`. Non-rational integrands
-  keep the structural cert + holonomic-special lane with
+  degree >=5 names `residue-cofactor-deg{d}-beyond-extgcd-bound`.
+  F*exp(G) with F rational, G polynomial -> the Risch exp-monomial lane
+  (R'+G'R=F: polynomial solve, or the Rothstein denominator bound
+  reducing it to linDESolve); an integrand rational in a single
+  exponential element e^{k*g0} — affine g0 = c0*x+b0 on a common root —
+  substitutes t = e^{g0}, re-enters the decider on F(t)/(c0*t), and
+  substitutes back node-wise, still `checked-exact` by re-extracting
+  the derivative's theta-frac. Nonlinear args, off-lattice roots,
+  bare-x coefficients, nested exp, and t-antiderivatives containing
+  rsum each name a refusal arm. Other non-rational integrands keep the
+  structural cert + holonomic-special lane with
   `no-risch-elementary-form-not-constructed` notes. Unresolved names the
   searched bounds + structural refusal.
 - `decide-ode(r)`: Kovacic pole-structure port. Over C every

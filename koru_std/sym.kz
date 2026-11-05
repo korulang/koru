@@ -51,6 +51,7 @@
 ~part certreg
 ~part certgen
 ~part rsum
+~part exptheta
 ~part canon
 ~part rel
 ~part alg
@@ -388,7 +389,6 @@ fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
         },
     }
 }
-
 
 // ============================================================================
 // Parser — user spelling to a raw tree, then normalize.
