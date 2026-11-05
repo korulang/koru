@@ -3,10 +3,9 @@
 
 // The path half of sweep capture collection — the walk that answers "which
 // enclosing names can this transplanted body see" (arm bindings, destructure
-// fields, mid-pipe return binds, `! each` loop items) and the pick that turns
-// in-scope into captured once a body's own refs are known. `Cap` keeps the
-// Bind record and the reference scans; the walk lives here so qcaps stays
-// under its line pin.
+// fields, mid-pipe return binds, `! each` loop items). `Cap` keeps the Bind
+// record and the reference scans; `Pick` (qpick part) keeps the pick/refuse
+// helpers and the seed-lookup — split so both halves stay under their pins.
 const Binds = struct {
     const ast = @import("ast");
     /// `for`'s `expr` arg — the iterable text an `! each` binding iterates.
@@ -20,16 +19,6 @@ const Binds = struct {
         if (path.segments.len != 1 or !std.mem.eql(u8, path.segments[0], "for")) return false;
         const mq = path.module_qualifier orelse "";
         return mq.len == 0 or std.mem.eql(u8, mq, "std.control");
-    }
-    fn isIdentChar(ch: u8) bool {
-        return Cap.isIdentStart(ch) or (ch >= '0' and ch <= '9') or ch == '-';
-    }
-    fn isBareIdent(t: []const u8) bool {
-        if (t.len == 0 or !Cap.isIdentStart(t[0])) return false;
-        for (t) |ch| {
-            if (!isIdentChar(ch)) return false;
-        }
-        return true;
     }
     /// Element type of a `for` iterable when this layer can name it: a
     /// top-level `a..b` range iterates usize; an `&[_]T{…}`/`[_]T{…}`
@@ -59,78 +48,6 @@ const Binds = struct {
             if (elt.len > 0) return alloc.dupe(u8, elt) catch unreachable;
         }
         return null;
-    }
-    /// Element type of a bind's own declared type — `[]T`/`[N]T`/`[]const T`
-    /// iterate T; leading `?`/`*` decorators strip off first.
-    fn iterElemType(ty: []const u8) ?[]const u8 {
-        var s = std.mem.trim(u8, ty, " \t");
-        while (s.len > 0 and (s[0] == '*' or s[0] == '?')) s = std.mem.trim(u8, s[1..], " \t");
-        if (std.mem.startsWith(u8, s, "[]")) {
-            s = std.mem.trim(u8, s[2..], " \t");
-            if (std.mem.startsWith(u8, s, "const ")) s = std.mem.trim(u8, s[6..], " \t");
-            return if (s.len > 0) s else null;
-        }
-        if (s.len > 0 and s[0] == '[') {
-            const close = std.mem.indexOfScalar(u8, s, ']') orelse return null;
-            const rest = std.mem.trim(u8, s[close + 1 ..], " \t");
-            return if (rest.len > 0) rest else null;
-        }
-        return null;
-    }
-    /// Second pass for `! each` binds whose `for` iterable named nothing
-    /// this layer could type: a bare `for(name)` resolves its element off
-    /// a collected bind's own `[]T`/`[N]T` once every ancestor is in.
-    /// What still cannot be named keeps the "?" marker — a body that
-    /// captures it refuses rather than emit an untyped field.
-    fn resolveEachIters(alloc: std.mem.Allocator, avail: []Cap.Bind) void {
-        for (avail) |*b| {
-            if (!std.mem.eql(u8, b.type, "?")) continue;
-            const it = b.each_iter orelse continue;
-            if (!isBareIdent(it)) continue;
-            for (avail) |t| {
-                if (!std.mem.eql(u8, t.name, it)) continue;
-                if (iterElemType(t.type)) |et| b.type = alloc.dupe(u8, et) catch unreachable;
-            }
-        }
-    }
-    /// One refusal text for every sweep boundary an `! each` bind with an
-    /// un-nameable element type tries to cross — the sweep body and the
-    /// `| none` arm refuse identically, so the teaching stays one string.
-    /// `ctx` spells which body did the reading ("the sweep body", "the
-    /// `| none` body").
-    fn eachUntypedMsg(alloc: std.mem.Allocator, ctx: []const u8, store_name: []const u8, b: Cap.Bind) []const u8 {
-        return std.fmt.allocPrint(alloc, "std/store:query({s}): {s} reads '{s}', bound by `! each` over `{s}` — the iterable's element type is not derivable at the sweep boundary. A range `a..b`, an `&[_]T{{…}}` literal, or a `[]T`/`[N]T` iterable names one; anything else needs the value lifted through a typed binding first.", .{ store_name, ctx, b.name, b.each_iter orelse b.name }) catch unreachable;
-    }
-    /// A body-arm's capture pick: an avail bind rides the body input only
-    /// when the body references it, once each; "?" marks an `! each` bind
-    /// whose iterable named no element — refuse rather than emit an untyped
-    /// field. `lexical` counts picks that need the enclosing frame.
-    const Picked = struct { caps: std.ArrayList(Cap.Bind), lexical: usize };
-    fn pickCaptures(alloc: std.mem.Allocator, avail: []const Cap.Bind, refs: []const []const u8, ctx: []const u8, store_name: []const u8) union(enum) { ok: Picked, refuse: []const u8 } {
-        var caps = std.ArrayList(Cap.Bind).initCapacity(alloc, 4) catch unreachable;
-        var lexical: usize = 0;
-        for (avail) |b| {
-            var used = false;
-            for (refs) |r| {
-                if (std.mem.eql(u8, r, b.name)) {
-                    used = true;
-                    break;
-                }
-            }
-            if (!used) continue;
-            if (std.mem.eql(u8, b.type, "?")) return .{ .refuse = eachUntypedMsg(alloc, ctx, store_name, b) };
-            var seen = false;
-            for (caps.items) |c| {
-                if (std.mem.eql(u8, c.name, b.name)) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) continue;
-            caps.append(alloc, b) catch unreachable;
-            if (b.lexical) lexical += 1;
-        }
-        return .{ .ok = .{ .caps = caps, .lexical = lexical } };
     }
     fn collectBindsOnPath(alloc: std.mem.Allocator, items: []const ast.Item, cont: *const ast.Continuation, target: *const ast.Invocation, out: *std.ArrayList(Cap.Bind)) bool {
         // Returns true if `target` lives under `cont`. Pushes mid-pipe binds
@@ -191,13 +108,30 @@ const Binds = struct {
                                     // resolveEachIters against the collected
                                     // binds; what cannot be named stays "?" and
                                     // refuses if a body captures it.
-                                    if (!std.mem.eql(u8, std.mem.trim(u8, c.branch, " "), "each")) break :blk_each;
-                                    if (!isForTor(pn.invocation.path)) break :blk_each;
-                                    const expr = forIterableExpr(&pn.invocation) orelse break :blk_each;
+                                    //
+                                    // Every OTHER wildcard-payload arm (`as`,
+                                    // a non-`for` `each`, any `! <arm> name`
+                                    // whose decl spells `*`) collects as "?"
+                                    // with the arm named — a body that captures
+                                    // it refuses with teaching instead of the
+                                    // bind dropping silently and the sweep
+                                    // emitting `use of undeclared identifier`.
+                                    const branch = std.mem.trim(u8, c.branch, " ");
+                                    if (std.mem.eql(u8, branch, "each") and isForTor(pn.invocation.path)) {
+                                        if (forIterableExpr(&pn.invocation)) |expr| {
+                                            out.append(alloc, .{
+                                                .name = ab,
+                                                .type = eachElemType(alloc, expr) orelse "?",
+                                                .each_iter = alloc.dupe(u8, expr) catch unreachable,
+                                                .arm = "each",
+                                            }) catch unreachable;
+                                            break :blk_each;
+                                        }
+                                    }
                                     out.append(alloc, .{
                                         .name = ab,
-                                        .type = eachElemType(alloc, expr) orelse "?",
-                                        .each_iter = alloc.dupe(u8, expr) catch unreachable,
+                                        .type = "?",
+                                        .arm = alloc.dupe(u8, branch) catch unreachable,
                                     }) catch unreachable;
                                 }
                             }
@@ -224,7 +158,7 @@ const Binds = struct {
                             };
                             if (is_create) {
                                 for (c.destructure) |df| {
-                                    if (Cap.storeColumnType(alloc, &pn.invocation, df.name)) |ft| {
+                                    if (Pick.storeColumnType(alloc, &pn.invocation, df.name)) |ft| {
                                         out.append(alloc, .{ .name = alloc.dupe(u8, df.name) catch unreachable, .type = ft }) catch unreachable;
                                     }
                                 }

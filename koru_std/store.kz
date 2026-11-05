@@ -65,9 +65,8 @@
 const std = @import("std");
 const ast_find = @import("ast");
 const codegen_utils_store = @import("codegen_utils");
-// Module-scope spellings the moved `~part` helpers use — named unlike the member/local aliases those structs and procs carry, so nothing shadows.
 const struct_literal_store = @import("struct_literal");
-const ast_functional_store = @import("ast_functional");
+const ast_functional_store = @import("ast_functional"); // module-scope spellings for moved `~part` helpers — named unlike member/local aliases, so nothing shadows
 
 /// The emitted-Zig namespace a store's units live in, dot-terminated.
 /// The entry module emits as `main_module.`; every other module emits under the
@@ -672,6 +671,7 @@ fn storeRefsText(alloc: std.mem.Allocator, text: []const u8, name: []const u8, p
 ~part cursor
 ~part qcaps
 ~part qbinds
+~part qpick
 ~part retqual
 ~part pverbs
 ~part sitetag

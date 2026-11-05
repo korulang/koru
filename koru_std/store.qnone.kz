@@ -61,7 +61,7 @@ const QueryNone = struct {
         };
         var nrefs = std.ArrayList([]const u8).initCapacity(alloc, 4) catch unreachable;
         Cap.collectRefs(alloc, &none_clone, &nrefs);
-        const picked = switch (Binds.pickCaptures(alloc, avail, nrefs.items, "the `| none` body", store_name)) {
+        const picked = switch (Pick.pickCaptures(alloc, avail, nrefs.items, "the `| none` body", store_name)) {
             .ok => |p| p,
             .refuse => |m| return .{ .refuse = m },
         };

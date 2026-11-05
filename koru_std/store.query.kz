@@ -385,7 +385,7 @@
     }
     // `! each` binds carry a "?" type until their iterable resolves — a bare
     // `for(name)` answers from a collected bind's own `[]T`/`[N]T` here.
-    Binds.resolveEachIters(allocator, avail.items);
+    Pick.resolveEachIters(allocator, avail.items);
 
     var captures = std.ArrayList(Cap.Bind).initCapacity(allocator, 4) catch unreachable;
     for (avail.items) |b| {
@@ -414,7 +414,7 @@
         // "?" — it cannot ride a typed Input field, so the capture refuses
         // with the shapes that DO resolve named.
         if (std.mem.eql(u8, b.type, "?")) {
-            return .{ .transformed = ast.refuse(allocator, reporter, .KORU161, flow.location, flow.module, "{s}", .{Binds.eachUntypedMsg(allocator, "the sweep body", store_name, b)}) };
+            return .{ .transformed = ast.refuse(allocator, reporter, .KORU161, flow.location, flow.module, "{s}", .{Pick.eachUntypedMsg(allocator, "the sweep body", store_name, b)}) };
         }
         // Dedup.
         var seen = false;

@@ -325,8 +325,8 @@ koru_std/store.preordertail.kz	54
 koru_std/store.prewrite.kz	445
 koru_std/store.pverbs.kz	713
 koru_std/store.pwalk.kz	141
-koru_std/store.qbinds.kz	275
-koru_std/store.qcaps.kz	173
+koru_std/store.qbinds.kz	209
+koru_std/store.qcaps.kz	164
 koru_std/store.qcols.kz	62
 koru_std/store.qguard.kz	22
 koru_std/store.qmiss.kz	46

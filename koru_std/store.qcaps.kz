@@ -23,6 +23,11 @@ const Cap = struct {
         /// binds' own `[]T`/`[N]T`; what still cannot be named refuses if
         /// a body captures it (store.query.kz / store.qnone.kz).
         each_iter: ?[]const u8 = null,
+        /// The arm branch a wildcard-payload binding hangs off (`as`,
+        /// `each`, …) — set when lookupBranch could not type the bind
+        /// (the arm's payload is `*`), so the refusal names which arm's
+        /// wildcard delivered it. Null for typed binds.
+        arm: ?[]const u8 = null,
         /// Needs the enclosing frame. False only for synthesized captures
         /// (`[ordinal]`, `[id]`), whose value is computed inside the loop.
         /// A rewritten call-site expression (fmt result rebuild, 690_294)
@@ -33,20 +38,6 @@ const Cap = struct {
     // interceptor destructure field binds (690_093). Reads the seed block
     // the same way the create transform does; null when the field is not a
     // declared column.
-    fn storeColumnType(alloc: std.mem.Allocator, inv: *const ast.Invocation, want: []const u8) ?[]const u8 {
-        var seed: ?[]const u8 = null;
-        for (inv.args) |a| {
-            if (std.mem.eql(u8, a.name, "source")) seed = a.value;
-        }
-        const s = seed orelse return null;
-        const struct_literal = @import("struct_literal");
-        const braced = std.fmt.allocPrint(alloc, "{{{s}}}", .{s}) catch return null;
-        const cf = struct_literal.parseFields(alloc, braced) catch return null;
-        for (cf) |c| {
-            if (std.mem.eql(u8, c.name, want)) return alloc.dupe(u8, std.mem.trim(u8, c.value, " \t\n\r")) catch return null;
-        }
-        return null;
-    }
     fn isIdentStart(ch: u8) bool {
         return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or ch == '_';
     }
