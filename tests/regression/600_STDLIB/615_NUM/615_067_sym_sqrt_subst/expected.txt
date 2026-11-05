@@ -1,0 +1,8 @@
+decide(layer=elementary)|antiderivative=(2e0*(((5e-1+(5e-1*x))*atan(√(x)))+(-5e-1*√(x))))|note=risch-sqrt-subst-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(2e0*(-1e0+√(x))*exp(√(x)))|note=risch-sqrt-subst-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(2e0*(-6e0+(-3e0*x)+(6e0*√(x))+(x*√(x)))*exp(√(x)))|note=risch-sqrt-subst-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(2e0*((-1e0*((-5e-1*log((1e0+x)))+(5e-1*x))*inv(3e0))+(atan(√(x))*inv(3e0)*x*√(x))))|note=risch-sqrt-subst-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(2e0*((-2.5e-1*x)+(5e-1*log(√(x))*x)))|note=risch-sqrt-subst-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(2e0*log((1e0+√(x))))|note=risch-sq-gsub-subst;checked-exact
+hs:decide(layer=holonomic-special)|note=no-risch-elementary-form-not-constructed;integrand-cert-structural;lane=sqrt-subst-mixed-radicand|integrand=ode(k=1,d=2,via=of)|p0=[-1,-2]|p1=[0,2,2]|antiderivative=ode(k=2,d=2,via=shift)|p0=[0]|p1=[-1,-2]|p2=[0,2,2]
+hs:decide(layer=holonomic-special)|note=no-risch-elementary-form-not-constructed;integrand-cert-structural;lane=sqrt-subst-mixed-radicand|integrand=ode(k=1,d=2,via=of)|p0=[0,-2]|p1=[0,0,2]|antiderivative=ode(k=2,d=2,via=shift)|p0=[0]|p1=[0,-2]|p2=[0,0,2]

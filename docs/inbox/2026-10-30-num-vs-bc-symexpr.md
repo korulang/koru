@@ -522,7 +522,13 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   Trager emits negated roots, and every free constant resolves by
   limited integration (the computed antiderivative's theta-part must
   be gamma*theta, gamma constant, else `{kind}-mono-limited`);
-  coefficients are compared as Q(x) elements rather than strings. An integrand that
+  coefficients are compared as Q(x) elements rather than strings.
+  A fourth lane is the algebraic pre-step: when every radical leaf
+  is sq(x), t = sqrt(x) rationalizes the whole integrand (x -> t*t,
+  dx -> 2t dt), the decider re-enters on a rational-function tower,
+  and the answer back-substitutes t -> sqrt(x) — checked-exact by
+  the same chain rule; a foreign radicand refuses
+  `sqrt-subst-mixed-radicand` rather than partially transform. An integrand that
   carries a tower element's dlog factor — g'*e^g for theta = e^g (g
   any polynomial, not just affine), u'/u for theta = log(u),
   u'/(2*theta) for theta = sqrt(u), u'/(1+u^2) for theta = atan(u) —
@@ -549,7 +555,7 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   registry_key path) without record-payload arms.
 
 615_048 pins all arms incl. the bounded/unbounded/
-unclassifiable decide-ode split, and decide-field nf. 615: 58/58.
+unclassifiable decide-ode split, and decide-field nf. 615: 59/59.
 
 ## Design only — non-SI extension surface (currency et al.)
 

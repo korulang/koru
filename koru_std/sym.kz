@@ -15,7 +15,8 @@
 //   - sum children group by structural base: π + π -> (2e0*π),
 //     (2e0*π)+(3e0*π) -> (5e0*π); decimals fold into one constant term
 //   - product decimals fold into one coefficient; coeff 0 -> 0e0,
-//     coeff 1 drops; f and inv(f) cancel pairwise
+//     coeff 1 drops; f and inv(f) cancel pairwise; u and inv(√u)
+//     fuse to √u (u = √u*√u in the extension field — exact)
 //   - inv(inv(x)) -> x; inv distributes over product children;
 //     inv(dec) folds to a decimal iff the mantissa's prime factors are all
 //     in {2,5} (1/4 -> 2.5e-1 exact; inv(3) stays symbolic — no silent
@@ -54,6 +55,7 @@
 ~part primmon
 ~part gsub
 ~part gsuba
+~part sqsub
 ~part canon
 ~part rel
 ~part alg
@@ -321,9 +323,8 @@ const SNode = struct {
     kids: []*SNode = &.{},           // kind == .add/.mul
     kid: *SNode = undefined,         // kind == .sq/.inv/.log/.atan/.exp
     aux: []u8 = &.{},                // kind == .rsum: "f0,f1,...;s00,s01,...|s10,..." —
-                                     // sum over roots alpha of f(t) of alpha*log(S(x,alpha));
-                                     // f's coeffs ascend in t, S's |-groups ascend in x
-                                     // (each a t-poly in the residue ring Q[t]/f)
+                                     // sum over roots alpha of f(t): alpha*log(S(x,alpha));
+                                     // coeffs ascend in t, |-groups in x (t-polys in Q[t]/f)
 };
 
 fn nodeNew(alloc: std.mem.Allocator, kind: NodeKind) !*SNode {
@@ -681,8 +682,8 @@ fn termWithCoeff(alloc: std.mem.Allocator, coeff: *const Dec, base: *const SNode
 }
 
 // Q(i) constants: re + im*i with owned Dec limbs. qiConstOf classifies a
-// normalized node that provably lives in Q(i): a dec, bare i, c*i, or a sum
-// of those. Used by the mul ring-fold and the conjugate lane of inv.
+// normalized node in Q(i) — dec, bare i, c*i, or a sum — for the mul
+// ring-fold and the conjugate lane of inv.
 const Qi = struct {
     re: Dec,
     im: Dec,
@@ -755,10 +756,9 @@ fn qiNormSq(alloc: std.mem.Allocator, z: *const Qi) !Dec {
     return decAdd(alloc, &p1, &p2);
 }
 
-// Two-kid list constructor that CONSUMES a and b on every path — on any
-// failure both kids (and the slice) are freed, on success the node owns
-// them. Use for raw trees that get normed, where plain errdefers on the
-// kids would double-free once the list exists.
+// Two-kid list constructor that CONSUMES a and b on every path — failure
+// frees both, success owns them. For raw trees that get normed, where
+// plain errdefers on the kids would double-free once the list exists.
 fn nodePair(alloc: std.mem.Allocator, kind: NodeKind, a: *SNode, b: *SNode) !*SNode {
     const pair = list2(alloc, a, b) catch |e| {
         nodeFree(alloc, a);
@@ -792,10 +792,9 @@ fn qiToNode(alloc: std.mem.Allocator, re: *const Dec, im: *const Dec) !*SNode {
 }
 
 // log of a Q(i) constant: log(a+bi) = (1/2)*log(a^2+b^2) + i*arg(z).
-// Pure-imaginary b*i emits log|b| + sign(b)*i*pi/2 directly (cleaner than
-// the half-norm form). arg is quadrant-aware: a>0 -> atan(b/a); a<0 ->
-// atan(b/a) + sign(b)*pi. Every piece re-norms — atan(1)->pi/4, log(1)->0,
-// i*0->0 fold out — so log(i) -> i*pi/2 and log(1+i) -> log(2)/2 + i*pi/4.
+// Pure-imaginary b*i emits log|b| + sign(b)*i*pi/2 directly. arg is
+// quadrant-aware (+ sign(b)*pi when a<0); every piece re-norms, so
+// log(i) -> i*pi/2 and log(1+i) -> log(2)/2 + i*pi/4.
 fn logQiNode(alloc: std.mem.Allocator, z: *const Qi) !*SNode {
     var re: ?*SNode = null;
     errdefer if (re) |r| nodeFree(alloc, r);
@@ -891,9 +890,8 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             errdefer if (inner_live) nodeFree(alloc, inner);
             if (inner.kind == .dec) {
                 if (inner.dec.neg) {
-                    // sqrt(-d) -> i*sqrt(|d|): the radicand re-enters through
-                    // the Q(i) constant ring. decSqrtExact still folds squares
-                    // (sqrt(-4) -> 2i); sqrt(-1) lands on bare i.
+                    // sqrt(-d) -> i*sqrt(|d|) via the Q(i) ring; decSqrtExact
+                    // still folds squares (sqrt(-4) -> 2i).
                     inner.dec.neg = false;
                     const sqn = try nodeUnary(alloc, .sq, inner);
                     inner_live = false;
@@ -1101,9 +1099,8 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             }
             if (inner.kind == .add or inner.kind == .mul) {
                 if (try qiConstOf(alloc, inner)) |zc| {
-                    // inv(a+bi) = (a-bi)*inv(a^2+b^2): conjugate times the
-                    // norm's reciprocal. Raw tree through one norm — inv(4e0)
-                    // folds 25e-2, non-2/5 norms stay symbolic inv facs.
+                    // inv(a+bi) = (a-bi)*inv(a^2+b^2) through one norm —
+                    // inv(4e0) folds 25e-2, non-2/5 norms stay symbolic.
                     var zv = zc;
                     defer zv.deinit();
                     var nim = zv.im;
@@ -1479,10 +1476,8 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     try facs.append(alloc, qn);
                 }
             }
-            // merge exp factors: exp(u)*exp(v) -> exp(u+v) — always valid.
-            // The summed argument re-norms: exp(0)->1 ejects it entirely,
-            // exp(log u)->u can unfold to any kind (dec joins coeff, mul
-            // splices its kids back into facs).
+            // merge exp(u)*exp(v) -> exp(u+v) — always valid; the summed arg
+            // re-norms (exp(0)->1 ejects; exp(log u)->u may splice kids back).
             var exp_idx = std.ArrayList(usize){};
             defer exp_idx.deinit(alloc);
             for (facs.items, 0..) |f, idx| {
@@ -1535,6 +1530,8 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                 }
                 const fc = try canonOf(alloc, f.kid);
                 defer alloc.free(fc);
+                const us: ?[]u8 = if (f.kid.kind == .sq) try canonOf(alloc, f.kid.kid) else null;
+                defer if (us) |q| alloc.free(q);
                 var removed = false;
                 var j: usize = 0;
                 while (j < facs.items.len) : (j += 1) {
@@ -1543,11 +1540,14 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     if (g.kind == .inv) continue;
                     const gc = try canonOf(alloc, g);
                     defer alloc.free(gc);
-                    if (std.mem.eql(u8, gc, fc)) {
+                    const fuse = us != null and std.mem.eql(u8, gc, us.?);
+                    if (std.mem.eql(u8, gc, fc) or fuse) {
+                        const rep: ?*SNode = if (fuse) try nodeUnary(alloc, .sq, try nodeClone(alloc, f.kid.kid)) else null;
                         nodeFree(alloc, f);
                         nodeFree(alloc, g);
                         _ = facs.orderedRemove(@max(ci, j));
                         _ = facs.orderedRemove(@min(ci, j));
+                        if (rep) |sqn| try facs.insert(alloc, @min(ci, j), sqn);
                         removed = true;
                         break;
                     }

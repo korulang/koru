@@ -2059,6 +2059,10 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
     // log(u) cascades r_i = int(a_i - (i+1)(u'/u)*r_{i+1}) at depth + 1.
     if (primLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral primmon")) |o| return o;
     if (gsubLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral gsub")) |o| return o;
+    // Sqrt-substitution lane (~part sqsub): when every radical leaf is
+    // sq(x), t = sqrt(x) rationalizes the integrand wholesale — x -> t*t,
+    // dx -> 2t dt — and the inner call re-decides at depth + 1.
+    if (sqsubLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral sqsub")) |o| return o;
     // Sum lane: an .add integrand that survived the monomial lanes is
     // split termwise — each term re-enters this same decision recursively
     // (depth-bounded), and the sum is elementary exactly when every term
