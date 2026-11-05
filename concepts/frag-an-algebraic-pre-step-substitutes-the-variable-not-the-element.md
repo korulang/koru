@@ -1,10 +1,12 @@
 ---
 type: belief
 id: frag-an-algebraic-pre-step-substitutes-the-variable-not-the-element
-provenance: sym B9, 2026-11 — after the dlog lane exhausted
+provenance: sym B9/B9b, 2026-11 — after the dlog lane exhausted
   per-element substitution, the remaining "arg-nonrational" refusals
   (atan(sqrt x), e^{sqrt x}, log(sqrt x)) turned out to need a
   different move entirely: substitute the variable, not an element.
+  B9b added the complementary canon fold the lane's output spelling
+  made visible.
 ts: 2026-11-05
 tags: [koru, stdlib, sym, risch, integration, substitution, algebraic]
 ---
@@ -34,9 +36,13 @@ Two consequences worth keeping:
 * **The lane orders last among the substitution family on purpose.**
   sq-gsub still wins anything carrying the dlog factor (1/(x+√x) →
   2·log(1+√x) is a θ=√x, dlog=1/(2θ) construction), because its
-  answers stay in the smaller field — sq-subst's answers spell
-  log(√x), e^{√x} where a direct lane would have stayed shallower.
-  Ordering matters to output quality, not to correctness: both are
+  answers stay in the smaller field. The log family exits sq-subst's
+  reach entirely since B9b: log(sqrt u) -> (1/2)*log u is a canon
+  fold, exact on the principal branch (re and im halve — the complex
+  case needs no sign guard either), so log(√x) norms to ½log x
+  *before any lane sees it* and the primitive cascade answers in
+  base field. Nested radicals recurse for free: log(x^{1/4}) -> ¼log x.
+  Ordering still matters for what remains: both lanes are
   checked-exact by the same chain-rule argument.
 * **checked-exact again needs no post-check.** The transform is a
   node isomorphism, the inner call verifies d/dt res = F(t), and
@@ -45,12 +51,15 @@ Two consequences worth keeping:
   opaque aux text the node transform cannot reach; the lane names
   `sqrt-subst-rsum` rather than smuggle an unsubstituted x.
 
-The norm side needed one rule to make the family close: u·inv(√u)
+The norm side needed two rules to make the family close. u·inv(√u)
 fuses to √u — exact field arithmetic (u = √u·√u) with no sign guard,
-unlike the sq·sq→u pair-fold which needs a provably nonneg radicand.
-Without it, the derivative of x·√x arrives spelled
-sq(x) + (1/2)·x·inv(sq(x)) and every downstream coefficient check —
-not just this lane's — sees two canons for one element.
+unlike the sq·sq→u pair-fold which needs a provably nonneg radicand;
+without it, the derivative of x·√x arrives spelled
+sq(x) + (1/2)·x·inv(sq(x)) and every downstream coefficient check
+sees two canons for one element. The second is the log fold above —
+and the honest observation is that *canon gaps masquerade as
+capability gaps*: "log(√x) is non-rational" was never a lane
+boundary, it was a missing rewrite one level below the lanes.
 
 What the lane is NOT: it does not integrate √(1+x²) or mixed
 radicands — those need Euler substitutions or the real tower, which

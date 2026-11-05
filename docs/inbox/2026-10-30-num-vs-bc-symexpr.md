@@ -528,7 +528,11 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   dx -> 2t dt), the decider re-enters on a rational-function tower,
   and the answer back-substitutes t -> sqrt(x) — checked-exact by
   the same chain rule; a foreign radicand refuses
-  `sqrt-subst-mixed-radicand` rather than partially transform. An integrand that
+  `sqrt-subst-mixed-radicand` rather than partially transform.
+  Norm also folds u*inv(sqrt u) -> sqrt u (exact field arithmetic,
+  no sign guard) and log(sqrt u) -> (1/2)*log u (exact on the
+  principal branch, nested radicals recurse) — the log family over
+  sqrt x routes through the ordinary log lanes in base field. An integrand that
   carries a tower element's dlog factor — g'*e^g for theta = e^g (g
   any polynomial, not just affine), u'/u for theta = log(u),
   u'/(2*theta) for theta = sqrt(u), u'/(1+u^2) for theta = atan(u) —

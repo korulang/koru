@@ -34,8 +34,8 @@
 //     conjugate over norm, sqrt(-d) -> i*sqrt(|d|)
 //   - exp(u) is the exponential node: exp(0) -> 1, exp(1) -> e,
 //     exp(log u) -> u, exp(c*log u) -> u^c for small |c|, exp(u)*exp(v)
-//     -> exp(u+v), inv(exp u) -> exp(-u); log of a Q(i) constant is
-//     (1/2)log(a^2+b^2) + i*arg on the principal branch
+//     -> exp(u+v), inv(exp u) -> exp(-u); log(sqrt u) -> (1/2)*log u;
+//     log of a Q(i) constant is (1/2)log(a^2+b^2) + i*arg, principal
 //
 // What NF does NOT do: no distributive factoring, no trig/ident tables,
 // no power node (π*π stays a product — pow is a deriv rung, not canon).
@@ -401,10 +401,9 @@ fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
 // ============================================================================
 
 // Generator registry — atoms 4.. index a declared generator (0=pi,1=e,
-// 2=phi,3=x). GReg is per-call state built from a rel:v1 registry text;
-// SNode stores only the index, so every tree in one derivation shares one
-// registry. laws[i] == null means the generator is declared but lawless —
-// deriving it refuses by name.
+// 2=phi,3=x). GReg is per-call state from a rel:v1 registry text; SNode
+// stores only the index, so one derivation shares one registry.
+// laws[i] == null means declared but lawless — deriving refuses by name.
 const GReg = struct {
     names: std.ArrayList([]const u8),
     laws: std.ArrayList(?*SNode),
@@ -646,8 +645,7 @@ fn sortKids(alloc: std.mem.Allocator, kids: []*SNode) !void {
     }
 }
 
-// A node's structural base for sum grouping: the part after stripping a
-// leading decimal coefficient. Fresh nodes; coeff is cloned out.
+// A node's structural base for sum grouping: the part after a leading decimal coefficient (cloned out).
 fn splitCoeff(alloc: std.mem.Allocator, n: *const SNode, coeff: *Dec) !*SNode {
     if (n.kind == .dec) {
         coeff.* = .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e };
@@ -664,8 +662,7 @@ fn splitCoeff(alloc: std.mem.Allocator, n: *const SNode, coeff: *Dec) !*SNode {
     return nodeClone(alloc, n);
 }
 
-// Build a fresh term node for base * coeff. Borrows both; returns an owned
-// node (a clone of base when coeff is +1, else a fresh product).
+// Fresh term node for base * coeff (borrows both): clone of base when coeff is +1, else a product.
 fn termWithCoeff(alloc: std.mem.Allocator, coeff: *const Dec, base: *const SNode) !*SNode {
     if (!coeff.neg and try decIsOne(alloc, coeff)) {
         return nodeClone(alloc, base);
@@ -757,8 +754,8 @@ fn qiNormSq(alloc: std.mem.Allocator, z: *const Qi) !Dec {
 }
 
 // Two-kid list constructor that CONSUMES a and b on every path — failure
-// frees both, success owns them. For raw trees that get normed, where
-// plain errdefers on the kids would double-free once the list exists.
+// frees both, success owns them. For raw trees to be normed, where
+// errdefers on the kids would double-free once the list exists.
 fn nodePair(alloc: std.mem.Allocator, kind: NodeKind, a: *SNode, b: *SNode) !*SNode {
     const pair = list2(alloc, a, b) catch |e| {
         nodeFree(alloc, a);
@@ -773,8 +770,7 @@ fn nodePair(alloc: std.mem.Allocator, kind: NodeKind, a: *SNode, b: *SNode) !*SN
     };
 }
 
-// Emit the canonical node for a Q(i) value. Borrows re/im: dec when im==0,
-// c*i (bare i at c=+-1) when re==0, else a const-first two-term sum.
+// Emit canonical node for a Q(i) value (borrows re/im): dec if im==0, c*i (bare i at c=+-1) if re==0, else a two-term sum.
 fn qiToNode(alloc: std.mem.Allocator, re: *const Dec, im: *const Dec) !*SNode {
     if (im.m.eqlZero()) {
         return nodeDec(alloc, .{ .neg = re.neg, .m = try re.m.clone(), .e = re.e });
@@ -792,9 +788,8 @@ fn qiToNode(alloc: std.mem.Allocator, re: *const Dec, im: *const Dec) !*SNode {
 }
 
 // log of a Q(i) constant: log(a+bi) = (1/2)*log(a^2+b^2) + i*arg(z).
-// Pure-imaginary b*i emits log|b| + sign(b)*i*pi/2 directly. arg is
-// quadrant-aware (+ sign(b)*pi when a<0); every piece re-norms, so
-// log(i) -> i*pi/2 and log(1+i) -> log(2)/2 + i*pi/4.
+// Pure-imaginary b*i emits log|b| + sign(b)*i*pi/2; arg is quadrant-
+// aware (+ sign(b)*pi when a<0). Pieces re-norm: log(i) -> i*pi/2.
 fn logQiNode(alloc: std.mem.Allocator, z: *const Qi) !*SNode {
     var re: ?*SNode = null;
     errdefer if (re) |r| nodeFree(alloc, r);
@@ -915,9 +910,8 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             if (inner.kind == .dec) {
                 if (inner.dec.m.eqlZero()) return error.LogZero;
                 if (inner.dec.neg) {
-                    // log(-d) -> log|d| + i*pi: principal branch, exact in
-                    // the Q(i) constant ring. LogNeg stays declared for
-                    // callers that want the real-only refusal lane.
+                    // log(-d) -> log|d| + i*pi, principal branch; LogNeg
+                    // stays declared for the real-only refusal lane.
                     inner.dec.neg = false;
                     const ln = try nodeUnary(alloc, .log, inner);
                     inner_live = false;
@@ -955,6 +949,16 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     zv.deinit();
                     return out;
                 }
+            }
+            if (inner.kind == .sq) {
+                // log(sqrt u) -> (1/2)*log u: exact on the principal branch
+                // (re and im halve) — nested radicals recurse for free.
+                const lg = try nodeUnary(alloc, .log, inner.kid);
+                alloc.destroy(inner);
+                inner_live = false;
+                const pr = try nodePair(alloc, .mul, try nodeDec(alloc, .{ .neg = false, .m = try BI.initSet(alloc, 5), .e = -1 }), lg);
+                defer nodeFree(alloc, pr);
+                return norm(alloc, pr);
             }
             return nodeUnary(alloc, .log, inner);
         },
@@ -1334,11 +1338,10 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                 coeff.m.deinit();
                 return nodeDec(alloc, try decZero(alloc));
             }
-            // coeff*inv(dec) rational reduction: (m_c*10^e_c)/(m_d*10^e_d)
-            // in lowest integer terms — den==1 folds fully into coeff, else
-            // the denominator rewrites to the reduced canon dec. This lands
-            // 3*inv(3e0) on 1e0 and 4*inv(6e1) on inv(1.5e1) — the same canon
-            // a fresh "1/15" produces, keeping equiv = string equality honest.
+            // coeff*inv(dec) rational reduction to lowest terms — den==1
+            // folds into coeff, else the denominator rewrites to the reduced
+            // canon dec: 4*inv(6e1) -> inv(1.5e1) is the canon a fresh
+            // "1/15" produces, keeping equiv = string equality honest.
             var ii: usize = 0;
             while (ii < facs.items.len) {
                 const f = facs.items[ii];
@@ -1428,10 +1431,9 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     ii += 1;
                 }
             }
-            // Q(i) constant ring fold: every factor that provably lives in
-            // Q(i) — bare i, c*i, or a sum re+c*i — multiplies inside the ring.
-            // >=2 participants collapse to one canonical Q(i) node; a dec
-            // result joins coeff, im-only becomes c*i, re+im a two-term sum.
+            // Q(i) constant ring fold: every provably-Q(i) factor (bare i,
+            // c*i, or re+c*i) multiplies in the ring; >=2 collapse to one
+            // canonical node — dec joins coeff, im-only c*i, re+im a sum.
             // i*i -> -1e0 is the smallest case; i*i*x -> -1e0*x rides coeff.
             var qi_idx = std.ArrayList(usize){};
             defer qi_idx.deinit(alloc);
@@ -2006,8 +2008,8 @@ fn ownedCopy(s: []const u8) []u8 {
 // ============================================================================
 
 // Literal / trusted parse: lit(π), lit(e*π), lit(√(2)), lit(1/3)...
-// expr: captures the arg's source text verbatim — authored math quotes
-// instead of evaluating. Runtime text goes through ingest/parse, not lit.
+// expr captures the arg's source text verbatim — authored math quotes,
+// not evaluated. Runtime text goes through ingest/parse, not lit.
 ~pub tor lit { expr: Expression }
 | exact string<sexpr!>
 | bad
@@ -2129,9 +2131,8 @@ fn ownedCopy(s: []const u8) []u8 {
 // Cross-tower lanes
 // ============================================================================
 
-// Re-issue a canonical decimal as a symbolic leaf. The bytes are already
-// canonical sexpr — numeric leaves share the decimal alphabet — so this is
-// a mark move, not a conversion.
+// Re-issue a canonical decimal as a symbolic leaf: the bytes are already
+// canonical sexpr, so this is a mark move, not a conversion.
 ~pub tor of-dec { n: string<std/num:!exact> } -> string<sexpr!>
 
 ~proc of-dec|zig {
@@ -2139,8 +2140,7 @@ fn ownedCopy(s: []const u8) []u8 {
 }
 
 // Integer power by repeated symbolic multiply: pow(x,3) -> (x*x*x),
-// pow(x,-2) -> inv((x*x)), pow(x,0) -> 1e0. pow(0,-1) -> | div-zero,
-// riding inv's own zero guard.
+// pow(x,-2) -> inv((x*x)), pow(x,0) -> 1e0. pow(0,-1) -> | div-zero.
 ~pub tor pow { a: string<!sexpr>, n: i64 }
 | exact string<sexpr!>
 | div-zero
