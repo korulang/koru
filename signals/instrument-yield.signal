@@ -1,0 +1,6 @@
+name: instrument-yield
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a standing generator (challenge/assay) returned judged artifacts — fires.json row + catalog growth; fired when an instrument produces, not when it runs
