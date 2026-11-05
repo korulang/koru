@@ -1257,6 +1257,7 @@ pub const ResolutionSource = enum {
     cflag,
     env,
     command,
+    cap,
     absent,
 
     pub fn name(self: ResolutionSource) []const u8 {
@@ -1264,6 +1265,7 @@ pub const ResolutionSource = enum {
             .cflag => "compiler flag",
             .env => "environment",
             .command => "command",
+            .cap => "capability grant",
             .absent => "absent",
         };
     }
@@ -1284,6 +1286,17 @@ pub var claimed_cli_flags: ?*std.StringHashMap(void) = null;
 
 fn claimCliFlag(f: []const u8) void {
     if (claimed_cli_flags) |sink| sink.put(f, {}) catch {};
+}
+
+/// Per-invocation audit sink for capability atoms. A `cap(x)` narrowing
+/// head records the atom it asks about here — granted or not — so the
+/// post-parse audit can refuse a consult no `--cap=<x>` grant covered,
+/// and a grant nothing consulted (the 310_145 audit's mirror). Set by
+/// koruc for the duration of one compile; null under unit tests and CCP.
+pub var claimed_caps: ?*std.StringHashMap(void) = null;
+
+fn claimCap(atom: []const u8) void {
+    if (claimed_caps) |sink| sink.put(atom, {}) catch {};
 }
 
 /// Reader-side provenance: the entry author writes the terse intent-shaped
@@ -1322,6 +1335,22 @@ pub const Provider = struct {
     pub fn resolveEnv(self: *const Provider, atom: []const u8) ?Value {
         const m = self.env_map orelse return null;
         if (m.get(atom)) |v| return coerce(v);
+        return null;
+    }
+
+    /// `cap(x)` narrows to capability grants: `--cap=<x>` flags land in
+    /// the provider flags like any name=value atom. The consulted name is
+    /// recorded either way — granted or not — so the cap audit sees use.
+    pub fn resolveCap(self: *const Provider, atom: []const u8) ?Value {
+        claimCap(atom);
+        for (self.flags) |f| {
+            if (f.len == atom.len + 4 and std.mem.startsWith(u8, f, "cap=") and
+                std.mem.eql(u8, f[4..], atom))
+            {
+                claimCliFlag(f);
+                return .{ .boolean = true };
+            }
+        }
         return null;
     }
 
@@ -1603,6 +1632,14 @@ const EntryEvaluator = struct {
             try self.note(atom, r);
             return r.value;
         }
-        return self.fail(error.UnsupportedConstruct, "unknown narrowing head `{s}` — known: flag, cflag, env, command", .{head});
+        if (std.mem.eql(u8, head, "cap")) {
+            const r: Resolution = if (self.provider.resolveCap(atom)) |v|
+                .{ .value = v, .source = .cap }
+            else
+                .{ .value = .{ .boolean = false }, .source = .absent };
+            try self.note(atom, r);
+            return r.value;
+        }
+        return self.fail(error.UnsupportedConstruct, "unknown narrowing head `{s}` — known: flag, cflag, env, command, cap", .{head});
     }
 };

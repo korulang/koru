@@ -8113,6 +8113,9 @@ pub fn main() !void {
     var claimed_cli_flags = std.StringHashMap(void).init(allocator);
     defer claimed_cli_flags.deinit();
     comptime_eval.claimed_cli_flags = &claimed_cli_flags;
+    var claimed_caps = std.StringHashMap(void).init(allocator);
+    defer claimed_caps.deinit();
+    comptime_eval.claimed_caps = &claimed_caps;
 
     // Parse the file
     log.debug("DEBUG: About to parse file: {s}, ast_json_mode = {}\n", .{ input, ast_json_mode });
@@ -8943,6 +8946,34 @@ pub fn main() !void {
             }
             if (!claimed) {
                 try printStderr(allocator, "koruc: '{s}' is not a flag this program or the toolchain claims\n\n  Bare flag atoms need a consumer — a flag()/cflag() gate or a flag.declare. Provider flags carry a value: {s}=<value>.\n", .{ flag_arg, flag_arg });
+                std.process.exit(1);
+            }
+        }
+    }
+
+    // Capability audit (cap() atoms): a cap(x) gate consult asks for a
+    // grant — `--cap=<x>` flags carry it (name=value provider atoms land
+    // in compiler_config like any other). A consult no grant covered is
+    // undeclared capability use — the ConnCaps refusal; a grant no gate
+    // consulted is a dead grant, the same audit shape as an unclaimed
+    // bare flag (310_145).
+    {
+        var grants = std.StringHashMap(void).init(allocator);
+        defer grants.deinit();
+        for (compiler_config.flags.items) |f| {
+            if (std.mem.startsWith(u8, f, "cap=")) try grants.put(f[4..], {});
+        }
+        var cap_it = claimed_caps.keyIterator();
+        while (cap_it.next()) |k| {
+            if (!grants.contains(k.*)) {
+                try printStderr(allocator, "koruc: capability '{s}' was consulted by a cap() gate but no grant names it\n\n  Grants come from `--cap=<name>` flags — an ungranted consult is undeclared capability use.\n", .{k.*});
+                std.process.exit(1);
+            }
+        }
+        var grant_it = grants.keyIterator();
+        while (grant_it.next()) |k| {
+            if (!claimed_caps.contains(k.*)) {
+                try printStderr(allocator, "koruc: capability grant '--cap={s}' was never consulted\n\n  A grant no cap() gate asks about is a dead grant — the same audit as an unclaimed bare flag. Remove it or gate on it.\n", .{k.*});
                 std.process.exit(1);
             }
         }
