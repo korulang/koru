@@ -126,6 +126,20 @@
         "novel": true
       },
       "note": "first assay fire \u2014 3/3 maps judged-pass (jq->JSON DOM blocker, capability-manifests->compiler feature, pg->zero blockers verified by full compile); catalog docs/assays/ 0->3; 2 commission candidates queued"
+    },
+    {
+      "generator": "koru-assay",
+      "ts": "2026-11-04",
+      "seat": "snow-yarrow",
+      "contestants": 3,
+      "yield": {
+        "landed": 3,
+        "evaporated": 0,
+        "pins_added": 0,
+        "pins_greened": 0,
+        "novel": true
+      },
+      "note": "fire #2 \u2014 2 clean passes (regex: don't-build engine, commission replace; vaxis: 1 compiler gap wildcard-arm-capture + i64/@divTrunc=RULING 030_143) + 1 bounce-and-revise (yq v1 falsified 'no koru-libs yaml' \u2014 libs/yaml tracked since Aug; v2 corrected to DOM-over-events, gardened frag-absence-claims-are-falsified-by-how-you-grep). Doctrine's falsification check caught a real corpus-survey failure."
     }
   ],
   "end_of_road": {
