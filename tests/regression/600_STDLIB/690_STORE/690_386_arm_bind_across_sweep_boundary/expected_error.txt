@@ -1,0 +1,1 @@
+the sweep body reads 'p', bound by the `! each` arm — the arm's payload is wildcard `*`, so the binding's type is not in the decl and the sweep boundary cannot name it
