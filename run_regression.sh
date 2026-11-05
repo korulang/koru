@@ -56,9 +56,11 @@ publish_board_to_site() {
     command -v node >/dev/null 2>&1 || return 0
     echo ""
     echo -e "${BLUE}Publishing board to korulang_org...${NC}"
-    if (cd "$site_dir" && \
-        node scripts/aggregate-history.js && \
-        node scripts/post-status-if-changed.js); then
+    # aggregate-history only — Discord announce is the ceremony's LAST step
+    # (post-deploy), never mid-run: announcing before the site deploys links
+    # readers to stale test pages. post-status-if-changed.js stays available
+    # via `pnpm build:status` for the explicit post-deploy call.
+    if (cd "$site_dir" && node scripts/aggregate-history.js); then
         echo -e "${GREEN}✅ board publish step done${NC}"
     else
         echo -e "${YELLOW}⚠️  board publish FAILED — the run stands, but korulang_org did not get it${NC}"
