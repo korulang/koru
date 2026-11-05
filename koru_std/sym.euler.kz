@@ -1,0 +1,181 @@
+// ============================================================================
+// ~part euler — Euler's first substitution for a sqrt(x^2 + c) radicand.
+//
+//   t = x + sqrt(x^2+c)   <=>   x = (t^2 - c)/(2t)
+//   sqrt(x^2+c) = (t^2+c)/(2t)      dx/dt = (t^2+c)/(2t^2)
+//
+// The conjugate parameter t = sqrt(u) - x rationalizes identically
+// (t*conj = c), but this spelling makes log(t) emit as log(x + sqrt(u))
+// — the asinh-form textbook answer — instead of -log(sqrt(u) - x).
+//
+// When every radical leaf shares one radicand u = c + x^2 the whole
+// integrand rationalizes in t; the decider re-enters at depth + 1 and
+// the answer back-substitutes t -> sqrt(u) - x via nodeSubstTheta.
+// checked-exact rides the chain rule exactly as gsub/sqsub — no
+// post-check.  Refusals name the shape the transform cannot promise:
+//   euler-radicand-mixed  different radicands under one integrand
+//   euler-radicand-shape  u is not c + x^2 — a linear term, a leading
+//                         coefficient != 1, or a missing/zero constant
+//                         (x^2 alone is a different animal)
+//   euler-inner / euler-subst-rsum / euler-inner-no-anti
+// ============================================================================
+
+// The forward transform, applied under the lane's radicand precheck:
+// every x (atom 3) becomes x(t) and every sq leaf becomes sqrt(t).
+// Consumes nothing; the caller owns the raw (un-normed) result.
+fn nodeSubstEuler(alloc: std.mem.Allocator, n: *const SNode, xt: *const SNode, sqt: *const SNode) anyerror!*SNode {
+    switch (n.kind) {
+        .dec => return try nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
+        .atom => {
+            if (n.atom == 3) return try nodeClone(alloc, xt);
+            return try nodeAtom(alloc, n.atom);
+        },
+        .sq => return try nodeClone(alloc, sqt), // radicand is u by the lane precheck
+        .inv, .log, .atan, .exp => return try nodeUnary(alloc, n.kind, try nodeSubstEuler(alloc, n.kid, xt, sqt)),
+        .add, .mul => {
+            const kids = try alloc.alloc(*SNode, n.kids.len);
+            var built: usize = 0;
+            errdefer {
+                for (kids[0..built]) |k| nodeFree(alloc, k);
+                alloc.free(kids);
+            }
+            for (n.kids, 0..) |k, i| {
+                kids[i] = try nodeSubstEuler(alloc, k, xt, sqt);
+                built = i + 1;
+            }
+            return try nodeList(alloc, n.kind, kids);
+        },
+        .rsum => return CertgenErr.RsumUnsupported, // integrands can't carry rsum
+    }
+}
+
+fn eulerLane(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    if (depth >= 6) return null;
+    var sqs = std.ArrayList(*const SNode){};
+    defer sqs.deinit(alloc);
+    try collectSqKids(alloc, nt_var, &sqs);
+    if (sqs.items.len == 0) return null;
+    // every radical must share one radicand — unlike sqsub there is no
+    // fixed target; the transform exists only if a single u carries all
+    // of them.
+    const uc = try canonOf(alloc, sqs.items[0].kid);
+    defer alloc.free(uc);
+    for (sqs.items[1..]) |q| {
+        const kc = try canonOf(alloc, q.kid);
+        defer alloc.free(kc);
+        if (!std.mem.eql(u8, kc, uc)) {
+            lane_extra.* = "euler-radicand-mixed";
+            return null;
+        }
+    }
+    // u must be c + x^2: quadratic, leading coefficient 1, no linear
+    // term, nonzero constant — else this substitution does not
+    // rationalize and the lane stays silent by name.
+    const u = sqs.items[0].kid;
+    const up = (try polyOfNode(alloc, u)) orelse {
+        lane_extra.* = "euler-radicand-shape";
+        return null;
+    };
+    defer polyFree(alloc, up);
+    if (up.len != 3 or !ratIsOne(&up[2]) or !ratIsZero(&up[1]) or ratIsZero(&up[0])) {
+        lane_extra.* = "euler-radicand-shape";
+        return null;
+    }
+    // Transform pieces, spelled in the inner variable (canon text "x"
+    // is t here):  x = (t*t - c)/(2t),  sqrt = (t*t + c)/(2t),
+    // dx/dt = (t*t + c)/(2t*t).  ratToString spells the constant as
+    // n or n/d and parseTree normalizes it back to a canon dec/inv.
+    const ct = try ratToString(alloc, &up[0]);
+    defer alloc.free(ct);
+    const xt_txt = try std.fmt.allocPrint(alloc, "(((x*x)+(-1e0*({s})))*inv((2e0*x)))", .{ct});
+    defer alloc.free(xt_txt);
+    const xt = try parseTree(alloc, xt_txt);
+    defer nodeFree(alloc, xt);
+    const sqt_txt = try std.fmt.allocPrint(alloc, "(((x*x)+({s}))*inv((2e0*x)))", .{ct});
+    defer alloc.free(sqt_txt);
+    const sqt = try parseTree(alloc, sqt_txt);
+    defer nodeFree(alloc, sqt);
+    const dx_txt = try std.fmt.allocPrint(alloc, "(((x*x)+({s}))*inv((2e0*x*x)))", .{ct});
+    defer alloc.free(dx_txt);
+    const dxn = try parseTree(alloc, dx_txt);
+    var dx_live = true;
+    defer if (dx_live) nodeFree(alloc, dxn);
+    // F(t) = H(x(t), sqrt(t)) * dx/dt — the product re-norms once.
+    var fmk = std.ArrayList(*SNode){};
+    defer fmk.deinit(alloc);
+    try fmk.append(alloc, dxn);
+    dx_live = false;
+    try fmk.append(alloc, try nodeSubstEuler(alloc, nt_var, xt, sqt));
+    const fm = try nodeList(alloc, .mul, try fmk.toOwnedSlice(alloc));
+    defer nodeFree(alloc, fm);
+    const fnn = norm(alloc, fm) catch @panic("std/sym:euler F norm");
+    defer nodeFree(alloc, fnn);
+    const ftxt = try canonOf(alloc, fnn);
+    defer alloc.free(ftxt);
+    var t_anti: ?[]u8 = null;
+    defer if (t_anti) |ta| alloc.free(ta);
+    const sub = decideIntegralInner(alloc, ftxt, max_order, max_deg, &t_anti, depth + 1);
+    switch (sub) {
+        .elementary => |b| {
+            defer alloc.free(b);
+            if (t_anti == null) {
+                lane_extra.* = "euler-inner-no-anti";
+                return null;
+            }
+        },
+        .holonomic_special => |b| {
+            alloc.free(b);
+            lane_extra.* = "euler-inner";
+            return null;
+        },
+        .unresolved => |b| {
+            alloc.free(b);
+            lane_extra.* = "euler-inner";
+            return null;
+        },
+        .not_holonomic => |b| {
+            alloc.free(b);
+            lane_extra.* = "euler-inner";
+            return null;
+        },
+        .non_rational, .non_analytic, .bad => {
+            lane_extra.* = "euler-inner";
+            return null;
+        },
+    }
+    const an = parseTree(alloc, t_anti.?) catch @panic("std/sym:euler anti parse");
+    defer nodeFree(alloc, an);
+    const ann = norm(alloc, an) catch @panic("std/sym:euler anti norm");
+    defer nodeFree(alloc, ann);
+    // t back-substitutes to x + sqrt(u).
+    const tb_txt = try std.fmt.allocPrint(alloc, "(x+√({s}))", .{uc});
+    defer alloc.free(tb_txt);
+    const tb = try parseTree(alloc, tb_txt);
+    defer nodeFree(alloc, tb);
+    const res = (try nodeSubstTheta(alloc, ann, tb)) orelse {
+        lane_extra.* = "euler-subst-rsum";
+        return null;
+    };
+    defer nodeFree(alloc, res);
+    const resn = norm(alloc, res) catch @panic("std/sym:euler res norm");
+    defer nodeFree(alloc, resn);
+    // checked-exact by the chain rule, same argument as gsubTry:
+    // the inner call verified d/dt res = F(t), and
+    // d/dx res(t(x)) = F(t(x)) * dt/dx = H(x).
+    const atxt = try canonOf(alloc, resn);
+    // antiWithConst owns atxt from here — it either returns it verbatim or
+    // frees it and hands back the const-wrapped text; anti is freed once.
+    const anti = try antiWithConst(alloc, atxt, const_txt);
+    defer alloc.free(anti);
+    const blob = try std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=risch-euler-subst-constructed;checked-exact", .{anti});
+    return elemRet(blob, anti, anti_out);
+}

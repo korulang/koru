@@ -1,12 +1,14 @@
 ---
 type: belief
 id: frag-an-algebraic-pre-step-substitutes-the-variable-not-the-element
-provenance: sym B9/B9b, 2026-11 — after the dlog lane exhausted
+provenance: sym B9/B9b/B10, 2026-11 — after the dlog lane exhausted
   per-element substitution, the remaining "arg-nonrational" refusals
   (atan(sqrt x), e^{sqrt x}, log(sqrt x)) turned out to need a
   different move entirely: substitute the variable, not an element.
   B9b added the complementary canon fold the lane's output spelling
-  made visible.
+  made visible.  B10 added the family's second substitution —
+  Euler's first — for the sqrt(x^2+c) radicand the B9 boundary
+  paragraph had named as out of reach.
 ts: 2026-11-05
 tags: [koru, stdlib, sym, risch, integration, substitution, algebraic]
 ---
@@ -18,38 +20,46 @@ require the integrand to carry θ', transform H into a rational T(t).
 That mechanism cannot help when the obstruction is *inside* an
 element — atan(√x) has no θ' factor to carry because the problem is
 that θ's own argument is not rational. The honest move there is older
-and more global: t = √x substitutes the *variable*. Every sq(x) leaf
-becomes t, every bare x becomes t², and dx becomes 2t·dt — the whole
-integrand rationalizes at once and the inner decider runs on a purely
-rational-function tower.
+and more global: substitute the *variable*. The B9 lane uses t = √x:
+every sq(x) leaf becomes t, every bare x becomes t², dx becomes
+2t·dt. B10's Euler lane uses t = x + √(x²+c): the inverse
+x = (t²−c)/(2t) is rational, √(x²+c) spells (t²+c)/(2t), and
+dx/dt = (t²+c)/(2t²) — again the whole integrand rationalizes at
+once and the inner decider runs on a purely rational-function tower.
 
-The validity condition is total, not per-element: **every radical
-leaf in the integrand must have x for a radicand.** One foreign
-radicand — sq(1+x), sq(x²) — leaves an algebraic strand the transform
-cannot clear, so the lane refuses `sqrt-subst-mixed-radicand` rather
-than partially transform. That all-or-nothing shape is the honest
-version of the same discipline the dlog lane learned: a substitution
-that reintroduces the obstruction is not a substitution.
+The validity condition is total, not per-element, in both members —
+but each substitution owns its own radicand predicate. t = √x
+requires *every* radical leaf to have radicand x. Euler requires
+*every* radical leaf to share one radicand of the exact shape
+x² + c (quadratic, leading coefficient 1, no linear term, nonzero
+rational constant — c < 0 included, √(x²−1) rationalizes the same
+way). One foreign radicand refuses `euler-radicand-mixed`; a shared
+radicand of the wrong shape refuses `euler-radicand-shape`; an
+x-only radical refuses `sqrt-subst-mixed-radicand`. That
+all-or-nothing shape is the honest version of the same discipline
+the dlog lane learned: a substitution that reintroduces the
+obstruction is not a substitution.
 
 Two consequences worth keeping:
 
-* **The lane orders last among the substitution family on purpose.**
+* **The lanes order last among the substitution family on purpose.**
   sq-gsub still wins anything carrying the dlog factor (1/(x+√x) →
-  2·log(1+√x) is a θ=√x, dlog=1/(2θ) construction), because its
-  answers stay in the smaller field. The log family exits sq-subst's
-  reach entirely since B9b: log(sqrt u) -> (1/2)*log u is a canon
-  fold, exact on the principal branch (re and im halve — the complex
+  2·log(1+√x) is a θ=√x, dlog=1/(2θ) construction; x·√(1+x²) →
+  (1+x²)^{3/2}/3 is θ=√(1+x²), dlog=x/θ), because its answers stay
+  in the smaller field. The log family exits the pre-steps' reach
+  entirely since B9b: log(sqrt u) -> (1/2)*log u is a canon fold,
+  exact on the principal branch (re and im halve — the complex
   case needs no sign guard either), so log(√x) norms to ½log x
   *before any lane sees it* and the primitive cascade answers in
-  base field. Nested radicals recurse for free: log(x^{1/4}) -> ¼log x.
-  Ordering still matters for what remains: both lanes are
-  checked-exact by the same chain-rule argument.
+  base field. Ordering still matters for what remains: all lanes
+  are checked-exact by the same chain-rule argument.
 * **checked-exact again needs no post-check.** The transform is a
-  node isomorphism, the inner call verifies d/dt res = F(t), and
-  d/dx res(√x) = F(√x)·(1/(2√x)) = H(x). The same argument failed to
-  hold only once — for rsum answers, whose variable lives inside an
-  opaque aux text the node transform cannot reach; the lane names
-  `sqrt-subst-rsum` rather than smuggle an unsubstituted x.
+  node isomorphism, the inner call verifies d/dt res = F(t), and the
+  chain rule closes d/dx res(t(x)) = H(x). The argument fails only
+  for rsum answers, whose variable lives inside an opaque aux text
+  the node transform cannot reach; the lanes name
+  `sqrt-subst-rsum` / `euler-subst-rsum` rather than smuggle an
+  unsubstituted variable.
 
 The norm side needed two rules to make the family close. u·inv(√u)
 fuses to √u — exact field arithmetic (u = √u·√u) with no sign guard,
@@ -61,6 +71,23 @@ and the honest observation is that *canon gaps masquerade as
 capability gaps*: "log(√x) is non-rational" was never a lane
 boundary, it was a missing rewrite one level below the lanes.
 
-What the lane is NOT: it does not integrate √(1+x²) or mixed
-radicands — those need Euler substitutions or the real tower, which
-remain named refusals. The boundary moved; it did not disappear.
+B10 adds one more lesson of the same kind, at the level of the
+substitution itself: **the parameter choice is the output spelling.**
+Euler's first substitution is usually taught as t = √(x²+c) − x,
+but its conjugate t = x + √(x²+c) rationalizes identically
+(t·conj = c gives the same rational inverse shape) — and norm does
+not fold between conjugates, so the two choices emit different
+canonical answers for the same integral. Picking t = x + √u makes
+the log term spell log(x + √(x²+c)) — the asinh-form textbook
+answer — for free. The residual ugly spelling (inv(x+√u) towers
+where an expanded x√u would sit) is conjugate-expansion debt: norm
+still does not distribute (a+b)² − (a−b)² -> 4ab, and that belongs
+to a canon pass, not a lane.
+
+What the family is NOT: it does not integrate mixed radicands
+(√(1+x²)·√(1+2x²) refuses euler-radicand-mixed), other quadratic
+shapes (a leading coefficient or linear term needs a scaling or
+shift pre-step the lane does not have), or integrands whose
+transformed F(t) is non-elementary (exp(x)·√(1+x²) refuses
+euler-inner). The boundary moved again; it did not disappear.
+True-tower coefficient fields ℚ(x,θ) remain the named next work.

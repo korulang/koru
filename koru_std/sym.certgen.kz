@@ -127,9 +127,8 @@ fn intPolysFromRats(alloc: std.mem.Allocator, polys: []const []const Rat) ![][]B
     return out;
 }
 
-// Structural polynomial extraction over Q: dec/x/+/* only. Anything
-// involving inv or sq (or non-x atoms, which are not rational) is not a
-// poly over Q[x] for these purposes.
+// Structural polynomial extraction over Q: dec/x/+/* only — inv, sq,
+// or non-x atoms are not poly over Q[x] for these purposes.
 fn polyOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!?[]Rat {
     switch (n.kind) {
         .dec => {
@@ -684,8 +683,7 @@ fn hermiteReduce(alloc: std.mem.Allocator, f: *const Frac) !HermiteOut {
     const sol = (try rrefNullVec(alloc, rows, n + 1)) orelse return error.HermiteSingular;
     defer polyFree(alloc, sol);
     if (!ratIsOne(&sol[n])) return error.HermiteSingular;
-    // fracNorm consumes n,d (and frees both on its own error path), so each
-    // pair is handed over immediately — no errdefer stays armed across it.
+    // fracNorm consumes n,d — each pair hands over immediately.
     const bpart = try polyClone(alloc, sol[0..m]);
     const dm2 = polyClone(alloc, dm) catch |e| {
         polyFree(alloc, bpart);
@@ -928,8 +926,7 @@ fn polyEvalAtRat(alloc: std.mem.Allocator, p: []const Rat, x: *const Rat) !Rat {
     return acc;
 }
 
-// Split off all rational roots of R (integerized, rational root theorem):
-// returns the found roots; R is divided down to the non-rational cofactor.
+// Split off all rational roots of R (integerized, rational root theorem).
 fn ratRootSplit(alloc: std.mem.Allocator, R_in: []const Rat, roots: *std.ArrayList(Rat)) ![]Rat {
     var rem = try polyClone(alloc, R_in);
     errdefer polyFree(alloc, rem);
@@ -2063,6 +2060,9 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
     // sq(x), t = sqrt(x) rationalizes the integrand wholesale — x -> t*t,
     // dx -> 2t dt — and the inner call re-decides at depth + 1.
     if (sqsubLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral sqsub")) |o| return o;
+    // Euler lane (~part euler): one shared radicand c + x^2 under every
+    // sqrt rationalizes via t = sqrt(u) - x at depth + 1.
+    if (eulerLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral euler")) |o| return o;
     // Sum lane: an .add integrand that survived the monomial lanes is
     // split termwise — each term re-enters this same decision recursively
     // (depth-bounded), and the sum is elementary exactly when every term
