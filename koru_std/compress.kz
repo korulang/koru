@@ -1047,7 +1047,7 @@ pub fn crc32(src: []const u8) u32 {
 ~pub tor gzip {
     data: string<*>
 }
-| compressed { data: string, original_size: usize }
+| compressed { data: string<std/io:allocated!>, original_size: usize }
 | error string
 
 // CRC32 of arbitrary bytes — the trailer's checksum exposed as its own

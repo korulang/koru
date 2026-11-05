@@ -13,6 +13,6 @@ std/io:read-file(path: "tests/regression/600_STDLIB/643_COMPRESS/643_003_gzip_mu
 | failed e |> std/io:print.ln("read failed {{ e:s }}")
 | ok content |> std/compress:gzip(data: content)
     | error e2 |> std/io:print.ln("ERR {{ e2:s }}") |> std/io:free(content)
-    | compressed { data, original_size } |> std/compress:crc32(data): crc
-        |> std/io:print.ln("multi {{ original_size:d }}->{{ data.len:d }} crc={{ crc:d }}")
-        |> std/io:free(content)
+    | compressed c |> std/compress:crc32(c.data): crc
+        |> std/io:print.ln("multi {{ c.original_size:d }}->{{ c.data.len:d }} crc={{ crc:d }}")
+        |> std/io:free(content) |> std/io:free(content: c.data)

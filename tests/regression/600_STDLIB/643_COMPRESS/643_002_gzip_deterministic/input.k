@@ -16,4 +16,6 @@ std/compress:gzip(data: "{\"route\":\"/json/25\",\"items\":[1,2,3],\"total\":6}"
     | compressed c2 |> std/compress:crc32(c2.data): crc2
         |> if(c1.data.len == c2.data.len and crc1 == crc2)
             | then |> std/io:print.ln("deterministic {{ c1.data.len:d }} crc={{ crc1:d }}")
+                |> std/io:free(content: c1.data) |> std/io:free(content: c2.data)
             | else |> std/io:print.ln("NONDETERMINISTIC {{ c1.data.len:d }}/{{ c2.data.len:d }} {{ crc1:d }}/{{ crc2:d }}")
+                |> std/io:free(content: c1.data) |> std/io:free(content: c2.data)

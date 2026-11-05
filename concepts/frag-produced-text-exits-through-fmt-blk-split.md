@@ -49,3 +49,12 @@ Measured extras: `s.data` projection on `*String` already reached `for` and
 capability. `split(s: *String)` still escapes as a raw Zig type error
 (`[]const u8` vs `*String`) rather than a Koru diagnostic — a separate
 checker hole (`string<*>` wildcard admits non-slice base types), unclosed.
+
+Second instance, same day (gzip-leak): `std/compress:gzip` returned its
+`compressed.data` payload as bare `string` — an owned koru_allocator slice
+in unlabeled clothing, leak per call. Fix was the label, not a disposer:
+`string<std/io:allocated!>` in the payload, `io:free` consumes it (643_001-3).
+Named residual: destructured field bindings (`| compressed { data }`) register
+the obligation under a `__ret_destr` key the exit-check reads but `io:free`'s
+consume-check cannot — unconsumable obligation; consumers bind `| compressed c`
+and free `c.data` instead.
