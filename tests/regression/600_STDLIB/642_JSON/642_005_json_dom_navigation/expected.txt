@@ -1,0 +1,14 @@
+key name
+key age
+key tags
+key meta
+fields=4
+have tags
+tag x
+tag y
+tag z
+tags=3
+lang=koru
+age=36
+len=4
+{"name":"ada","age":36,"tags":["x","y","z"],"meta":{"lang":"koru"}}

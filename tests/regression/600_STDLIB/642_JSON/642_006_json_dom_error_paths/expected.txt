@@ -1,0 +1,7 @@
+BAD UnexpectedEndOfInput
+at-on-array wrong-kind
+idx 9 out-of-bounds
+elem3 null
+elem1 float
+len=5
+missing not-found

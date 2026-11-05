@@ -1,12 +1,12 @@
 // std/json - JSON encoding and decoding
-// - `~part parse` (json.parse.kz): `std/json:parse` reads the `ok` branch's
-//   destructure as the input schema and generates a bespoke parser per site.
-// - `~part emit` (json.emit.kz): the `value:` record literal is the output
-//   schema; a direct writer is generated per site.
+// - `~part parse`/`~part emit`: schema-directed compile-time transforms.
+// - `~part dom` (json.dom.kz): runtime document model — parse to a
+//   traversable tree, key iteration, typed descent, serializer.
 ~part parse
 ~part emit
 ~part parsehelpers
 ~part parsesub
+~part dom
 const std = @import("std");
 
 // ============================================================================

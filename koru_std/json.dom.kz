@@ -1,0 +1,208 @@
+// Koru Standard Library: the `dom` part of json.kz — a runtime JSON
+// document model. Joined via `~part dom` in json.kz; merged into the
+// module at load.
+//
+// The navigation twin of `std/json:parse`'s schema-directed transform:
+// where `parse` compiles the `ok` destructure into a bespoke typed
+// reader (schema fixed at compile time, no tree ever built), `dom`
+// materializes the whole document — for consumers whose access paths
+// are not known at compile time (jq-shaped tools, generic walkers,
+// recursive descent over arbitrary input). The node type is Zig's
+// std.json.Value over a parseFromSlice arena: `Document` owns the arena
+// (one `<open!>` obligation, discharged only by `dom.free`); every
+// `*JsonNode` handed out by `root`/`at`/`idx`/`each` borrows into it —
+// valid while the Document lives, untracked (the same contract
+// `std/string:split`'s `! piece` views draw, one level down).
+//
+// `dom.parse` copies every string into the arena (parseFromSlice's
+// alloc_always for Value), so the input text is freeable immediately —
+// nodes never point into it.
+//
+// `dom.render` mints `string<emitted!>` — discharged by the existing
+// `std/json:emit.free`, same contract the emit transform writes against.
+pub const Document = std.json.Parsed(std.json.Value);
+pub const JsonNode = std.json.Value;
+
+// Parse arbitrary JSON text into an owned document. `malformed` carries
+// a static diagnostic name (Scanner's error set); the position details
+// the comptime `parse` reports are not preserved by parseFromSlice.
+~pub tor dom.parse { input: string<*> }
+| ok *Document<open!>
+| malformed string
+
+// Borrow the document's root node — the descent start.
+~pub tor dom.root { doc: *Document<open> } -> *JsonNode
+
+// Discharge the `<open!>` obligation: deinit the arena and destroy the
+// document handle. Every node borrowed from it dies here.
+~pub tor dom.free { doc: *Document<!open> }
+
+// Typed descent, one node at a time — the switch jq's `.` performs.
+// Every Value variant gets an arm; containers re-yield `*JsonNode` so
+// `at`/`idx`/`each` can continue, scalars yield their payload.
+~pub tor dom.val { n: *JsonNode<*> }
+| object *JsonNode
+| array *JsonNode
+| str string
+| numstr string
+| int i64
+| float f64
+| bool bool
+| null
+
+// Object field by name.
+~pub tor dom.at { n: *JsonNode<*>, key: string }
+| found *JsonNode
+| not-found
+| wrong-kind
+
+// Array element by index.
+~pub tor dom.idx { n: *JsonNode<*>, i: usize }
+| elem *JsonNode
+| out-of-bounds
+| wrong-kind
+
+// Container extent: object field count, array length, string length.
+~pub tor dom.len { n: *JsonNode<*> }
+| count usize
+| wrong-kind
+
+// jq's `.[]` — iterate whichever container it is: objects fire
+// `! field` with {key, value}, arrays fire `! item` per element.
+// Scalars refuse through `wrong-kind` (optional arm: unhandled means
+// the program traps if it fires — check `val` first).
+~pub tor dom.each { n: *JsonNode<*> }
+! field { key: string, value: *JsonNode }
+! item *JsonNode
+| done usize
+| ?wrong-kind
+
+// Serialize the node (and everything under it) to emitted text —
+// `string<emitted!>` obligation, discharged by `std/json:emit.free`.
+~pub tor dom.render { n: *JsonNode<*> } -> string<emitted!>
+
+~proc dom.parse|zig {
+    const allocator = koru_allocator();
+    const doc = allocator.create(std.json.Parsed(std.json.Value)) catch {
+        return .{ .malformed = "out of memory" };
+    };
+    doc.* = std.json.parseFromSlice(std.json.Value, allocator, input, .{}) catch |err| {
+        allocator.destroy(doc);
+        return .{ .malformed = @errorName(err) };
+    };
+    return .{ .ok = doc };
+}
+
+~proc dom.root|zig {
+    return &doc.value;
+}
+
+~proc dom.free|zig {
+    doc.deinit();
+    koru_allocator().destroy(doc);
+}
+
+~proc dom.val|zig {
+    return switch (n.*) {
+        .object => .{ .object = n },
+        .array => .{ .array = n },
+        .string => .{ .str = n.string },
+        .number_string => .{ .numstr = n.number_string },
+        .integer => .{ .int = n.integer },
+        .float => .{ .float = n.float },
+        .bool => .{ .bool = n.bool },
+        .null => .{ .null = .{} },
+    };
+}
+
+~proc dom.at|zig {
+    if (n.* != .object) return .{ .wrong_kind = .{} };
+    const child = n.object.getPtr(key) orelse return .{ .not_found = .{} };
+    return .{ .found = child };
+}
+
+~proc dom.idx|zig {
+    if (n.* != .array) return .{ .wrong_kind = .{} };
+    if (i >= n.array.items.len) return .{ .out_of_bounds = .{} };
+    return .{ .elem = &n.array.items[i] };
+}
+
+~proc dom.len|zig {
+    return switch (n.*) {
+        .object => .{ .count = n.object.count() },
+        .array => .{ .count = n.array.items.len },
+        .string => .{ .count = n.string.len },
+        else => .{ .wrong_kind = .{} },
+    };
+}
+
+~proc dom.each|zig {
+    switch (n.*) {
+        .object => {
+            var count: usize = 0;
+            var it = n.object.iterator();
+            while (it.next()) |entry| {
+                field(.{ .key = entry.key_ptr.*, .value = entry.value_ptr });
+                count += 1;
+            }
+            return .{ .done = count };
+        },
+        .array => {
+            var count: usize = 0;
+            for (n.array.items) |*el| {
+                item(el);
+                count += 1;
+            }
+            return .{ .done = count };
+        },
+        else => return .{ .wrong_kind = .{} },
+    }
+}
+
+// Compact deterministic serializer — written by hand rather than
+// Stringify.value: on std.json.Value that path mixes the generic union
+// walk with Value.jsonStringify's writer-stream separators and emits a
+// doubled comma between elements (measured 0.15.2). Key order is the
+// ObjectMap's insertion order — the parsed document's own order.
+fn domRenderNode(n: std.json.Value, w: *std.Io.Writer) !void {
+    switch (n) {
+        .null => try w.writeAll("null"),
+        .bool => |b| try w.writeAll(if (b) "true" else "false"),
+        .integer => |i| try w.print("{d}", .{i}),
+        .float => |f| try w.print("{d}", .{f}),
+        .number_string => |s| try w.writeAll(s),
+        .string => |s| try std.json.Stringify.encodeJsonString(s, .{}, w),
+        .array => |a| {
+            try w.writeByte('[');
+            for (a.items, 0..) |el, i| {
+                if (i > 0) try w.writeByte(',');
+                try domRenderNode(el, w);
+            }
+            try w.writeByte(']');
+        },
+        .object => |o| {
+            try w.writeByte('{');
+            var it = o.iterator();
+            var i: usize = 0;
+            while (it.next()) |e| {
+                if (i > 0) try w.writeByte(',');
+                try std.json.Stringify.encodeJsonString(e.key_ptr.*, .{}, w);
+                try w.writeByte(':');
+                try domRenderNode(e.value_ptr.*, w);
+                i += 1;
+            }
+            try w.writeByte('}');
+        },
+    }
+}
+
+~proc dom.render|zig {
+    var al = std.Io.Writer.Allocating.init(koru_allocator());
+    domRenderNode(n.*, &al.writer) catch {
+        @panic("std/json:dom.render: out of memory");
+    };
+    // toArrayList hands the buffer's ownership out — one allocation,
+    // koru_allocator-owned, discharged by emit.free like emit's own text.
+    const list = al.toArrayList();
+    return list.items;
+}
