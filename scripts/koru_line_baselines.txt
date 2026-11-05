@@ -399,3 +399,4 @@ koru_std/types.fields.kz	55
 koru_std/types.kz	374
 koru_std/vendor.kz	1145
 koru_std/void.kz	20
+koru_std/yaml.kz	400

@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-json-decode-has-two-regimes-schema-and-dom
-provenance: measured during json-dom commission (snow-yarrow fire) — 642_005/006 green while landing; recursion probe compiled and ran before the design settled, 2026-11-05
+provenance: measured during json-dom commission then extended during yaml-dom (snow-yarrow fires) — 642_005/006 and 646_001/002 green while landing; yaml.kz's Document IS std.json.Parsed(Value) built by hand from libyaml events, 2026-11-05
 ts: 2026-11-05
 ---
 
@@ -20,24 +20,47 @@ navigate, `dom.render` serializes to `string<emitted!>` (discharged by
 
 Every `*JsonNode` borrows into the Document's arena — valid while the
 document lives, untracked like `split`'s pieces. `dom.parse` copies all
-strings into the arena, so the input text may be freed immediately.
+strings into the arena, so the input text is freeable immediately.
 
-Measured while landing (642_005/006):
+**Extended by std/yaml (same day):** the DOM is format-agnostic, not
+JSON-shaped. `std/yaml:parse` assembles `std.json.Value` nodes from the
+libyaml event stream and hands out the identical `*Document<open!>` —
+every `dom.*` tor navigates a YAML tree unmodified and `dom.render`
+gives `-o=json` for free. Any format that can land data in the Value
+union inherits the entire navigation surface; the parser is the only
+format-specific work. Core-schema bound kept: keys arrive as text,
+anchors/aliases refuse `malformed` rather than expanding a graph into
+a tree, `malformed` is `string<std/io:allocated!>` (allocated payload —
+static strings would be freed into unallocated memory).
 
+Measured while landing:
+
+- Phantom obligations are MODULE-namespaced: `string<emitted!>` inside
+  `std/yaml` mints `std.yaml:emitted`, which `emit.free` refuses —
+  `string<std/json:emitted!>` qualifies the obligation back to the
+  owner.
+- Container `Value`s must attach to parents only when COMPLETE —
+  `ObjectMap.put`/`Array.append` mutate the header in place, so a copy
+  made at START-event time goes stale (root landed empty).
+- Proc bodies carrying effect branches splice into the caller —
+  module fns/types/consts reached from them take `$mod.` prefixes
+  (KORU112).
+- `ArrayList` is unmanaged in 0.15.2 — `std.array_list.Managed` is the
+  init(allocator) shape; `pop()` returns `?T`.
+- An arena created mid-stream needs a defer that destroys it when the
+  malformed path never handed ownership to `! doc` — otherwise the
+  error path leaks what the happy path's obligation would have owned.
 - Optional terminal arms (`| ?wrong-kind`) may not carry `_` bodies —
   KORU054; an unarmed optional arm already discards. Required arms take
   the discard.
 - Arm names are choke-level: same-named arms from different tors at one
-  level must agree on payload type (KORU031) — `at`/`idx`/`len` got
-  `found`/`elem`/`count` rather than `ok`.
-- Hyphenated arms emit underscore union members: `.@"wrong-kind"` is a
-  miss, `.wrong_kind` is the member.
+  level must agree on payload type (KORU031).
 - `Stringify.value` on `std.json.Value` mixes its generic union walk
   with `Value.jsonStringify`'s writer-stream separators and emits a
   doubled comma between elements (0.15.2) — `dom.render` writes a small
   recursive serializer instead.
 
 Open: no escape from `*JsonNode` borrow to owned copy — a node cannot
-outlive its document today (the `parse` transform's scoped-borrow rule,
-one level down); a `dom.copy`-shaped leaf is unwritten. `malformed`
-carries the Scanner's error name only, no offset.
+outlive its document today; a `dom.copy`-shaped leaf is unwritten.
+`malformed` carries the diagnostic text; dom.parse's variant carries
+the Scanner's error name only, no offset.

@@ -1,0 +1,26 @@
+key name
+key age
+key ratio
+key flag
+key nothing
+key tags
+key meta
+fields=7
+name=ada
+age=36
+tag x
+tag y
+tags=2
+{"name":"ada","age":36,"ratio":1.5,"flag":true,"nothing":null,"tags":["x","y"],"meta":{"lang":"koru"}}
+name: ada
+age: 36
+ratio: 1.5
+flag: true
+nothing: null
+tags:
+  - x
+  - y
+meta:
+  lang: koru
+
+docs=1

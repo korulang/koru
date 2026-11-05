@@ -1,0 +1,400 @@
+// Koru Standard Library: std/yaml — YAML documents into the std/json
+// document model. Rides the libyaml lift: same `requires.system` +
+// `@cImport` + phantom-obligation shape libs/yaml proved (the
+// winnow/pcre2 precedent — a measured host library instead of a
+// hand-built parser).
+//
+// `std/yaml:parse` streams libyaml's events and assembles each document
+// into `std.json.Value` nodes in an arena — the SAME node type
+// `std/json:dom` navigates. A parsed YAML document takes every `dom.*`
+// tor: `dom.root`, `dom.val` (typed descent), `dom.at`/`dom.idx`,
+// `dom.each` (`! field`/`! item`), `dom.len`, `dom.render` (→ `-o=json`
+// for free), `dom.free` (the arena obligation). Multi-document streams
+// fire `! doc` per document — each `<open!>` obligation is discharged
+// inside its arm.
+//
+// CORE SCHEMA (the assay's bound): mapping keys arrive as plain text
+// (a non-scalar key is `malformed`), plain scalars resolve to
+// null/bool/int/float/string (quoted scalars stay string), standard
+// `!!` tags resolve, unknown tags keep raw text, anchors and aliases
+// REFUSE — `malformed` — rather than silently expanding a graph into
+// a tree.
+//
+// `std/yaml:emit` serializes a node subtree to block YAML (2-space
+// indent, JSON-style double-quoting for strings that would re-resolve
+// otherwise), minting `string<emitted!>` discharged by
+// `std/json:emit.free`.
+~import std/deps
+
+~std/deps:requires.system {
+    "name": "yaml",
+    "check": "pkg-config --modversion yaml-0.1",
+    "brew": "libyaml",
+    "apt": "libyaml-dev",
+    "dnf": "libyaml-devel",
+    "pacman": "libyaml",
+    "apk": "yaml-dev"
+}
+
+// Link wiring for the produced binary — collected by std/build:requires
+// collection (imported-module flows are walked). Linux has yaml.h and
+// libyaml on the system paths already; the /opt/homebrew entries cover
+// the Homebrew install and are harmless where they do not exist.
+~std/build:requires {
+    exe.linkSystemLibrary("yaml");
+    exe.addIncludePath(.{ .cwd_relative = "/opt/homebrew/include" });
+    exe.addLibraryPath(.{ .cwd_relative = "/opt/homebrew/lib" });
+}
+
+const std = @import("std");
+pub const c = @cImport({
+    @cInclude("yaml.h");
+});
+
+// Parse YAML text; each document in the stream fires `! doc` as an
+// owned `*Document<open!>` — the identical handle `std/json:dom.parse`
+// yields, discharged by `std/json:dom.free`. `malformed` carries an
+// allocated diagnostic (libyaml's problem text + position), disposed
+// by `std/io:free`.
+~pub tor parse { input: string<*> }
+! doc *std/json:Document<open!>
+| done usize
+| malformed string<std/io:allocated!>
+
+// Serialize a node subtree as block YAML — `string<emitted!>`, same
+// obligation `std/json:dom.render` mints, discharged by
+// `std/json:emit.free`.
+~pub tor emit { n: *std/json:JsonNode<*> } -> string<std/json:emitted!>
+
+// ── scalar resolution (YAML 1.2 core schema) ─────────────────────────
+fn resolveScalar(text: []const u8, tag: ?[*:0]const u8, plain: bool) std.json.Value {
+    if (!plain) return .{ .string = text }; // quoted/literal/folded stay strings
+    if (tag) |t| {
+        const ts = std.mem.span(t);
+        if (std.mem.endsWith(u8, ts, ":str")) return .{ .string = text };
+        if (std.mem.endsWith(u8, ts, ":int")) return intValue(text);
+        if (std.mem.endsWith(u8, ts, ":float")) return floatValue(text);
+        if (std.mem.endsWith(u8, ts, ":bool")) return boolValue(text);
+        if (std.mem.endsWith(u8, ts, ":null")) return .{ .null = {} };
+        return .{ .string = text }; // unknown tag: raw text
+    }
+    if (text.len == 0 or std.mem.eql(u8, text, "~") or
+        std.mem.eql(u8, text, "null") or std.mem.eql(u8, text, "Null") or
+        std.mem.eql(u8, text, "NULL")) return .{ .null = {} };
+    if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "True") or
+        std.mem.eql(u8, text, "TRUE")) return .{ .bool = true };
+    if (std.mem.eql(u8, text, "false") or std.mem.eql(u8, text, "False") or
+        std.mem.eql(u8, text, "FALSE")) return .{ .bool = false };
+    if (looksNumeric(text)) {
+        const iv = intValue(text);
+        if (iv != .string) return iv;
+        const fv = floatValue(text);
+        if (fv != .string) return fv;
+    }
+    return .{ .string = text };
+}
+
+fn looksNumeric(text: []const u8) bool {
+    if (text.len == 0) return false;
+    const c0 = text[0];
+    return std.ascii.isDigit(c0) or c0 == '-' or c0 == '+' or c0 == '.';
+}
+
+fn intValue(text: []const u8) std.json.Value {
+    var t = text;
+    var neg = false;
+    if (t.len > 0 and (t[0] == '-' or t[0] == '+')) {
+        neg = t[0] == '-';
+        t = t[1..];
+    }
+    var base: u8 = 10;
+    if (t.len > 2 and t[0] == '0' and (t[1] == 'x' or t[1] == 'X')) {
+        base = 16;
+        t = t[2..];
+    } else if (t.len > 2 and t[0] == '0' and (t[1] == 'o' or t[1] == 'O')) {
+        base = 8;
+        t = t[2..];
+    }
+    const mag = std.fmt.parseInt(i64, t, base) catch return floatValue(text);
+    return .{ .integer = if (neg) -mag else mag };
+}
+
+fn floatValue(text: []const u8) std.json.Value {
+    if (std.mem.eql(u8, text, ".inf") or std.mem.eql(u8, text, ".Inf") or
+        std.mem.eql(u8, text, ".INF") or std.mem.eql(u8, text, "+.inf") or
+        std.mem.eql(u8, text, "-.inf") or std.mem.eql(u8, text, ".nan") or
+        std.mem.eql(u8, text, ".NaN") or std.mem.eql(u8, text, ".NAN"))
+        return .{ .number_string = text }; // JSON cannot spell non-finite
+    const f = std.fmt.parseFloat(f64, text) catch return .{ .string = text };
+    if (!std.math.isFinite(f)) return .{ .number_string = text };
+    return .{ .float = f };
+}
+
+fn boolValue(text: []const u8) std.json.Value {
+    if (text.len > 0 and (text[0] == 't' or text[0] == 'T')) return .{ .bool = true };
+    return .{ .bool = false };
+}
+
+// ── event → tree assembly ────────────────────────────────────────────
+// Frames: index 0 is the arena marker + completed-root slot; indices 1..
+// are open containers. `expect_key`/`pending_key` only live on map
+// frames.
+const Frame = struct {
+    node: *std.json.Value,
+    expect_key: bool = false,
+    pending_key: []const u8 = "",
+    is_arena: bool = false,
+    root: ?std.json.Value = null,
+};
+
+fn mal(allocator: std.mem.Allocator, comptime s: []const u8) []u8 {
+    return allocator.dupe(u8, s) catch @panic("std/yaml: out of memory");
+}
+
+fn malParser(allocator: std.mem.Allocator, parser: *c.yaml_parser_t) []u8 {
+    const problem = if (parser.problem != null) std.mem.span(parser.problem) else "yaml error";
+    return std.fmt.allocPrint(allocator, "{s} (line {d})", .{ problem, parser.problem_mark.line + 1 }) catch
+        mal(allocator, "yaml parse error");
+}
+
+// Attach a completed node: sequence append, mapping key-or-value, or the
+// document root slot on the arena frame.
+fn attach(frames: *std.array_list.Managed(Frame), node: *std.json.Value) !void {
+    const top = &frames.items[frames.items.len - 1];
+    if (top.is_arena) {
+        top.root = node.*;
+        return;
+    }
+    if (top.node.* == .object) {
+        if (top.expect_key) {
+            if (node.* != .string) return error.KeyNotString;
+            top.pending_key = node.string;
+            top.expect_key = false;
+        } else {
+            try top.node.object.put(top.pending_key, node.*);
+            top.expect_key = true;
+        }
+    } else {
+        try top.node.array.append(node.*);
+    }
+}
+
+fn arena(frames: *std.array_list.Managed(Frame)) std.mem.Allocator {
+    const a: *std.heap.ArenaAllocator = @ptrCast(@alignCast(frames.items[0].node));
+    return a.allocator();
+}
+
+~proc parse|zig {
+    const allocator = koru_allocator();
+    var parser: $mod.c.yaml_parser_t = undefined;
+    if ($mod.c.yaml_parser_initialize(&parser) == 0) {
+        return .{ .malformed = $mod.mal(allocator, "yaml_parser_initialize failed") };
+    }
+    defer $mod.c.yaml_parser_delete(&parser);
+    // libyaml borrows the input pointer for the parser's whole life —
+    // the caller's slice may die while we hold it, so copy it.
+    const buf = allocator.dupe(u8, input) catch {
+        return .{ .malformed = $mod.mal(allocator, "out of memory") };
+    };
+    defer allocator.free(buf);
+    $mod.c.yaml_parser_set_input_string(&parser, buf.ptr, buf.len);
+
+    var frames = std.array_list.Managed($mod.Frame).init(allocator);
+    defer frames.deinit();
+    // If a document dies on the malformed path, its arena never met a
+    // `! doc` handoff — destroy it here. A fired `! doc` clears the
+    // frames so the obligation's real owner (dom.free) keeps it.
+    defer {
+        if (frames.items.len > 0 and frames.items[0].is_arena) {
+            const a: *std.heap.ArenaAllocator = @ptrCast(@alignCast(frames.items[0].node));
+            a.deinit();
+            allocator.destroy(a);
+        }
+    }
+    var docs: usize = 0;
+
+    while (true) {
+        var ev: $mod.c.yaml_event_t = undefined;
+        if ($mod.c.yaml_parser_parse(&parser, &ev) == 0) {
+            return .{ .malformed = $mod.malParser(allocator, &parser) };
+        }
+        const ty = ev.type;
+        switch (ty) {
+            $mod.c.YAML_STREAM_END_EVENT => {
+                $mod.c.yaml_event_delete(&ev);
+                return .{ .done = docs };
+            },
+            $mod.c.YAML_DOCUMENT_START_EVENT => {
+                $mod.c.yaml_event_delete(&ev);
+                frames.clearRetainingCapacity();
+                const a = allocator.create(std.heap.ArenaAllocator) catch {
+                    return .{ .malformed = $mod.mal(allocator, "out of memory") };
+                };
+                a.* = std.heap.ArenaAllocator.init(allocator);
+                frames.append(.{ .node = @ptrCast(a), .is_arena = true }) catch {
+                    return .{ .malformed = $mod.mal(allocator, "out of memory") };
+                };
+            },
+            $mod.c.YAML_DOCUMENT_END_EVENT => {
+                $mod.c.yaml_event_delete(&ev);
+                const a: *std.heap.ArenaAllocator = @ptrCast(@alignCast(frames.items[0].node));
+                if (frames.items[0].root == null) {
+                    return .{ .malformed = $mod.mal(allocator, "empty document") };
+                }
+                const out_doc = allocator.create(std.json.Parsed(std.json.Value)) catch {
+                    return .{ .malformed = $mod.mal(allocator, "out of memory") };
+                };
+                out_doc.* = .{ .arena = a, .value = frames.items[0].root.? };
+                docs += 1;
+                doc(out_doc);
+                frames.clearRetainingCapacity();
+            },
+            $mod.c.YAML_MAPPING_START_EVENT, $mod.c.YAML_SEQUENCE_START_EVENT => {
+                const aa = $mod.arena(&frames);
+                const node = aa.create(std.json.Value) catch {
+                    $mod.c.yaml_event_delete(&ev);
+                    return .{ .malformed = $mod.mal(allocator, "out of memory") };
+                };
+                const is_map = ty == $mod.c.YAML_MAPPING_START_EVENT;
+                node.* = if (is_map)
+                    .{ .object = std.json.ObjectMap.init(aa) }
+                else
+                    .{ .array = std.json.Array.init(aa) };
+                frames.append(.{ .node = node, .expect_key = is_map }) catch {
+                    $mod.c.yaml_event_delete(&ev);
+                    return .{ .malformed = $mod.mal(allocator, "out of memory") };
+                };
+                $mod.c.yaml_event_delete(&ev);
+            },
+            $mod.c.YAML_MAPPING_END_EVENT, $mod.c.YAML_SEQUENCE_END_EVENT => {
+                $mod.c.yaml_event_delete(&ev);
+                const done_node = frames.pop().?.node;
+                $mod.attach(&frames, done_node) catch |e| {
+                    return .{ .malformed = switch (e) {
+                        error.OutOfMemory => $mod.mal(allocator, "out of memory"),
+                        error.KeyNotString => $mod.mal(allocator, "non-scalar mapping key"),
+                    } };
+                };
+            },
+            $mod.c.YAML_SCALAR_EVENT => {
+                const aa = $mod.arena(&frames);
+                const sc = ev.data.scalar;
+                const raw = sc.value[0..sc.length];
+                const text = aa.dupe(u8, raw) catch {
+                    $mod.c.yaml_event_delete(&ev);
+                    return .{ .malformed = $mod.mal(allocator, "out of memory") };
+                };
+                const tag: ?[*:0]const u8 = if (sc.tag == null) null else @ptrCast(sc.tag);
+                const plain = sc.style == $mod.c.YAML_PLAIN_SCALAR_STYLE;
+                $mod.c.yaml_event_delete(&ev);
+                const node = aa.create(std.json.Value) catch {
+                    return .{ .malformed = $mod.mal(allocator, "out of memory") };
+                };
+                node.* = $mod.resolveScalar(text, tag, plain);
+                $mod.attach(&frames, node) catch |e| {
+                    return .{ .malformed = switch (e) {
+                        error.OutOfMemory => $mod.mal(allocator, "out of memory"),
+                        error.KeyNotString => $mod.mal(allocator, "non-scalar mapping key"),
+                    } };
+                };
+            },
+            $mod.c.YAML_ALIAS_EVENT => {
+                $mod.c.yaml_event_delete(&ev);
+                return .{ .malformed = $mod.mal(allocator, "anchors/aliases unsupported (core schema)") };
+            },
+            else => {
+                $mod.c.yaml_event_delete(&ev);
+            },
+        }
+    }
+}
+
+// ── block-YAML emitter ───────────────────────────────────────────────
+// A string emits plain when it would re-resolve to itself and carries
+// no structural characters; anything else takes JSON-style double
+// quotes (valid YAML double-quoted scalars for the core schema).
+fn plainSafe(s: []const u8) bool {
+    if (s.len == 0) return false;
+    if (resolveScalar(s, null, true) != .string) return false; // would re-resolve
+    if (s[0] == ' ' or s[s.len - 1] == ' ') return false;
+    const specials = ":#{}[]&*!|>'\"%@`,";
+    for (s) |ch| {
+        if (ch < 0x20) return false;
+        if (std.mem.indexOfScalar(u8, specials, ch) != null) return false;
+    }
+    if (s[0] == '-' or s[0] == '?' or s[0] == '~' or s[0] == '.') {
+        if (s.len == 1 or s[1] == ' ') return false;
+    }
+    return true;
+}
+
+fn emitScalar(n: std.json.Value, w: *std.Io.Writer) !void {
+    switch (n) {
+        .null => try w.writeAll("null"),
+        .bool => |b| try w.writeAll(if (b) "true" else "false"),
+        .integer => |i| try w.print("{d}", .{i}),
+        .float => |f| try w.print("{d}", .{f}),
+        .number_string => |s| try w.writeAll(s),
+        .string => |s| {
+            if (plainSafe(s)) {
+                try w.writeAll(s);
+            } else {
+                try std.json.Stringify.encodeJsonString(s, .{}, w);
+            }
+        },
+        else => unreachable,
+    }
+}
+
+fn emitIndent(w: *std.Io.Writer, depth: usize) !void {
+    for (0..depth) |_| try w.writeAll("  ");
+}
+
+fn emitBlock(n: std.json.Value, w: *std.Io.Writer, depth: usize) !void {
+    switch (n) {
+        .object => |o| {
+            var it = o.iterator();
+            while (it.next()) |e| {
+                try emitIndent(w, depth);
+                try emitScalar(.{ .string = e.key_ptr.* }, w);
+                try w.writeAll(":");
+                if (e.value_ptr.* == .object or e.value_ptr.* == .array) {
+                    try w.writeAll("\n");
+                    try emitBlock(e.value_ptr.*, w, depth + 1);
+                } else {
+                    try w.writeAll(" ");
+                    try emitScalar(e.value_ptr.*, w);
+                    try w.writeAll("\n");
+                }
+            }
+        },
+        .array => |a| {
+            for (a.items) |el| {
+                try emitIndent(w, depth);
+                try w.writeAll("-");
+                if (el == .object or el == .array) {
+                    try w.writeAll("\n");
+                    try emitBlock(el, w, depth + 1);
+                } else {
+                    try w.writeAll(" ");
+                    try emitScalar(el, w);
+                    try w.writeAll("\n");
+                }
+            }
+        },
+        else => {
+            try emitIndent(w, depth);
+            try emitScalar(n, w);
+            try w.writeAll("\n");
+        },
+    }
+}
+
+~proc emit|zig {
+    var al = std.Io.Writer.Allocating.init(koru_allocator());
+    $mod.emitBlock(n.*, &al.writer, 0) catch {
+        @panic("std/yaml:emit: out of memory");
+    };
+    const list = al.toArrayList();
+    return list.items;
+}

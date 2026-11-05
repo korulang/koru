@@ -1,0 +1,5 @@
+doc has first
+doc has second
+docs=2
+anchors/aliases unsupported (core schema)
+did not find expected ',' or ']' (line 2)
