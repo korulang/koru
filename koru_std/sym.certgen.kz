@@ -1526,19 +1526,6 @@ fn nodeHasVar(n: *const SNode) bool {
 
 // Multiply an emitted antiderivative text by the stripped constant
 // factors (canon "(anti*consts)"); consumes `anti` either way.
-fn antiWithConst(alloc: std.mem.Allocator, anti: []u8, ct: ?[]const u8) ![]u8 {
-    const c = ct orelse return anti;
-    defer alloc.free(anti);
-    var buf = std.ArrayList(u8){};
-    defer buf.deinit(alloc);
-    try buf.append(alloc, '(');
-    try buf.appendSlice(alloc, anti);
-    try buf.append(alloc, '*');
-    try buf.appendSlice(alloc, c);
-    try buf.append(alloc, ')');
-    return normCanon(alloc, buf.items);
-}
-
 // Exact triangular solve of R' + G'R = F for polynomial R.  Returns
 // null when the degree bound or a residual equation fails — a proof
 // that no rational R exists.  G' == 0 degenerates to R' = F.
@@ -1850,6 +1837,10 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
         txt.append(alloc, '+') catch @panic("std/sym:decide-integral");
         fracText(alloc, &txt, &hr.rat) catch @panic("std/sym:decide-integral");
         const anti0 = normCanon(alloc, txt.items) catch @panic("std/sym:decide-integral canon");
+        // the full-emission path needs the un-consted text: full gets
+        // const_txt once, on (anti0 + ltxt) — not twice via anti.
+        const anti0w = alloc.dupe(u8, anti0) catch @panic("std/sym:decide-integral canon");
+        defer alloc.free(anti0w);
         const anti = antiWithConst(alloc, anti0, const_txt) catch @panic("std/sym:decide-integral canon");
         defer alloc.free(anti);
         if (fracIsZero(&hr.log)) {
@@ -1881,7 +1872,7 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
         var ftxt = std.ArrayList(u8){};
         defer ftxt.deinit(alloc);
         ftxt.append(alloc, '(') catch @panic("std/sym:decide-integral");
-        ftxt.appendSlice(alloc, anti) catch @panic("std/sym:decide-integral");
+        ftxt.appendSlice(alloc, anti0w) catch @panic("std/sym:decide-integral");
         ftxt.appendSlice(alloc, ltxt.items) catch @panic("std/sym:decide-integral");
         ftxt.append(alloc, ')') catch @panic("std/sym:decide-integral");
         const full0 = normCanon(alloc, ftxt.items) catch @panic("std/sym:decide-integral canon");
@@ -2064,9 +2055,9 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
     // in a single exponential element e^{c0 x + b0} reduces to a rational
     // t-integral and re-enters the decider at depth + 1.
     if (thetaLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral theta")) |o| return o;
-    // Log-monomial lane (~part logmono): an integrand polynomial in one
+    // Primitive-monomial lane (~part primmon): a polynomial in one
     // log(u) cascades r_i = int(a_i - (i+1)(u'/u)*r_{i+1}) at depth + 1.
-    if (logLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral logmono")) |o| return o;
+    if (primLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral primmon")) |o| return o;
     if (gsubLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, &lane_extra) catch @panic("std/sym:decide-integral gsub")) |o| return o;
     // Sum lane: an .add integrand that survived the monomial lanes is
     // split termwise — each term re-enters this same decision recursively

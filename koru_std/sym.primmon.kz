@@ -1,20 +1,22 @@
 // ============================================================================
-// ~part logmono — the primitive (logarithmic) monomial lane for
-// decide-integral.
+// ~part primmon — the primitive-monomial lane for decide-integral.
 //
-// An integrand that is a polynomial in a single primitive monomial
-//   θ = log(u),   u rational in x,
-// with θ-free coefficients — rationals, other logs, exp/atan leaves —
+// A primitive monomial is a tower element whose derivative lands back
+// in the base field with no θ factor:
+//   θ = log(u):    θ' = u'/u
+//   θ = atan(u):   θ' = u'/(1+u^2)
+// for u rational in x.  An integrand that is a polynomial in one such
+// θ with θ-free coefficients — rationals, other logs, exp/atan leaves —
 // has, when it has an elementary antiderivative at all, one of the form
 //   Σ r_j(x)·θ^j,   r_j in the same base field
-// (the structure theorem for primitive extensions — the log analog of
-// Liouville).  Differentiating and matching θ^i gives the descending
-// cascade
-//   r_i' = a_i − (i+1)·(u'/u)·r_{i+1},   i = n..0,
+// (the structure theorem for primitive extensions).  Differentiating
+// and matching θ^i gives the descending cascade
+//   r_i' = a_i − (i+1)·h·r_{i+1},   i = n..0,   h = θ',
 // each step a base-field integration that re-enters the decider.
 // r_{i+1} is determined only up to a constant C, which enters step i as
-// the extra integrand −(i+1)·C·u'/u — and that integrates to
-// −(i+1)·C·θ.  The constant is therefore read back off the computed
+// the extra integrand −(i+1)·C·h — and that integrates to
+// −(i+1)·C·θ (h is exactly θ').  The constant is therefore read back
+// off the computed
 // antiderivative: its θ-part must be γ·θ with γ a constant, giving
 // C = γ/(i+1).  Any other θ-part — higher powers, or a nonconstant
 // coefficient — is the limited-integration failure and names the
@@ -34,19 +36,24 @@ fn collectLogKids(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList
     }
 }
 
-// Does n contain a .log leaf whose argument canon equals ukey?
-fn logHasU(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8) anyerror!bool {
+// Does n contain a tkind leaf whose argument canon equals ukey (or its
+// parity twin nukey — atan(-u) and log(1/u) are still theta)?
+fn primHasU(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8, nukey: ?[]const u8, tkind: NodeKind) anyerror!bool {
     switch (n.kind) {
         .dec, .atom, .rsum => return false,
-        .log => {
-            const kt = try canonOf(alloc, n.kid);
-            defer alloc.free(kt);
-            if (std.mem.eql(u8, kt, ukey)) return true;
-            return logHasU(alloc, n.kid, ukey);
+        .sq, .inv, .log, .atan, .exp => {
+            if (n.kind == tkind) {
+                const kt = try canonOf(alloc, n.kid);
+                defer alloc.free(kt);
+                if (std.mem.eql(u8, kt, ukey)) return true;
+                if (nukey) |nk| {
+                    if (std.mem.eql(u8, kt, nk)) return true;
+                }
+            }
+            return primHasU(alloc, n.kid, ukey, nukey, tkind);
         },
-        .sq, .inv, .atan, .exp => return logHasU(alloc, n.kid, ukey),
         .add, .mul => {
-            for (n.kids) |k| if (try logHasU(alloc, k, ukey)) return true;
+            for (n.kids) |k| if (try primHasU(alloc, k, ukey, nukey, tkind)) return true;
             return false;
         },
     }
@@ -139,27 +146,39 @@ fn lpMul(alloc: std.mem.Allocator, a: LPoly, b: LPoly) !LPoly {
 // Null return: a θ sits in a non-polynomial position — inside
 // inv/sq/atan/exp (the rational-in-θ lane is future work — it needs
 // Hermite reduction in the extension, not just the cascade).
-fn logPolyOf(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8) anyerror!?LPoly {
+fn primPolyOf(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8, nukey: ?[]const u8, tkind: NodeKind) anyerror!?LPoly {
     switch (n.kind) {
         .dec, .atom, .rsum => return try lpSingle(alloc, try nodeClone(alloc, n)),
-        .log => {
-            const kt = try canonOf(alloc, n.kid);
-            defer alloc.free(kt);
-            if (!std.mem.eql(u8, kt, ukey)) return try lpSingle(alloc, try nodeClone(alloc, n));
-            const p = try alloc.alloc(?*SNode, 2);
-            p[0] = null;
-            p[1] = try nodeDec(alloc, try decOneN(alloc, false));
-            return p;
-        },
-        .sq, .inv, .atan, .exp => {
-            if (try logHasU(alloc, n.kid, ukey)) return null;
+        .sq, .inv, .log, .atan, .exp => {
+            if (n.kind == tkind) {
+                const kt = try canonOf(alloc, n.kid);
+                defer alloc.free(kt);
+                var tneg = false;
+                var tmatch = std.mem.eql(u8, kt, ukey);
+                if (!tmatch and nukey != null) {
+                    // parity twin: atan(-u) = -theta, log(1/u) = -theta
+                    if (std.mem.eql(u8, kt, nukey.?)) {
+                        tmatch = true;
+                        tneg = true;
+                    }
+                }
+                if (tmatch) {
+                    const p = try alloc.alloc(?*SNode, 2);
+                    p[0] = null;
+                    p[1] = try nodeDec(alloc, try decOneN(alloc, tneg));
+                    return p;
+                }
+            }
+            // a non-matching unary leaf is a coefficient only if no
+            // theta hides in its argument (log(log x) for theta=log x).
+            if (try primHasU(alloc, n, ukey, nukey, tkind)) return null;
             return try lpSingle(alloc, try nodeClone(alloc, n));
         },
         .add => {
             var acc = try lpConst(alloc, try decZero(alloc));
             errdefer lpFree(alloc, acc);
             for (n.kids) |k| {
-                const kp = (try logPolyOf(alloc, k, ukey)) orelse {
+                const kp = (try primPolyOf(alloc, k, ukey, nukey, tkind)) orelse {
                     lpFree(alloc, acc);
                     return null;
                 };
@@ -174,7 +193,7 @@ fn logPolyOf(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8) anyerr
             var acc = try lpConst(alloc, try decOneN(alloc, false));
             errdefer lpFree(alloc, acc);
             for (n.kids) |k| {
-                const kp = (try logPolyOf(alloc, k, ukey)) orelse {
+                const kp = (try primPolyOf(alloc, k, ukey, nukey, tkind)) orelse {
                     lpFree(alloc, acc);
                     return null;
                 };
@@ -226,9 +245,12 @@ fn coeffNodesEql(alloc: std.mem.Allocator, a: ?*SNode, b: ?*SNode) anyerror!bool
 // polynomial in one log(u) with rational u and the cascade constructs;
 // null (with a named lane tag when the refusal is structural)
 // otherwise.
-fn logLane(
+fn primCascade(
     alloc: std.mem.Allocator,
     nt_var: *const SNode,
+    tkind: NodeKind,
+    un: *const SNode,
+    note: []const u8,
     max_order: i64,
     max_deg: i64,
     const_txt: ?[]const u8,
@@ -236,25 +258,40 @@ fn logLane(
     depth: u8,
     lane_extra: *?[]const u8,
 ) !?DecideIntegOut {
-    if (depth >= 6) return null;
-    var logs = std.ArrayList(*const SNode){};
-    defer logs.deinit(alloc);
-    try collectLogKids(alloc, nt_var, &logs);
-    if (logs.items.len == 0) return null;
-
-    // θ = log(u): the first log leaf fixes u; any other log is then a
-    // base-field coefficient for this lane (the cascade recurses on it).
-    const u_node = logs.items[0].kid;
-    const ukey = try canonOf(alloc, u_node);
+    // θ = tkind(u): the leaf's argument fixes u; any other leaf is then
+    // a base-field coefficient for this lane (the cascade recurses on
+    // it).
+    const ukey = try canonOf(alloc, un);
     defer alloc.free(ukey);
-    const up = (try polyOfNode(alloc, u_node)) orelse {
-        lane_extra.* = "log-mono-arg-nonrational";
+    // The parity twin of the argument: atan(-u) = -theta, log(1/u) =
+    // -theta.  Inner lanes (Trager) emit atan(-x) for the negated root;
+    // without the twin the leaf lands in a coefficient and the cascade
+    // assembles a wrong antiderivative that the check catches only as
+    // a panic.
+    const nkn = blk: {
+        if (tkind == .log) {
+            const iv = try nodeUnary(alloc, .inv, try nodeClone(alloc, un));
+            defer nodeFree(alloc, iv);
+            break :blk try norm(alloc, iv);
+        }
+        const nk2 = try alloc.alloc(*SNode, 2);
+        nk2[0] = try nodeDec(alloc, try decOneN(alloc, true));
+        nk2[1] = try nodeClone(alloc, un);
+        const nm = try nodeList(alloc, .mul, nk2);
+        defer nodeFree(alloc, nm);
+        break :blk try norm(alloc, nm);
+    };
+    defer nodeFree(alloc, nkn);
+    const nukey: ?[]const u8 = try canonOf(alloc, nkn);
+    defer if (nukey) |k| alloc.free(k);
+    const up = (try polyOfNode(alloc, un)) orelse {
+        lane_extra.* = if (tkind == .log) "log-mono-arg-nonrational" else "atan-mono-arg-nonrational";
         return null;
     };
     defer polyFree(alloc, up);
 
-    const F = (try logPolyOf(alloc, nt_var, ukey)) orelse {
-        lane_extra.* = "log-mono-not-poly";
+    const F = (try primPolyOf(alloc, nt_var, ukey, nukey, tkind)) orelse {
+        lane_extra.* = if (tkind == .log) "log-mono-not-poly" else "atan-mono-not-poly";
         return null;
     };
     defer lpFree(alloc, F);
@@ -268,20 +305,24 @@ fn logLane(
     const n = lpDeg(F);
     if (n == 0) return null;
     if (n > 16) {
-        lane_extra.* = "log-mono-deg-bound";
+        lane_extra.* = if (tkind == .log) "log-mono-deg-bound" else "atan-mono-deg-bound";
         return null;
     }
 
-    // h = u'/u as integrand text; θ = log(u).
-    const du = try deriveNode(alloc, u_node);
+    // h = θ' as integrand text: u'/u for log, u'/(1+u^2) for atan.
+    const du = try deriveNode(alloc, un);
     defer nodeFree(alloc, du);
     const dun = try norm(alloc, du);
     defer nodeFree(alloc, dun);
     const du_txt = try canonOf(alloc, dun);
     defer alloc.free(du_txt);
-    const h_txt = try std.fmt.allocPrint(alloc, "(({s})*inv({s}))", .{ du_txt, ukey });
+    const h_txt = if (tkind == .log)
+        try std.fmt.allocPrint(alloc, "(({s})*inv({s}))", .{ du_txt, ukey })
+    else
+        try std.fmt.allocPrint(alloc, "(({s})*inv((1e0+({s})*({s}))))", .{ du_txt, ukey, ukey });
     defer alloc.free(h_txt);
-    const theta_txt = try std.fmt.allocPrint(alloc, "log({s})", .{ukey});
+    const th_sp = if (tkind == .log) "log" else "atan";
+    const theta_txt = try std.fmt.allocPrint(alloc, "{s}({s})", .{ th_sp, ukey });
     defer alloc.free(theta_txt);
 
     // The cascade.  r[j] holds the coefficient text of θ^j; r[n+1] is
@@ -311,50 +352,41 @@ fn logLane(
             .elementary => |b| {
                 defer alloc.free(b);
                 if (g_anti == null) {
-                    lane_extra.* = "log-mono-inner-no-anti";
+                    lane_extra.* = if (tkind == .log) "log-mono-inner-no-anti" else "atan-mono-inner-no-anti";
                     return null;
                 }
             },
-            .holonomic_special => |b| {
+            .holonomic_special, .unresolved, .not_holonomic => |b| {
                 alloc.free(b);
-                lane_extra.* = "log-mono-inner";
-                return null;
-            },
-            .unresolved => |b| {
-                alloc.free(b);
-                lane_extra.* = "log-mono-inner";
-                return null;
-            },
-            .not_holonomic => |b| {
-                alloc.free(b);
-                lane_extra.* = "log-mono-inner";
+                lane_extra.* = if (tkind == .log) "log-mono-inner" else "atan-mono-inner";
                 return null;
             },
             .non_rational, .non_analytic, .bad => {
-                lane_extra.* = "log-mono-inner";
+                lane_extra.* = if (tkind == .log) "log-mono-inner" else "atan-mono-inner";
                 return null;
             },
         }
-        const gn = parseTree(alloc, g_anti.?) catch @panic("std/sym:logmono anti parse");
+        const gn = parseTree(alloc, g_anti.?) catch @panic("std/sym:primmon anti parse");
         defer nodeFree(alloc, gn);
-        const gnn = norm(alloc, gn) catch @panic("std/sym:logmono anti norm");
+        const gnn = norm(alloc, gn) catch @panic("std/sym:primmon anti norm");
         defer nodeFree(alloc, gnn);
-        const p = (try logPolyOf(alloc, gnn, ukey)) orelse {
-            lane_extra.* = "log-mono-anti-notpoly";
+        const p = (try primPolyOf(alloc, gnn, ukey, nukey, tkind)) orelse {
+            lane_extra.* = if (tkind == .log) "log-mono-anti-notpoly" else "atan-mono-anti-notpoly";
             return null;
         };
         defer lpFree(alloc, p);
+
         // Limited integration: the θ-part of ∫A_i must be γ·θ, γ
         // constant — it fixes r_{i+1}'s free constant to γ/(i+1).
         if (lpDeg(p) > 1) {
-            lane_extra.* = "log-mono-limited";
+            lane_extra.* = if (tkind == .log) "log-mono-limited" else "atan-mono-limited";
             return null;
         }
         if (p.len > 1 and p[1] != null) {
             const pn = try norm(alloc, p[1].?);
             defer nodeFree(alloc, pn);
             if (pn.kind != .dec) {
-                lane_extra.* = "log-mono-limited";
+                lane_extra.* = if (tkind == .log) "log-mono-limited" else "atan-mono-limited";
                 return null;
             }
             var gr = try ratFromDec(alloc, &pn.dec);
@@ -397,16 +429,16 @@ fn logLane(
     }
     if (first) try buf.appendSlice(alloc, "0e0");
     try buf.append(alloc, ')');
-    const at0 = parseTree(alloc, buf.items) catch @panic("std/sym:logmono anti parse");
+    const at0 = parseTree(alloc, buf.items) catch @panic("std/sym:primmon anti parse");
     defer nodeFree(alloc, at0);
-    const ann = norm(alloc, at0) catch @panic("std/sym:logmono anti norm");
+    const ann = norm(alloc, at0) catch @panic("std/sym:primmon anti norm");
     defer nodeFree(alloc, ann);
-    const dn = deriveNode(alloc, ann) catch @panic("std/sym:logmono derive");
+    const dn = deriveNode(alloc, ann) catch @panic("std/sym:primmon derive");
     defer nodeFree(alloc, dn);
-    const dnn = norm(alloc, dn) catch @panic("std/sym:logmono derive norm");
+    const dnn = norm(alloc, dn) catch @panic("std/sym:primmon derive norm");
     defer nodeFree(alloc, dnn);
-    const D = (try logPolyOf(alloc, dnn, ukey)) orelse
-        @panic("std/sym:logmono derivative escaped theta");
+    const D = (try primPolyOf(alloc, dnn, ukey, nukey, tkind)) orelse
+        @panic("std/sym:primmon derivative escaped theta");
     defer lpFree(alloc, D);
     for (D) |*c| {
         if (c.*) |cn| {
@@ -415,17 +447,60 @@ fn logLane(
             c.* = nn;
         }
     }
-    if (lpDeg(D) > n) @panic("std/sym:logmono check degree overflow");
+    if (lpDeg(D) > n) @panic("std/sym:primmon check degree overflow");
     var ci: usize = 0;
     while (ci <= n) : (ci += 1) {
         const dc: ?*SNode = if (ci < D.len) D[ci] else null;
         const ac: ?*SNode = if (ci < F.len) F[ci] else null;
         if (!(try coeffNodesEql(alloc, dc, ac)))
-            @panic("std/sym:logmono failed its exact check");
+            @panic("std/sym:primmon failed its exact check");
     }
     const atxt = try canonOf(alloc, ann);
     const anti = try antiWithConst(alloc, atxt, const_txt);
     defer alloc.free(anti);
-    const blob = try std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=risch-log-mono-constructed;checked-exact", .{anti});
+    const blob = try std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note={s}", .{ anti, note });
     return elemRet(blob, anti, anti_out);
+}
+
+fn primLane(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    if (depth >= 6) return null;
+    var logs = std.ArrayList(*const SNode){};
+    defer logs.deinit(alloc);
+    try collectLogKids(alloc, nt_var, &logs);
+    var atans = std.ArrayList(*const SNode){};
+    defer atans.deinit(alloc);
+    try collectAtanKids(alloc, nt_var, &atans);
+    if (logs.items.len == 0 and atans.items.len == 0) return null;
+
+    if (logs.items.len > 0) {
+        if (try primCascade(alloc, nt_var, .log, logs.items[0].kid, "risch-log-mono-constructed;checked-exact", max_order, max_deg, const_txt, anti_out, depth, lane_extra)) |o| return o;
+    }
+    if (atans.items.len > 0) {
+        if (try primCascade(alloc, nt_var, .atan, atans.items[0].kid, "risch-atan-mono-constructed;checked-exact", max_order, max_deg, const_txt, anti_out, depth, lane_extra)) |o| return o;
+    }
+    return null;
+}
+
+// antiderivative text times an optional constant factor, re-canonicalized —
+// shared by the decide-integral lanes' constant-factor re-application.
+fn antiWithConst(alloc: std.mem.Allocator, anti: []u8, ct: ?[]const u8) ![]u8 {
+    const c = ct orelse return anti;
+    defer alloc.free(anti);
+    var buf = std.ArrayList(u8){};
+    defer buf.deinit(alloc);
+    try buf.append(alloc, '(');
+    try buf.appendSlice(alloc, anti);
+    try buf.append(alloc, '*');
+    try buf.appendSlice(alloc, c);
+    try buf.append(alloc, ')');
+    return normCanon(alloc, buf.items);
 }

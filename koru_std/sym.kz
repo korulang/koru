@@ -51,7 +51,7 @@
 ~part certgen
 ~part rsum
 ~part exptheta
-~part logmono
+~part primmon
 ~part gsub
 ~part gsuba
 ~part canon

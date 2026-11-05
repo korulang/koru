@@ -515,11 +515,14 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   substitutes back node-wise, still `checked-exact` by re-extracting
   the derivative's theta-frac. A polynomial in one log(u), u
   rational, with theta-free coefficients -> the primitive-monomial
-  cascade r_i' = a_i - (i+1)(u'/u)r_{i+1}, each step re-entering
-  the decider; every free constant resolves by limited integration
-  (the computed antiderivative's theta-part must be gamma*theta,
-  gamma constant, else `log-mono-limited`), and coefficients are
-  compared as Q(x) elements rather than strings. An integrand that
+  cascade r_i' = a_i - (i+1)h*r_{i+1} (h = theta'), each step
+  re-entering the decider; the same lane covers every primitive
+  element (log(u): h=u'/u; atan(u): h=u'/(1+u^2)), accepts the
+  parity twin of u (atan(-u) = -theta, log(1/u) = -theta) since
+  Trager emits negated roots, and every free constant resolves by
+  limited integration (the computed antiderivative's theta-part must
+  be gamma*theta, gamma constant, else `{kind}-mono-limited`);
+  coefficients are compared as Q(x) elements rather than strings. An integrand that
   carries a tower element's dlog factor — g'*e^g for theta = e^g (g
   any polynomial, not just affine), u'/u for theta = log(u),
   u'/(2*theta) for theta = sqrt(u), u'/(1+u^2) for theta = atan(u) —
@@ -546,7 +549,7 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   registry_key path) without record-payload arms.
 
 615_048 pins all arms incl. the bounded/unbounded/
-unclassifiable decide-ode split, and decide-field nf. 615: 57/57.
+unclassifiable decide-ode split, and decide-field nf. 615: 58/58.
 
 ## Design only — non-SI extension surface (currency et al.)
 

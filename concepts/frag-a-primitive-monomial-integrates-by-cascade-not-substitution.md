@@ -1,10 +1,11 @@
 ---
 type: belief
 id: frag-a-primitive-monomial-integrates-by-cascade-not-substitution
-provenance: sym B6, 2026-11 — the log lane was expected to reuse the
+provenance: sym B6/B8, 2026-11 — the log lane was expected to reuse the
   exp-theta skeleton; the mechanism turned out different, and the
   difference is the point. The sibling frag's closing sentence is
-  corrected here.
+  corrected here. B8 confirmed 'primitive' is the real invariant by
+  lifting the lane to atan(u).
 ts: 2026-11-05
 tags: [koru, stdlib, sym, risch, integration, log, tower]
 ---
@@ -23,8 +24,16 @@ has an elementary antiderivative at all, one of the form Σ rⱼ·θ^j with
 rⱼ in the same base field — the structure theorem for primitive
 extensions, the log analog of Liouville. Matching θ-coefficients in
 the derivative yields a descending system
-rᵢ' = aᵢ − (i+1)·(u'/u)·rᵢ₊₁, each step an ordinary base-field
-integration that simply re-enters the decider. The one genuinely
+rᵢ' = aᵢ − (i+1)·h·rᵢ₊₁ with h = θ', each step an ordinary base-field
+integration that simply re-enters the decider. The mechanism is
+kind-blind: θ = log(u) gives h = u'/u and θ = atan(u) gives
+u'/(1+u²) — the file renames logmono to primmon because 'primitive'
+was always the invariant, 'log' just the first inhabitant. The one
+wrinkle a second inhabitant exposed is parity: Trager emits atan(−u)
+for the negated root, and atan(−u) = −θ (likewise log(1/u) = −θ), so
+leaf matching accepts a parity twin of u with a −1 coefficient —
+without it, θ hides inside a coefficient and the cascade assembles a
+wrong antiderivative that surfaces only as a check panic. The one genuinely
 non-mechanical piece is *limited integration*: rᵢ₊₁ is only known up
 to a constant C, which appears in step i's integrand as
 −(i+1)·C·u'/u — and that integrates to −(i+1)·C·θ. So the computed
@@ -53,9 +62,16 @@ The refusal arms point the opposite direction from exp-theta's by
 necessity: a log in a non-polynomial position (inv, sqrt, atan, exp —
 the rational-in-θ case needs Hermite in the extension, future work), a
 non-rational u, degree bounds, depth, and the two honesty arms
-`log-mono-inner` / `log-mono-limited`. Two latent bugs were found by
+`log-mono-inner` / `log-mono-limited`. Latent bugs were found by
 the lane rather than by review: the constant-factor split handed a
 freed ArrayList buffer to nodeList (any `−1e0·exp(x)·inv(x)` crashed
-the decider standalone), and the coefficient check was stringly until
-the mixed-monomial case produced an equal-but-different-canon
-coefficient.
+the decider standalone); the coefficient check was stringly until the
+mixed-monomial case produced an equal-but-different-canon coefficient;
+and B8's first atan case unmasked a wrong-answer bug upstream —
+antiWithConst applied the integrand's constant factor to the rational
+part AND to the assembled full text, so every const·(integrand with a
+log part) emitted c²·rat + c·log under `checked-exact`. The fix is one
+application over (anti0 + ltxt). The hermiteCheck/fracEql verifications
+cover the un-consted math only; scaling afterward is exact by
+linearity, but the lesson stands: a `checked-exact` tag is only as wide
+as the code path it actually verifies.
