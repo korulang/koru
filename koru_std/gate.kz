@@ -271,8 +271,7 @@
 
     // The staged diff is fetched lazily — only an odds roll, a -local row,
     // or a judged row can need it.
-    var staged: ?[]const u8 = null;
-    var staged_done = false;
+    var st = gate_scope.Staged{};
 
     // The judge resolves lazily on the first judgment-class row: the
     // profile's `judge` field names the binary (relative to the profile's
@@ -308,13 +307,12 @@
         // fire annotates the row's own line with the roll.
         var fired: []const u8 = "";
         if (helpers.oddsN(r.tags)) |n| {
-            if (!staged_done) {
-                staged_done = true;
-                if (helpers.runOut(alloc, &.{ "git", "-C", gated_repo, "diff", "--staged" }, null, null)) |res| {
-                    if (res.code == 0) staged = res.out;
-                }
+            const diff = st.diffOf(alloc, gated_repo);
+            if (gate_scope.oddsScopedOut(alloc, gated_repo, r.tags, &st)) |det| {
+                if (!want_json) helpers.row("–", r.name, namew, det);
+                verdicts.append(alloc, .{ .name = r.name, .verdict = "skip", .detail = det }) catch {};
+                continue;
             }
-            const diff = staged orelse "";
             const roll = helpers.oddsRoll(r.name, diff);
             if (roll >= n) {
                 const det = std.fmt.allocPrint(alloc, "rolled {d}, needed < {d}", .{ roll, n }) catch "rolled away";
@@ -400,13 +398,7 @@
         if (is_local) {
             state = gate_diffstate.judgedState(alloc, r.tags, local_state orelse "");
         } else {
-            if (!staged_done) {
-                staged_done = true;
-                if (helpers.runOut(alloc, &.{ "git", "-C", gated_repo, "diff", "--staged" }, null, null)) |res| {
-                    if (res.code == 0) staged = res.out;
-                }
-            }
-            state = gate_diffstate.judgedState(alloc, r.tags, staged orelse "");
+            state = gate_diffstate.judgedState(alloc, r.tags, st.diffOf(alloc, gated_repo));
         }
         if (!is_local and std.mem.trim(u8, state, " \n\t").len == 0) {
             if (!want_json) helpers.row("–", r.name, namew, "no staged changes");
@@ -523,3 +515,4 @@
 }
 ~part diffstate
 ~part helpers
+~part scope

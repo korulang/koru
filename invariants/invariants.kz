@@ -127,12 +127,14 @@
 }
 
 // The sampled alarm: odds-10 rolls the staged diff and fires the census
-// check on roughly one commit in ten. The pin is the board's state at the
+// check on roughly one commit in ten. scope-<path> narrows the roll's
+// population to diffs that could carry the census's clones — a docs-only
+// commit never rolls here. The pin is the board's state at the
 // close of the deslop campaign; regrowth blocks until the clones are
 // folded or the pin is re-set with a reason.
 ~std/invariants:inferred {
     "name": "deslop-board-does-not-regrow",
-    "tags": ["git-gate", "odds-10"],
+    "tags": ["git-gate", "odds-10", "scope-src"]],
     "rule": "The structural clone census over src/ (tools/deslop.zig, --min-tokens=48) must not regrow past the pin in checks/deslop-census.baseline. This row is sampled — the odds-10 tag fires it on roughly one commit in ten, so slop accumulates only until a roll lands: an alarm driven by commit activity, not a schedule. When it fires above the pin, fold the clones the census names into their canonical form, or re-pin the baseline in the same commit with the reason the duplication is intentional — dialects, public adapters, and semantically distinct twins stay duplicated by design (concepts/frag-dedup-is-lift-then-delete.md). The census reads the working tree, so uncommitted work counts against the pin; a re-pin that hides avoidable slop is a silent weakening.",
     "check": "python3 checks/check_deslop_census.py checks/deslop-census.baseline -- zig run ../tools/deslop.zig -- ../src --top=8 --min-tokens=48"
 }
@@ -142,7 +144,7 @@
 // Independent roll stream — the row name is part of the hash.
 ~std/invariants:inferred {
     "name": "deslop-small-idiom-board",
-    "tags": ["git-gate", "odds-10"],
+    "tags": ["git-gate", "odds-10", "scope-src"]],
     "rule": "The structural clone census over src/ at --min-tokens=32 (tools/deslop.zig) must not regrow past the pin in checks/deslop-census-32.baseline. The 32-token floor is the small-idiom tier — micro-duplication below the main board's sightline. Same contract as its sibling row: sampled firing (odds-10), regrowth blocks until the clones are folded into their canonical form or the pin is re-set in the same commit with the reason the duplication is intentional; the census reads the working tree, so uncommitted work counts against the pin.",
     "check": "python3 checks/check_deslop_census.py checks/deslop-census-32.baseline -- zig run ../tools/deslop.zig -- ../src --top=8 --min-tokens=32"
 }
@@ -154,7 +156,7 @@
 // cannot canon them, so they escape the count entirely).
 ~std/invariants:inferred {
     "name": "deslop-koru-libs-board",
-    "tags": ["git-gate", "repo-koru-libs", "odds-10"],
+    "tags": ["git-gate", "repo-koru-libs", "odds-10", "scope-*.kz"]],
     "rule": "The clone census over koru-libs' .kz corpus (tools/deslop_kz.py driving koruc --ast-canon, --min-nodes=32) must not regrow past the pin in checks/deslop-koru-libs.baseline. Same contract as the src/ rows: sampled firing (odds-10) on koru-libs commits only, regrowth blocks until folded or the pin is re-set with reason. The census reads the consumer's working tree and skips files koruc cannot canon — a file that stops parsing escapes the count until it parses again.",
     "check": "python3 checks/check_deslop_census.py checks/deslop-koru-libs.baseline -- python3 ../tools/deslop_kz.py ../zig-out/bin/koruc ../../koru-libs --top=8 --min-nodes=32"
 }
@@ -164,7 +166,7 @@
 // and spellings (the vocabulary in use — growth means new surface).
 ~std/invariants:inferred {
     "name": "deslop-stdlib-board",
-    "tags": ["git-gate", "odds-10"],
+    "tags": ["git-gate", "odds-10", "scope-koru_std"]],
     "rule": "The clone census over koru_std's .kz corpus (tools/deslop_kz.py driving koruc --ast-canon, --min-nodes=32) must not regrow past the pin in checks/deslop-stdlib.baseline — clusters and members are the slop pin, skipped is the parser-coverage pin (a file koruc cannot canon escapes the count entirely), spellings pins the vocabulary in use. Same contract: odds-10 sampled firing, regrowth blocks until folded or the pin is re-set in the same commit with reason.",
     "check": "python3 checks/check_deslop_census.py checks/deslop-stdlib.baseline -- python3 ../tools/deslop_kz.py ../zig-out/bin/koruc ../koru_std --top=8 --min-nodes=32"
 }
@@ -177,7 +179,7 @@
 // First pin measured the layer at ~15x the decl census's mass.
 ~std/invariants:inferred {
     "name": "deslop-stdlib-host-board",
-    "tags": ["git-gate", "odds-10"],
+    "tags": ["git-gate", "odds-10", "scope-koru_std"]],
     "rule": "The host-code clone census over koru_std's .kz corpus (tools/deslop_kz.py --host: canon-extracted Zig reassembled per file, fingerprinted by tools/deslop.zig at --min-tokens=48) must not regrow past the pin in checks/deslop-stdlib-host.baseline. Same contract as its sibling rows: odds-10 sampled firing, regrowth blocks until the named clones are folded or the pin is re-set in the same commit with reason. Files whose host text cannot parse standalone are named on stderr and escape the count until they parse again — dormant proc bodies are the known offenders.",
     "check": "python3 checks/check_deslop_census.py checks/deslop-stdlib-host.baseline -- python3 ../tools/deslop_kz.py ../zig-out/bin/koruc ../koru_std --host --top=8 --min-tokens=48"
 }
