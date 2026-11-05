@@ -1,0 +1,6 @@
+name: ordering-defect
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a publish path announced state before the deploy that makes the announcement true — fired when Discord posted a board the site hadn't shipped yet; the fix moved announce to post-deploy (ceremony-last)
