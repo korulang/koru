@@ -503,8 +503,10 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   rational residues give `c*log(gcd)` terms, degree-2 residue fields give
   conjugate real-log pairs (disc>0) or a real log+atan pair (disc<0, no
   i); every emission is checked exactly against the integrand before it
-  is returned (`checked-exact`). Residue cofactors of degree >=3 name
-  `residue-factor-deg{d}-needs-algebraic-coeffs`. Non-rational integrands
+  is returned (`checked-exact`). Residue cofactors of degree 3/4 emit a
+  root-sum `rsum(f;...)` node built over the residue ring Q[t]/(f)
+  (zero divisors split the modulus; check via trace/norm, still exact);
+  degree >=5 names `residue-cofactor-deg{d}-beyond-extgcd-bound`. Non-rational integrands
   keep the structural cert + holonomic-special lane with
   `no-risch-elementary-form-not-constructed` notes. Unresolved names the
   searched bounds + structural refusal.

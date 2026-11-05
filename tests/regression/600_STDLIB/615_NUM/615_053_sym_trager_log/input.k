@@ -102,8 +102,8 @@ std/sym:lit(inv((x*x*x+x)))
     | bad |> std/io:print.ln("bad")
 | bad |> std/io:print.ln("bad-lit")
 
-// 1/(x^3-2): residues live in a cubic extension, no algebraic-number
-// layer yet -> elementary layer names the refusal, Hermite part preserved
+// 1/(x^3-2): residues live in a cubic extension — the rsum lane
+// constructs sum_{alpha^3=1/108} alpha*log(x - 6*alpha), checked-exact
 std/sym:lit(inv((x*x*x-2)))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 3)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)

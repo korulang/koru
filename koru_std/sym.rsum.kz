@@ -1,0 +1,671 @@
+// ============================================================================
+// std/sym part: rsum — the algebraic-coefficient Rothstein-Trager
+// residue lane: the rsum node payload spec, its parser/validator, and
+// the K[x]-over-Q[t]/(f) gcd/norm/trace machinery that constructs
+// root-sum antiderivatives for residue cofactors of degree 3 and 4.
+// Joined via `~part rsum` in sym.kz; merged into the module at load.
+// ============================================================================
+
+fn nodeRsum(alloc: std.mem.Allocator, aux: []const u8) !*SNode {
+    const n = try nodeNew(alloc, .rsum);
+    n.aux = try alloc.dupe(u8, aux);
+    return n;
+}
+
+// rsum payload: "f0,f1,...;s00,s01,...|s10,s11,...|..." — f's coeffs
+// ascending in t, S's |-groups ascending in x (each group a t-poly's
+// coeffs ascending in t). A Rat token is [-]digits or [-]digits/digits.
+fn rsumPayloadOk(s: []const u8) bool {
+    const semi = std.mem.indexOfScalar(u8, s, ';') orelse return false;
+    if (std.mem.indexOfScalarPos(u8, s, semi + 1, ';') != null) return false;
+    const tok_ok = struct {
+        fn ok(t: []const u8) bool {
+            var i: usize = 0;
+            if (i < t.len and t[i] == '-') i += 1;
+            var digits = false;
+            while (i < t.len and std.ascii.isDigit(t[i])) : (i += 1) digits = true;
+            if (!digits) return false;
+            if (i < t.len and t[i] == '/') {
+                i += 1;
+                var den = false;
+                while (i < t.len and std.ascii.isDigit(t[i])) : (i += 1) den = true;
+                if (!den) return false;
+            }
+            return i == t.len;
+        }
+    }.ok;
+    const csvOk = struct {
+        fn ok(g: []const u8, tk_fn: *const fn ([]const u8) bool) bool {
+            if (g.len == 0) return false;
+            var toks = std.mem.splitScalar(u8, g, ',');
+            while (toks.next()) |tk| {
+                if (!tk_fn(tk)) return false;
+            }
+            return true;
+        }
+    }.ok;
+    if (!csvOk(s[0..semi], tok_ok)) return false;
+    var groups: usize = 0;
+    var it = std.mem.splitScalar(u8, s[semi + 1 ..], '|');
+    while (it.next()) |grp| {
+        if (!csvOk(grp, tok_ok)) return false;
+        groups += 1;
+    }
+    return groups > 0;
+}
+
+// "rsum(<payload>)" factor: payload validated before it ever
+// becomes a node — malformed text refuses error.Bad.
+fn parseRsumFactor(c: *ParseCtx) !*SNode {
+    if (c.i + 4 >= c.s.len or c.s[c.i + 1] != 's' or c.s[c.i + 2] != 'u' or c.s[c.i + 3] != 'm' or c.s[c.i + 4] != '(') return error.Bad;
+    c.i += 5;
+    const start = c.i;
+    while (c.i < c.s.len and c.s[c.i] != ')') c.i += 1;
+    if (c.i >= c.s.len) return error.Bad;
+    const payload = c.s[start..c.i];
+    c.i += 1;
+    if (!rsumPayloadOk(payload)) return error.Bad;
+    return nodeRsum(c.alloc, payload);
+}
+
+// ============ Residue-ring lane — cofactor degree >= 3 ============
+// rem is squarefree with no rational roots (enumeration consumed them).
+// K = Q[t]/rem is a residue RING, not necessarily a field: an element
+// sharing a factor with rem is a zero divisor, and a non-invertible
+// leading coefficient inside the K[x] gcd exposes exactly such a factor
+// (Davenport–Trager) — the lane splits the modulus there and recurses,
+// so every computed component is a field.
+// On a component the K[x] gcd S(x,t) specializes at each root alpha to
+// gcd(C - alpha*D', D); the log part's share is
+//   sum_{f(alpha)=0} alpha * log S(x,alpha)   — one rsum node.
+// Exact check, no algebraic numerics (keeps checked-exact):
+//   sum_alpha alpha * S'_x/S  =  Tr_K(t * dS * Q) / Norm(S)
+//   Norm(S) = Res_t(S,f) in Q[x],  Q = Norm/S in K[x],
+// and the element trace is the Newton power-sum weighted coefficient
+// sum: Tr(c0+...+cj t^j) = sum c_j p_j, p_j = sum_alpha alpha^j.
+// ============================================================================
+
+const KP = [][]Rat; // poly in x, coeffs in K (each a t-poly reduced mod f)
+
+fn kZero(alloc: std.mem.Allocator) ![]Rat {
+    const e = try alloc.alloc(Rat, 1);
+    e[0] = try ratFromInt(alloc, 0);
+    return e;
+}
+
+fn kConst(alloc: std.mem.Allocator, r: *const Rat) ![]Rat {
+    const e = try alloc.alloc(Rat, 1);
+    e[0] = try ratClone(r);
+    return e;
+}
+
+fn kpFree(alloc: std.mem.Allocator, p: KP) void {
+    for (p) |*c| polyFree(alloc, c.*);
+    alloc.free(p);
+}
+
+fn kpClone(alloc: std.mem.Allocator, p: KP) !KP {
+    const out = try alloc.alloc([]Rat, p.len);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| polyFree(alloc, c.*);
+        alloc.free(out);
+    }
+    while (i < p.len) : (i += 1) out[i] = try polyClone(alloc, p[i]);
+    return out;
+}
+
+fn kpIsZero(p: KP) bool {
+    for (p) |*c| {
+        if (!polyIsZero(c.*)) return false;
+    }
+    return true;
+}
+
+fn kpDegIdx(p: KP) usize {
+    var i: usize = p.len;
+    while (i > 0) {
+        i -= 1;
+        if (!polyIsZero(p[i])) return i;
+    }
+    return 0;
+}
+
+fn kpAddSub(alloc: std.mem.Allocator, a: KP, b: KP, sub: bool) !KP {
+    const n = @max(a.len, b.len);
+    const out = try alloc.alloc([]Rat, n);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| polyFree(alloc, c.*);
+        alloc.free(out);
+    }
+    const zero = try kZero(alloc);
+    defer polyFree(alloc, zero);
+    while (i < n) : (i += 1) {
+        const ai: []const Rat = if (i < a.len) a[i] else zero;
+        const bi: []const Rat = if (i < b.len) b[i] else zero;
+        out[i] = if (sub) try polySub(alloc, ai, bi) else try polyAdd(alloc, ai, bi);
+    }
+    return out;
+}
+
+// Convolution over K: coeffs are t-polys combined by algMulMod.
+fn kpMul(alloc: std.mem.Allocator, mod: []const Rat, a: KP, b: KP) !KP {
+    if (kpIsZero(a) or kpIsZero(b)) {
+        const out = try alloc.alloc([]Rat, 1);
+        out[0] = try kZero(alloc);
+        return out;
+    }
+    const n = kpDegIdx(a) + kpDegIdx(b) + 1;
+    const out = try alloc.alloc([]Rat, n);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| polyFree(alloc, c.*);
+        alloc.free(out);
+    }
+    while (i < n) : (i += 1) out[i] = try kZero(alloc);
+    for (a[0..kpDegIdx(a) + 1], 0..) |*ca, ia| {
+        if (polyIsZero(ca.*)) continue;
+        for (b[0..kpDegIdx(b) + 1], 0..) |*cb, ib| {
+            if (polyIsZero(cb.*)) continue;
+            const pr = try algMulMod(alloc, ca.*, cb.*, mod);
+            defer polyFree(alloc, pr);
+            const nv = try polyAdd(alloc, out[ia + ib], pr);
+            polyFree(alloc, out[ia + ib]);
+            out[ia + ib] = nv;
+        }
+    }
+    return out;
+}
+
+const KPDM = union(enum) { dm: struct { q: KP, r: KP }, factor: []Rat };
+
+// a = q*b + r over K[x]; leading-coeff inversion goes through
+// algInvPoly, so a zero divisor surfaces as .factor (g | mod).
+fn kpDivMod(alloc: std.mem.Allocator, mod: []const Rat, a_in: KP, b: KP) !KPDM {
+    var a = try kpClone(alloc, a_in);
+    errdefer kpFree(alloc, a);
+    const q = try alloc.alloc([]Rat, a_in.len);
+    var qi: usize = 0;
+    errdefer {
+        for (q[0..qi]) |*c| polyFree(alloc, c.*);
+        alloc.free(q);
+    }
+    while (qi < q.len) : (qi += 1) q[qi] = try kZero(alloc);
+    const bd = kpDegIdx(b);
+    while (true) {
+        if (kpIsZero(a)) break;
+        const ad = kpDegIdx(a);
+        if (ad < bd) break;
+        const shift = ad - bd;
+        var g: []Rat = undefined;
+        const lc_inv = try algInvPoly(alloc, b[bd], mod, &g);
+        if (lc_inv == null) {
+            kpFree(alloc, a);
+            for (q) |*c| polyFree(alloc, c.*);
+            alloc.free(q);
+            return .{ .factor = g };
+        }
+        defer polyFree(alloc, g);
+        defer polyFree(alloc, lc_inv.?);
+        const cf = try algMulMod(alloc, a[ad], lc_inv.?, mod);
+        defer polyFree(alloc, cf);
+        const nq = try polyAdd(alloc, q[shift], cf);
+        polyFree(alloc, q[shift]);
+        q[shift] = nq;
+        var i: usize = 0;
+        while (i <= bd) : (i += 1) {
+            if (polyIsZero(b[i])) continue;
+            const t = try algMulMod(alloc, cf, b[i], mod);
+            defer polyFree(alloc, t);
+            const nv = try polySub(alloc, a[i + shift], t);
+            polyFree(alloc, a[i + shift]);
+            a[i + shift] = nv;
+        }
+    }
+    return .{ .dm = .{ .q = q, .r = a } };
+}
+
+// Monic gcd over K[x]; a non-invertible leading coefficient names the
+// modulus factor it lives on.
+fn kpGcd(alloc: std.mem.Allocator, mod: []const Rat, a_in: KP, b_in: KP) !KPDM {
+    var a = try kpClone(alloc, a_in);
+    errdefer kpFree(alloc, a);
+    var b = try kpClone(alloc, b_in);
+    defer kpFree(alloc, b);
+    while (!kpIsZero(b)) {
+        const dm = try kpDivMod(alloc, mod, a, b);
+        switch (dm) {
+            .factor => |g| {
+                kpFree(alloc, a);
+                return .{ .factor = g };
+            },
+            .dm => |d| {
+                kpFree(alloc, d.q);
+                kpFree(alloc, a);
+                a = b;
+                b = d.r;
+            },
+        }
+    }
+    var g: []Rat = undefined;
+    const ld = kpDegIdx(a);
+    const lc_inv = try algInvPoly(alloc, a[ld], mod, &g);
+    if (lc_inv == null) {
+        kpFree(alloc, a);
+        return .{ .factor = g };
+    }
+    defer polyFree(alloc, g);
+    defer polyFree(alloc, lc_inv.?);
+    if (polyDegIdx(a[ld]) != 0 or !ratIsOne(&a[ld][0])) {
+        for (a) |*c| {
+            const nv = try algMulMod(alloc, c.*, lc_inv.?, mod);
+            polyFree(alloc, c.*);
+            c.* = nv;
+        }
+    }
+    const empty = try alloc.alloc([]Rat, 0);
+    return .{ .dm = .{ .q = empty, .r = a } };
+}
+
+// Sylvester–Bareiss with Q[x]-valued cells: resultant in t of two polys
+// whose coefficients are x-polys (a's j-th entry multiplies t^j).
+fn resT(alloc: std.mem.Allocator, a: []const []Rat, b: []const []Rat) ![]Rat {
+    const am = a.len - 1;
+    const bn = b.len - 1;
+    const N = am + bn;
+    const cell = try alloc.alloc(?[]Rat, N * N);
+    for (cell) |*cl| cl.* = null;
+    defer {
+        for (cell) |*cl| if (cl.*) |clp| polyFree(alloc, clp);
+        alloc.free(cell);
+    }
+    // bn rows of a-coeffs shifted right by the row index.
+    var r: usize = 0;
+    while (r < bn) : (r += 1) {
+        var j: usize = 0;
+        while (j <= am) : (j += 1) {
+            if (polyIsZero(a[j])) continue;
+            cell[r * N + r + j] = try polyClone(alloc, a[j]);
+        }
+    }
+    // am rows of b-coeffs.
+    r = 0;
+    while (r < am) : (r += 1) {
+        var j: usize = 0;
+        while (j <= bn) : (j += 1) {
+            if (polyIsZero(b[j])) continue;
+            cell[(bn + r) * N + r + j] = try polyClone(alloc, b[j]);
+        }
+    }
+    var neg = false;
+    var prev: ?[]Rat = null;
+    defer if (prev) |pp| polyFree(alloc, pp);
+    var k: usize = 0;
+    while (k + 1 < N) : (k += 1) {
+        if (cell[k * N + k] == null) {
+            var ir2 = k + 1;
+            while (ir2 < N and cell[ir2 * N + k] == null) ir2 += 1;
+            if (ir2 == N) return polyEmpty(alloc);
+            var c2: usize = 0;
+            while (c2 < N) : (c2 += 1) {
+                const tmp = cell[k * N + c2];
+                cell[k * N + c2] = cell[ir2 * N + c2];
+                cell[ir2 * N + c2] = tmp;
+            }
+            neg = !neg;
+        }
+        var i: usize = k + 1;
+        while (i < N) : (i += 1) {
+            var j: usize = k + 1;
+            while (j < N) : (j += 1) {
+                var tA = try polyEmpty(alloc);
+                defer polyFree(alloc, tA);
+                var tB = try polyEmpty(alloc);
+                defer polyFree(alloc, tB);
+                if (cell[k * N + k]) |pk| {
+                    if (cell[i * N + j]) |pij| {
+                        polyFree(alloc, tA);
+                        tA = try polyMul(alloc, pk, pij);
+                    }
+                }
+                if (cell[i * N + k]) |pik| {
+                    if (cell[k * N + j]) |pkj| {
+                        polyFree(alloc, tB);
+                        tB = try polyMul(alloc, pik, pkj);
+                    }
+                }
+                const num = try polySub(alloc, tA, tB);
+                defer polyFree(alloc, num);
+                if (polyIsZero(num)) {
+                    if (cell[i * N + j]) |old| polyFree(alloc, old);
+                    cell[i * N + j] = null;
+                    continue;
+                }
+                var nv: []Rat = undefined;
+                if (prev) |pp| {
+                    const dm = try polyDivMod(alloc, num, pp);
+                    defer polyFree(alloc, dm.r);
+                    if (!polyIsZero(dm.r)) {
+                        polyFree(alloc, dm.q);
+                        @panic("std/sym: bareiss inexact division — elimination bug");
+                    }
+                    nv = dm.q;
+                } else {
+                    nv = try polyClone(alloc, num);
+                }
+                if (cell[i * N + j]) |old| polyFree(alloc, old);
+                cell[i * N + j] = nv;
+            }
+        }
+        if (prev) |pp| polyFree(alloc, pp);
+        prev = try polyClone(alloc, cell[k * N + k].?);
+    }
+    const det = cell[(N - 1) * N + (N - 1)] orelse try polyEmpty(alloc);
+    cell[(N - 1) * N + (N - 1)] = null;
+    if (neg) for (det) |*cc| cc.n.negate();
+    return det;
+}
+
+// Newton power sums p_j = sum_alpha alpha^j for monic f, j = 0..k-1:
+// p_0 = k; p_m = -m*a_{k-m} - sum_{i<m} a_{k-i}*p_{m-i} (a_j = 0 if j<0).
+fn newtonSums(alloc: std.mem.Allocator, f: []const Rat) ![]Rat {
+    const k = polyDegIdx(f);
+    const p = try alloc.alloc(Rat, k);
+    var i: usize = 0;
+    errdefer {
+        for (p[0..i]) |*c| ratDeinit(c);
+        alloc.free(p);
+    }
+    while (i < k) : (i += 1) p[i] = try ratFromInt(alloc, 0);
+    ratDeinit(&p[0]);
+    p[0] = try ratFromInt(alloc, @intCast(k));
+    var m: usize = 1;
+    while (m < k) : (m += 1) {
+        var acc = try ratFromInt(alloc, 0);
+        errdefer ratDeinit(&acc);
+        var ii: usize = 1;
+        while (ii < m) : (ii += 1) {
+            if (k < ii) break;
+            if (k - ii >= f.len) continue;
+            if (ratIsZero(&f[k - ii])) continue;
+            var tm = try ratMul(alloc, &f[k - ii], &p[m - ii]);
+            defer ratDeinit(&tm);
+            const nv = try ratAdd(alloc, &acc, &tm);
+            ratDeinit(&acc);
+            acc = nv;
+        }
+        var res = try ratNeg(&acc);
+        ratDeinit(&acc);
+        errdefer ratDeinit(&res);
+        if (k >= m and k - m < f.len) {
+            var am_ = try ratMulInt(alloc, &f[k - m], @intCast(m));
+            defer ratDeinit(&am_);
+            const nv = try ratSub(alloc, &res, &am_);
+            ratDeinit(&res);
+            res = nv;
+        }
+        ratDeinit(&p[m]);
+        p[m] = res;
+    }
+    return p;
+}
+
+// Tr_K of a K element: sum_j c_j * p_j (Newton sums of the modulus).
+fn kTrace(alloc: std.mem.Allocator, e: []const Rat, ps: []const Rat) !Rat {
+    var acc = try ratFromInt(alloc, 0);
+    errdefer ratDeinit(&acc);
+    var j: usize = 0;
+    while (j < e.len and j < ps.len) : (j += 1) {
+        if (ratIsZero(&e[j]) or ratIsZero(&ps[j])) continue;
+        var tm = try ratMul(alloc, &e[j], &ps[j]);
+        defer ratDeinit(&tm);
+        const nv = try ratAdd(alloc, &acc, &tm);
+        ratDeinit(&acc);
+        acc = nv;
+    }
+    return acc;
+}
+
+// The rsum lane's built artifacts: S over K plus the exact derivative
+// Frac of sum_alpha alpha*log S(x,alpha).
+const RsumBuilt = union(enum) { built: struct { s: KP, chk: Frac }, factor: []Rat };
+
+fn rsumBuild(alloc: std.mem.Allocator, mod: []const Rat, C: []const Rat, D: []const Rat, dD: []const Rat) !RsumBuilt {
+    const k = polyDegIdx(mod);
+    // a[i] = C_i - dD_i * t ; b[i] = D_i (const K elements)
+    const al = @max(C.len, dD.len);
+    const a = try alloc.alloc([]Rat, al);
+    var ai: usize = 0;
+    errdefer {
+        for (a[0..ai]) |*c| polyFree(alloc, c.*);
+        alloc.free(a);
+    }
+    while (ai < al) : (ai += 1) {
+        const e = try alloc.alloc(Rat, 2);
+        e[0] = if (ai < C.len) try ratClone(&C[ai]) else try ratFromInt(alloc, 0);
+        e[1] = if (ai < dD.len) try ratNeg(&dD[ai]) else try ratFromInt(alloc, 0);
+        a[ai] = e;
+    }
+    defer {
+        for (a) |*c| polyFree(alloc, c.*);
+        alloc.free(a);
+    }
+    const b = try alloc.alloc([]Rat, D.len);
+    var bi: usize = 0;
+    errdefer {
+        for (b[0..bi]) |*c| polyFree(alloc, c.*);
+        alloc.free(b);
+    }
+    while (bi < D.len) : (bi += 1) b[bi] = try kConst(alloc, &D[bi]);
+    defer {
+        for (b) |*c| polyFree(alloc, c.*);
+        alloc.free(b);
+    }
+    const gd = try kpGcd(alloc, mod, a, b);
+    const s = switch (gd) {
+        .factor => |g| return .{ .factor = g },
+        .dm => |d| blk: {
+            alloc.free(d.q);
+            break :blk d.r;
+        },
+    };
+    errdefer kpFree(alloc, s);
+    const sd = kpDegIdx(s);
+    if (kpIsZero(s) or sd == 0) {
+        const ez = try polyEmpty(alloc);
+        errdefer polyFree(alloc, ez);
+        const dz = try polyOne(alloc);
+        return .{ .built = .{ .s = s, .chk = .{ .n = ez, .d = dz } } };
+    }
+    // Norm(S) = Res_t(S,f): S as a t-poly — transpose the coeff matrix
+    // (deg_t S < k; unused high slots stay zero).
+    const st = try alloc.alloc([]Rat, k);
+    var si: usize = 0;
+    errdefer {
+        for (st[0..si]) |*c| polyFree(alloc, c.*);
+        alloc.free(st);
+    }
+    while (si < k) : (si += 1) {
+        const xp = try alloc.alloc(Rat, sd + 1);
+        var xi: usize = 0;
+        errdefer {
+            for (xp[0..xi]) |*r| ratDeinit(r);
+            alloc.free(xp);
+        }
+        while (xi <= sd) : (xi += 1) {
+            xp[xi] = if (si < s[xi].len) try ratClone(&s[xi][si]) else try ratFromInt(alloc, 0);
+        }
+        st[si] = xp;
+    }
+    defer {
+        for (st) |*c| polyFree(alloc, c.*);
+        alloc.free(st);
+    }
+    var st_len = k;
+    while (st_len > 0 and polyIsZero(st[st_len - 1])) st_len -= 1;
+    // f as a t-poly of const x-coeffs.
+    const ft = try alloc.alloc([]Rat, k + 1);
+    var fi: usize = 0;
+    errdefer {
+        for (ft[0..fi]) |*c| polyFree(alloc, c.*);
+        alloc.free(ft);
+    }
+    while (fi <= k) : (fi += 1) {
+        const xp = try alloc.alloc(Rat, 1);
+        xp[0] = if (fi < mod.len) try ratClone(&mod[fi]) else try ratFromInt(alloc, 0);
+        ft[fi] = xp;
+    }
+    defer {
+        for (ft) |*c| polyFree(alloc, c.*);
+        alloc.free(ft);
+    }
+    var normp = try resT(alloc, st[0..st_len], ft);
+    errdefer polyFree(alloc, normp);
+    if ((st_len - 1) * k % 2 == 1) for (normp) |*cc| cc.n.negate();
+    // Q = Norm/S in K[x]: lift Norm's coeffs to const K elems, divide.
+    const nl = try alloc.alloc([]Rat, normp.len);
+    var ni: usize = 0;
+    errdefer {
+        for (nl[0..ni]) |*c| polyFree(alloc, c.*);
+        alloc.free(nl);
+    }
+    while (ni < normp.len) : (ni += 1) nl[ni] = try kConst(alloc, &normp[ni]);
+    defer {
+        for (nl) |*c| polyFree(alloc, c.*);
+        alloc.free(nl);
+    }
+    const qdm = try kpDivMod(alloc, mod, nl, s);
+    const q = switch (qdm) {
+        .factor => |g| return .{ .factor = g },
+        .dm => |d| blk: {
+            if (!kpIsZero(d.r)) @panic("std/sym: rsum norm not divisible by S — construction bug");
+            kpFree(alloc, d.r);
+            break :blk d.q;
+        },
+    };
+    defer kpFree(alloc, q);
+    // E = t * dS/dx * Q in K[x]: (dS/dx)[j-1] = j * s[j].
+    const ds = try alloc.alloc([]Rat, sd);
+    var di: usize = 0;
+    errdefer {
+        for (ds[0..di]) |*c| polyFree(alloc, c.*);
+        alloc.free(ds);
+    }
+    var xi2: usize = 1;
+    while (xi2 <= sd) : (xi2 += 1) {
+        const ce = try alloc.alloc(Rat, s[xi2].len);
+        var ci: usize = 0;
+        errdefer {
+            for (ce[0..ci]) |*r| ratDeinit(r);
+            alloc.free(ce);
+        }
+        while (ci < s[xi2].len) : (ci += 1) ce[ci] = try ratMulInt(alloc, &s[xi2][ci], @intCast(xi2));
+        ds[di] = ce;
+        di += 1;
+    }
+    defer {
+        for (ds) |*c| polyFree(alloc, c.*);
+        alloc.free(ds);
+    }
+    const tk_e = try alloc.alloc([]Rat, 1);
+    tk_e[0] = try alloc.alloc(Rat, 2);
+    tk_e[0][0] = try ratFromInt(alloc, 0);
+    tk_e[0][1] = try ratFromInt(alloc, 1);
+    defer {
+        polyFree(alloc, tk_e[0]);
+        alloc.free(tk_e);
+    }
+    const e1 = try kpMul(alloc, mod, tk_e, ds);
+    defer kpFree(alloc, e1);
+    const ee = try kpMul(alloc, mod, e1, q);
+    defer kpFree(alloc, ee);
+    // numerator P(x): P[i] = Tr(E[i]); denominator = Norm.
+    const ps = try newtonSums(alloc, mod);
+    defer polyFree(alloc, ps);
+    var pn = try alloc.alloc(Rat, ee.len);
+    var pi: usize = 0;
+    errdefer {
+        for (pn[0..pi]) |*r| ratDeinit(r);
+        alloc.free(pn);
+    }
+    while (pi < ee.len) : (pi += 1) pn[pi] = try kTrace(alloc, ee[pi], ps);
+    const chk = try fracNorm(alloc, pn, normp);
+    normp = undefined;
+    pn = undefined;
+    return .{ .built = .{ .s = s, .chk = chk } };
+}
+
+// rsum payload: f coeffs csv ascending in t, then ';', then S's
+// x-groups '|'-joined, each the K elem's coeffs csv ascending in t.
+fn rsumEmit(alloc: std.mem.Allocator, mod: []const Rat, s: KP, text: *std.ArrayList(u8)) !void {
+    try text.appendSlice(alloc, "+(rsum(");
+    for (mod[0..polyDegIdx(mod) + 1], 0..) |*c, i| {
+        if (i > 0) try text.append(alloc, ',');
+        const cs = try ratToString(alloc, c);
+        defer alloc.free(cs);
+        try text.appendSlice(alloc, cs);
+    }
+    try text.append(alloc, ';');
+    for (s[0..kpDegIdx(s) + 1], 0..) |*c, i| {
+        if (i > 0) try text.append(alloc, '|');
+        for (c.*[0..polyDegIdx(c.*) + 1], 0..) |*r, j| {
+            if (j > 0) try text.append(alloc, ',');
+            const rs = try ratToString(alloc, r);
+            defer alloc.free(rs);
+            try text.appendSlice(alloc, rs);
+        }
+    }
+    try text.appendSlice(alloc, "))");
+}
+
+// Cofactor dispatch: deg-2 -> quadLane; deg in {3,4} -> S over K, then
+// one rsum emission; deg >= 5 -> named refusal. A zero divisor in the
+// K[x] gcd splits the modulus (Davenport-Trager) and recurses per
+// factor. The deg-5 wall is a budget bound, not a math gap: the K[x]
+// Euclid inverts through algInvPoly's naive rational extended gcd,
+// whose intermediate fractions explode at deg >= 5 — a subresultant
+// PRS lifts the wall.
+fn cofactorLane(alloc: std.mem.Allocator, mod_in: []const Rat, C: []const Rat, D: []const Rat, dD: []const Rat, text: *std.ArrayList(u8), check: *Frac, depth: usize) !?[]u8 {
+    if (depth > 32) @panic("std/sym: cofactor split did not terminate");
+    const mod = try polyMonic(alloc, mod_in);
+    defer polyFree(alloc, mod);
+    const fd = polyDegIdx(mod);
+    if (fd == 1) @panic("std/sym: degree-1 residue cofactor missed by rational enumeration");
+    if (fd == 2) {
+        var v = try ratClone(&mod[0]);
+        defer ratDeinit(&v);
+        var u = try ratClone(&mod[1]);
+        defer ratDeinit(&u);
+        try quadLane(alloc, &u, &v, C, D, dD, text, check);
+        return null;
+    }
+    if (fd >= 5) {
+        return try std.fmt.allocPrint(alloc, "residue-cofactor-deg{d}-beyond-extgcd-bound(not-constructed)", .{fd});
+    }
+    const built = try rsumBuild(alloc, mod, C, D, dD);
+    switch (built) {
+        .factor => |g| {
+            defer polyFree(alloc, g);
+            const dm = try polyDivMod(alloc, mod, g);
+            defer polyFree(alloc, dm.r);
+            if (!polyIsZero(dm.r)) @panic("std/sym: zero-divisor factor does not split modulus");
+            defer polyFree(alloc, dm.q);
+            if (try cofactorLane(alloc, g, C, D, dD, text, check, depth + 1)) |note| return note;
+            if (try cofactorLane(alloc, dm.q, C, D, dD, text, check, depth + 1)) |note| return note;
+        },
+        .built => |bb| {
+            defer kpFree(alloc, bb.s);
+            defer {
+                var cf = bb.chk;
+                fracFree(alloc, &cf);
+            }
+            if (kpDegIdx(bb.s) == 0) return null;
+            try rsumEmit(alloc, mod, bb.s, text);
+            const ncheck = try fracAdd(alloc, check, &bb.chk);
+            fracFree(alloc, check);
+            check.* = ncheck;
+        },
+    }
+    return null;
+}

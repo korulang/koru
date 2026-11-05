@@ -1,0 +1,87 @@
+// ============================================================================
+// std/sym part: canon — canonical sexpr rendering of node trees.
+// Joined via `~part canon` in sym.kz; merged into the module at load.
+// ============================================================================
+
+// ============================================================================
+// Canon render
+// ============================================================================
+
+const ATOMS = [_][]const u8{ "π", "e", "φ", "x", "i" };
+
+fn canonWrite(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(u8)) !void {
+    return canonWriteG(alloc, n, null, out);
+}
+
+fn canonWriteG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg, out: *std.ArrayList(u8)) !void {
+    switch (n.kind) {
+        .dec => {
+            const s = try decToString(alloc, &n.dec);
+            defer alloc.free(s);
+            try out.appendSlice(alloc, s);
+        },
+        .atom => {
+            if (n.atom < 5) {
+                try out.appendSlice(alloc, ATOMS[n.atom]);
+            } else if (greg) |g| {
+                try out.appendSlice(alloc, "g(");
+                try out.appendSlice(alloc, g.names.items[n.atom - 5]);
+                try out.append(alloc, ')');
+            } else {
+                var buf: [16]u8 = undefined;
+                const ds = std.fmt.bufPrint(&buf, "g#{d}", .{n.atom - 5}) catch unreachable;
+                try out.appendSlice(alloc, ds);
+            }
+        },
+        .sq => {
+            try out.appendSlice(alloc, "√(");
+            try canonWriteG(alloc, n.kid, greg, out);
+            try out.append(alloc, ')');
+        },
+        .inv => {
+            try out.appendSlice(alloc, "inv(");
+            try canonWriteG(alloc, n.kid, greg, out);
+            try out.append(alloc, ')');
+        },
+        .log => {
+            try out.appendSlice(alloc, "log(");
+            try canonWriteG(alloc, n.kid, greg, out);
+            try out.append(alloc, ')');
+        },
+        .atan => {
+            try out.appendSlice(alloc, "atan(");
+            try canonWriteG(alloc, n.kid, greg, out);
+            try out.append(alloc, ')');
+        },
+        .exp => {
+            try out.appendSlice(alloc, "exp(");
+            try canonWriteG(alloc, n.kid, greg, out);
+            try out.append(alloc, ')');
+        },
+        .rsum => {
+            try out.appendSlice(alloc, "rsum(");
+            try out.appendSlice(alloc, n.aux);
+            try out.append(alloc, ')');
+        },
+        .add, .mul => {
+            try out.append(alloc, '(');
+            const sep: []const u8 = if (n.kind == .add) "+" else "*";
+            for (n.kids, 0..) |k, i| {
+                if (i > 0) try out.appendSlice(alloc, sep);
+                try canonWriteG(alloc, k, greg, out);
+            }
+            try out.append(alloc, ')');
+        },
+    }
+}
+
+fn canonOf(alloc: std.mem.Allocator, n: *const SNode) ![]u8 {
+    return canonOfG(alloc, n, null);
+}
+
+fn canonOfG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg) ![]u8 {
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    try canonWriteG(alloc, n, greg, &out);
+    return out.toOwnedSlice(alloc);
+}

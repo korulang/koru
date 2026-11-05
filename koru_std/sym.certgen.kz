@@ -6,9 +6,9 @@
 //   recWrite, certClosure).
 //
 // cert-of derives the ODE STRUCTURALLY — each rule a math identity, no
-// series witness. Lean coverage is narrower than this file:
-// HolonomicClosure.lean proves order-1 product, constant-rate sum, and
-// integral_closure_shift; the general m+n elimination is zig-only:
+// series witness. Lean coverage matches: HolonomicClosureGeneral.lean
+// proves arbitrary-order sum and product closure (the same reduction
+// certClosure executes); the remaining rules are zig-only:
 //   dec        -> f' = 0
 //   x          -> x f' - f = 0
 //   a + b      -> certClosure sum
@@ -25,7 +25,7 @@
 // under-determined carrying the (unpackageable) rec for diagnostics.
 // ============================================================================
 
-const CertgenErr = error{ InvHighOrder, SqrtNonPoly, LogNonPoly, AtanNonPoly, ExpNonPoly };
+const CertgenErr = error{ InvHighOrder, SqrtNonPoly, LogNonPoly, AtanNonPoly, ExpNonPoly, RsumUnsupported };
 
 fn biSlice(alloc: std.mem.Allocator, vals: []const i64) ![]BI {
     const out = try alloc.alloc(BI, vals.len);
@@ -176,7 +176,7 @@ fn polyOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!?[]Rat {
             }
             return acc;
         },
-        .sq, .inv, .log, .atan, .exp => return null,
+        .sq, .inv, .log, .atan, .exp, .rsum => return null,
     }
 }
 
@@ -317,6 +317,7 @@ fn certOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!OdeCert {
             const ips = try intPolysFromRats(alloc, &rat_polys);
             return .{ .order = 1, .deg = certDegOf(ips), .polys = ips };
         },
+        .rsum => return CertgenErr.RsumUnsupported,
     }
 }
 
@@ -501,7 +502,8 @@ fn cserWrite(alloc: std.mem.Allocator, total: usize, coeffs: []const Rat, ode_te
 // UNRESOLVED (named bound/evidence). Rational integrands run the real
 // Hermite + Rothstein–Trager lane below: logs and arctans ARE constructed
 // over Q and degree-2 residue fields (no i — quadratic disc<0 emits a
-// real atan); cofactor degree >=3 names the missing algebraic layer.
+// real atan); cofactors of degree 3/4 emit root-sum rsum nodes via the
+// sym.rsum lane; degree >=5 names its bound.
 // Non-rational integrands still fall to the holonomic lane.
 // ============================================================================
 
@@ -581,7 +583,7 @@ fn ratFuncOfNode(alloc: std.mem.Allocator, n: *const SNode) anyerror!?Frac {
             if (fracIsZero(&kf)) return null;
             return try fracInv(alloc, &kf);
         },
-        .sq, .log, .atan, .exp => return null,
+        .sq, .log, .atan, .exp, .rsum => return null,
     }
 }
 
@@ -760,8 +762,10 @@ fn fracText(alloc: std.mem.Allocator, out: *std.ArrayList(u8), f: *const Frac) !
 //   * rational root c        -> c*log(gcd(C - cD', D))
 //   * irreducible t^2+ut+v, disc>0 -> conjugate real pair (rho±w)*log(A±wB)
 //   * irreducible t^2+ut+v, disc<0 -> rho*log(A^2+w^2 B^2) + 2w*atan(A/(wB))
-//   * residue cofactor deg>=3   -> refused by name (algebraic coeffs
-//     beyond quadratics need a real algebraic-number layer we don't have)
+//   * residue cofactor deg 3/4 -> rsum node via the K[x] gcd over
+//     Q[t]/(f) (zero divisors split the modulus; see sym.rsum.kz)
+//   * residue cofactor deg>=5   -> refused by name (budget bound: the
+//     extended gcd's rational arithmetic explodes before it returns)
 // Every constructed term is derivative-checked: the Frac-sum of the term
 // derivatives must equal C/D exactly, before anything is emitted.
 // ============================================================================
@@ -1499,18 +1503,7 @@ fn logPartConstruct(alloc: std.mem.Allocator, C: []const Rat, D: []const Rat, te
     }
     const rd = polyDegIdx(rem);
     if (rd == 0) return null;
-    if (rd == 1) @panic("std/sym: degree-1 residue cofactor missed by rational enumeration");
-    if (rd > 2) {
-        return try std.fmt.allocPrint(alloc, "residue-factor-deg{d}-needs-algebraic-coeffs(not-constructed)", .{rd});
-    }
-    var lc = try ratClone(&rem[2]);
-    defer ratDeinit(&lc);
-    var v = try ratDiv(alloc, &rem[0], &lc);
-    defer ratDeinit(&v);
-    var u = try ratDiv(alloc, &rem[1], &lc);
-    defer ratDeinit(&u);
-    try quadLane(alloc, &u, &v, C, D, dD, text, check);
-    return null;
+    return try cofactorLane(alloc, rem, C, D, dD, text, check, 0);
 }
 
 // ============ Risch exp-monomial: F*exp(G) -> R*exp(G) ============
@@ -1534,6 +1527,7 @@ fn nodeHasVar(n: *const SNode) bool {
             return false;
         },
         .sq, .inv, .log, .atan, .exp => return nodeHasVar(n.kid),
+        .rsum => return true, // the residue poly S(x,t) carries x
     }
 }
 
@@ -2165,6 +2159,7 @@ fn decideIntegralInner(alloc: std.mem.Allocator, a: []const u8, max_order: i64, 
             CertgenErr.LogNonPoly => structural_refusal = "log-nonpoly",
             CertgenErr.AtanNonPoly => structural_refusal = "atan-nonpoly",
             CertgenErr.ExpNonPoly => structural_refusal = "exp-nonpoly",
+            CertgenErr.RsumUnsupported => structural_refusal = "rsum-payload-opaque",
             else => @panic("std/sym:decide-integral"),
         }
         // discovery fallback within declared bounds (witness-grade seed)

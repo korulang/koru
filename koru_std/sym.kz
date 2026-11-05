@@ -50,6 +50,8 @@
 ~part certcomp
 ~part certreg
 ~part certgen
+~part rsum
+~part canon
 ~part rel
 ~part alg
 
@@ -307,7 +309,7 @@ fn decSqrtExact(alloc: std.mem.Allocator, d: *const Dec) !?Dec {
 // internal only. Children are heap SNodes owned by their parent.
 // ============================================================================
 
-const NodeKind = enum { dec, atom, sq, inv, log, atan, exp, add, mul };
+const NodeKind = enum { dec, atom, sq, inv, log, atan, exp, add, mul, rsum };
 
 const SNode = struct {
     kind: NodeKind,
@@ -315,6 +317,10 @@ const SNode = struct {
     atom: u8 = 0,                    // kind == .atom: 0=pi, 1=e, 2=phi, 3=x, 4=i; >=5 named generators
     kids: []*SNode = &.{},           // kind == .add/.mul
     kid: *SNode = undefined,         // kind == .sq/.inv/.log/.atan/.exp
+    aux: []u8 = &.{},                // kind == .rsum: "f0,f1,...;s00,s01,...|s10,..." —
+                                     // sum over roots alpha of f(t) of alpha*log(S(x,alpha));
+                                     // f's coeffs ascend in t, S's |-groups ascend in x
+                                     // (each a t-poly in the residue ring Q[t]/f)
 };
 
 fn nodeNew(alloc: std.mem.Allocator, kind: NodeKind) !*SNode {
@@ -355,6 +361,7 @@ fn nodeFree(alloc: std.mem.Allocator, n: *SNode) void {
             alloc.free(n.kids);
         },
         .sq, .inv, .log, .atan, .exp => nodeFree(alloc, n.kid),
+        .rsum => alloc.free(n.aux),
         else => {},
     }
     alloc.destroy(n);
@@ -365,6 +372,7 @@ fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
         .dec => return nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
         .atom => return nodeAtom(alloc, n.atom),
         .sq, .inv, .log, .atan, .exp => return nodeUnary(alloc, n.kind, try nodeClone(alloc, n.kid)),
+        .rsum => return nodeRsum(alloc, n.aux),
         .add, .mul => {
             const kids = try alloc.alloc(*SNode, n.kids.len);
             var built: usize = 0;
@@ -381,83 +389,6 @@ fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
     }
 }
 
-// ============================================================================
-// Canon render
-// ============================================================================
-
-const ATOMS = [_][]const u8{ "π", "e", "φ", "x", "i" };
-
-fn canonWrite(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(u8)) !void {
-    return canonWriteG(alloc, n, null, out);
-}
-
-fn canonWriteG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg, out: *std.ArrayList(u8)) !void {
-    switch (n.kind) {
-        .dec => {
-            const s = try decToString(alloc, &n.dec);
-            defer alloc.free(s);
-            try out.appendSlice(alloc, s);
-        },
-        .atom => {
-            if (n.atom < 5) {
-                try out.appendSlice(alloc, ATOMS[n.atom]);
-            } else if (greg) |g| {
-                try out.appendSlice(alloc, "g(");
-                try out.appendSlice(alloc, g.names.items[n.atom - 5]);
-                try out.append(alloc, ')');
-            } else {
-                var buf: [16]u8 = undefined;
-                const ds = std.fmt.bufPrint(&buf, "g#{d}", .{n.atom - 5}) catch unreachable;
-                try out.appendSlice(alloc, ds);
-            }
-        },
-        .sq => {
-            try out.appendSlice(alloc, "√(");
-            try canonWriteG(alloc, n.kid, greg, out);
-            try out.append(alloc, ')');
-        },
-        .inv => {
-            try out.appendSlice(alloc, "inv(");
-            try canonWriteG(alloc, n.kid, greg, out);
-            try out.append(alloc, ')');
-        },
-        .log => {
-            try out.appendSlice(alloc, "log(");
-            try canonWriteG(alloc, n.kid, greg, out);
-            try out.append(alloc, ')');
-        },
-        .atan => {
-            try out.appendSlice(alloc, "atan(");
-            try canonWriteG(alloc, n.kid, greg, out);
-            try out.append(alloc, ')');
-        },
-        .exp => {
-            try out.appendSlice(alloc, "exp(");
-            try canonWriteG(alloc, n.kid, greg, out);
-            try out.append(alloc, ')');
-        },
-        .add, .mul => {
-            try out.append(alloc, '(');
-            const sep: []const u8 = if (n.kind == .add) "+" else "*";
-            for (n.kids, 0..) |k, i| {
-                if (i > 0) try out.appendSlice(alloc, sep);
-                try canonWriteG(alloc, k, greg, out);
-            }
-            try out.append(alloc, ')');
-        },
-    }
-}
-
-fn canonOf(alloc: std.mem.Allocator, n: *const SNode) ![]u8 {
-    return canonOfG(alloc, n, null);
-}
-
-fn canonOfG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg) ![]u8 {
-    var out = std.ArrayList(u8){};
-    errdefer out.deinit(alloc);
-    try canonWriteG(alloc, n, greg, &out);
-    return out.toOwnedSlice(alloc);
-}
 
 // ============================================================================
 // Parser — user spelling to a raw tree, then normalize.
@@ -673,6 +604,7 @@ fn parseFactor(c: *ParseCtx) anyerror!*SNode {
         c.i += 1;
         return nodeAtom(c.alloc, 4);
     }
+    if (cp == 'r') return parseRsumFactor(c);
     return error.Bad;
 }
 
@@ -1127,6 +1059,7 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             }
             return nodeUnary(alloc, .exp, inner);
         },
+        .rsum => return nodeClone(alloc, n),
         .inv => {
             const inner = try norm(alloc, n.kid);
             var inner_live = true;
@@ -1882,6 +1815,7 @@ fn deriveNodeG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg) an
             }
             return nodeList(alloc, .mul, kids_slice);
         },
+        .rsum => return error.Opaque,
         .atan => {
             const dk = try deriveNodeG(alloc, n.kid, greg);
             var dk_live = true;
