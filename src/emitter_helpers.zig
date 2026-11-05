@@ -1408,7 +1408,35 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool, needs_
     try emitter.write("    const vtable = @import(\"std\").mem.Allocator.VTable{ .alloc = bareAlloc, .resize = bareResize, .remap = bareRemap, .free = bareFree };\n");
     try emitter.write("    const allocator = @import(\"std\").mem.Allocator{ .ptr = undefined, .vtable = &vtable };\n");
     try emitter.write("};\n");
+    // Leak-report mode: KORU_LEAK_REPORT=1 at compile time swaps the backing to
+    // DebugAllocator (per-site alloc tracking) and starts a watch thread —
+    // servers never reach koru_leak_check's exit hook, so the report has to
+    // come out while the process is alive.
+    const leak_mode = std.posix.getenv("KORU_LEAK_REPORT") != null;
     try emitter.write("const __koru_backing = if (@import(\"builtin\").link_libc) @import(\"std\").heap.c_allocator else if (@import(\"builtin\").os.tag == .freestanding and !@import(\"builtin\").cpu.arch.isWasm()) __koru_bare.allocator else @import(\"std\").heap.page_allocator;\n");
+    try emitter.write(if (leak_mode) "const __koru_leak_mode = true;\n" else "const __koru_leak_mode = false;\n");
+    try emitter.write("var __koru_gpa: @import(\"std\").heap.DebugAllocator(.{ .stack_trace_frames = 16 }) = .init;\n");
+    try emitter.write("fn __koruBacking() @import(\"std\").mem.Allocator {\n");
+    try emitter.write("    if (comptime __koru_leak_mode) return __koru_gpa.allocator();\n");
+    try emitter.write("    return __koru_backing;\n");
+    try emitter.write("}\n");
+    try emitter.write("var __koru_leak_watch_started: @import(\"std\").atomic.Value(bool) = .init(false);\n");
+    try emitter.write("fn __koru_leak_watch_maybe_start() void {\n");
+    try emitter.write("    if (comptime !__koru_leak_mode) return;\n");
+    try emitter.write("    if (__koru_leak_watch_started.swap(true, .acq_rel)) return;\n");
+    try emitter.write("    _ = @import(\"std\").Thread.spawn(.{}, __koru_leak_watch, .{}) catch {};\n");
+    try emitter.write("}\n");
+    try emitter.write("fn __koru_leak_watch() void {\n");
+    try emitter.write("    var tick: usize = 0;\n");
+    try emitter.write("    while (true) : (tick += 1) {\n");
+    try emitter.write("        @import(\"std\").Thread.sleep(5 * @import(\"std\").time.ns_per_s);\n");
+    try emitter.write("        @import(\"std\").debug.print(\"[koru-leak] outstanding allocs: {}\\n\", .{__koru_leak_count.load(.acquire)});\n");
+    try emitter.write("        if (tick % 12 == 11) {\n");
+    try emitter.write("            @import(\"std\").debug.print(\"[koru-leak] GPA scan — sites still holding allocs:\\n\", .{});\n");
+    try emitter.write("            _ = __koru_gpa.detectLeaks();\n");
+    try emitter.write("        }\n");
+    try emitter.write("    }\n");
+    try emitter.write("}\n");
     try emitter.write("var __koru_leak_count: @import(\"std\").atomic.Value(usize) = .init(0);\n");
     // Fork/join pool: [parallel]-marked calls queue as WaitGroup tasks on a
     // lazily-initialized worker pool (µs-cost queued work, never an OS
@@ -1436,24 +1464,25 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool, needs_
     try emitter.write("    return &__koru_par_pool;\n}\n");
     try emitter.write("fn __koru_alloc(ctx: *anyopaque, len: usize, alignment: @import(\"std\").mem.Alignment, ret_addr: usize) ?[*]u8 {\n");
     try emitter.write("    _ = ctx;\n");
-    try emitter.write("    const r = __koru_backing.rawAlloc(len, alignment, ret_addr);\n");
-    try emitter.write("    if (comptime @import(\"builtin\").mode == .Debug) {\n");
+    try emitter.write("    __koru_leak_watch_maybe_start();\n");
+    try emitter.write("    const r = __koruBacking().rawAlloc(len, alignment, ret_addr);\n");
+    try emitter.write("    if (comptime @import(\"builtin\").mode == .Debug or __koru_leak_mode) {\n");
     try emitter.write("        if (r != null) _ = __koru_leak_count.fetchAdd(1, .monotonic);\n");
     try emitter.write("    }\n");
     try emitter.write("    return r;\n");
     try emitter.write("}\n");
     try emitter.write("fn __koru_resize(ctx: *anyopaque, memory: []u8, alignment: @import(\"std\").mem.Alignment, new_len: usize, ret_addr: usize) bool {\n");
     try emitter.write("    _ = ctx;\n");
-    try emitter.write("    return __koru_backing.rawResize(memory, alignment, new_len, ret_addr);\n");
+    try emitter.write("    return __koruBacking().rawResize(memory, alignment, new_len, ret_addr);\n");
     try emitter.write("}\n");
     try emitter.write("fn __koru_remap(ctx: *anyopaque, memory: []u8, alignment: @import(\"std\").mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {\n");
     try emitter.write("    _ = ctx;\n");
-    try emitter.write("    return __koru_backing.rawRemap(memory, alignment, new_len, ret_addr);\n");
+    try emitter.write("    return __koruBacking().rawRemap(memory, alignment, new_len, ret_addr);\n");
     try emitter.write("}\n");
     try emitter.write("fn __koru_free(ctx: *anyopaque, memory: []u8, alignment: @import(\"std\").mem.Alignment, ret_addr: usize) void {\n");
     try emitter.write("    _ = ctx;\n");
-    try emitter.write("    __koru_backing.rawFree(memory, alignment, ret_addr);\n");
-    try emitter.write("    if (comptime @import(\"builtin\").mode == .Debug) {\n");
+    try emitter.write("    __koruBacking().rawFree(memory, alignment, ret_addr);\n");
+    try emitter.write("    if (comptime @import(\"builtin\").mode == .Debug or __koru_leak_mode) {\n");
     try emitter.write("        _ = __koru_leak_count.fetchSub(1, .monotonic);\n");
     try emitter.write("    }\n");
     try emitter.write("}\n");
