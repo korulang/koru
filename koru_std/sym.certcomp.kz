@@ -728,9 +728,9 @@ fn certZeroLaw(alloc: std.mem.Allocator) !OdeCert {
 // exact dependency over Q(x), general over orders m,n (via=sum/prod).
 // NOT minimal-order: cert-of(1-x) emits order 2 where order 1 holds
 // (concepts/frag-a-companion-basis-elimination-can-emit-a-nonminimal-ode).
-// Lean coverage is narrower than this implementation: HolonomicClosure.lean
-// proves order-1 product, constant-rate sum, and integral_closure_shift;
-// the general m+n elimination has no Lean mirror.
+// Lean now mirrors this generality: HolonomicClosureGeneral.lean proves
+// isHolonomic_add (order <= m+n) and isHolonomic_mul (order <= m*n);
+// HolonomicClosure.lean keeps the special cases + integral_closure_shift.
 fn certClosure(alloc: std.mem.Allocator, ca: *const OdeCert, cb: *const OdeCert, mode: ClMode) !OdeCert {
     if (ca.order == 0) {
         if (mode == .sum) return certClone(alloc, cb);
