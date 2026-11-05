@@ -2859,15 +2859,36 @@ pub const PhantomSemanticChecker = struct {
         const binding_name = cont.binding orelse "_";
         {
             for (branch_payload.?.fields) |field| {
+                // A destructure arm (`| compressed { data }`) peels the
+                // payload's fields onto scalar bindings — the obligation
+                // rides the LOCAL name the author wrote (`data`), never
+                // `_.data`: without the remap the scalar is a plain binding,
+                // `io:free(data)` sees "no live obligation" (KORU030), and
+                // the real debt sits under the discard name where the exit
+                // check cannot see it — the runtime leak counter was the
+                // only thing that ever caught it. Fields the destructure
+                // does not peel keep `binding.field` (an unreachable key —
+                // the ordinary guaranteed-leak rule).
+                const destructured_path = blk: {
+                    if (cont.destructure.len > 0) {
+                        for (cont.destructure) |df| {
+                            if (std.mem.indexOfScalar(u8, df.path, '.') == null and
+                                std.mem.eql(u8, df.path, field.name) and
+                                !std.mem.eql(u8, df.name, "_"))
+                            {
+                                break :blk try self.allocator.dupe(u8, df.name);
+                            }
+                        }
+                    }
+                    break :blk null;
+                };
+                const is_identity = std.mem.eql(u8, field.name, "__type_ref");
+                const field_path = destructured_path orelse if (is_identity)
+                    try self.allocator.dupe(u8, binding_name)
+                else
+                    try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ binding_name, field.name });
+                defer self.allocator.free(field_path);
                 if (field.phantom) |phantom_str| {
-                    // For identity branches (__type_ref), use just the binding name
-                    // since the value IS the binding. For struct branches, use binding.field
-                    const is_identity = std.mem.eql(u8, field.name, "__type_ref");
-                    const field_path = if (is_identity)
-                        try self.allocator.dupe(u8, binding_name)
-                    else
-                        try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ binding_name, field.name });
-                    defer self.allocator.free(field_path);
 
                     // Canonicalize phantom state using event's qualified module name
                     const module_for_canon = event_module orelse event_decl.module;
@@ -2892,15 +2913,9 @@ pub const PhantomSemanticChecker = struct {
                     // Phantom-less payload — record the base type on the
                     // separate base_types table (registry rung 1) so the
                     // nominal-distinctness check (validateArgument's no-phantom
-                    // gate) can compare it against the expected param. Mirrors
-                    // the phantom branch's field_path shape exactly.
-                    const is_identity = std.mem.eql(u8, field.name, "__type_ref");
-                    const field_path = if (is_identity)
-                        try self.allocator.dupe(u8, binding_name)
-                    else
-                        try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ binding_name, field.name });
-                    defer self.allocator.free(field_path);
-
+                    // gate) can compare it against the expected param. The
+                    // field_path is the hoisted destructure/binding key the
+                    // phantom branch just spelled.
                     const module_for_canon = event_module orelse event_decl.module;
                     const canonical_base_type = try self.canonicalizeBaseType(
                         field.type,
