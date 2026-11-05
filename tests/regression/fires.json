@@ -112,6 +112,20 @@
         "novel": true
       },
       "note": "3/3 landed: string:cmp (eeee53fb4), string-map:del+map:del (8837646df), string:read (merge 94d9567fb). Each closed a gap the demonstrations surfaced days earlier \u2014 self-feeding loop proven. Residuals: '<'-on-strings NEEDS_RULING; split(*String) raw-Zig-error not Koru diagnostic; 820_006 -1 respell owed."
+    },
+    {
+      "generator": "koru-assay",
+      "ts": "2026-11-04",
+      "seat": "snow-yarrow",
+      "contestants": 3,
+      "yield": {
+        "landed": 3,
+        "evaporated": 0,
+        "pins_added": 0,
+        "pins_greened": 0,
+        "novel": true
+      },
+      "note": "first assay fire \u2014 3/3 maps judged-pass (jq->JSON DOM blocker, capability-manifests->compiler feature, pg->zero blockers verified by full compile); catalog docs/assays/ 0->3; 2 commission candidates queued"
     }
   ],
   "end_of_road": {
