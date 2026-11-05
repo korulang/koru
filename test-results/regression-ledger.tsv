@@ -474,3 +474,6 @@
 2026-11-04T00:21:00.483Z	3cebb7c36	fixed	110_008_dir_import_no_pub
 2026-11-04T00:21:00.483Z	3cebb7c36	fixed	110_012_auto_import_parent
 2026-11-04T00:21:00.483Z	3cebb7c36	fixed	8211_bare_proc_call_site_fails
+2026-11-05T13:14:28.775Z	2072d459b	fixed	643_001_gzip_body_shapes
+2026-11-05T13:14:28.775Z	2072d459b	fixed	643_002_gzip_deterministic
+2026-11-05T13:14:28.775Z	2072d459b	fixed	643_003_gzip_multiblock
