@@ -1,0 +1,6 @@
+name: wall-verified
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a reported crash/wall was reproduced-or-refuted against current main and closed with pins on both sides — fired when verification replaces suspicion (zip-sigabrt: no SIGABRT, abort surface already closed by wildcard-capture)
