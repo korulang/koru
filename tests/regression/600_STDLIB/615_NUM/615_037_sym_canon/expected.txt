@@ -11,3 +11,6 @@ inv(3e0)
 commuted: same
 (π*π)
 1e0
+x
+(x*x)
+log(x)

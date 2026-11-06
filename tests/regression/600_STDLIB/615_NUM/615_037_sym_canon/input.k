@@ -66,3 +66,15 @@ std/sym:lit(π)
         | div-zero |> std/io:print.ln("dz")
     | bad |> std/io:print.ln("bad2") |> std/sym:free(n: a)
 | bad |> std/io:print.ln("bad")
+
+std/sym:lit(log(exp(x)))
+| exact a |> std/io:print.ln("{{ a:s }}") |> std/sym:free(n: a)
+| bad |> std/io:print.ln("bad")
+
+std/sym:lit(log(exp(x*x)))
+| exact a |> std/io:print.ln("{{ a:s }}") |> std/sym:free(n: a)
+| bad |> std/io:print.ln("bad")
+
+std/sym:lit(log(exp(log(x))))
+| exact a |> std/io:print.ln("{{ a:s }}") |> std/sym:free(n: a)
+| bad |> std/io:print.ln("bad")

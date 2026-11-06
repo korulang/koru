@@ -1,14 +1,16 @@
 ---
 type: belief
 id: frag-an-algebraic-pre-step-substitutes-the-variable-not-the-element
-provenance: sym B9/B9b/B10, 2026-11 — after the dlog lane exhausted
+provenance: sym B9/B9b/B10/B10c, 2026-11 — after the dlog lane exhausted
   per-element substitution, the remaining "arg-nonrational" refusals
   (atan(sqrt x), e^{sqrt x}, log(sqrt x)) turned out to need a
   different move entirely: substitute the variable, not an element.
   B9b added the complementary canon fold the lane's output spelling
   made visible.  B10 added the family's second substitution —
   Euler's first — for the sqrt(x^2+c) radicand the B9 boundary
-  paragraph had named as out of reach.
+  paragraph had named as out of reach.  B10c closed the inverse-law
+  pair: log(exp u) -> u, the mirror of the exp(log u) -> u fold that
+  had been folding silently all along.
 ts: 2026-11-05
 tags: [koru, stdlib, sym, risch, integration, substitution, algebraic]
 ---
@@ -70,6 +72,13 @@ sees two canons for one element. The second is the log fold above —
 and the honest observation is that *canon gaps masquerade as
 capability gaps*: "log(√x) is non-rational" was never a lane
 boundary, it was a missing rewrite one level below the lanes.
+B10c is the same lesson once removed: the tower probe surfaced
+log(e^x)^2/2 as a *correct* but un-folded answer — log(exp u) -> u
+had never been written even though exp(log u) -> u folded from the
+start. Exactness note: the fold is exact on the real reading (the
+complex off-strip case picks up a 2*pi*i winding term) — the same
+branch commitment exp(log u) -> u already made, stated rather than
+absorbed silently.
 
 B10 adds one more lesson of the same kind, at the level of the
 substitution itself: **the parameter choice is the output spelling.**
