@@ -59,8 +59,7 @@ fn primHasU(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8, nukey: 
     }
 }
 
-// A polynomial in θ with node coefficients: index i is the coefficient
-// of θ^i, null means zero.
+// Polynomial in θ with node coefficients: c[i] = coeff of θ^i, null = 0.
 const LPoly = []?*SNode;
 
 fn lpFree(alloc: std.mem.Allocator, p: LPoly) void {
@@ -142,10 +141,9 @@ fn lpMul(alloc: std.mem.Allocator, a: LPoly, b: LPoly) !LPoly {
     return p;
 }
 
-// The polynomial-in-θ coefficient list of n, where θ = log(ukey).
-// Null return: a θ sits in a non-polynomial position — inside
-// inv/sq/atan/exp (the rational-in-θ lane is future work — it needs
-// Hermite reduction in the extension, not just the cascade).
+// The polynomial-in-θ coefficient list of n, where θ = tkind(ukey).
+// Null: a θ sits non-polynomially — inside inv/sq/atan/exp (the
+// rational-in-θ lane is future work: Hermite in the extension).
 fn primPolyOf(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8, nukey: ?[]const u8, tkind: NodeKind) anyerror!?LPoly {
     switch (n.kind) {
         .dec, .atom, .rsum => return try lpSingle(alloc, try nodeClone(alloc, n)),
@@ -211,11 +209,10 @@ fn canonIsZero(t: []const u8) bool {
     return std.mem.eql(u8, t, "0") or std.mem.eql(u8, t, "0e0");
 }
 
-// Exact coefficient equality: canonical text first; on a mismatch, both
-// sides are tried as rational functions of x — -x/(x+1) and
-// -1+1/(x+1) canon differently but are the same element of Q(x).  A
-// side that is not rational-in-x (a surviving log/exp leaf) keeps the
-// canon verdict: different text is different.
+// Exact coefficient equality: canon text first; on mismatch both sides
+// are tried as rational functions of x — -x/(x+1) and -1+1/(x+1) canon
+// differently but are one element of Q(x).  A non-rational-in-x side
+// keeps the canon verdict.
 fn coeffNodesEql(alloc: std.mem.Allocator, a: ?*SNode, b: ?*SNode) anyerror!bool {
     if (a == null and b == null) return true;
     if (a == null or b == null) {
@@ -264,10 +261,8 @@ fn primCascade(
     const ukey = try canonOf(alloc, un);
     defer alloc.free(ukey);
     // The parity twin of the argument: atan(-u) = -theta, log(1/u) =
-    // -theta.  Inner lanes (Trager) emit atan(-x) for the negated root;
-    // without the twin the leaf lands in a coefficient and the cascade
-    // assembles a wrong antiderivative that the check catches only as
-    // a panic.
+    // -theta — Trager emits atan(-x); without the twin the leaf lands
+    // in a coefficient and the check panics on a wrong assembly.
     const nkn = blk: {
         if (tkind == .log) {
             const iv = try nodeUnary(alloc, .inv, try nodeClone(alloc, un));
@@ -433,7 +428,13 @@ fn primCascade(
     defer nodeFree(alloc, at0);
     const ann = norm(alloc, at0) catch @panic("std/sym:primmon anti norm");
     defer nodeFree(alloc, ann);
-    const dn = deriveNode(alloc, ann) catch @panic("std/sym:primmon derive");
+    const dn = deriveNode(alloc, ann) catch |e| {
+        if (e == error.Opaque) {
+            lane_extra.* = if (tkind == .log) "log-mono-inner-rsum" else "atan-mono-inner-rsum";
+            return null;
+        }
+        return e;
+    };
     defer nodeFree(alloc, dn);
     const dnn = norm(alloc, dn) catch @panic("std/sym:primmon derive norm");
     defer nodeFree(alloc, dnn);
@@ -490,8 +491,7 @@ fn primLane(
     return null;
 }
 
-// antiderivative text times an optional constant factor, re-canonicalized —
-// shared by the decide-integral lanes' constant-factor re-application.
+// antiderivative text times an optional const factor, re-canonicalized.
 fn antiWithConst(alloc: std.mem.Allocator, anti: []u8, ct: ?[]const u8) ![]u8 {
     const c = ct orelse return anti;
     defer alloc.free(anti);

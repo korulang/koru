@@ -6,3 +6,4 @@ decide(layer=elementary)|antiderivative=((-1e0*x)+(log(x)*x))|note=risch-log-mon
 decide(layer=elementary)|antiderivative=(inv(3e0)*log(x)*log(x)*log(x))|note=risch-log-mono-constructed;checked-exact
 decide(layer=elementary)|antiderivative=((-2e0*log(x)*x)+(2e0*x)+(log(x)*log(x)*x))|note=risch-log-mono-constructed;checked-exact
 nr
+hs:decide(layer=holonomic-special)|note=no-risch-elementary-form-not-constructed;integrand-cert-structural;lane=atan-mono-inner-rsum|integrand=ode(k=1,d=4,via=of)|p0=[0,-2]|p1=[2,0,2,0,1]|antiderivative=ode(k=2,d=4,via=shift)|p0=[0]|p1=[0,-2]|p2=[2,0,2,0,1]

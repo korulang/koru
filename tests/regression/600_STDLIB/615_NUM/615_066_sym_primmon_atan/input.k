@@ -10,6 +10,10 @@
 // case 4: honest refusal — atan^2(x) is non-elementary (dilog).
 // cases 5-7: the log family unchanged through the rename.
 // case 8: log(log x) nested — honest non-rational.
+// case 9: atan(1+x^2) — the inner quartic Trager integral is an rsum;
+//   the assembled antiderivative cannot be re-derived (rsum is opaque
+//   to deriveNode), so the cascade refuses atan-mono-inner-rsum
+//   rather than emit unchecked — a panic before B10b.
 
 import std/io
 import std/sym
@@ -84,6 +88,17 @@ std/sym:lit(((log(x)*log(x))))
     | bad |> std/io:print.ln("bad")
 | bad |> std/io:print.ln("bad-lit")
 std/sym:lit((log(x)+log(log(x))))
+| exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 6)
+    | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
+    | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
+    | unresolved m |> std/io:print.ln("un:{{ m:s }}") |> std/io:free(content: m)
+    | not-holonomic m |> std/io:print.ln("nh:{{ m:s }}") |> std/io:free(content: m)
+    | non-rational |> std/io:print.ln("nr")
+    | non-analytic |> std/io:print.ln("na")
+    | bad |> std/io:print.ln("bad")
+| bad |> std/io:print.ln("bad-lit")
+
+std/sym:lit(atan(1+x*x))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 6)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)

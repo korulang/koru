@@ -1,11 +1,12 @@
 ---
 type: belief
 id: frag-a-primitive-monomial-integrates-by-cascade-not-substitution
-provenance: sym B6/B8, 2026-11 — the log lane was expected to reuse the
-  exp-theta skeleton; the mechanism turned out different, and the
-  difference is the point. The sibling frag's closing sentence is
-  corrected here. B8 confirmed 'primitive' is the real invariant by
-  lifting the lane to atan(u).
+provenance: sym B6/B8/B10b, 2026-11 — the log lane was expected to
+  reuse the exp-theta skeleton; the mechanism turned out different,
+  and the difference is the point. The sibling frag's closing
+  sentence is corrected here. B8 confirmed 'primitive' is the real
+  invariant by lifting the lane to atan(u). B10b found the exact
+  check's reach boundary: rsum.
 ts: 2026-11-05
 tags: [koru, stdlib, sym, risch, integration, log, tower]
 ---
@@ -75,3 +76,19 @@ application over (anti0 + ltxt). The hermiteCheck/fracEql verifications
 cover the un-consted math only; scaling afterward is exact by
 linearity, but the lesson stands: a `checked-exact` tag is only as wide
 as the code path it actually verifies.
+
+B10b sharpened that lesson one level up: the check's reach ends at
+opaque payloads. When an inner coefficient integral resolves through
+Trager's residue-ring lane (atan(1+x^2) -> the quartic x^4+2x^2+2 has
+no Q-factorization), the inner call returns a *certified* rsum term —
+certified by its own trace-arithmetic check, not by deriveNode. But
+the cascade's whole-answer verification re-derives the assembled
+antiderivative, and deriveNode treats .rsum as error.Opaque: certified
+parts compose into a whole the surface cannot re-verify. The lane
+refuses <kind>-mono-inner-rsum rather than emit unchecked — the same
+discipline the substitution lanes applied to rsum payloads they could
+not transform (gsub-anti-rsum, euler-subst-rsum). The boundary is
+verification reach, not capability: the answer x*atan(1+x^2) - rsum
+exists and its pieces are each exact-checked; no honesty class in the
+decider can carry "assembled from certified parts, unverified as a
+whole," and until one exists the refusal is the correct verdict.
