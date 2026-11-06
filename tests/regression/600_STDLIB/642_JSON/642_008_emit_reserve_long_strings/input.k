@@ -13,6 +13,13 @@ proc docs|zig {
     return &.{
         .{ .id = 7, .body = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\\\n\t\x01bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", .note = "ok" },
         .{ .id = 3, .body = "cccccccccccccccccccccccccccccccccccccccc\"dddddddddddddddddddddddddddddddddddddddd", .note = null },
+        // 15 bytes, quote on the last byte — the padded-tail vector check
+        // must still flag it and the per-byte pass must escape it.
+        .{ .id = 11, .body = "ABCDEFGHIJKLMN\"", .note = null },
+        // 17 bytes, control char at index 16 — first tail byte is dirty.
+        .{ .id = 12, .body = "eeeeeeeeeeeeeeee\x01", .note = null },
+        // 40 control bytes — escapes expand ~6x past the v.len + 2 reserve.
+        .{ .id = 13, .body = "\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01", .note = null },
     };
 }
 
