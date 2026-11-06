@@ -53,491 +53,6 @@
     // Helpers live in a container so they can recurse; it re-imports what it
     // needs (fn-scope containers cannot reach fn-scope consts) — same shape
     // as the parse twin.
-    const H = struct {
-        const std2 = @import("std");
-        const ast2 = @import("ast");
-        const astfn = @import("ast_functional");
-        const EH = @import("emitter_helpers");
-
-        // A resolved field type at the write side.
-        const ETy = union(enum) {
-            str,
-            boolean,
-            int: []const u8,
-            float: []const u8,
-            opt: *const ETy,
-            arr: *const ETy,
-            obj: []const EField,
-        };
-
-        const EField = struct { name: []const u8, ty: *const ETy };
-
-        // One `key: value` entry of the record literal, post-resolution.
-        // `expr` is emitted verbatim as Zig when `ty` is set; `lit` is
-        // pre-escaped constant JSON bytes (quotes included for strings);
-        // `sub` is a nested object shape spelled at the call site.
-        const EVal = union(enum) {
-            expr: struct { text: []const u8, ty: *const ETy },
-            lit: []const u8,
-            sub: []const EOut,
-        };
-        const EOut = struct { name: []const u8, val: *const EVal };
-
-        const Ctx = struct {
-            a: std2.mem.Allocator,
-            sfx: []const u8, // site-unique suffix _L_C
-            scope: []const ast2.ScopeBinding,
-            program: *const ast2.Program,
-            invocation: *const ast2.Invocation,
-            n: usize = 0,
-            fail: ?[]const u8 = null,
-        };
-
-        fn failf(ctx: *Ctx, comptime fmt: []const u8, args: anytype) void {
-            if (ctx.fail == null)
-                ctx.fail = std2.fmt.allocPrint(ctx.a, fmt, args) catch "std/json:emit refusal detail OOM";
-        }
-
-        fn dupTy(ctx: *Ctx, ty: ETy) *const ETy {
-            const p = ctx.a.create(ETy) catch unreachable;
-            p.* = ty;
-            return p;
-        }
-
-        fn isIntT(t: []const u8) bool {
-            if (std2.mem.eql(u8, t, "isize") or std2.mem.eql(u8, t, "usize")) return true;
-            if (t.len >= 2 and (t[0] == 'i' or t[0] == 'u')) {
-                for (t[1..]) |ch| {
-                    if (ch < '0' or ch > '9') return false;
-                }
-                return true;
-            }
-            return false;
-        }
-
-        fn isFloatT(t: []const u8) bool {
-            if (t.len >= 2 and t[0] == 'f') {
-                for (t[1..]) |ch| {
-                    if (ch < '0' or ch > '9') return false;
-                }
-                return true;
-            }
-            return false;
-        }
-
-        fn isPlainIdent(name: []const u8) bool {
-            if (name.len == 0) return false;
-            for (name, 0..) |ch, i| {
-                const ok = if (i == 0)
-                    (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or ch == '_'
-                else
-                    (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_';
-                if (!ok) return false;
-            }
-            return true;
-        }
-
-        /// A Koru field-type spelling → the writer-side type. `string`,
-        /// `bool`, ints/floats, `?T`, `[]T`, `{...}` record spellings;
-        /// `const ` prefixes and `<phantom>` suffixes are stripped. Anything
-        //  else (pointers, slices of records, proto names) refuses.
-        fn tyFromText(ctx: *Ctx, text0: []const u8, what: []const u8) ?*const ETy {
-            var t = std2.mem.trim(u8, text0, " \t\r\n");
-            if (std2.mem.indexOfScalar(u8, t, '<')) |lt| t = std2.mem.trim(u8, t[0..lt], " \t\r\n");
-            if (t.len == 0) {
-                failf(ctx, "json emit: the type of '{s}' isn't known at the emit site — bind it from a typed destructure field or pass a literal", .{what});
-                return null;
-            }
-            if (t[0] == '?') {
-                const inner = tyFromText(ctx, t[1..], what) orelse return null;
-                return dupTy(ctx, .{ .opt = inner });
-            }
-            if (std2.mem.startsWith(u8, t, "[]")) {
-                const inner = tyFromText(ctx, t[2..], what) orelse return null;
-                return dupTy(ctx, .{ .arr = inner });
-            }
-            if (std2.mem.startsWith(u8, t, "const "))
-                return tyFromText(ctx, t[6..], what);
-            if (t[0] == '{') {
-                if (t.len < 2 or t[t.len - 1] != '}') {
-                    failf(ctx, "json emit: malformed record type '{s}' on '{s}'", .{ t, what });
-                    return null;
-                }
-                const fields = shapeFromText(ctx, t[1 .. t.len - 1], what) orelse return null;
-                return dupTy(ctx, .{ .obj = fields });
-            }
-            if (std2.mem.eql(u8, t, "string")) return dupTy(ctx, .str);
-            if (std2.mem.eql(u8, t, "bool")) return dupTy(ctx, .boolean);
-            if (isIntT(t)) return dupTy(ctx, .{ .int = ctx.a.dupe(u8, t) catch unreachable });
-            if (isFloatT(t)) return dupTy(ctx, .{ .float = ctx.a.dupe(u8, t) catch unreachable });
-            failf(ctx, "json emit: '{s}' is '{s}' — not serializable in v1 (want string, bool, an int/float type, ?T, []T, or a record)", .{ what, t });
-            return null;
-        }
-
-        /// The `{a: t, b: { ... }}` grammar inside a type spelling — the
-        /// write-side mirror of parse's parseShapeText.
-        fn shapeFromText(ctx: *Ctx, inner: []const u8, what: []const u8) ?[]const EField {
-            var fields = std2.ArrayList(EField){};
-            var depth: i32 = 0;
-            var start: usize = 0;
-            var i: usize = 0;
-            while (i <= inner.len) : (i += 1) {
-                const at_end = i == inner.len;
-                const split = at_end or (inner[i] == ',' and depth == 0);
-                if (!at_end) {
-                    if (inner[i] == '{' or inner[i] == '[' or inner[i] == '(') depth += 1;
-                    if (inner[i] == '}' or inner[i] == ']' or inner[i] == ')') depth -= 1;
-                }
-                if (!split) continue;
-                const entry = std2.mem.trim(u8, inner[start..i], " \t\r\n");
-                start = i + 1;
-                if (entry.len == 0) continue;
-                // Top-level ':' splits name from type.
-                var colon: ?usize = null;
-                var d2: i32 = 0;
-                for (entry, 0..) |ch, k| {
-                    if (ch == '{' or ch == '[' or ch == '(') d2 += 1;
-                    if (ch == '}' or ch == ']' or ch == ')') d2 -= 1;
-                    if (ch == ':' and d2 == 0) {
-                        colon = k;
-                        break;
-                    }
-                }
-                const c0 = colon orelse {
-                    failf(ctx, "json emit: record field '{s}' on '{s}' has no type", .{ entry, what });
-                    return null;
-                };
-                const name = std2.mem.trim(u8, entry[0..c0], " \t\r\n");
-                if (!isPlainIdent(name)) {
-                    failf(ctx, "json emit: record field name '{s}' is not a plain identifier", .{name});
-                    return null;
-                }
-                const ty = tyFromText(ctx, entry[c0 + 1 ..], name) orelse return null;
-                fields.append(ctx.a, .{ .name = name, .ty = ty }) catch unreachable;
-            }
-            if (fields.items.len == 0) {
-                failf(ctx, "json emit: empty record type on '{s}'", .{what});
-                return null;
-            }
-            return fields.toOwnedSlice(ctx.a) catch unreachable;
-        }
-
-        /// Field list of a branch-payload record → EField list. Field.type
-        /// is the declared spelling (`string`, `i64`, `<state>` phantoms
-        /// stripped inside tyFromText).
-        fn fieldsFromPayload(ctx: *Ctx, fields: []const ast2.Field) ?[]const EField {
-            var out = std2.ArrayList(EField){};
-            for (fields) |f| {
-                if (std2.mem.eql(u8, f.name, "_")) continue;
-                const ty = tyFromText(ctx, f.type, f.name) orelse return null;
-                out.append(ctx.a, .{ .name = f.name, .ty = ty }) catch unreachable;
-            }
-            return out.toOwnedSlice(ctx.a) catch unreachable;
-        }
-
-        /// Resolve a bare identifier against the scope at the emit site:
-        /// destructure fields, payload binds, return binds, impl inputs —
-        /// then the tor-decl payload fields for a dotted access.
-        fn identType(ctx: *Ctx, name: []const u8) ?[]const u8 {
-            for (ctx.scope) |b| {
-                if (std2.mem.eql(u8, b.name, name)) return b.type;
-            }
-            return null;
-        }
-
-        /// `expr` is a value position inside the record literal.
-        /// Returns the EVal, or null with ctx.fail set.
-        fn valFromText(ctx: *Ctx, text0: []const u8, keyname: []const u8) ?*const EVal {
-            const out = ctx.a.create(EVal) catch unreachable;
-            const t = std2.mem.trim(u8, text0, " \t\r\n");
-            if (t.len == 0) {
-                failf(ctx, "json emit: field '{s}' has no value", .{keyname});
-                return null;
-            }
-            if (t[0] == '{') {
-                if (t.len < 2 or t[t.len - 1] != '}') {
-                    failf(ctx, "json emit: malformed nested record on '{s}'", .{keyname});
-                    return null;
-                }
-                const sub = outsFromLiteral(ctx, t[1 .. t.len - 1]) orelse return null;
-                out.* = .{ .sub = sub };
-                return out;
-            }
-            // Literals self-type; emit them as constant JSON text.
-            if (t[0] == '"') {
-                if (t.len < 2 or t[t.len - 1] != '"') {
-                    failf(ctx, "json emit: unterminated string literal on '{s}'", .{keyname});
-                    return null;
-                }
-                // Koru and Zig string literal escapes coincide for the JSON
-                // set — emit the literal verbatim into a runtime escaper call
-                // rather than trusting our own unescape.
-                out.* = .{ .expr = .{ .text = ctx.a.dupe(u8, t) catch unreachable, .ty = dupTy(ctx, .str) } };
-                return out;
-            }
-            if (std2.mem.eql(u8, t, "true") or std2.mem.eql(u8, t, "false") or std2.mem.eql(u8, t, "null")) {
-                out.* = .{ .lit = ctx.a.dupe(u8, t) catch unreachable };
-                return out;
-            }
-            var is_num = t.len > 0 and ((t[0] >= '0' and t[0] <= '9') or t[0] == '-');
-            if (is_num) {
-                var any_digit = false;
-                for (t) |ch| {
-                    if (ch >= '0' and ch <= '9') {
-                        any_digit = true;
-                    } else if (ch != '.' and ch != 'e' and ch != 'E' and ch != '-' and ch != '+') {
-                        is_num = false;
-                        break;
-                    }
-                }
-                if (is_num and any_digit) {
-                    out.* = .{ .lit = ctx.a.dupe(u8, t) catch unreachable };
-                    return out;
-                }
-            }
-            // `ident` or `ident.field`.
-            var dot: ?usize = null;
-            var d3: i32 = 0;
-            for (t, 0..) |ch, k| {
-                if (ch == '(' or ch == '[' or ch == '{') d3 += 1;
-                if (ch == ')' or ch == ']' or ch == '}') d3 -= 1;
-                if (ch == '.' and d3 == 0) {
-                    dot = k;
-                    break;
-                }
-            }
-            const base = if (dot) |d| t[0..d] else t;
-            if (!isPlainIdent(base)) {
-                failf(ctx, "json emit: '{s}' on '{s}' is not a value emit can type — pass an in-scope binding, a binding.field path, a literal, or a nested {{...}}", .{ t, keyname });
-                return null;
-            }
-            if (dot) |d| {
-                // binding.field — the binding must resolve to a tor branch
-                // payload; the field's declared type is the value's type.
-                const field_name = std2.mem.trim(u8, t[d + 1 ..], " \t\r\n");
-                if (!isPlainIdent(field_name)) {
-                    failf(ctx, "json emit: '{s}' on '{s}' — only one level of field access is supported", .{ t, keyname });
-                    return null;
-                }
-                const resolved = astfn.resolveBindingType(ctx.a, .{ .name = base, .type = "", .value_ref = base }, ctx.invocation, ctx.program) catch {
-                    failf(ctx, "json emit: '{s}' does not resolve to a record payload binding — '{s}' is opaque at this site", .{ t, base });
-                    return null;
-                };
-                for (resolved.fields) |f| {
-                    if (std2.mem.eql(u8, f.name, field_name)) {
-                        const ty = tyFromText(ctx, f.type, t) orelse return null;
-                        out.* = .{ .expr = .{ .text = ctx.a.dupe(u8, t) catch unreachable, .ty = ty } };
-                        return out;
-                    }
-                }
-                failf(ctx, "json emit: '{s}' — no field '{s}' on the '{s}' payload", .{ t, field_name, base });
-                return null;
-            }
-            const ty_text = identType(ctx, base) orelse {
-                failf(ctx, "json emit: '{s}' on '{s}' isn't bound in this scope — emit resolves values against bindings introduced by upstream branches and destructures", .{ t, keyname });
-                return null;
-            };
-            const ty = tyFromText(ctx, ty_text, t) orelse return null;
-            out.* = .{ .expr = .{ .text = ctx.a.dupe(u8, t) catch unreachable, .ty = ty } };
-            return out;
-        }
-
-        /// The `{ k: v, k2, k3: { ... } }` literal inside `value:` — bare
-        /// `k` is a pun for `k: k`.
-        fn outsFromLiteral(ctx: *Ctx, inner: []const u8) ?[]const EOut {
-            var outs = std2.ArrayList(EOut){};
-            var depth: i32 = 0;
-            var start: usize = 0;
-            var i: usize = 0;
-            while (i <= inner.len) : (i += 1) {
-                const at_end = i == inner.len;
-                var split = at_end;
-                if (!at_end) {
-                    if (inner[i] == '"') {
-                        // Skip a string literal — commas inside don't split.
-                        i += 1;
-                        while (i < inner.len) : (i += 1) {
-                            if (inner[i] == '\\') {
-                                i += 1;
-                            } else if (inner[i] == '"') break;
-                        }
-                        continue;
-                    }
-                    if (inner[i] == '{' or inner[i] == '[' or inner[i] == '(') depth += 1;
-                    if (inner[i] == '}' or inner[i] == ']' or inner[i] == ')') depth -= 1;
-                    split = inner[i] == ',' and depth == 0;
-                }
-                if (!split) continue;
-                const entry = std2.mem.trim(u8, inner[start..i], " \t\r\n");
-                start = i + 1;
-                if (entry.len == 0) continue;
-                // Top-level ':' splits key from value.
-                var colon: ?usize = null;
-                var d2: i32 = 0;
-                var instr = false;
-                var esc_ch = false;
-                for (entry, 0..) |ch, k| {
-                    if (instr) {
-                        if (esc_ch) {
-                            esc_ch = false;
-                        } else if (ch == '\\') {
-                            esc_ch = true;
-                        } else if (ch == '"') {
-                            instr = false;
-                        }
-                        continue;
-                    }
-                    if (ch == '"') {
-                        instr = true;
-                        continue;
-                    }
-                    if (ch == '{' or ch == '[' or ch == '(') d2 += 1;
-                    if (ch == '}' or ch == ']' or ch == ')') d2 -= 1;
-                    if (ch == ':' and d2 == 0) {
-                        colon = k;
-                        break;
-                    }
-                }
-                var name: []const u8 = undefined;
-                var vtext: []const u8 = undefined;
-                if (colon) |c0| {
-                    name = std2.mem.trim(u8, entry[0..c0], " \t\r\n");
-                    vtext = std2.mem.trim(u8, entry[c0 + 1 ..], " \t\r\n");
-                } else {
-                    // Pun: bare `k` emits the binding named `k` as key "k".
-                    name = entry;
-                    vtext = entry;
-                }
-                if (!isPlainIdent(name)) {
-                    failf(ctx, "json emit: key '{s}' is not a plain identifier — JSON keys that need quoting can't be spelled in v1", .{name});
-                    return null;
-                }
-                const val = valFromText(ctx, vtext, name) orelse return null;
-                outs.append(ctx.a, .{ .name = name, .val = val }) catch unreachable;
-            }
-            if (outs.items.len == 0) {
-                failf(ctx, "json emit: empty record literal — emit(value: {{...}}) wants at least one key", .{});
-                return null;
-            }
-            return outs.toOwnedSlice(ctx.a) catch unreachable;
-        }
-
-        fn w(out: *std2.ArrayList(u8), ctx: *Ctx, comptime fmt: []const u8, args: anytype) void {
-            const s = std2.fmt.allocPrint(ctx.a, fmt, args) catch unreachable;
-            out.appendSlice(ctx.a, s) catch unreachable;
-        }
-
-        /// A Zig string literal spelling for arbitrary bytes (used to emit
-        /// constant JSON runs into the writer sequence).
-        fn zlit(ctx: *Ctx, bytes: []const u8) []const u8 {
-            var o = std2.ArrayList(u8){};
-            o.append(ctx.a, '"') catch unreachable;
-            for (bytes) |c| {
-                switch (c) {
-                    '"' => o.appendSlice(ctx.a, "\\\"") catch unreachable,
-                    '\\' => o.appendSlice(ctx.a, "\\\\") catch unreachable,
-                    '\n' => o.appendSlice(ctx.a, "\\n") catch unreachable,
-                    '\r' => o.appendSlice(ctx.a, "\\r") catch unreachable,
-                    '\t' => o.appendSlice(ctx.a, "\\t") catch unreachable,
-                    else => if (c < 0x20 or c > 0x7e) {
-                        const esc = std2.fmt.allocPrint(ctx.a, "\\x{x:0>2}", .{c}) catch unreachable;
-                        o.appendSlice(ctx.a, esc) catch unreachable;
-                    } else {
-                        o.append(ctx.a, c) catch unreachable;
-                    },
-                }
-            }
-            o.append(ctx.a, '"') catch unreachable;
-            return o.toOwnedSlice(ctx.a) catch unreachable;
-        }
-
-        /// Append constant JSON bytes to the pending-literal accumulator;
-        /// flush turns it into one appendSlice call.
-        fn emitFlush(ctx: *Ctx, out: *std2.ArrayList(u8), pending: *std2.ArrayList(u8)) void {
-            if (pending.items.len == 0) return;
-            w(out, ctx, "__jb{s}.appendSlice(__ja{s}, {s}) catch @panic(\"std/json:emit: out of memory\"); ", .{ ctx.sfx, ctx.sfx, zlit(ctx, pending.items) });
-            pending.clearRetainingCapacity();
-        }
-
-        /// Emit the write of one resolved value. `expr` is the Zig text of
-        /// the value (identifier or dotted path). Constant runs accumulate
-        /// in `pending` so a value's static framing merges into neighbours.
-        fn emitVal(ctx: *Ctx, out: *std2.ArrayList(u8), pending: *std2.ArrayList(u8), expr: []const u8, ty: *const ETy) void {
-            switch (ty.*) {
-                .str => {
-                    emitFlush(ctx, out, pending);
-                    w(out, ctx, "__jwesc{s}(&__jb{s}, __ja{s}, {s}); ", .{ ctx.sfx, ctx.sfx, ctx.sfx, expr });
-                },
-                .boolean => {
-                    emitFlush(ctx, out, pending);
-                    w(out, ctx, "__jb{s}.appendSlice(__ja{s}, if ({s}) \"true\" else \"false\") catch @panic(\"std/json:emit: out of memory\"); ", .{ ctx.sfx, ctx.sfx, expr });
-                },
-                .int => {
-                    emitFlush(ctx, out, pending);
-                    w(out, ctx, "__jwnum{s}(&__jb{s}, __ja{s}, {s}); ", .{ ctx.sfx, ctx.sfx, ctx.sfx, expr });
-                },
-                .float => {
-                    emitFlush(ctx, out, pending);
-                    w(out, ctx, "__jwflt{s}(&__jb{s}, __ja{s}, {s}); ", .{ ctx.sfx, ctx.sfx, ctx.sfx, expr });
-                },
-                .opt => |inner| {
-                    emitFlush(ctx, out, pending);
-                    ctx.n += 1;
-                    w(out, ctx, "if ({s}) |__ov{d}| {{ ", .{ expr, ctx.n });
-                    emitVal(ctx, out, pending, std2.fmt.allocPrint(ctx.a, "__ov{d}", .{ctx.n}) catch unreachable, inner);
-                    w(out, ctx, "}} else {{ __jb{s}.appendSlice(__ja{s}, \"null\") catch @panic(\"std/json:emit: out of memory\"); }} ", .{ ctx.sfx, ctx.sfx });
-                },
-                .arr => |elem| {
-                    emitFlush(ctx, out, pending);
-                    ctx.n += 1;
-                    const n = ctx.n;
-                    w(out, ctx, "__jb{s}.append(__ja{s}, '[') catch @panic(\"std/json:emit: out of memory\"); for ({s}, 0..) |__el{d}, __ix{d}| {{ if (__ix{d} > 0) __jb{s}.append(__ja{s}, ',') catch @panic(\"std/json:emit: out of memory\"); ", .{ ctx.sfx, ctx.sfx, expr, n, n, n, ctx.sfx, ctx.sfx });
-                    emitVal(ctx, out, pending, std2.fmt.allocPrint(ctx.a, "__el{d}", .{n}) catch unreachable, elem);
-                    w(out, ctx, "}} __jb{s}.append(__ja{s}, ']') catch @panic(\"std/json:emit: out of memory\"); ", .{ ctx.sfx, ctx.sfx });
-                },
-                .obj => |fields| {
-                    pending.appendSlice(ctx.a, "{") catch unreachable;
-                    emitFields(ctx, out, pending, fields, expr);
-                    pending.appendSlice(ctx.a, "}") catch unreachable;
-                },
-            }
-        }
-
-        /// `{ "k": <v>, ... }` for a resolved field list whose base expr is
-        /// `expr` (empty for a call-site literal; "cfg" for a record binding).
-        fn emitFields(ctx: *Ctx, out: *std2.ArrayList(u8), pending: *std2.ArrayList(u8), fields: []const EField, base: []const u8) void {
-            for (fields, 0..) |f, i| {
-                if (i > 0) pending.appendSlice(ctx.a, ",") catch unreachable;
-                pending.appendSlice(ctx.a, "\"") catch unreachable;
-                pending.appendSlice(ctx.a, f.name) catch unreachable;
-                pending.appendSlice(ctx.a, "\":") catch unreachable;
-                const sub_expr = if (base.len == 0)
-                    f.name
-                else
-                    std2.fmt.allocPrint(ctx.a, "{s}.{s}", .{ base, f.name }) catch unreachable;
-                emitVal(ctx, out, pending, sub_expr, f.ty);
-            }
-        }
-
-        /// Emit the write sequence for a call-site record literal's entries.
-        fn emitOuts(ctx: *Ctx, out: *std2.ArrayList(u8), pending: *std2.ArrayList(u8), outs: []const EOut) void {
-            for (outs, 0..) |e, i| {
-                if (i > 0) pending.appendSlice(ctx.a, ",") catch unreachable;
-                pending.appendSlice(ctx.a, "\"") catch unreachable;
-                pending.appendSlice(ctx.a, e.name) catch unreachable;
-                pending.appendSlice(ctx.a, "\":") catch unreachable;
-                switch (e.val.*) {
-                    .lit => |b| pending.appendSlice(ctx.a, b) catch unreachable,
-                    .expr => |x| emitVal(ctx, out, pending, x.text, x.ty),
-                    .sub => |sub| {
-                        pending.appendSlice(ctx.a, "{") catch unreachable;
-                        emitOuts(ctx, out, pending, sub);
-                        pending.appendSlice(ctx.a, "}") catch unreachable;
-                    },
-                }
-            }
-        }
-    };
 
     if (item.* != .flow) @panic("std/json emit transform: containing item is not a flow - walker dispatch contract broken");
     const flow = &item.flow;
@@ -569,21 +84,21 @@
     else
         &.{}; // flow-root emit: no enclosing scope, literals only
 
-    var ctx = H.Ctx{ .a = allocator, .sfx = sfx, .scope = scope, .program = program, .invocation = real_inv };
+    var ctx = EmitH.Ctx{ .a = allocator, .sfx = sfx, .scope = scope, .program = program, .invocation = real_inv };
 
     var helpers = std.ArrayList(u8){};
     var pending = std.ArrayList(u8){};
     var dispatch = std.ArrayList(u8){};
 
-    H.w(&helpers, &ctx, "fn __jwesc{s}(b: *@import(\"std\").ArrayList(u8), a: @import(\"std\").mem.Allocator, v: []const u8) void {{ b.append(a, '\"') catch @panic(\"std/json:emit: out of memory\"); b.ensureUnusedCapacity(a, v.len + 2) catch @panic(\"std/json:emit: out of memory\"); const ones: u64 = 0x0101010101010101; const high: u64 = 0x8080808080808080; var run: usize = 0; for (0..v.len / 8) |wi| {{ const i = wi * 8; const w = @import(\"std\").mem.readInt(u64, v[i..][0..8], .little); const q1 = w ^ (ones * '\"'); const q2 = w ^ (ones * '\\\\'); const needs = (((w -% (ones * 0x20)) & ~w) | ((q1 -% ones) & ~q1) | ((q2 -% ones) & ~q2)) & high; if (needs != 0) {{ for (v[i .. i + 8], i..) |c, j| {{ const esc: []const u8 = switch (c) {{ '\"' => \"\\\\\\\"\", '\\\\' => \"\\\\\\\\\", '\\n' => \"\\\\n\", '\\r' => \"\\\\r\", '\\t' => \"\\\\t\", 0x08 => \"\\\\b\", 0x0c => \"\\\\f\", else => \"\", }}; const uesc = esc.len == 0 and c < 0x20; if (esc.len > 0 or uesc) {{ b.appendSlice(a, v[run..j]) catch @panic(\"std/json:emit: out of memory\"); if (uesc) {{ var ub: [8]u8 = undefined; const us = @import(\"std\").fmt.bufPrint(&ub, \"\\\\u{{x:0>4}}\", .{{c}}) catch unreachable; b.appendSlice(a, us) catch @panic(\"std/json:emit: out of memory\"); }} else {{ b.appendSlice(a, esc) catch @panic(\"std/json:emit: out of memory\"); }} run = j + 1; }} }} }} }} const tail = (v.len / 8) * 8; for (v[tail..], tail..) |c, i| {{ const esc: []const u8 = switch (c) {{ '\"' => \"\\\\\\\"\", '\\\\' => \"\\\\\\\\\", '\\n' => \"\\\\n\", '\\r' => \"\\\\r\", '\\t' => \"\\\\t\", 0x08 => \"\\\\b\", 0x0c => \"\\\\f\", else => \"\", }}; const uesc = esc.len == 0 and c < 0x20; if (esc.len > 0 or uesc) {{ b.appendSlice(a, v[run..i]) catch @panic(\"std/json:emit: out of memory\"); if (uesc) {{ var ub: [8]u8 = undefined; const us = @import(\"std\").fmt.bufPrint(&ub, \"\\\\u{{x:0>4}}\", .{{c}}) catch unreachable; b.appendSlice(a, us) catch @panic(\"std/json:emit: out of memory\"); }} else {{ b.appendSlice(a, esc) catch @panic(\"std/json:emit: out of memory\"); }} run = i + 1; }} }} b.appendSlice(a, v[run..]) catch @panic(\"std/json:emit: out of memory\"); b.append(a, '\"') catch @panic(\"std/json:emit: out of memory\"); }}\n", .{sfx});
-    H.w(&helpers, &ctx, "fn __jwnum{s}(b: *@import(\"std\").ArrayList(u8), a: @import(\"std\").mem.Allocator, v: anytype) void {{ var nb: [512]u8 = undefined; const s = @import(\"std\").fmt.bufPrint(&nb, \"{{d}}\", .{{v}}) catch @panic(\"std/json:emit: number does not fit 512 bytes\"); b.appendSlice(a, s) catch @panic(\"std/json:emit: out of memory\"); }}\n", .{sfx});
-    H.w(&helpers, &ctx, "fn __jwflt{s}(b: *@import(\"std\").ArrayList(u8), a: @import(\"std\").mem.Allocator, v: anytype) void {{ if (!@import(\"std\").math.isFinite(v)) {{ b.appendSlice(a, \"null\") catch @panic(\"std/json:emit: out of memory\"); return; }} __jwnum{s}(b, a, v); }}\n", .{ sfx, sfx });
+    EmitH.w(&helpers, &ctx, "fn __jwesc{s}(b: *@import(\"std\").ArrayList(u8), a: @import(\"std\").mem.Allocator, v: []const u8) void {{ b.append(a, '\"') catch @panic(\"std/json:emit: out of memory\"); b.ensureUnusedCapacity(a, v.len + 2) catch @panic(\"std/json:emit: out of memory\"); const ones: u64 = 0x0101010101010101; const high: u64 = 0x8080808080808080; var run: usize = 0; for (0..v.len / 8) |wi| {{ const i = wi * 8; const w = @import(\"std\").mem.readInt(u64, v[i..][0..8], .little); const q1 = w ^ (ones * '\"'); const q2 = w ^ (ones * '\\\\'); const needs = (((w -% (ones * 0x20)) & ~w) | ((q1 -% ones) & ~q1) | ((q2 -% ones) & ~q2)) & high; if (needs != 0) {{ for (v[i .. i + 8], i..) |c, j| {{ const esc: []const u8 = switch (c) {{ '\"' => \"\\\\\\\"\", '\\\\' => \"\\\\\\\\\", '\\n' => \"\\\\n\", '\\r' => \"\\\\r\", '\\t' => \"\\\\t\", 0x08 => \"\\\\b\", 0x0c => \"\\\\f\", else => \"\", }}; const uesc = esc.len == 0 and c < 0x20; if (esc.len > 0 or uesc) {{ b.appendSlice(a, v[run..j]) catch @panic(\"std/json:emit: out of memory\"); if (uesc) {{ var ub: [8]u8 = undefined; const us = @import(\"std\").fmt.bufPrint(&ub, \"\\\\u{{x:0>4}}\", .{{c}}) catch unreachable; b.appendSlice(a, us) catch @panic(\"std/json:emit: out of memory\"); }} else {{ b.appendSlice(a, esc) catch @panic(\"std/json:emit: out of memory\"); }} run = j + 1; }} }} }} }} const tail = (v.len / 8) * 8; for (v[tail..], tail..) |c, i| {{ const esc: []const u8 = switch (c) {{ '\"' => \"\\\\\\\"\", '\\\\' => \"\\\\\\\\\", '\\n' => \"\\\\n\", '\\r' => \"\\\\r\", '\\t' => \"\\\\t\", 0x08 => \"\\\\b\", 0x0c => \"\\\\f\", else => \"\", }}; const uesc = esc.len == 0 and c < 0x20; if (esc.len > 0 or uesc) {{ b.appendSlice(a, v[run..i]) catch @panic(\"std/json:emit: out of memory\"); if (uesc) {{ var ub: [8]u8 = undefined; const us = @import(\"std\").fmt.bufPrint(&ub, \"\\\\u{{x:0>4}}\", .{{c}}) catch unreachable; b.appendSlice(a, us) catch @panic(\"std/json:emit: out of memory\"); }} else {{ b.appendSlice(a, esc) catch @panic(\"std/json:emit: out of memory\"); }} run = i + 1; }} }} b.appendSlice(a, v[run..]) catch @panic(\"std/json:emit: out of memory\"); b.append(a, '\"') catch @panic(\"std/json:emit: out of memory\"); }}\n", .{sfx});
+    EmitH.w(&helpers, &ctx, "fn __jwnum{s}(b: *@import(\"std\").ArrayList(u8), a: @import(\"std\").mem.Allocator, v: anytype) void {{ var nb: [512]u8 = undefined; const s = @import(\"std\").fmt.bufPrint(&nb, \"{{d}}\", .{{v}}) catch @panic(\"std/json:emit: number does not fit 512 bytes\"); b.appendSlice(a, s) catch @panic(\"std/json:emit: out of memory\"); }}\n", .{sfx});
+    EmitH.w(&helpers, &ctx, "fn __jwflt{s}(b: *@import(\"std\").ArrayList(u8), a: @import(\"std\").mem.Allocator, v: anytype) void {{ if (!@import(\"std\").math.isFinite(v)) {{ b.appendSlice(a, \"null\") catch @panic(\"std/json:emit: out of memory\"); return; }} __jwnum{s}(b, a, v); }}\n", .{ sfx, sfx });
 
     // The write sequence: `{`, per-key "k":, the value, `}` — constant runs
     // merge into single appendSlices; dynamic values flush and emit inline.
     // The block breaks with the produced string — the emitter wraps it in a
     // labeled block whose break value binds the site's `: name`.
-    H.w(&dispatch, &ctx, "{{ var __jb{s}: @import(\"std\").ArrayList(u8) = .{{}}; const __ja{s} = koru_allocator(); ", .{ sfx, sfx });
+    EmitH.w(&dispatch, &ctx, "{{ var __jb{s}: @import(\"std\").ArrayList(u8) = .{{}}; const __ja{s} = koru_allocator(); ", .{ sfx, sfx });
     pending.appendSlice(allocator, "{") catch unreachable;
 
     const vt = std.mem.trim(u8, value_text, " \t\r\n");
@@ -591,30 +106,30 @@
         if (vt.len < 2 or vt[vt.len - 1] != '}') {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit: malformed record literal at `value:`", .{}) } };
         }
-        const outs = H.outsFromLiteral(&ctx, vt[1 .. vt.len - 1]) orelse {
+        const outs = EmitH.outsFromLiteral(&ctx, vt[1 .. vt.len - 1]) orelse {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "{s}", .{ctx.fail.?}) } };
         };
-        H.emitOuts(&ctx, &dispatch, &pending, outs);
-    } else if (H.isPlainIdent(vt)) {
+        EmitH.emitOuts(&ctx, &dispatch, &pending, outs);
+    } else if (EmitH.isPlainIdent(vt)) {
         // Whole-record emit: `emit(value: cfg)` where cfg is a
         // branch-payload binding — every declared payload field emits.
-        const resolved = H.astfn.resolveBindingType(allocator, .{ .name = vt, .type = "", .value_ref = vt }, invocation, program) catch {
+        const resolved = EmitH.astfn.resolveBindingType(allocator, .{ .name = vt, .type = "", .value_ref = vt }, invocation, program) catch {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit: '{s}' does not resolve to a record payload — spell the schema out: emit(value: {{ field: field, ... }})", .{vt}) } };
         };
         if (resolved.fields.len == 0) {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit: '{s}' resolves to a payload with no named fields", .{vt}) } };
         }
-        const fields = H.fieldsFromPayload(&ctx, resolved.fields) orelse {
+        const fields = EmitH.fieldsFromPayload(&ctx, resolved.fields) orelse {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "{s}", .{ctx.fail.?}) } };
         };
-        H.emitFields(&ctx, &dispatch, &pending, fields, vt);
+        EmitH.emitFields(&ctx, &dispatch, &pending, fields, vt);
     } else {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit: `value:` wants a record literal `{{ key: value, ... }}` or a record-typed binding — got '{s}'", .{vt}) } };
     }
 
     pending.appendSlice(allocator, "}") catch unreachable;
-    H.emitFlush(&ctx, &dispatch, &pending);
-    H.w(&dispatch, &ctx, "break :__KORU_INLINE__ __jb{s}.toOwnedSlice(__ja{s}) catch @panic(\"std/json:emit: out of memory\"); }}", .{ sfx, sfx });
+    EmitH.emitFlush(&ctx, &dispatch, &pending);
+    EmitH.w(&dispatch, &ctx, "break :__KORU_INLINE__ __jb{s}.toOwnedSlice(__ja{s}) catch @panic(\"std/json:emit: out of memory\"); }}", .{ sfx, sfx });
 
     if (ctx.fail) |f| {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "{s}", .{f}) } };

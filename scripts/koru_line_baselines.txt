@@ -120,7 +120,8 @@ koru_std/fs.kz	104
 koru_std/fs.sync.kz	26
 koru_std/gate.diffstate.kz	28
 koru_std/gate.helpers.kz	222
-koru_std/gate.kz	525
+koru_std/gate.kz	518
+koru_std/gate.scope.kz	89
 koru_std/gpu.kz	228
 koru_std/grid.cursor.kz	37
 koru_std/grid.for.kz	388
@@ -183,8 +184,10 @@ koru_std/io.jsprec.kz	48
 koru_std/io.kz	1017
 koru_std/io.lowers.kz	36
 koru_std/json.dom.kz	208
-koru_std/json.emit.kz	666
-koru_std/json.kz	268
+koru_std/json.emit.kz	181
+koru_std/json.emithelpers.kz	491
+koru_std/json.helpers.kz	25
+koru_std/json.kz	245
 koru_std/json.parse.kz	224
 koru_std/json.parsehelpers.kz	282
 koru_std/json.parsesub.kz	34
@@ -254,6 +257,7 @@ koru_std/refine.kz	417
 koru_std/refine.terminal.kz	85
 koru_std/regex.kz	464
 koru_std/regex.norm.kz	53
+koru_std/regex.replace.kz	219
 koru_std/regex.scan.kz	413
 koru_std/rings.home.kz	62
 koru_std/rings.kz	161
@@ -332,6 +336,7 @@ koru_std/store.qguard.kz	22
 koru_std/store.qmiss.kz	46
 koru_std/store.qmisskind.kz	58
 koru_std/store.qnone.kz	113
+koru_std/store.qpick.kz	115
 koru_std/store.qrewrite.kz	218
 koru_std/store.qsites.kz	143
 koru_std/store.qtail.kz	129

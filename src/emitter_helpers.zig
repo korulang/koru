@@ -13556,6 +13556,39 @@ pub fn writeBareReturnType(
         return;
     }
 
+    // `[]{ f: T, ... }` — a slice of the same anonymous record shape (and the
+    // `?`-prefixed spellings `?{...}` / `?[]{...}`): lower each `[]` level to
+    // const per the lowerZigType convention, then hand the brace body to
+    // emitRecordShapeStruct so field types lower identically to the bare
+    // record return. Two passes — the prefix is scanned before anything is
+    // written so a non-record remainder falls through untouched.
+    {
+        var i: usize = 0;
+        while (i < trimmed.len) {
+            if (trimmed[i] == '?') {
+                i += 1;
+            } else if (std.mem.startsWith(u8, trimmed[i..], "[]")) {
+                i += 2;
+                if (std.mem.startsWith(u8, trimmed[i..], "const ")) i += 6;
+            } else break;
+        }
+        if (i > 0 and i < trimmed.len and trimmed[i] == '{') {
+            var j: usize = 0;
+            while (j < i) {
+                if (trimmed[j] == '?') {
+                    try emitter.write("?");
+                    j += 1;
+                } else {
+                    try emitter.write("[]const ");
+                    j += 2;
+                    if (std.mem.startsWith(u8, trimmed[j..], "const ")) j += 6;
+                }
+            }
+            try emitRecordShapeStruct(emitter, trimmed[i..], main_module_name, declaring_module, "koru: slice/optional record return type passed the parser but failed parseFields");
+            return;
+        }
+    }
+
     // The canonical text type lowers through lowerZigType — bare `string` and
     // nested spellings alike (`[]string` → `[]const []const u8`, `?[]string`,
     // `[]const string`): the surface ban on raw byte slices (510_108) makes

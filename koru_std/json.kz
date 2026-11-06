@@ -4,9 +4,11 @@
 //   traversable tree, key iteration, typed descent, serializer.
 ~part parse
 ~part emit
+~part emithelpers
 ~part parsehelpers
 ~part parsesub
 ~part dom
+~part helpers
 const std = @import("std");
 
 // ============================================================================
@@ -240,29 +242,4 @@ pub const JsonValue = union(enum) {
     };
     
     return .{ .ok = num };
-}
-
-
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-fn writeJsonEscaped(writer: anytype, s: []const u8) void {
-    // Run-batched writeAll — same escape set and spellings, byte-identical.
-    var run_start: usize = 0;
-    for (s, 0..) |ch, i| {
-        if (ch != '"' and ch != '\\' and ch >= 0x20) continue;
-        if (i > run_start) writer.writeAll(s[run_start..i]) catch {};
-        switch (ch) {
-            '"' => writer.writeAll("\\\"") catch {},
-            '\\' => writer.writeAll("\\\\") catch {},
-            '\n' => writer.writeAll("\\n") catch {},
-            '\r' => writer.writeAll("\\r") catch {},
-            '\t' => writer.writeAll("\\t") catch {},
-            else => writer.print("\\u{x:0>4}", .{ch}) catch {},
-        }
-        run_start = i + 1;
-    }
-    if (run_start < s.len) writer.writeAll(s[run_start..]) catch {};
 }
