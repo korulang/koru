@@ -1,3 +1,4 @@
 {"service":"orisha","port":8080,"tls":true,"meta":{"tier":"bench","weight":1.5},"note":null}
 {"who":"ada","years":36,"town":"paris","alias":null,"seen":["a","b"],"active":true}
 {"who":"cid","years":9,"town":"oslo","alias":"ciddy","seen":[]}
+{"esc":"0123456789\"\\\n\t\u0001abcdefghij"}

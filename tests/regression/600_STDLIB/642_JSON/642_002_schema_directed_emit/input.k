@@ -26,3 +26,8 @@ std/json:parse(input: "{\"name\":\"cid\",\"age\":9,\"addr\":{\"city\":\"oslo\"},
 | malformed { message, offset } |> std/io:print.ln("BAD2 {{ offset:d }}: {{ message:s }}")
 | ok _:{ name: string, age: i64, addr: { city: string }, nick: ?string, tags: []string } |> std/json:emit(value: { who: name, years: age, town: city, alias: nick, seen: tags }): out
     |> std/io:print.ln("{{ out:s }}") |> std/json:emit.free(text: out)
+
+// escapes: quote, backslash, newline, tab, 0x01 — each inside its own
+// 8-byte scan word, with >8-byte clean runs on both sides
+std/json:emit(value: { esc: "0123456789\"\\\n\t\x01abcdefghij" }): ebody
+    |> std/io:print.ln("{{ ebody:s }}") |> std/json:emit.free(text: ebody)
