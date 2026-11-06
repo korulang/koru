@@ -90,7 +90,7 @@
     var pending = std.ArrayList(u8){};
     var dispatch = std.ArrayList(u8){};
 
-    EmitH.w(&helpers, &ctx, "fn __jwesc{s}(b: *@import(\"std\").ArrayList(u8), a: @import(\"std\").mem.Allocator, v: []const u8) void {{ b.append(a, '\"') catch @panic(\"std/json:emit: out of memory\"); b.ensureUnusedCapacity(a, v.len + 2) catch @panic(\"std/json:emit: out of memory\"); const ones: u64 = 0x0101010101010101; const high: u64 = 0x8080808080808080; var run: usize = 0; for (0..v.len / 8) |wi| {{ const i = wi * 8; const w = @import(\"std\").mem.readInt(u64, v[i..][0..8], .little); const q1 = w ^ (ones * '\"'); const q2 = w ^ (ones * '\\\\'); const needs = (((w -% (ones * 0x20)) & ~w) | ((q1 -% ones) & ~q1) | ((q2 -% ones) & ~q2)) & high; if (needs != 0) {{ for (v[i .. i + 8], i..) |c, j| {{ const esc: []const u8 = switch (c) {{ '\"' => \"\\\\\\\"\", '\\\\' => \"\\\\\\\\\", '\\n' => \"\\\\n\", '\\r' => \"\\\\r\", '\\t' => \"\\\\t\", 0x08 => \"\\\\b\", 0x0c => \"\\\\f\", else => \"\", }}; const uesc = esc.len == 0 and c < 0x20; if (esc.len > 0 or uesc) {{ b.appendSlice(a, v[run..j]) catch @panic(\"std/json:emit: out of memory\"); if (uesc) {{ var ub: [8]u8 = undefined; const us = @import(\"std\").fmt.bufPrint(&ub, \"\\\\u{{x:0>4}}\", .{{c}}) catch unreachable; b.appendSlice(a, us) catch @panic(\"std/json:emit: out of memory\"); }} else {{ b.appendSlice(a, esc) catch @panic(\"std/json:emit: out of memory\"); }} run = j + 1; }} }} }} }} const tail = (v.len / 8) * 8; for (v[tail..], tail..) |c, i| {{ const esc: []const u8 = switch (c) {{ '\"' => \"\\\\\\\"\", '\\\\' => \"\\\\\\\\\", '\\n' => \"\\\\n\", '\\r' => \"\\\\r\", '\\t' => \"\\\\t\", 0x08 => \"\\\\b\", 0x0c => \"\\\\f\", else => \"\", }}; const uesc = esc.len == 0 and c < 0x20; if (esc.len > 0 or uesc) {{ b.appendSlice(a, v[run..i]) catch @panic(\"std/json:emit: out of memory\"); if (uesc) {{ var ub: [8]u8 = undefined; const us = @import(\"std\").fmt.bufPrint(&ub, \"\\\\u{{x:0>4}}\", .{{c}}) catch unreachable; b.appendSlice(a, us) catch @panic(\"std/json:emit: out of memory\"); }} else {{ b.appendSlice(a, esc) catch @panic(\"std/json:emit: out of memory\"); }} run = i + 1; }} }} b.appendSlice(a, v[run..]) catch @panic(\"std/json:emit: out of memory\"); b.append(a, '\"') catch @panic(\"std/json:emit: out of memory\"); }}\n", .{sfx});
+    EmitH.w(&helpers, &ctx, "fn __jwesc{s}(b: *@import(\"std\").ArrayList(u8), a: @import(\"std\").mem.Allocator, v: []const u8) void {{ b.append(a, '\"') catch @panic(\"std/json:emit: out of memory\"); b.ensureUnusedCapacity(a, v.len + 2) catch @panic(\"std/json:emit: out of memory\"); var run: usize = 0; const s20: @Vector(16, u8) = @splat(0x20); const sq: @Vector(16, u8) = @splat('\"'); const sb: @Vector(16, u8) = @splat('\\\\'); for (0..v.len / 16) |wi| {{ const i = wi * 16; const vec: @Vector(16, u8) = v[i..][0..16].*; const mask = (vec < s20) | (vec == sq) | (vec == sb); if (@reduce(.Or, mask)) {{ for (v[i .. i + 16], i..) |c, j| {{ const esc: []const u8 = switch (c) {{ '\"' => \"\\\\\\\"\", '\\\\' => \"\\\\\\\\\", '\\n' => \"\\\\n\", '\\r' => \"\\\\r\", '\\t' => \"\\\\t\", 0x08 => \"\\\\b\", 0x0c => \"\\\\f\", else => \"\", }}; const uesc = esc.len == 0 and c < 0x20; if (esc.len > 0 or uesc) {{ b.appendSlice(a, v[run..j]) catch @panic(\"std/json:emit: out of memory\"); if (uesc) {{ var ub: [8]u8 = undefined; const us = @import(\"std\").fmt.bufPrint(&ub, \"\\\\u{{x:0>4}}\", .{{c}}) catch unreachable; b.appendSlice(a, us) catch @panic(\"std/json:emit: out of memory\"); }} else {{ b.appendSlice(a, esc) catch @panic(\"std/json:emit: out of memory\"); }} run = j + 1; }} }} }} }} const tail = (v.len / 16) * 16; for (v[tail..], tail..) |c, i| {{ const esc: []const u8 = switch (c) {{ '\"' => \"\\\\\\\"\", '\\\\' => \"\\\\\\\\\", '\\n' => \"\\\\n\", '\\r' => \"\\\\r\", '\\t' => \"\\\\t\", 0x08 => \"\\\\b\", 0x0c => \"\\\\f\", else => \"\", }}; const uesc = esc.len == 0 and c < 0x20; if (esc.len > 0 or uesc) {{ b.appendSlice(a, v[run..i]) catch @panic(\"std/json:emit: out of memory\"); if (uesc) {{ var ub: [8]u8 = undefined; const us = @import(\"std\").fmt.bufPrint(&ub, \"\\\\u{{x:0>4}}\", .{{c}}) catch unreachable; b.appendSlice(a, us) catch @panic(\"std/json:emit: out of memory\"); }} else {{ b.appendSlice(a, esc) catch @panic(\"std/json:emit: out of memory\"); }} run = i + 1; }} }} b.appendSlice(a, v[run..]) catch @panic(\"std/json:emit: out of memory\"); b.append(a, '\"') catch @panic(\"std/json:emit: out of memory\"); }}\n", .{sfx});
     EmitH.w(&helpers, &ctx, "fn __jwnum{s}(b: *@import(\"std\").ArrayList(u8), a: @import(\"std\").mem.Allocator, v: anytype) void {{ var nb: [512]u8 = undefined; const s = @import(\"std\").fmt.bufPrint(&nb, \"{{d}}\", .{{v}}) catch @panic(\"std/json:emit: number does not fit 512 bytes\"); b.appendSlice(a, s) catch @panic(\"std/json:emit: out of memory\"); }}\n", .{sfx});
     EmitH.w(&helpers, &ctx, "fn __jwflt{s}(b: *@import(\"std\").ArrayList(u8), a: @import(\"std\").mem.Allocator, v: anytype) void {{ if (!@import(\"std\").math.isFinite(v)) {{ b.appendSlice(a, \"null\") catch @panic(\"std/json:emit: out of memory\"); return; }} __jwnum{s}(b, a, v); }}\n", .{ sfx, sfx });
 
@@ -109,6 +109,7 @@
         const outs = EmitH.outsFromLiteral(&ctx, vt[1 .. vt.len - 1]) orelse {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "{s}", .{ctx.fail.?}) } };
         };
+        EmitCap.reserveOuts(&ctx, &dispatch, outs);
         EmitH.emitOuts(&ctx, &dispatch, &pending, outs);
     } else if (EmitH.isPlainIdent(vt)) {
         // Whole-record emit: `emit(value: cfg)` where cfg is a
@@ -122,6 +123,7 @@
         const fields = EmitH.fieldsFromPayload(&ctx, resolved.fields) orelse {
             return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "{s}", .{ctx.fail.?}) } };
         };
+        EmitCap.reserveFields(&ctx, &dispatch, fields, vt);
         EmitH.emitFields(&ctx, &dispatch, &pending, fields, vt);
     } else {
         return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit: `value:` wants a record literal `{{ key: value, ... }}` or a record-typed binding — got '{s}'", .{vt}) } };
@@ -167,15 +169,4 @@
     } };
 
     return .{ .transformed = .{ .replacement = ast.Item{ .flow = new_flow }, .appended = appended } };
-}
-
-// JS twin: not yet implemented — refuse loudly rather than emit Zig text
-// into a JS output (where it would surface as a syntax error).
-~[transform]proc emit|js {
-    const ast = @import("ast");
-
-    if (item.* != .flow) @panic("std/json emit transform: containing item is not a flow - walker dispatch contract broken");
-    const flow = &item.flow;
-
-    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit is not implemented for the JS target yet — compile with the Zig backend", .{}) } };
 }

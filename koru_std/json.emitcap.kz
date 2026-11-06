@@ -1,0 +1,110 @@
+// Koru Standard Library: JSON — emit capacity estimates.
+// Joined via `~part emitcap` in json.kz; merged into the json module at
+// load. EmitCap walks the same resolved schema EmitH walks and produces a
+// usize-typed Zig expression bounding the site's output bytes, so the
+// emitted writer can ensureTotalCapacity once instead of growing by
+// doubling. Static framing (keys, quotes, braces, commas, literal bytes)
+// folds to comptime literals; string exprs contribute .len; numbers take
+// the spec bounds (20 int / 32 float / 5 bool / 4 null); arrays pre-pass
+// their elements in a labeled block. Escapes can still outgrow the
+// estimate — it is a reservation hint, not a contract.
+const EmitCap = struct {
+    const std2 = @import("std");
+
+    /// usize expr text estimating `expr`'s emitted byte count under `ty`.
+    /// Fresh loop/block/opt names come from the shared ctx.n counter so
+    /// they cannot collide with EmitH's __ov/__el/__ix vars.
+    fn tyExpr(ctx: *EmitH.Ctx, expr: []const u8, ty: *const EmitH.ETy) []const u8 {
+        switch (ty.*) {
+            .str => { return std2.fmt.allocPrint(ctx.a, "({s}).len + 2", .{expr}) catch unreachable; },
+            .boolean => { return "5"; },
+            .int => { return "20"; },
+            .float => { return "32"; },
+            .opt => |inner| {
+                ctx.n += 1;
+                const n = ctx.n;
+                const inner_est = tyExpr(ctx, std2.fmt.allocPrint(ctx.a, "__ov{d}", .{n}) catch unreachable, inner);
+                return std2.fmt.allocPrint(ctx.a, "if ({s}) |__ov{d}| ({s}) else 4", .{ expr, n, inner_est }) catch unreachable;
+            },
+            .arr => |elem| {
+                ctx.n += 1;
+                const n = ctx.n;
+                const elem_est = tyExpr(ctx, std2.fmt.allocPrint(ctx.a, "__ce{d}", .{n}) catch unreachable, elem);
+                return std2.fmt.allocPrint(ctx.a, "blk{d}: {{ var __cap{d}: usize = 2 + ({s}).len -| 1; for ({s}) |__ce{d}| {{ __cap{d} += ({s}); }} break :blk{d} __cap{d}; }}", .{ n, n, expr, expr, n, n, elem_est, n, n }) catch unreachable;
+            },
+            .obj => |fields| {
+                const inner = fieldsExpr(ctx, fields, expr);
+                return std2.fmt.allocPrint(ctx.a, "2 + ({s})", .{inner}) catch unreachable;
+            },
+        }
+    }
+
+    /// Sum over a call-site record literal's entries: inter-entry commas
+    /// plus `"name":` framing plus each value's estimate. Braces are the
+    /// caller's (+2).
+    fn outsExpr(ctx: *EmitH.Ctx, outs: []const EmitH.EOut) []const u8 {
+        var terms = std2.ArrayList([]const u8){};
+        for (outs, 0..) |e, i| {
+            if (i > 0) terms.append(ctx.a, "1") catch unreachable;
+            terms.append(ctx.a, std2.fmt.allocPrint(ctx.a, "{d}", .{@as(usize, e.name.len) + 3}) catch unreachable) catch unreachable;
+            terms.append(ctx.a, valExpr(ctx, e.val)) catch unreachable;
+        }
+        return joinPlus(ctx, terms.items);
+    }
+
+    /// Same walk for a resolved payload record (`emit(value: cfg)`).
+    fn fieldsExpr(ctx: *EmitH.Ctx, fields: []const EmitH.EField, base: []const u8) []const u8 {
+        var terms = std2.ArrayList([]const u8){};
+        for (fields, 0..) |f, i| {
+            if (i > 0) terms.append(ctx.a, "1") catch unreachable;
+            terms.append(ctx.a, std2.fmt.allocPrint(ctx.a, "{d}", .{@as(usize, f.name.len) + 3}) catch unreachable) catch unreachable;
+            const sub_expr = if (base.len == 0)
+                f.name
+            else
+                std2.fmt.allocPrint(ctx.a, "{s}.{s}", .{ base, f.name }) catch unreachable;
+            terms.append(ctx.a, tyExpr(ctx, sub_expr, f.ty)) catch unreachable;
+        }
+        return joinPlus(ctx, terms.items);
+    }
+
+    fn valExpr(ctx: *EmitH.Ctx, val: *const EmitH.EVal) []const u8 {
+        switch (val.*) {
+            .lit => |b| { return std2.fmt.allocPrint(ctx.a, "{d}", .{b.len}) catch unreachable; },
+            .expr => |x| { return tyExpr(ctx, x.text, x.ty); },
+            .sub => |sub| {
+                const inner = outsExpr(ctx, sub);
+                return std2.fmt.allocPrint(ctx.a, "2 + ({s})", .{inner}) catch unreachable;
+            },
+        }
+    }
+
+    fn joinPlus(ctx: *EmitH.Ctx, terms: []const []const u8) []const u8 {
+        var o = std2.ArrayList(u8){};
+        for (terms, 0..) |t, i| {
+            if (i > 0) o.appendSlice(ctx.a, " + ") catch unreachable;
+            o.appendSlice(ctx.a, "(") catch unreachable;
+            o.appendSlice(ctx.a, t) catch unreachable;
+            o.appendSlice(ctx.a, ")") catch unreachable;
+        }
+        return o.toOwnedSlice(ctx.a) catch unreachable;
+    }
+
+    /// Emit `__jb.ensureTotalCapacity(__ja, <cap>)` into the write stream.
+    /// `cap` is a usize expr from outsExpr/fieldsExpr plus the outer braces.
+    fn reserve(ctx: *EmitH.Ctx, out: *std2.ArrayList(u8), cap: []const u8) void {
+        const s = std2.fmt.allocPrint(ctx.a, "__jb{s}.ensureTotalCapacity(__ja{s}, {s}) catch @panic(\"std/json:emit: out of memory\"); ", .{ ctx.sfx, ctx.sfx, cap }) catch unreachable;
+        out.appendSlice(ctx.a, s) catch unreachable;
+    }
+
+    /// Reserve for a call-site record literal — outer braces plus entries.
+    fn reserveOuts(ctx: *EmitH.Ctx, out: *std2.ArrayList(u8), outs: []const EmitH.EOut) void {
+        const cap = std2.fmt.allocPrint(ctx.a, "2 + ({s})", .{outsExpr(ctx, outs)}) catch unreachable;
+        reserve(ctx, out, cap);
+    }
+
+    /// Reserve for a resolved record binding — outer braces plus fields.
+    fn reserveFields(ctx: *EmitH.Ctx, out: *std2.ArrayList(u8), fields: []const EmitH.EField, base: []const u8) void {
+        const cap = std2.fmt.allocPrint(ctx.a, "2 + ({s})", .{fieldsExpr(ctx, fields, base)}) catch unreachable;
+        reserve(ctx, out, cap);
+    }
+};

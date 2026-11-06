@@ -1,0 +1,14 @@
+// Koru Standard Library: JSON — emit JS-backend twin.
+// Joined via `~part emitjs` in json.kz; merged into the json module at
+// load. Split out of json.emit.kz to keep the driver under its line pin.
+
+// JS twin: not yet implemented — refuse loudly rather than emit Zig text
+// into a JS output (where it would surface as a syntax error).
+~[transform]proc emit|js {
+    const ast = @import("ast");
+
+    if (item.* != .flow) @panic("std/json emit transform: containing item is not a flow - walker dispatch contract broken");
+    const flow = &item.flow;
+
+    return .{ .transformed = .{ .replacement = ast.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit is not implemented for the JS target yet — compile with the Zig backend", .{}) } };
+}

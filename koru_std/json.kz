@@ -5,9 +5,12 @@
 ~part parse
 ~part emit
 ~part emithelpers
+~part emitcap
+~part emitjs
 ~part parsehelpers
 ~part parsesub
 ~part dom
+~part gets
 ~part helpers
 const std = @import("std");
 
@@ -168,78 +171,4 @@ pub const JsonValue = union(enum) {
     arr.buffer.append(']') catch {};
     const result = arr.buffer.toOwnedSlice() catch "";
     return result;
-}
-
-// ============================================================================
-// Decoding - Extract values from JSON strings
-// ============================================================================
-
-~pub tor get.string { json: string<*>, key: string }
-| ok string
-| not-found
-
-~proc get.string|zig {
-    // Find "key":"value"
-    var search_buf: [256]u8 = undefined;
-    const search_key = std.fmt.bufPrint(&search_buf, "\"{s}\":\"", .{key}) catch {
-        return .{ .not_found = .{} };
-    };
-    
-    const key_pos = std.mem.indexOf(u8, json, search_key) orelse {
-        return .{ .not_found = .{} };
-    };
-    
-    const value_start = key_pos + search_key.len;
-    
-    // Find end of string value (handle escapes)
-    var value_end = value_start;
-    var in_escape = false;
-    while (value_end < json.len) : (value_end += 1) {
-        if (in_escape) {
-            in_escape = false;
-            continue;
-        }
-        if (json[value_end] == '\\') {
-            in_escape = true;
-            continue;
-        }
-        if (json[value_end] == '"') {
-            break;
-        }
-    }
-    
-    return .{ .ok = json[value_start..value_end] };
-}
-
-~pub tor get.int { json: string, key: string }
-| ok i64
-| not-found
-
-~proc get.int|zig {
-    // Find "key":number
-    var search_buf: [256]u8 = undefined;
-    const search_key = std.fmt.bufPrint(&search_buf, "\"{s}\":", .{key}) catch {
-        return .{ .not_found = .{} };
-    };
-    
-    const key_pos = std.mem.indexOf(u8, json, search_key) orelse {
-        return .{ .not_found = .{} };
-    };
-    
-    const value_start = key_pos + search_key.len;
-    
-    // Skip whitespace
-    var start = value_start;
-    while (start < json.len and (json[start] == ' ' or json[start] == '\t')) : (start += 1) {}
-    
-    // Find end of number
-    var end = start;
-    if (end < json.len and json[end] == '-') end += 1;
-    while (end < json.len and json[end] >= '0' and json[end] <= '9') : (end += 1) {}
-    
-    const num = std.fmt.parseInt(i64, json[start..end], 10) catch {
-        return .{ .not_found = .{} };
-    };
-    
-    return .{ .ok = num };
 }
