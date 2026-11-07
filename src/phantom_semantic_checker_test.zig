@@ -76,18 +76,23 @@ test "identity branch capture preserves phantom state literal" {
 
     // Units-of-measure phantom typing — pure state matching, no obligations.
     //
-    // `read-sensor` returns `f32<celsius>` via an identity-declared branch
-    // (`| temperature f32<celsius>`). The identity capture `| temperature t |>`
-    // binds the whole payload to `t`. That `t` must carry the phantom state
-    // literal `celsius` so that `log-reading(value: t)` — which requires
-    // `f32<celsius>` — type-checks.
+    // `read-sensor` returns `f32<celsius>` via a branch payload. The identity
+    // capture `| temperature t |>` binds the whole payload to `t`. That `t`
+    // must carry the phantom state literal `celsius` so that
+    // `log-reading(value: t)` — which requires `f32<celsius>` — type-checks.
     //
     // No `!` anywhere: there is nothing to discharge. Temperatures don't get
     // cleaned up. This exercises the state-literal tracking path in isolation
     // from the obligation machinery.
+    //
+    // The second branch exists because a SOLE payload branch is refused at
+    // parse (PARSE003 — a one-variant tag union is a bare return). `other`
+    // carries a different state so the capture proves `t` took `celsius`,
+    // not just "some phantom".
     const source =
         \\~tor read-sensor { }
         \\| temperature f32<celsius>
+        \\| other f32<volts>
         \\
         \\~tor log-reading { value: f32<celsius> }
         \\
@@ -136,9 +141,6 @@ test "identity branch capture preserves phantom state literal" {
 
     // Identity capture `t` must carry the <celsius> state from the branch so
     // that `log-reading(value: t)` matches its `f32<celsius>` parameter.
-    //
-    // Currently expected to FAIL on master with KORU030 "no tracked phantom
-    // state" — that is the bug this test pins.
     if (reporter.hasErrors()) {
         const stderr_writer = std.debug.lockStderrWriter(&.{});
         defer std.debug.unlockStderrWriter();
