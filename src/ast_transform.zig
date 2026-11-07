@@ -3214,6 +3214,11 @@ const InvariantHoist = struct {
     events: std.StringHashMap(*const ast.EventDecl),
     impls: std.StringHashMap(*const ast.Flow),
     memo: std.StringHashMap(HoistVerdict),
+    /// Capture-cell bindings (`capture { … } ! as g`) whose `as`-arm subtree
+    /// is being visited. A `captured { … }` step inside a `for ! each` body
+    /// writes one of these cells PER ITERATION, so any read of the cell —
+    /// `g.n` or bare `g` — is loop-variant even though it names no item.
+    cells: std.ArrayList([]const u8) = .empty,
 
     fn init(allocator: std.mem.Allocator, main_module: []const u8) InvariantHoist {
         return .{
@@ -3435,7 +3440,25 @@ const InvariantHoist = struct {
     fn visitCont(self: *InvariantHoist, cont: *ast.Continuation) !void {
         // Bottom-up: nested fors hoist first so outer classification sees the
         // post-rewrite body.
-        for (@constCast(cont.continuations)) |*c| try self.visitCont(c);
+        //
+        // Pre-order cell tracking: a `capture` invocation's `as` arm binds
+        // the cell name for its whole subtree — push it while visiting that
+        // arm so tryHoist can see the cell is mutable inside the loop.
+        const is_capture = if (cont.node) |n| switch (n) {
+            .invocation => |inv| std.mem.eql(u8, lastSeg(inv.path), "capture"),
+            else => false,
+        } else false;
+        for (@constCast(cont.continuations)) |*c| {
+            var pushed = false;
+            if (is_capture and std.mem.eql(u8, c.branch, "as")) {
+                if (c.binding) |b| {
+                    self.cells.append(self.allocator, b) catch {};
+                    pushed = true;
+                }
+            }
+            try self.visitCont(c);
+            if (pushed) _ = self.cells.pop();
+        }
         const n = cont.node orelse return;
         switch (n) {
             .invocation => |inv| {
@@ -3510,6 +3533,21 @@ const InvariantHoist = struct {
                 (is_fold and foldArmsMention(w, item))) {
                 boundary = i; break;
             }
+            // A capture cell in scope is written per-iteration by any
+            // `captured { … }` step in this body — reading it (`g.n`, or the
+            // whole cell `g`) observes the PRE-WRITE snapshot if the step
+            // hoists. Measured 2026-11-07 (320_183): `bump(x: g.n)` lifted
+            // out of `for ! each` evaluated once before the loop while
+            // `captured { n: r }` kept writing `g.n` inside it — every
+            // iteration re-bumped 0.
+            var cell_hit = false;
+            for (self.cells.items) |cn| {
+                if (nodeMentionsName(w.node, cn)) {
+                    cell_hit = true;
+                    break;
+                }
+            }
+            if (cell_hit) { boundary = i; break; }
             if (self.isDischarge(&winv, &hoisted)) {
                 try post.append(self.allocator, &w.node.?);
                 continue;

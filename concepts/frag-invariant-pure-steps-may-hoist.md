@@ -16,7 +16,13 @@ When a `for ! each` body's leading steps never read the item and reach no
 them once before the loop. This is GHC's full-laziness move, but spelled
 through machinery Koru already had, rather than assumed by a runtime:
 
-- **Invariance is a dependence check** — no arg mentions the item or `__it`.
+- **Invariance is a dependence check** — no arg mentions the item or `__it`,
+  AND no arg mentions a name the body writes. The second clause was missing
+  until 320_183: a `capture … as g` cell is written per-iteration by
+  `captured { … }` steps, so `bump(x: g.n)` named no item yet read the
+  pre-loop snapshot when lifted — silent wrong-answer, printed 1 where 3
+  was owed. The pass now tracks `as`-arm bindings as live cells for their
+  subtree and treats any mention as variant.
 - **Cleanliness is the same flood `[parallel]` runs** — same-module flow
   impls whose transitive callees stay clean, control builtins pass through,
   denylisted effect names stop the prefix. Recursion edges are `.visiting`,
