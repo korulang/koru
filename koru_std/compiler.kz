@@ -15,6 +15,7 @@
 ~part prelate
 ~part materialize
 ~part materialize-build
+~part materialize-term
 ~part materialize-csbuild
 // Compiler system dependencies
 ~std/deps:requires.system {
@@ -26,7 +27,6 @@
     "pacman": "zig",
     "apk": "zig"
 }
-
 const std = @import("std");
 const ast = @import("ast");
 const Program = ast.Program;

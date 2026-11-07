@@ -31,9 +31,15 @@
     const env_target = std.process.getEnvVarOwned(allocator, "KORU_BACKEND_TARGET") catch null;
     defer if (env_target) |t| allocator.free(t);
     const build_target = emitter_helpers.getBuildConfig("target") orelse env_target;
+    // KORU_BACKEND_CPU=<model> is the host-side override for hosts whose
+    // native CPU detection under-reports features (e.g. aarch64 VMs that
+    // hide FEAT_SHA2 from getauxval — zig's -mcpu=native then emits the
+    // scalar sha2 path). Declared build:config "cpu" still wins.
+    const env_cpu = std.process.getEnvVarOwned(allocator, "KORU_BACKEND_CPU") catch null;
+    defer if (env_cpu) |c| allocator.free(c);
     // Silicon profile ("cpu" key, e.g. "generic_rv32+m+c" = ESP32-C3's
     // rv32imc/ilp32); without it the arch default picks an ABI the chip lacks.
-    const build_cpu = emitter_helpers.getBuildConfig("cpu");
+    const build_cpu = emitter_helpers.getBuildConfig("cpu") orelse env_cpu;
 
     var zig_lib_buf: [4096]u8 = undefined;
     const zig_lib_overlay = emitter_helpers.ensureZigLibOverlay(allocator, CompilerEnv.koru_home, &zig_lib_buf);
@@ -205,42 +211,5 @@
     }
 
     return .{ .ctx = ctx, .code = code };
-}
-
-// Non-success Term handling shared by the zig build / zig build-exe
-// drivers above — the two paths used to spell this switch verbatim.
-// Full Term union: a bare `.Exited` access panics when the build was
-// signal-killed (OOM killer under memory pressure), and that panic reads
-// as a compiler crash. Returns on exit 0; every other termination
-// reports and exits the process.
-fn zigChildTermOrExit(term: std.process.Child.Term, run_stderr: []const u8, tool: []const u8, stdout: std.fs.File, stderr: std.fs.File) void {
-    var buf2: [512]u8 = undefined;
-    switch (term) {
-        .Exited => |exit_code| {
-            if (exit_code == 0) return;
-            stdout.writeAll("✗ Compilation failed\n") catch {};
-            if (run_stderr.len > 0) {
-                stderr.writeAll("Error: ") catch {};
-                stderr.writeAll(run_stderr) catch {};
-                stderr.writeAll("\n") catch {};
-            }
-            std.process.exit(1);
-        },
-        .Signal => |sig| {
-            const msg = std.fmt.bufPrint(&buf2, "✗ {s} was killed by signal {d} — ended from outside, before it could finish. This usually means the machine ran out of memory, or something killed it externally. Check memory and load, then rerun. The source program was never judged.\n", .{ tool, sig }) catch "✗ build killed\n";
-            stderr.writeAll(msg) catch {};
-            std.process.exit(1);
-        },
-        .Stopped => |sig| {
-            const msg = std.fmt.bufPrint(&buf2, "✗ {s} was stopped by signal {d} and never resumed — resume or kill it, then rerun\n", .{ tool, sig }) catch "✗ build stopped\n";
-            stderr.writeAll(msg) catch {};
-            std.process.exit(1);
-        },
-        .Unknown => |status| {
-            const msg = std.fmt.bufPrint(&buf2, "✗ {s} ended in an unknown state (status {d}) — rerun; if it repeats, the machine is the suspect\n", .{ tool, status }) catch "✗ build failed\n";
-            stderr.writeAll(msg) catch {};
-            std.process.exit(1);
-        },
-    }
 }
 

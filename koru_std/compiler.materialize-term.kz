@@ -1,0 +1,38 @@
+// Non-success Term handling shared by the zig build / zig build-exe
+// drivers in materialize-build — the two paths used to spell this
+// switch verbatim. Split via `~part materialize-term` in compiler.kz
+// so materialize-build stays under the line wall.
+// Full Term union: a bare `.Exited` access panics when the build was
+// signal-killed (OOM killer under memory pressure), and that panic reads
+// as a compiler crash. Returns on exit 0; every other termination
+// reports and exits the process.
+fn zigChildTermOrExit(term: std.process.Child.Term, run_stderr: []const u8, tool: []const u8, stdout: std.fs.File, stderr: std.fs.File) void {
+    var buf2: [512]u8 = undefined;
+    switch (term) {
+        .Exited => |exit_code| {
+            if (exit_code == 0) return;
+            stdout.writeAll("✗ Compilation failed\n") catch {};
+            if (run_stderr.len > 0) {
+                stderr.writeAll("Error: ") catch {};
+                stderr.writeAll(run_stderr) catch {};
+                stderr.writeAll("\n") catch {};
+            }
+            std.process.exit(1);
+        },
+        .Signal => |sig| {
+            const msg = std.fmt.bufPrint(&buf2, "✗ {s} was killed by signal {d} — ended from outside, before it could finish. This usually means the machine ran out of memory, or something killed it externally. Check memory and load, then rerun. The source program was never judged.\n", .{ tool, sig }) catch "✗ build killed\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        },
+        .Stopped => |sig| {
+            const msg = std.fmt.bufPrint(&buf2, "✗ {s} was stopped by signal {d} and never resumed — resume or kill it, then rerun\n", .{ tool, sig }) catch "✗ build stopped\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        },
+        .Unknown => |status| {
+            const msg = std.fmt.bufPrint(&buf2, "✗ {s} ended in an unknown state (status {d}) — rerun; if it repeats, the machine is the suspect\n", .{ tool, status }) catch "✗ build failed\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        },
+    }
+}

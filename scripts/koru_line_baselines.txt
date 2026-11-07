@@ -74,8 +74,9 @@ koru_std/compiler.directives.kz	15
 koru_std/compiler.dump.kz	24
 koru_std/compiler.flags.kz	6
 koru_std/compiler.kz	2672
-koru_std/compiler.materialize-build.kz	246
+koru_std/compiler.materialize-build.kz	215
 koru_std/compiler.materialize-csbuild.kz	94
+koru_std/compiler.materialize-term.kz	38
 koru_std/compiler.materialize.kz	174
 koru_std/compiler.paths.kz	33
 koru_std/compiler.prelate.kz	35
@@ -188,6 +189,7 @@ koru_std/json.emit.kz	172
 koru_std/json.emitcap.kz	110
 koru_std/json.emithelpers.kz	491
 koru_std/json.emitjs.kz	14
+koru_std/json.gets.kz	76
 koru_std/json.helpers.kz	25
 koru_std/json.kz	174
 koru_std/json.parse.kz	224
