@@ -46,5 +46,5 @@
     koru_allocator().free(text);
 }
 ~[transform]proc emit|zig {
-    return .{ .transformed = EmitDrive.drive(allocator, reporter, item, invocation, program, false) };
+    return .{ .transformed = EmitDrive.drive(allocator, reporter, item, invocation, program, .heap) };
 }

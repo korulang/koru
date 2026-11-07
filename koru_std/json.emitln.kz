@@ -1,11 +1,8 @@
-// Koru Standard Library: JSON — emit.ln, the scratch-buffer emit, plus
-// EmitDrive, the site driver shared by `emit` and `emit.ln`.
+// Koru Standard Library: JSON — the scratch-buffer emit arms' decls.
 // Joined via `~part emitln` in json.kz; merged into the json module at
-// load. EmitDrive.drive is the emit transform's orchestration — schema
-// resolution stays in EmitH, capacity hints in EmitCap; `ln` is a
-// comptime mode that swaps the writer prelude (per-callsite threadlocal
-// scratch instead of an ArrayList), skips the reserve pass, and breaks
-// with a scoped slice instead of an owned one.
+// load. EmitDrive (the shared site driver, all three writer modes) lives
+// in json.emitdrive.kz — this file pins only the two non-allocating call
+// surfaces.
 //
 // emit.ln is the write-side twin of fmt:ln's discipline: the site emits
 // into a per-callsite threadlocal scratch (default 4096 bytes,
@@ -14,204 +11,35 @@
 // feed a synchronous sink (a send buffer, a file write) but can never be
 // stored or returned. No heap allocation, no emit.free — scratch needs
 // no discharge. Overflow panics naming the site's size, same as fmt:ln.
-// Schema grammar, escaping, and refusal diagnostics are identical to
-// `emit`; only the writer changes (EmitDrive.drive comptime mode).
+// CAVEAT (shared with fmt:ln): scratch@scoped promises frame-safety but
+// same-callsite REENTRANCY (recursion, a callback between emit and
+// consume) overwrites the buffer while the outer value is still alive —
+// silent corruption the phantom cannot see. Intended use only: emit →
+// consume with nothing reentrant between.
+//
+// emit.into is the zero-copy arm: `buf:` names a writable []u8 slice
+// (spliced verbatim into the generated writer — a connection's send
+// region, a stack array) and the site returns `usize`, bytes written.
+// snprintf contract: no slice return, because the phantom system cannot
+// honestly express "borrows caller's buf". Args resolve BY NAME, so
+// `value:` and `buf:` may arrive in either order. Overflow panics naming
+// emit.into; the buffer length is runtime, so the message says "exceeds
+// the provided buffer". No reserve pass — same as emit.ln.
 //
 //   std/json:emit.ln [size(8k)] (value: { posts: ps }): out
 //   |> orisha:respond(req, status: 200, body: out, ...): r
-
-const EmitDrive = struct {
-    const std2 = @import("std");
-    const ast2 = @import("ast");
-    const EH = @import("emitter_helpers");
-
-    /// The three per-site writer helpers (__jwesc/__jwnum/__jwflt).
-    /// `bty` spells the writer's `b:` param type — emit passes the
-    /// ArrayList pointer, emit.ln passes `anytype` so the same bodies
-    /// serve the scratch writer (module-level helpers cannot see the
-    /// block-local scratch type).
-    fn writerHelpers(out: *std2.ArrayList(u8), ctx: *EmitH.Ctx, bty: []const u8) void {
-    EmitH.w(out, ctx, "fn __jwesc{s}(b: {s}, a: @import(\"std\").mem.Allocator, v: []const u8) void {{ b.ensureUnusedCapacity(a, v.len + 2) catch @panic(\"std/json:emit: out of memory\"); b.appendAssumeCapacity('\"'); var run: usize = 0; var cap6 = false; const s20: @Vector(16, u8) = @splat(0x20); const sq: @Vector(16, u8) = @splat('\"'); const sb: @Vector(16, u8) = @splat('\\\\'); const nvec = v.len / 16; for (0..nvec) |wi| {{ const i = wi * 16; const vec: @Vector(16, u8) = v[i..][0..16].*; const mask = (vec < s20) | (vec == sq) | (vec == sb); if (@reduce(.Or, mask)) {{ for (v[i .. i + 16], i..) |c, j| {{ if (c >= 0x20 and c != '\"' and c != '\\\\') continue; if (!cap6) {{ b.ensureUnusedCapacity(a, 6 * (v.len - j) + 1) catch @panic(\"std/json:emit: out of memory\"); cap6 = true; }} b.appendSliceAssumeCapacity(v[run..j]); const esc: []const u8 = switch (c) {{ '\"' => \"\\\\\\\"\", '\\\\' => \"\\\\\\\\\", '\\n' => \"\\\\n\", '\\r' => \"\\\\r\", '\\t' => \"\\\\t\", 0x08 => \"\\\\b\", 0x0c => \"\\\\f\", else => \"\", }}; const uesc = esc.len == 0 and c < 0x20; if (uesc) {{ var ub: [8]u8 = undefined; const us = @import(\"std\").fmt.bufPrint(&ub, \"\\\\u{{x:0>4}}\", .{{c}}) catch unreachable; b.appendSliceAssumeCapacity(us); }} else {{ b.appendSliceAssumeCapacity(esc); }} run = j + 1; }} }} }} const tail = nvec * 16; const tlen = v.len - tail; if (tlen > 0) {{ var tb: [16]u8 = undefined; @memset(tb[0..], 'a'); @memcpy(tb[0..tlen], v[tail..]); const tvec: @Vector(16, u8) = tb[0..16].*; const tmask = (tvec < s20) | (tvec == sq) | (tvec == sb); if (@reduce(.Or, tmask)) {{ for (v[tail..], tail..) |c, i| {{ if (c >= 0x20 and c != '\"' and c != '\\\\') continue; if (!cap6) {{ b.ensureUnusedCapacity(a, 6 * (v.len - i) + 1) catch @panic(\"std/json:emit: out of memory\"); cap6 = true; }} b.appendSliceAssumeCapacity(v[run..i]); const esc: []const u8 = switch (c) {{ '\"' => \"\\\\\\\"\", '\\\\' => \"\\\\\\\\\", '\\n' => \"\\\\n\", '\\r' => \"\\\\r\", '\\t' => \"\\\\t\", 0x08 => \"\\\\b\", 0x0c => \"\\\\f\", else => \"\", }}; const uesc = esc.len == 0 and c < 0x20; if (uesc) {{ var ub: [8]u8 = undefined; const us = @import(\"std\").fmt.bufPrint(&ub, \"\\\\u{{x:0>4}}\", .{{c}}) catch unreachable; b.appendSliceAssumeCapacity(us); }} else {{ b.appendSliceAssumeCapacity(esc); }} run = i + 1; }} }} }} b.appendSliceAssumeCapacity(v[run..]); b.appendAssumeCapacity('\"'); }}\n", .{ ctx.sfx, bty });
-    EmitH.w(out, ctx, "fn __jwnum{s}(b: {s}, a: @import(\"std\").mem.Allocator, v: anytype) void {{ var nb: [512]u8 = undefined; const s = @import(\"std\").fmt.bufPrint(&nb, \"{{d}}\", .{{v}}) catch @panic(\"std/json:emit: number does not fit 512 bytes\"); b.appendSlice(a, s) catch @panic(\"std/json:emit: out of memory\"); }}\n", .{ ctx.sfx, bty });
-    EmitH.w(out, ctx, "fn __jwflt{s}(b: {s}, a: @import(\"std\").mem.Allocator, v: anytype) void {{ if (!@import(\"std\").math.isFinite(v)) {{ b.appendSlice(a, \"null\") catch @panic(\"std/json:emit: out of memory\"); return; }} __jwnum{s}(b, a, v); }}\n", .{ ctx.sfx, bty, ctx.sfx });
-    }
-
-    /// Drive one emit site. `ln` comptime-selects the scratch-buffer
-    /// emission; everything else — refusal paths, scope resolution, the
-    /// write sequence — is shared verbatim with `emit`.
-    fn drive(
-        allocator: anytype,
-        reporter: anytype,
-        item: anytype,
-        invocation: anytype,
-        program: anytype,
-        comptime ln: bool,
-    ) ast2.SiteResult {
-
-    // Helpers live in a container so they can recurse; it re-imports what it
-    // needs (fn-scope containers cannot reach fn-scope consts) — same shape
-    // as the parse twin.
-
-    if (item.* != .flow) @panic("std/json emit transform: containing item is not a flow - walker dispatch contract broken");
-    const flow = &item.flow;
-
-    if (invocation.args.len == 0) {
-        return .{ .replacement = ast2.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit requires a value: emit(value: {{...}}) or emit(value: <record binding>)", .{}) };
-    }
-    const value_text: []const u8 = invocation.args[0].value;
-
-    const sfx = std2.fmt.allocPrint(allocator, "_{d}_{d}", .{ flow.location.line, flow.location.column }) catch unreachable;
-
-    // At a nested site the transform sees a site VIEW: flow.inv() is a copy
-    // that does not resolve inside the real program. The real invocation is
-    // the holding continuation's node — that is what resolveBindingType must
-    // receive. At flow root there is no view; `invocation` is real.
-    const real_inv: *const ast2.Invocation = blk: {
-        if (flow.site_of) |site| {
-            if (site.node) |*n| {
-                if (n.* == .invocation) break :blk &n.invocation;
-            }
-        }
-        break :blk invocation;
-    };
-
-    // The bindings in scope at the emit site — the type source for every
-    // identifier value in the record literal.
-    const scope: []const ast2.ScopeBinding = if (flow.site_of) |site|
-        EH.scopeAtSite(allocator, program.items, site) catch &.{}
-    else
-        &.{}; // flow-root emit: no enclosing scope, literals only
-
-    var ctx = EmitH.Ctx{ .a = allocator, .sfx = sfx, .scope = scope, .program = program, .invocation = real_inv };
-
-    // [size(Nk)] on an emit.ln call sizes THIS site's threadlocal scratch —
-    // per-callsite like fmt:ln, default 4096. Malformed sizes become
-    // @compileError in the emitted source (SiteResult has no error channel).
-    var buf_size: usize = 4096;
-    var size_err: ?[]const u8 = null;
-    if (ln) {
-        const ann_parser = @import("annotation_parser");
-        if (ann_parser.getCall(allocator, invocation.annotations, "size") catch null) |sc| {
-            if (sc.args.len != 1) {
-                size_err = "std/json:emit.ln: [size(...)] takes exactly one argument — [size(8k)], [size(4096)]";
-            } else {
-                const spec = std2.mem.trim(u8, sc.args[0], " \t\"");
-                var mult: usize = 1;
-                var digits = spec;
-                if (digits.len > 0 and (digits[digits.len - 1] == 'k' or digits[digits.len - 1] == 'K')) {
-                    mult = 1024;
-                    digits = digits[0 .. digits.len - 1];
-                } else if (digits.len > 0 and (digits[digits.len - 1] == 'm' or digits[digits.len - 1] == 'M')) {
-                    mult = 1024 * 1024;
-                    digits = digits[0 .. digits.len - 1];
-                }
-                const parsed = std2.fmt.parseUnsigned(usize, digits, 10) catch 0;
-                buf_size = parsed *| mult;
-                if (buf_size == 0) {
-                    size_err = std2.fmt.allocPrint(allocator, "std/json:emit.ln: [size({s})] is not a size — digits with an optional k/m suffix, e.g. [size(8k)]", .{spec}) catch unreachable;
-                }
-            }
-        }
-    }
-
-    var helpers = std2.ArrayList(u8){};
-    var pending = std2.ArrayList(u8){};
-    var dispatch = std2.ArrayList(u8){};
-
-
-    // The write sequence: `{`, per-key "k":, the value, `}` — constant runs
-    // merge into single appendSlices; dynamic values flush and emit inline.
-    // The block breaks with the produced string — the emitter wraps it in a
-    // labeled block whose break value binds the site's `: name`.
-    writerHelpers(&helpers, &ctx, if (ln) "anytype" else "*@import(\"std\").ArrayList(u8)");
-    if (size_err) |msg| {
-        EmitH.w(&dispatch, &ctx, "@compileError(\"{s}\")", .{msg});
-    } else if (ln) {
-        EmitH.w(&dispatch, &ctx, "{{ const __Jw{s} = struct {{ threadlocal var __tls: [{d}]u8 = undefined; b: *[{d}]u8, n: usize = 0, fn append(self: *@This(), gpa: @import(\"std\").mem.Allocator, c: u8) !void {{ _ = gpa; if (self.n + 1 > self.b.len) __of(); self.b[self.n] = c; self.n += 1; }} fn appendSlice(self: *@This(), gpa: @import(\"std\").mem.Allocator, s: []const u8) !void {{ _ = gpa; if (self.n + s.len > self.b.len) __of(); @memcpy(self.b[self.n .. self.n + s.len], s); self.n += s.len; }} fn appendAssumeCapacity(self: *@This(), c: u8) void {{ self.b[self.n] = c; self.n += 1; }} fn appendSliceAssumeCapacity(self: *@This(), s: []const u8) void {{ @memcpy(self.b[self.n .. self.n + s.len], s); self.n += s.len; }} fn ensureUnusedCapacity(self: *@This(), gpa: @import(\"std\").mem.Allocator, add: usize) !void {{ _ = gpa; if (self.n + add > self.b.len) __of(); }} fn ensureTotalCapacity(self: *@This(), gpa: @import(\"std\").mem.Allocator, cap: usize) !void {{ _ = gpa; if (cap > self.b.len) __of(); }} fn slice(self: *const @This()) []const u8 {{ return self.b[0..self.n]; }} fn __of() noreturn {{ @panic(\"std/json:emit.ln output exceeds the {d}-byte scratch buffer — use emit (allocates, no cap) or [size(Nk)] for larger documents\"); }} }}; var __jb{s}: __Jw{s} = .{{ .b = &__Jw{s}.__tls }}; const __ja{s} = koru_allocator(); ", .{sfx, buf_size, buf_size, buf_size, sfx, sfx, sfx, sfx});
-    } else {
-    EmitH.w(&dispatch, &ctx, "{{ var __jb{s}: @import(\"std\").ArrayList(u8) = .{{}}; const __ja{s} = koru_allocator(); ", .{ sfx, sfx });
-    }
-    pending.appendSlice(allocator, "{") catch unreachable;
-
-    const vt = std2.mem.trim(u8, value_text, " \t\r\n");
-    if (vt.len > 0 and vt[0] == '{') {
-        if (vt.len < 2 or vt[vt.len - 1] != '}') {
-            return .{ .replacement = ast2.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit: malformed record literal at `value:`", .{}) };
-        }
-        const outs = EmitH.outsFromLiteral(&ctx, vt[1 .. vt.len - 1]) orelse {
-            return .{ .replacement = ast2.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "{s}", .{ctx.fail.?}) };
-        };
-        if (!ln) EmitCap.reserveOuts(&ctx, &dispatch, outs);
-        if (size_err == null) EmitH.emitOuts(&ctx, &dispatch, &pending, outs);
-    } else if (EmitH.isPlainIdent(vt)) {
-        // Whole-record emit: `emit(value: cfg)` where cfg is a
-        // branch-payload binding — every declared payload field emits.
-        const resolved = EmitH.astfn.resolveBindingType(allocator, .{ .name = vt, .type = "", .value_ref = vt }, invocation, program) catch {
-            return .{ .replacement = ast2.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit: '{s}' does not resolve to a record payload — spell the schema out: emit(value: {{ field: field, ... }})", .{vt}) };
-        };
-        if (resolved.fields.len == 0) {
-            return .{ .replacement = ast2.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit: '{s}' resolves to a payload with no named fields", .{vt}) };
-        }
-        const fields = EmitH.fieldsFromPayload(&ctx, resolved.fields) orelse {
-            return .{ .replacement = ast2.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "{s}", .{ctx.fail.?}) };
-        };
-        if (!ln) EmitCap.reserveFields(&ctx, &dispatch, fields, vt);
-        if (size_err == null) EmitH.emitFields(&ctx, &dispatch, &pending, fields, vt);
-    } else {
-        return .{ .replacement = ast2.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "std/json:emit: `value:` wants a record literal `{{ key: value, ... }}` or a record-typed binding — got '{s}'", .{vt}) };
-    }
-
-    pending.appendSlice(allocator, "}") catch unreachable;
-    if (size_err == null) EmitH.emitFlush(&ctx, &dispatch, &pending);
-    if (size_err == null) {
-        if (ln) {
-            EmitH.w(&dispatch, &ctx, "break :__KORU_INLINE__ __jb{s}.slice(); }}", .{ sfx });
-        } else {
-    EmitH.w(&dispatch, &ctx, "break :__KORU_INLINE__ __jb{s}.toOwnedSlice(__ja{s}) catch @panic(\"std/json:emit: out of memory\"); }}", .{ sfx, sfx });
-        }
-    }
-
-    if (ctx.fail) |f| {
-        return .{ .replacement = ast2.refusal(allocator, reporter, .KORU178, flow.location, flow.module, "{s}", .{f}) };
-    }
-
-    const inline_code = dispatch.toOwnedSlice(allocator) catch unreachable;
-
-    // Keep the `emit` path — the decl's `-> string<emitted!>` mints the
-    // obligation on the site's `: name` binding directly.
-    const new_marks = allocator.alloc([]const u8, flow.inv().marks.len + 1) catch unreachable;
-    for (flow.inv().marks, 0..) |m, k| new_marks[k] = m;
-    new_marks[flow.inv().marks.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
-
-    const new_inv = ast2.Invocation{
-        .path = flow.inv().path,
-        .args = flow.inv().args,
-        .annotations = flow.inv().annotations, .marks = new_marks,
-        .inserted_by_tap = flow.inv().inserted_by_tap,
-        .from_opaque_tap = flow.inv().from_opaque_tap,
-        .inline_body = inline_code,
-        // Preserve the site's `: body` bind — the labeled block's break
-        // value materialises as `const body = ...`.
-        .return_binding = flow.inv().return_binding,
-    };
-
-    var new_flow = flow.*;
-    new_flow.body = ast2.rootSite(new_inv, flow.body.continuations, flow.location);
-    new_flow.inline_body = inline_code;
-
-    const appended = allocator.alloc(ast2.Item, 1) catch unreachable;
-    appended[0] = ast2.Item{ .inline_code = ast2.InlineCode{
-        .code = helpers.toOwnedSlice(allocator) catch unreachable,
-        .location = flow.location,
-        .module = flow.module,
-    } };
-
-    return .{ .replacement = ast2.Item{ .flow = new_flow }, .appended = appended };
-    }
-};
+//
+//   std/json:emit.into(buf: tgt.buf[tgt.head_pad..], value: { posts: ps }): n
+//   |> orisha:respond-filled(req, status: 200, tgt, n, ...): r
 
 ~[comptime|transform]pub tor emit.ln { value: string, reporter: *std/compiler:ErrorReporter } -> string<scratch@scoped>
 
 ~[transform]proc emit.ln|zig {
-    return .{ .transformed = EmitDrive.drive(allocator, reporter, item, invocation, program, true) };
+    return .{ .transformed = EmitDrive.drive(allocator, reporter, item, invocation, program, .ln) };
+}
+
+~[comptime|transform]pub tor emit.into { buf: string, value: string, reporter: *std/compiler:ErrorReporter } -> usize
+
+~[transform]proc emit.into|zig {
+    return .{ .transformed = EmitDrive.drive(allocator, reporter, item, invocation, program, .into) };
 }

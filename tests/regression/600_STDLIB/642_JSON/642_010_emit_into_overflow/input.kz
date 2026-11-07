@@ -1,0 +1,16 @@
+// PIN: emit.into overflows the caller's slice LOUDLY — the panic names
+// emit.into and says the provided buffer was exceeded (the length is
+// runtime, so no comptime size is claimed).
+threadlocal var sbuf: [16]u8 = undefined;
+
+~import std/io
+~import std/json
+
+~pub tor docs {} -> []{ id: i64, body: string }
+~proc docs|zig {
+    return &.{ .{ .id = 7, .body = "this body is far too long for sixteen bytes" } };
+}
+
+~docs(): ds
+|> std/json:emit.into(buf: sbuf[0..], value: { docs: ds }): n
+|> std/io:print.ln("n={{ n:d }}")

@@ -1,0 +1,2 @@
+LN:{"docs":[{"id":7,"body":"hello \"world\"\n"},{"id":3,"body":"plain"},{"id":11,"body":"tab\tand\u0001ctrl"}]}
+INTO n=108 body={"docs":[{"id":7,"body":"hello \"world\"\n"},{"id":3,"body":"plain"},{"id":11,"body":"tab\tand\u0001ctrl"}]}

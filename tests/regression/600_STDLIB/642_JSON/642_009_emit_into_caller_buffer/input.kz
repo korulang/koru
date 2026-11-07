@@ -1,0 +1,24 @@
+// PIN: std/json:emit.into renders into a caller-owned []u8 and returns
+// usize — byte-identical to emit.ln's scratch output, with `value:` and
+// `buf:` resolved by name in either order (this site spells value first).
+threadlocal var sbuf: [512]u8 = undefined;
+
+~import std/io
+~import std/json
+
+~pub tor docs {} -> []{ id: i64, body: string }
+~proc docs|zig {
+    return &.{
+        .{ .id = 7, .body = "hello \"world\"\n" },
+        .{ .id = 3, .body = "plain" },
+        .{ .id = 11, .body = "tab\tand\x01ctrl" },
+    };
+}
+
+~docs(): ds
+|> std/json:emit.ln(value: { docs: ds }): out
+|> std/io:print.ln("LN:{{ out:s }}")
+
+~docs(): ds2
+|> std/json:emit.into(value: { docs: ds2 }, buf: sbuf[0..]): n
+|> std/io:print.ln("INTO n={{ n:d }} body={{ sbuf[0..n]:s }}")

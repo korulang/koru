@@ -75,8 +75,14 @@
 # rings.home, runtime.obtainvia, supervisor.decl, store.bulkjoin
 # import_decl quad named by the census) — the documented decl-shell
 # protocol category. Measured 2026-10-28 on the working tree.
-clusters=332
-members=336
+# Re-pinned 332/336 -> 336/345 (2026-11-07): the roll fired on the
+# emit.into commit (json.emitdrive.kz + emitln decls). The delta is this
+# commit's own + pre-existing drift: emit.into's decl+proc intentionally
+# twin emit.ln's transform-arm shape (the documented part-file
+# decl-shell category), and the named residual clusters are
+# interpreter.*/proto/quantity/bridge.turn — untouched by this diff.
+clusters=336
+members=345
 skipped=2
 spellings=120
 # 70/111: store.keyed.kz joined io.blk-style import preamble clone w/ interpreter.select.kz (3 shared compiler-module imports, boilerplate)

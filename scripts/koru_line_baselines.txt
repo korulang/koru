@@ -187,9 +187,10 @@ koru_std/io.lowers.kz	36
 koru_std/json.dom.kz	208
 koru_std/json.emit.kz	50
 koru_std/json.emitcap.kz	110
+koru_std/json.emitdrive.kz	237
 koru_std/json.emithelpers.kz	491
 koru_std/json.emitjs.kz	14
-koru_std/json.emitln.kz	217
+koru_std/json.emitln.kz	45
 koru_std/json.gets.kz	76
 koru_std/json.helpers.kz	25
 koru_std/json.kz	174

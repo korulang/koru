@@ -6,6 +6,7 @@
 ~part emit
 ~part emithelpers
 ~part emitcap
+~part emitdrive
 ~part emitjs
 ~part emitln
 ~part parsehelpers
@@ -17,7 +18,6 @@ const std = @import("std");
 // ============================================================================
 // Types
 // ============================================================================
-
 pub const JsonObject = struct {
     buffer: std.ArrayList(u8),
     allocator: std.mem.Allocator,
