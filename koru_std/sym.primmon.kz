@@ -142,8 +142,10 @@ fn lpMul(alloc: std.mem.Allocator, a: LPoly, b: LPoly) !LPoly {
 }
 
 // The polynomial-in-θ coefficient list of n, where θ = tkind(ukey).
-// Null: a θ sits non-polynomially — inside inv/sq/atan/exp (the
-// rational-in-θ lane is future work: Hermite in the extension).
+// Null: a θ sits non-polynomially — inside inv/sq/atan/exp.  Rational
+// functions of θ are the gsub lane's ground (F = H/dlog is rational
+// in t); for a primitive θ the h-free remainder is non-elementary by
+// Liouville-in-the-extension, so no Hermite-in-θ lane is owed.
 fn primPolyOf(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8, nukey: ?[]const u8, tkind: NodeKind) anyerror!?LPoly {
     switch (n.kind) {
         .dec, .atom, .rsum => return try lpSingle(alloc, try nodeClone(alloc, n)),
@@ -167,8 +169,7 @@ fn primPolyOf(alloc: std.mem.Allocator, n: *const SNode, ukey: []const u8, nukey
                     return p;
                 }
             }
-            // a non-matching unary leaf is a coefficient only if no
-            // theta hides in its argument (log(log x) for theta=log x).
+            // a non-matching unary leaf is a coefficient only if no theta hides in its arg.
             if (try primHasU(alloc, n, ukey, nukey, tkind)) return null;
             return try lpSingle(alloc, try nodeClone(alloc, n));
         },
@@ -255,9 +256,8 @@ fn primCascade(
     depth: u8,
     lane_extra: *?[]const u8,
 ) !?DecideIntegOut {
-    // θ = tkind(u): the leaf's argument fixes u; any other leaf is then
-    // a base-field coefficient for this lane (the cascade recurses on
-    // it).
+    // θ = tkind(u): the leaf's argument fixes u; any other leaf is a
+    // base-field coefficient for this lane (the cascade recurses on it).
     const ukey = try canonOf(alloc, un);
     defer alloc.free(ukey);
     // The parity twin of the argument: atan(-u) = -theta, log(1/u) =
@@ -320,9 +320,9 @@ fn primCascade(
     const theta_txt = try std.fmt.allocPrint(alloc, "{s}({s})", .{ th_sp, ukey });
     defer alloc.free(theta_txt);
 
-    // The cascade.  r[j] holds the coefficient text of θ^j; r[n+1] is
-    // the still-unknown constant carried as "0e0" until step n resolves
-    // it, and each step folds C = γ/(i+1) back into r[i+1].
+    // The cascade.  r[j] is the coefficient text of θ^j; r[n+1] is the
+    // unknown constant ("0e0") until step n resolves it, each step
+    // folding C = γ/(i+1) back into r[i+1].
     var r = try alloc.alloc(?[]u8, n + 2);
     for (r) |*s| s.* = null;
     defer {

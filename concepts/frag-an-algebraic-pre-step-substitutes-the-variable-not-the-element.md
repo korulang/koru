@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-an-algebraic-pre-step-substitutes-the-variable-not-the-element
-provenance: sym B9/B9b/B10/B10c, 2026-11 — after the dlog lane exhausted
+provenance: sym B9/B9b/B10/B10c/B10d, 2026-11 — after the dlog lane exhausted
   per-element substitution, the remaining "arg-nonrational" refusals
   (atan(sqrt x), e^{sqrt x}, log(sqrt x)) turned out to need a
   different move entirely: substitute the variable, not an element.
@@ -10,7 +10,8 @@ provenance: sym B9/B9b/B10/B10c, 2026-11 — after the dlog lane exhausted
   Euler's first — for the sqrt(x^2+c) radicand the B9 boundary
   paragraph had named as out of reach.  B10c closed the inverse-law
   pair: log(exp u) -> u, the mirror of the exp(log u) -> u fold that
-  had been folding silently all along.
+  had been folding silently all along.  B10d paid the conjugate-
+  expansion debt B10 itself named — both folds, canon-side.
 ts: 2026-11-05
 tags: [koru, stdlib, sym, risch, integration, substitution, algebraic]
 ---
@@ -88,10 +89,24 @@ but its conjugate t = x + √(x²+c) rationalizes identically
 not fold between conjugates, so the two choices emit different
 canonical answers for the same integral. Picking t = x + √u makes
 the log term spell log(x + √(x²+c)) — the asinh-form textbook
-answer — for free. The residual ugly spelling (inv(x+√u) towers
-where an expanded x√u would sit) is conjugate-expansion debt: norm
-still does not distribute (a+b)² − (a−b)² -> 4ab, and that belongs
-to a canon pass, not a lane.
+answer — for free.
+
+B10d paid the residual debt — the inv(x+√u) towers — with two
+conjugate folds, both exact field arithmetic and neither a
+distribution. inv(a+√u) rationalizes to (√u−a)·inv(u−a²), gated on
+u−a² norming to a nonzero dec: the fold fires only when the
+conjugate product collapses, so no add ever sits under an inv that
+wasn't a true conjugate denominator (and inv(3+√11) -> (√11−3)/2
+falls out for free, numeric denominators included). The second fold
+merges the square pair the first one produces: c·(a+b)² − c·(a−b)²
+-> 4·c·a·b, run over the sum's grouped (coeff, base) pairs before
+term rebuild — that is what turns Euler's t² and t⁻² terms into
+x√u directly, so √(x²±c) emits the textbook x√u/2 ± log(x+√u)/2
+rather than any inv-tower. One wrinkle worth keeping: the
+conjugate's varying kid carries its own −1 (the canon spelling of
+√u−x is add[−x, √u]), so the merged base needs its sign lifted
+back into the coefficient — canon-of-negation, not string
+equality, is the matching test.
 
 What the family is NOT: it does not integrate mixed radicands
 (√(1+x²)·√(1+2x²) refuses euler-radicand-mixed), other quadratic

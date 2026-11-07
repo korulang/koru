@@ -58,6 +58,7 @@
 ~part gsuba
 ~part sqsub
 ~part euler
+~part conj
 ~part canon
 ~part rel
 ~part alg
@@ -404,8 +405,7 @@ fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
 
 // Generator registry — atoms 4.. index a declared generator (0=pi,1=e,
 // 2=phi,3=x). GReg is per-call state from a rel:v1 registry text; SNode
-// stores only the index, so one derivation shares one registry.
-// laws[i] == null means declared but lawless — deriving refuses by name.
+// stores only the index. laws[i] == null means declared but lawless.
 const GReg = struct {
     names: std.ArrayList([]const u8),
     laws: std.ArrayList(?*SNode),
@@ -884,8 +884,7 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             errdefer if (inner_live) nodeFree(alloc, inner);
             if (inner.kind == .dec) {
                 if (inner.dec.neg) {
-                    // sqrt(-d) -> i*sqrt(|d|) via the Q(i) ring; decSqrtExact
-                    // still folds squares (sqrt(-4) -> 2i).
+                    // sqrt(-d) -> i*sqrt(|d|) via the Q(i) ring.
                     inner.dec.neg = false;
                     const sqn = try nodeUnary(alloc, .sq, inner);
                     inner_live = false;
@@ -938,8 +937,7 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     // real constant — the plain log node stays.
                     zv.deinit();
                 } else {
-                    // log of a Q(i) constant over the complex principal
-                    // branch: (1/2)log(a^2+b^2) + i*arg.
+                    // log of a Q(i) constant: (1/2)log(a^2+b^2) + i*arg.
                     nodeFree(alloc, inner);
                     inner_live = false;
                     const out = try logQiNode(alloc, &zv);
@@ -948,8 +946,7 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                 }
             }
             if (inner.kind == .sq) {
-                // log(sqrt u) -> (1/2)*log u: exact on the principal branch
-                // (re and im halve) — nested radicals recurse for free.
+                // log(sqrt u) -> (1/2)*log u; nested radicals recurse.
                 const lg = try nodeUnary(alloc, .log, inner.kid);
                 alloc.destroy(inner);
                 inner_live = false;
@@ -959,8 +956,7 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             }
             if (inner.kind == .exp) {
                 // log(exp u) -> u — the other inverse law; exact on the
-                // real reading (off-strip complex args pick up a 2pi*i
-                // winding term — the same commitment exp(log u)->u made).
+                // real reading (off-strip complex picks up a 2pi*i term).
                 const u = inner.kid;
                 alloc.destroy(inner);
                 inner_live = false;
@@ -1107,8 +1103,7 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             }
             if (inner.kind == .add or inner.kind == .mul) {
                 if (try qiConstOf(alloc, inner)) |zc| {
-                    // inv(a+bi) = (a-bi)*inv(a^2+b^2) through one norm —
-                    // inv(4e0) folds 25e-2, non-2/5 norms stay symbolic.
+                    // inv(a+bi) = (a-bi)*inv(a^2+b^2) through one norm.
                     var zv = zc;
                     defer zv.deinit();
                     var nim = zv.im;
@@ -1124,6 +1119,11 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     nodeFree(alloc, inner);
                     inner_live = false;
                     return norm(alloc, pr);
+                }
+            }
+            if (inner.kind == .add) {
+                if (try normConjInv(alloc, inner)) |cn| {
+                    nodeFree(alloc, inner); inner_live = false; return cn;
                 }
             }
             if (inner.kind == .exp) {
@@ -1250,6 +1250,8 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                     };
                 }
             }
+            // conjugate-square pairs c*(a+b)^2 - c*(a-b)^2 -> 4c*a*b.
+            try normConjSquares(alloc, &bases, &coeffs);
             // rebuild terms: constant term (base == dec 1) first
             var out_kids = std.ArrayList(*SNode){};
             defer out_kids.deinit(alloc);
@@ -1343,9 +1345,8 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
                 return nodeDec(alloc, try decZero(alloc));
             }
             // coeff*inv(dec) rational reduction to lowest terms — den==1
-            // folds into coeff, else the denominator rewrites to the reduced
-            // canon dec: 4*inv(6e1) -> inv(1.5e1) is the canon a fresh
-            // "1/15" produces, keeping equiv = string equality honest.
+            // folds into coeff, else the denominator rewrites to the
+            // reduced canon dec (equiv stays string equality).
             var ii: usize = 0;
             while (ii < facs.items.len) {
                 const f = facs.items[ii];
@@ -1436,8 +1437,7 @@ fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
             }
             // Q(i) constant ring fold: every provably-Q(i) factor (bare i,
             // c*i, or re+c*i) multiplies in the ring; >=2 collapse to one
-            // canonical node — dec joins coeff, im-only c*i, re+im a sum.
-            // i*i -> -1e0 is the smallest case; i*i*x -> -1e0*x rides coeff.
+            // canonical node — i*i -> -1e0 is the smallest case.
             var qi_idx = std.ArrayList(usize){};
             defer qi_idx.deinit(alloc);
             var qi_vals = std.ArrayList(Qi){};

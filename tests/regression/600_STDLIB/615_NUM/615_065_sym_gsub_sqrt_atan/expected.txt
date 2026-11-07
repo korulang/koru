@@ -2,7 +2,7 @@ decide(layer=elementary)|antiderivative=(inv(3e0)*√((1e0+(x*x)))*√((1e0+(x*x
 decide(layer=elementary)|antiderivative=√((1e0+(x*x)))|note=risch-sq-gsub-subst;checked-exact
 decide(layer=elementary)|antiderivative=√(x)|note=risch-sq-gsub-subst;checked-exact
 decide(layer=elementary)|antiderivative=(4e-1*√((1e0+(x*x)))*√((1e0+(x*x)))*√((1e0+(x*x)))*√((1e0+(x*x)))*√((1e0+(x*x))))|note=risch-sq-gsub-subst;checked-exact
-decide(layer=elementary)|antiderivative=(2.5e-1*((-5e-1*inv((x+√((1e0+(x*x)))))*inv((x+√((1e0+(x*x))))))+(2e0*log((x+√((1e0+(x*x))))))+(5e-1*(x+√((1e0+(x*x))))*(x+√((1e0+(x*x)))))))|note=risch-euler-subst-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(2.5e-1*((2e0*log((x+√((1e0+(x*x))))))+(2e0*x*√((1e0+(x*x))))))|note=risch-euler-subst-constructed;checked-exact
 decide(layer=elementary)|antiderivative=(5e-1*atan((x*x))*atan((x*x)))|note=risch-atan-mono-constructed;checked-exact
 decide(layer=elementary)|antiderivative=(5e-1*atan(x)*atan(x))|note=risch-atan-mono-constructed;checked-exact
 hs:decide(layer=holonomic-special)|note=no-risch-elementary-form-not-constructed;integrand-cert-structural;lane=atan-mono-inner|integrand=ode(k=1,d=4,via=of)|p0=[0,-2,0,4]|p1=[1,0,0,0,1]|antiderivative=ode(k=2,d=4,via=shift)|p0=[0]|p1=[0,-2,0,4]|p2=[1,0,0,0,1]

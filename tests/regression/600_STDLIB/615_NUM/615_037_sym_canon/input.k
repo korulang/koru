@@ -78,3 +78,19 @@ std/sym:lit(log(exp(x*x)))
 std/sym:lit(log(exp(log(x))))
 | exact a |> std/io:print.ln("{{ a:s }}") |> std/sym:free(n: a)
 | bad |> std/io:print.ln("bad")
+
+std/sym:lit(1/(3+√(11)))
+| exact a |> std/io:print.ln("{{ a:s }}") |> std/sym:free(n: a)
+| bad |> std/io:print.ln("bad")
+
+std/sym:lit(1/(x+√(x*x+1)))
+| exact a |> std/io:print.ln("{{ a:s }}") |> std/sym:free(n: a)
+| bad |> std/io:print.ln("bad")
+
+std/sym:lit(1/(1+√(x)))
+| exact a |> std/io:print.ln("{{ a:s }}") |> std/sym:free(n: a)
+| bad |> std/io:print.ln("bad")
+
+std/sym:lit((x+√(x))*(x+√(x))-(x-√(x))*(x-√(x)))
+| exact a |> std/io:print.ln("{{ a:s }}") |> std/sym:free(n: a)
+| bad |> std/io:print.ln("bad")

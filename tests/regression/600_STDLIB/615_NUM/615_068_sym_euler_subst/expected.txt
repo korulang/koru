@@ -1,8 +1,8 @@
-decide(layer=elementary)|antiderivative=(2.5e-1*((-5e-1*inv((x+√((1e0+(x*x)))))*inv((x+√((1e0+(x*x))))))+(2e0*log((x+√((1e0+(x*x))))))+(5e-1*(x+√((1e0+(x*x))))*(x+√((1e0+(x*x)))))))|note=risch-euler-subst-constructed;checked-exact
-decide(layer=elementary)|antiderivative=(2.5e-1*((-8e0*inv((x+√((4e0+(x*x)))))*inv((x+√((4e0+(x*x))))))+(5e-1*(x+√((4e0+(x*x))))*(x+√((4e0+(x*x)))))+(8e0*log((x+√((4e0+(x*x))))))))|note=risch-euler-subst-constructed;checked-exact
-decide(layer=elementary)|antiderivative=(2.5e-1*((-2e0*log((x+√((-1e0+(x*x))))))+(-5e-1*inv((x+√((-1e0+(x*x)))))*inv((x+√((-1e0+(x*x))))))+(5e-1*(x+√((-1e0+(x*x))))*(x+√((-1e0+(x*x)))))))|note=risch-euler-subst-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(2.5e-1*((2e0*log((x+√((1e0+(x*x))))))+(2e0*x*√((1e0+(x*x))))))|note=risch-euler-subst-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(2.5e-1*((2e0*x*√((4e0+(x*x))))+(8e0*log((x+√((4e0+(x*x))))))))|note=risch-euler-subst-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(2.5e-1*((-2e0*log((x+√((-1e0+(x*x))))))+(2e0*x*√((-1e0+(x*x))))))|note=risch-euler-subst-constructed;checked-exact
 decide(layer=elementary)|antiderivative=log((x+√((1e0+(x*x)))))|note=risch-euler-subst-constructed;checked-exact
-decide(layer=elementary)|antiderivative=(2.5e-1*((-2e0*log((x+√((1e0+(x*x))))))+(-5e-1*inv((x+√((1e0+(x*x)))))*inv((x+√((1e0+(x*x))))))+(5e-1*(x+√((1e0+(x*x))))*(x+√((1e0+(x*x)))))))|note=risch-euler-subst-constructed;checked-exact
+decide(layer=elementary)|antiderivative=(2.5e-1*((-2e0*log((x+√((1e0+(x*x))))))+(2e0*x*√((1e0+(x*x))))))|note=risch-euler-subst-constructed;checked-exact
 decide(layer=elementary)|antiderivative=(2e0*((-5e-1*log((1e0+x+√((1e0+(x*x))))))+(5e-1*log((-1e0+x+√((1e0+(x*x))))))))|note=risch-euler-subst-constructed;checked-exact
 hs:decide(layer=holonomic-special)|note=no-risch-elementary-form-not-constructed;integrand-cert-structural;lane=euler-radicand-mixed|integrand=ode(k=1,d=4,via=of)|p0=[0,-3,0,-4]|p1=[1,0,3,0,2]|antiderivative=ode(k=2,d=4,via=shift)|p0=[0]|p1=[0,-3,0,-4]|p2=[1,0,3,0,2]
 hs:decide(layer=holonomic-special)|note=no-risch-elementary-form-not-constructed;integrand-cert-structural;lane=euler-radicand-shape|integrand=ode(k=1,d=2,via=of)|p0=[0,-4]|p1=[2,0,4]|antiderivative=ode(k=2,d=2,via=shift)|p0=[0]|p1=[0,-4]|p2=[2,0,4]
