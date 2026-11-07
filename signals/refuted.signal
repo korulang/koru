@@ -1,0 +1,6 @@
+name: refuted
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a claimed defect or wall measured absent on the current tree — the repro compiles green, the pinned failure is stale (dead source shape, fixed earlier, or a misattributed diagnostic). Distinct from wall-verified (a crash reproduced-or-refuted and closed with pins on both sides): refuted fires when the claimed gap itself does not exist, so the work becomes pins-and-evidence rather than a fix. Burned lesson: a KORU030 "no tracked phantom state" on a misnamed argument read as a phantom-seeding wall for a day — the boundary was green since 384fd31d3.
