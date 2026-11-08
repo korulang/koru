@@ -3,6 +3,7 @@ const log = @import("log");
 const DEBUG = false;  // Set to true for verbose logging
 const ast = @import("ast");
 const module_resolver_mod = @import("module_resolver");
+const struct_literal = @import("struct_literal");
 const ModuleResolver = module_resolver_mod.ModuleResolver;
 
 // Explicit error set to avoid circular inference with recursive foreach/conditional
@@ -168,11 +169,105 @@ fn normalizeTypeStringOpt(ctx: *Context, string_slot: *?[]const u8) !void {
     }
 }
 
+/// `Ident[params]` → `Ident_p1_p2` inside a TYPE STRING — name-level
+/// canonicalization for specialization-is-synthesis (frag:
+/// specialization-is-synthesis-not-generics). `Heap[i64]` denotes the
+/// already-synthesized concrete decl `Heap_i64`; `Map[string,i64]` →
+/// `Map_string_i64` (underscore-join is the synthesized-name convention).
+/// Recursive for nested params. Only fires when the bracket content is a
+/// type-param list (struct_literal.bracketContentIsTypeParams) — `i64[note]`
+/// annotations, `u64[\d+]` literate tags, and `[8]i64` array tails are
+/// untouched. After this rewrite every downstream consumer (KORU117 host
+/// type check, emitter, phantom checker) sees `Heap_i64` uniformly.
+fn rewriteBracketParams(allocator: std.mem.Allocator, s: []const u8) !?[]const u8 {
+    var out = std.ArrayList(u8).empty;
+    var changed = false;
+    var i: usize = 0;
+    while (i < s.len) {
+        const c = s[i];
+        const is_ident_start = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
+        if (!is_ident_start) {
+            try out.append(allocator, c);
+            i += 1;
+            continue;
+        }
+        // Maximal identifier run, then an optional `[…]` param tail.
+        var j = i + 1;
+        while (j < s.len and ((s[j] >= 'a' and s[j] <= 'z') or (s[j] >= 'A' and s[j] <= 'Z') or
+            (s[j] >= '0' and s[j] <= '9') or s[j] == '_' or s[j] == '-')) : (j += 1) {}
+        const name = s[i..j];
+        if (j < s.len and s[j] == '[') {
+            // Balanced bracket match.
+            var depth: i32 = 1;
+            var k = j + 1;
+            while (k < s.len and depth > 0) : (k += 1) {
+                if (s[k] == '[') depth += 1;
+                if (s[k] == ']') depth -= 1;
+            }
+            if (depth == 0) {
+                const content = s[j + 1 .. k - 1];
+                if (struct_literal.bracketContentIsTypeParams(content)) {
+                    // Rewrite each top-level comma element recursively.
+                    var params = std.ArrayList([]const u8).empty;
+                    var pstart: usize = 0;
+                    var pd: i32 = 0;
+                    var pi: usize = 0;
+                    while (pi <= content.len) : (pi += 1) {
+                        const atend = pi == content.len;
+                        const pc: u8 = if (atend) ',' else content[pi];
+                        if (!atend) {
+                            switch (pc) {
+                                '[', '{', '(', '<' => pd += 1,
+                                ']', '}', ')', '>' => pd -= 1,
+                                else => {},
+                            }
+                        }
+                        if (pc == ',' and pd == 0) {
+                            const el = std.mem.trim(u8, content[pstart..pi], " \t\r\n");
+                            if (el.len > 0) {
+                                const rw = try rewriteBracketParams(allocator, el);
+                                try params.append(allocator, rw orelse el);
+                            }
+                            pstart = pi + 1;
+                        }
+                    }
+                    try out.appendSlice(allocator, name);
+                    for (params.items) |p| {
+                        try out.append(allocator, '_');
+                        try out.appendSlice(allocator, p);
+                    }
+                    i = k;
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+        try out.appendSlice(allocator, name);
+        i = j;
+    }
+    if (!changed) {
+        out.deinit(allocator);
+        return null;
+    }
+    return try out.toOwnedSlice(allocator);
+}
+
 fn normalizeTypeString(ctx: *Context, old: []const u8) !?[]const u8 {
+    // Bracket-param rewrite first: `Heap[i64]` → `Heap_i64` is name-level
+    // canonicalization, orthogonal to the module-path rewrite below. The
+    // result (when it fires) becomes the string the colon scan reads.
+    var bracket_owned: ?[]const u8 = null;
+    var cur = old;
+    if (try rewriteBracketParams(ctx.allocator, old)) |rw| {
+        bracket_owned = rw;
+        cur = rw;
+    }
+    defer if (bracket_owned) |bo| ctx.allocator.free(bo);
+
     var bracket_depth: i32 = 0;
     var angle_depth: i32 = 0;
     var colon_idx: ?usize = null;
-    for (old, 0..) |c, i| {
+    for (cur, 0..) |c, i| {
         switch (c) {
             '[' => bracket_depth += 1,
             ']' => bracket_depth -= 1,
@@ -185,21 +280,34 @@ fn normalizeTypeString(ctx: *Context, old: []const u8) !?[]const u8 {
             else => {},
         }
     }
-    const ci = colon_idx orelse return null;
+    const ci = colon_idx orelse {
+        if (bracket_owned) |bo| {
+            bracket_owned = null;
+            return bo;
+        }
+        return null;
+    };
     // Walk back over the path token (ident chars + separators).
     var start = ci;
     while (start > 0) {
-        const c = old[start - 1];
+        const c = cur[start - 1];
         const is_path_char = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
             (c >= '0' and c <= '9') or c == '_' or c == '-' or c == '/' or c == '.';
         if (!is_path_char) break;
         start -= 1;
     }
-    if (start == ci) return null;
-    const spelling = old[start..ci];
-    const resolved = resolveModuleSpelling(ctx, spelling) orelse return null;
-    if (std.mem.eql(u8, resolved, spelling)) return null;
-    return try std.fmt.allocPrint(ctx.allocator, "{s}{s}{s}", .{ old[0..start], resolved, old[ci..] });
+    const take_bracket = struct {
+        fn f(slot: *?[]const u8) ?[]const u8 {
+            const v = slot.* orelse return null;
+            slot.* = null;
+            return v;
+        }
+    }.f;
+    if (start == ci) return take_bracket(&bracket_owned);
+    const spelling = cur[start..ci];
+    const resolved = resolveModuleSpelling(ctx, spelling) orelse return take_bracket(&bracket_owned);
+    if (std.mem.eql(u8, resolved, spelling)) return take_bracket(&bracket_owned);
+    return try std.fmt.allocPrint(ctx.allocator, "{s}{s}{s}", .{ cur[0..start], resolved, cur[ci..] });
 }
 
 /// Field.module_path is a stored spelling (`b/pump` from `b/pump:Payload`);

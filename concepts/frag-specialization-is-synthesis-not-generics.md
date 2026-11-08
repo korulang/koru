@@ -53,6 +53,18 @@ whole gap. Whatever wins, the first work item is deciding what bracket
 params in type position are ALLOWED to mean — under this ruling, never
 type-system application, always synthesis parameters.
 
+**Landed 2026-11-07 (direction 1, name-level only):** `Name[params]` in
+type position now canonicalizes to the underscore-joined synthesized
+decl — `Heap[i64]`→`Heap_i64`, `Map[string,i64]`→`Map_string_i64` — via
+`rewriteBracketParams` in canonicalize_names, with the parser retaining
+`Ident[params]` in `field.type` (splitTrailingAnnotationsOwned spares
+brackets whose content is a type-param list; `i64[note]`/`Source[HTML]`/
+`u64[\d+]` annotations still peel). Conservative edge: a bare-identifier
+param (`Heap[Node]`) is indistinguishable from an annotation atom and
+stays an annotation — params must be base-type keywords, prefixed,
+qualified (`mod:Type`), or nested parameterized spellings. Pin:
+660_039_bracket_type_spelling.
+
 **Checked abstraction is buildable, not traded away (ruling
 2026-11-07, Lars):** an earlier draft of this note framed "generics
 buy checked abstraction — the template type-checks once, generically"

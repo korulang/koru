@@ -578,7 +578,7 @@ const Allocator = std.mem.Allocator;
     });
     canonicalize_names_module.addImport("ast", ast_module);
     canonicalize_names_module.addImport("log", log_module);
-    canonicalize_names_module.addImport("module_resolver", module_resolver_module);
+    canonicalize_names_module.addImport("module_resolver", module_resolver_module); canonicalize_names_module.addImport("struct_literal", struct_literal_module);
     post_transform_weld_module.addImport("canonicalize_names", canonicalize_names_module);
 
     // AST serializer (for --ast-json and debugging)

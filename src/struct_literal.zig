@@ -600,6 +600,94 @@ pub fn peelBaseType(field_value: []const u8) struct { value: []const u8, type: [
     return .{ .value = prefix, .type = inner };
 }
 
+/// Is `el` a TYPE spelling — the element grammar a `Name[params]` bracket
+/// tail is allowed to carry (specialization-is-synthesis: brackets on a
+/// name are parameters, resolved by synthesis to the underscore-joined
+/// concrete decl, never generics application)? Conservative on purpose:
+/// a bare identifier counts only when it is a base-type keyword — `note`,
+/// `HTML`, `text` stay annotations, so `i64[note]`/`Source[HTML]` keep
+/// their `type_annotations` meaning. `*`/`?`/`[]`-prefixed forms, qualified
+/// `mod/path:Type` spellings (the `:` is required — `meter/second` is an
+/// annotation atom, not a path), and nested `Ident[…]`/`Ident<…>` all
+/// count. Anything else — regex atoms, quoted strings, `[a-z…]` classes —
+/// is annotation content.
+pub fn isTypeParamElement(el_in: []const u8) bool {
+    var s = std.mem.trim(u8, el_in, " \t\r\n");
+    if (s.len == 0) return false;
+    // Peel type prefixes: `*`, `?`, `*const `, `?*`, `[]const `, `[]`.
+    while (true) {
+        if (std.mem.startsWith(u8, s, "*const ")) {
+            s = s[7..];
+        } else if (std.mem.startsWith(u8, s, "[]const ")) {
+            s = s[8..];
+        } else if (s.len > 0 and (s[0] == '*' or s[0] == '?')) {
+            s = s[1..];
+        } else if (std.mem.startsWith(u8, s, "[]")) {
+            s = s[2..];
+        } else break;
+        s = std.mem.trimLeft(u8, s, " \t");
+    }
+    if (s.len == 0) return false;
+    if (isBaseType(s) or std.mem.eql(u8, s, "string") or std.mem.eql(u8, s, "void")) return true;
+    // Qualified type: a `:` at bracket/angle depth 0 with nonempty sides.
+    {
+        var bd: i32 = 0;
+        var ad: i32 = 0;
+        for (s, 0..) |c, i| {
+            switch (c) {
+                '[', '{', '(' => bd += 1,
+                ']', '}', ')' => bd -= 1,
+                '<' => ad += 1,
+                '>' => ad -= 1,
+                ':' => if (bd == 0 and ad == 0) {
+                    if (i > 0 and i + 1 < s.len) return true;
+                },
+                else => {},
+            }
+        }
+    }
+    // Nested parameterized/phantom type: `Ident[` or `Ident<` head.
+    if (isIdentStartChar(s[0])) {
+        var i: usize = 1;
+        while (i < s.len and isIdentChar(s[i])) : (i += 1) {}
+        if (i < s.len and (s[i] == '[' or s[i] == '<')) return true;
+        // A qualified path head (`a/b/c:Name` was caught above; `a.b.c` or
+        // `a/b/c` module spellings without a colon are not type grammar).
+        return false;
+    }
+    return false;
+}
+
+/// Does the content of a `[…]` group read as a comma-separated TYPE-PARAM
+/// list (every element a type spelling)? This is the discriminator between
+/// `Heap[i64]` (params — stays in the type string, canonicalizes to
+/// `Heap_i64`) and `i64[note, tagged]`/`u64[\d+]`/`Source[HTML]`
+/// (annotations — peeled into `type_annotations` as before).
+pub fn bracketContentIsTypeParams(content: []const u8) bool {
+    var depth: i32 = 0;
+    var start: usize = 0;
+    var saw = false;
+    var i: usize = 0;
+    while (i <= content.len) : (i += 1) {
+        const at_end = i == content.len;
+        const c: u8 = if (at_end) ',' else content[i];
+        if (!at_end) {
+            switch (c) {
+                '[', '{', '(', '<' => depth += 1,
+                ']', '}', ')', '>' => depth -= 1,
+                else => {},
+            }
+        }
+        if (c == ',' and depth == 0) {
+            const el = std.mem.trim(u8, content[start..i], " \t\r\n");
+            if (el.len == 0 or !isTypeParamElement(el)) return false;
+            saw = true;
+            start = i + 1;
+        }
+    }
+    return saw;
+}
+
 /// Split a shape field's `= <expr>` default off its type text: `i64 = 5` →
 /// `{ .type = "i64", .default = "5" }`. THE single parser for the tail —
 /// parseShape (parser.zig) splits it off `Field.type` here, and the

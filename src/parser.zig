@@ -10416,6 +10416,16 @@ pub const Parser = struct {
             const at = open orelse break;
             if (at == 0) break; // `[]`-led type — a slice, not a suffix
             const content = s[at + 1 .. s.len - 1];
+            // `Ident[params]` is a parameterized type spelling
+            // (specialization-is-synthesis: `Heap[i64]` names the concrete
+            // `Heap_i64`), not a `Type[annotation]` suffix — leave the
+            // brackets in the type string for canonicalize_names to rewrite.
+            // Annotations (`i64[note]`, `u64[\d+]`, `Source[HTML]`) have
+            // non-type content and still peel. The ident-char gate keeps
+            // `[8]i64`-style array tails and `a[i64][j]` chains out.
+            if (struct_literal.bracketContentIsTypeParams(content) and
+                at > 0 and
+                (std.ascii.isAlphanumeric(s[at - 1]) or s[at - 1] == '_')) break;
             var insert_at: usize = 0;
             var it = std.mem.splitScalar(u8, content, ',');
             while (it.next()) |piece| {

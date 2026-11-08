@@ -691,6 +691,9 @@ pub fn build(b: *std.Build) void {
     });
     struct_literal_module.addImport("liquid", liquid_module);
     exe.root_module.addImport("struct_literal", struct_literal_module);
+    // canonicalize_names rewrites `Ident[params]` → `Ident_params` in type
+    // strings; the type-vs-annotation discriminator lives in struct_literal.
+    canonicalize_names_module.addImport("struct_literal", struct_literal_module);
     // Shared record-classification predicates: the parser classifies `-> {...}`
     // produce bodies and the emitter lowers records, both from this one module.
     parser_module.addImport("struct_literal", struct_literal_module);
