@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-11-05T12:44:19.939Z",
+  "timestamp": "2026-11-08T08:54:39.278Z",
   "summary": {
-    "passed": 433,
+    "passed": 436,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 445,
+    "total": 448,
     "suiteCount": 45,
     "status": "success"
   },
@@ -197,10 +197,10 @@
     },
     {
       "name": "integration_tests",
-      "passed": 14,
+      "passed": 17,
       "failed": 0,
       "skipped": 0,
-      "total": 14,
+      "total": 17,
       "status": "success"
     },
     {

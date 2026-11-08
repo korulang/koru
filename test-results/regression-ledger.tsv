@@ -477,3 +477,6 @@
 2026-11-05T13:14:28.775Z	2072d459b	fixed	643_001_gzip_body_shapes
 2026-11-05T13:14:28.775Z	2072d459b	fixed	643_002_gzip_deterministic
 2026-11-05T13:14:28.775Z	2072d459b	fixed	643_003_gzip_multiblock
+2026-11-08T09:23:26.387Z	09b5af731	regressed	350_027_router_for_template_arm
+2026-11-08T09:23:26.387Z	09b5af731	regressed	350_028_router_cond_template_arm
+2026-11-08T09:23:26.387Z	09b5af731	regressed	350_030_router_if_template_arm
