@@ -1,0 +1,48 @@
+// Test 8216: a subflow variant arm carrying a MULTI-STEP chain.
+//
+// 8215 pins the single-continuation hole (`: r => final r`). This pins the
+// shape the interaction-pattern work actually needs: a variant arm whose
+// body sequences several calls — the drag/gesture case where the whole
+// point of a per-platform variant is that the STEPS differ. Today every
+// variant arm with continuations/preamble emits
+//   @compileError("variant subflow body has continuations/preamble —
+//   emission path not yet implemented")
+// (visitor_emitter.zig subflow-variant path), so this is the same wall
+// 8215 names, expressed in the `|>` chain spelling a UI interaction
+// flow would use. Flip green when variant-arm emission learns chains.
+
+~import std/io
+~import std/build
+
+const std = @import("std");
+
+~tor double { value: i32 } -> i32
+
+~proc double|zig {
+    return value * 2;
+}
+
+~tor greet { value: i32 } -> i32
+
+~greet = double(value): r -> r
+
+// Two chained steps inside the variant arm: double, then double again.
+// 21 -> 42 -> 84. The arm is otherwise identical in contract to the
+// default arm — only its body is a chain, which is what variants exist
+// to express.
+~greet|twice = double(value): r1 |> double(value: r1): r2 -> r2
+
+~std/build:variants {
+    "input:greet": "twice"
+}
+| configured _ |> _
+| skipped _ |> _
+| invalid-event _ |> _
+
+~tor print-result { value: i32 }
+
+~proc print-result|zig {
+    std.debug.print("{}\n", .{value});
+}
+
+~greet(value: 21): f |> print-result(value: f)

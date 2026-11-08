@@ -1,0 +1,6 @@
+OWED: a subflow variant arm with a multi-step `|>` chain compiles.
+
+Same wall as 8215 (variant subflow body has continuations/preamble —
+emission path not yet implemented), pinned in the chain spelling an
+interaction-pattern variant needs. Driven by --todo-sweep; drop this
+marker when the pin is promotable.

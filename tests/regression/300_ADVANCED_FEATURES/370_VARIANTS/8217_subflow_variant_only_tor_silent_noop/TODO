@@ -1,0 +1,8 @@
+OWED: an unselected subflow-variant-only tor refuses loudly.
+
+Today the base handler emits `return undefined` — the call silently
+does nothing (measured: program prints only "after"). Proc-variant
+tors panic at runtime in the same shape; subflow variants should
+match (panic parity) or refuse earlier. This pin asserts a frontend
+refusal as the strictest reading; retarget if panic parity lands.
+Driven by --todo-sweep; drop this marker when promotable.
