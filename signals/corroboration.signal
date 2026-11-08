@@ -1,0 +1,8 @@
+name: corroboration
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: folded into `confirmation` — declare that name. Independent evidence
+  strengthening a belief already held is `confirmation`; the word added
+  nothing the canonical lacks (same fold as belief-strengthened).

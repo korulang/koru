@@ -1,0 +1,134 @@
+// Koru Standard Library: std/heap — binary min-heap over i64 keys.
+//
+// v1 is the i64 trunk only (the List_i64 precedent): packed keys carry
+// their own ordering, so `key = cost << K | payload` gives cost-ordered
+// extract-min for uniform-cost search (Dijkstra/A*) with zero heap-side
+// knowledge of what the key means. The unified `new(<element>)` /
+// element-synthesis machinery and the `Heap[i64]` spelling are the
+// follow-on rung — see concepts/frag-specialization-is-synthesis-not-
+// generics.md for the ruling this module is the first consumer of.
+//
+// Ownership states (phantom on *Heap_i64 — identical protocol to
+// *List_i64):
+//   <heap!>  - new issues the obligation: this heap must be freed.
+//   <heap>   - borrowed: push/pop/len in place, obligation untouched.
+//   <!heap>  - consumed: free discharges the obligation.
+//
+// Ops are direct `-i64` tors (no transform layer yet): heap.push-i64,
+// heap.pop-i64, heap.len-i64, heap.free-i64, heap.new-i64.
+
+const std = @import("std");
+
+pub const Heap_i64 = struct {
+    // Heap-ordered backing store: parent <= children, minimum at [0].
+    items: std.ArrayList(i64),
+    allocator: std.mem.Allocator,
+
+    // Package-private — only free/auto-discharge calls this.
+    fn deinit(self: *Heap_i64) void {
+        self.items.deinit(self.allocator);
+        self.allocator.destroy(self);
+    }
+
+    fn siftUp(self: *Heap_i64, i: usize) void {
+        var idx = i;
+        while (idx > 0) {
+            const parent = (idx - 1) / 2;
+            if (self.items.items[parent] <= self.items.items[idx]) break;
+            std.mem.swap(i64, &self.items.items[parent], &self.items.items[idx]);
+            idx = parent;
+        }
+    }
+
+    fn siftDown(self: *Heap_i64, i: usize) void {
+        const n = self.items.items.len;
+        var idx = i;
+        while (true) {
+            const l = 2 * idx + 1;
+            const r = l + 1;
+            var smallest = idx;
+            if (l < n and self.items.items[l] < self.items.items[smallest]) smallest = l;
+            if (r < n and self.items.items[r] < self.items.items[smallest]) smallest = r;
+            if (smallest == idx) break;
+            std.mem.swap(i64, &self.items.items[idx], &self.items.items[smallest]);
+            idx = smallest;
+        }
+    }
+};
+
+// ============================================
+// Construction
+// ============================================
+
+// Concrete i64 constructor. Carries the <heap!> ownership obligation.
+~pub tor new-i64 {}
+| list *Heap_i64<heap!>
+| err string
+
+~proc new-i64|zig {
+    const allocator = koru_allocator();
+    const self = allocator.create(Heap_i64) catch {
+        return .{ .err = "allocation failed" };
+    };
+    self.* = .{
+        .items = std.ArrayList(i64).initCapacity(allocator, 0) catch {
+            allocator.destroy(self);
+            return .{ .err = "allocation failed" };
+        },
+        .allocator = allocator,
+    };
+    return .{ .list = self };
+}
+
+// ============================================
+// Mutation (borrow — obligation untouched)
+// ============================================
+
+// Insert a key. Void, chains with `|>`. OOM panics (same loud-on-failure
+// split as std/list:push).
+~pub tor push-i64 { xs: *Heap_i64<heap>, key: i64 }
+
+~proc push-i64|zig {
+    xs.items.append(xs.allocator, key) catch {
+        @panic("std/heap:push — out of memory");
+    };
+    xs.siftUp(xs.items.items.len - 1);
+}
+
+// Remove and return the minimum key. `| item` / `| empty` branches —
+// callers that know the heap is non-empty may bind `item` only.
+~pub tor pop-i64 { xs: *Heap_i64<heap> }
+| item i64
+| empty
+
+~proc pop-i64|zig {
+    const n = xs.items.items.len;
+    if (n == 0) return .empty;
+    const top = xs.items.items[0];
+    const last = xs.items.pop().?;
+    if (n > 1) {
+        xs.items.items[0] = last;
+        xs.siftDown(0);
+    }
+    return .{ .item = top };
+}
+
+// ============================================
+// Read (borrow)
+// ============================================
+
+~pub tor len-i64 { xs: *Heap_i64<heap> } -> i64
+
+~proc len-i64|zig {
+    return @as(i64, @intCast(xs.items.items.len));
+}
+
+// ============================================
+// Discharge (consume)
+// ============================================
+
+~pub tor free-i64 { xs: *Heap_i64<!heap> }
+
+~proc free-i64|zig {
+    xs.deinit();
+}
