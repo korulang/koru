@@ -1,0 +1,40 @@
+~import std/io
+~const { title: "The Document Is The Program", stamp: "2026-10-25", rows: 3 }
+~std/io:print.ln("")
+~std/io:print.ln("# {{ title:s }}")
+~std/io:print.ln("")
+~std/io:print.ln("Prose is prose — **bold**, `code`, lists, quotes. The only sigil")
+~std/io:print.ln("is `~` at column 0: that line is Koru, same rules as `.kz`.")
+~std/io:print.ln("")
+~std/io:print.ln("| construct   | emits        |")
+~std/io:print.ln("|-------------|--------------|")
+~std/io:print.ln("| table rows  | literal text |")
+~std/io:print.ln("| `~` lines   | koru calls   |")
+~std/io:print.ln("")
+~std/io:print.ln("```koru")
+~std/io:print.ln("~import std/io")
+~std/io:print.ln("std/io:print \"fences stay literal, sigils included\"")
+~std/io:print.ln("```")
+~std/io:print.ln("")
+~std/io:print.ln("## A computed section")
+~std/io:print.ln("")
+~stats()
+~std/io:print.ln("")
+~std/io:print.ln("## Inline calls")
+~std/io:print.ln("")
+~std/io:print.ln("generated {{ stamp:s }} by a doc that is also a program.")
+~std/io:print.ln("")
+~tor stats {}
+~proc stats|zig {
+    const std = @import("std");
+    const out = std.fs.File.stdout();
+    var i: usize = 1;
+    while (i <= 3) : (i += 1) {
+        var buf: [64]u8 = undefined;
+        const line = std.fmt.bufPrint(&buf, "- stat row {d}: computed\n", .{i}) catch unreachable;
+        out.writeAll(line) catch unreachable;
+    }
+}
+~std/io:print.ln("")
+~std/io:print.ln("---")
+~std/io:print.ln("*end of document*")
