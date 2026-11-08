@@ -1,0 +1,20 @@
+// Proc facet for 677_001: |zig impls carrying cap(...) declarations and
+// body text the surface scan reads. fetch declares io+network and its
+// body agrees; churn declares nothing and its COMMENT carries the scan
+// bait — the false-positive case, live.
+
+~[
+- cap(io)
+- cap(network)
+]proc fetch|zig {
+    const bait = "std.net.tcpConnectToHost std.time.milliTimestamp std.crypto.random";
+    _ = bait;
+    return .{ .done = "ok" };
+}
+
+~proc churn|zig {
+    // silent proc: no cap entries. Comment bait the scanner WILL see —
+    // std.fs.cwd().openFile std.process.args — lexical scan has no idea
+    // this is prose.
+    return .{ .done = n };
+}

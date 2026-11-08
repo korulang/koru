@@ -1,0 +1,138 @@
+// caps.explain.kz — the `explain` part of caps — joined via `~part explain`
+// in caps.kz; members land in koru_caps.
+//
+// Reports the program's declared capability surface: every cap(...) entry
+// on every reachable declaration, plus the surface-scan tier — inferred,
+// lexical, comments and strings count. Self-declared caps are claims the
+// author makes; scan hits are evidence, never proof. Programs that don't
+// import std/caps get no section — the explainer is opt-in like everything
+// else here.
+
+const CapDecl = struct {
+    key: []const u8,
+    kind: []const u8, // "contract" or "impl"
+    module: []const u8,
+    dotted: []const u8,
+    target: ?[]const u8,
+    annotations: []const []const u8,
+    body_text: []const u8,
+};
+
+fn collectDecls(alloc: std.mem.Allocator, items: []const ast.Item, out: *std.ArrayList(CapDecl)) void {
+    for (items) |*it| switch (it.*) {
+        .module_decl => |m| collectDecls(alloc, m.items, out),
+        .event_decl => |e| out.append(alloc, .{
+            .key = pathKey(alloc, e.module, &e.path),
+            .kind = "contract",
+            .module = e.module,
+            .dotted = dottedPath(alloc, &e.path),
+            .target = null,
+            .annotations = e.annotations,
+            .body_text = "",
+        }) catch unreachable,
+        .proc_decl => |p| out.append(alloc, .{
+            .key = pathKey(alloc, p.module, &p.path),
+            .kind = "impl",
+            .module = p.module,
+            .dotted = dottedPath(alloc, &p.path),
+            .target = p.target,
+            .annotations = p.annotations,
+            .body_text = p.body.text,
+        }) catch unreachable,
+        else => {},
+    };
+}
+
+fn declLabel(alloc: std.mem.Allocator, d: CapDecl) []const u8 {
+    if (std.mem.eql(u8, d.kind, "contract")) {
+        return std.fmt.allocPrint(alloc, "contract {s}:{s}", .{ d.module, d.dotted }) catch unreachable;
+    }
+    return std.fmt.allocPrint(alloc, "impl {s}:{s}|{s}", .{ d.module, d.dotted, d.target orelse "zig" }) catch unreachable;
+}
+
+fn joinSpaced(alloc: std.mem.Allocator, items: []const []const u8) []const u8 {
+    var buf = std.ArrayList(u8){};
+    for (items, 0..) |s, i| {
+        if (i > 0) buf.append(alloc, ' ') catch unreachable;
+        buf.appendSlice(alloc, s) catch unreachable;
+    }
+    return buf.items;
+}
+
+// @retain: explain_caps_event is referenced from generated code
+// (koruc's koru_explain_gather invokes every discovered [explainer]).
+~[comptime|explainer]pub tor explain-caps {
+    program: *const std/compiler:Program,
+    allocator: std.mem.Allocator
+} -> ExplainReport
+
+~proc explain-caps|zig {
+    const Entry = ast.ExplainReport.Entry;
+    const Section = ast.ExplainReport.Section;
+
+    var decls = std.ArrayList(CapDecl){};
+    collectDecls(allocator, program.items, &decls);
+
+    var n_with_caps: usize = 0;
+    var n_with_hits: usize = 0;
+    var n_entries: usize = 0;
+    var decl_entries = std.ArrayList(Entry){};
+    var scan_entries = std.ArrayList(Entry){};
+
+    for (decls.items) |d| {
+        var caps = std.ArrayList([]const u8){};
+        capEntries(allocator, d.annotations, &caps);
+        if (caps.items.len > 0) {
+            n_with_caps += 1;
+            n_entries += caps.items.len;
+            decl_entries.append(allocator, .{ .property = .{
+                .key = declLabel(allocator, d),
+                .value = .{ .string = joinSpaced(allocator, caps.items) },
+            } }) catch unreachable;
+        }
+        if (std.mem.eql(u8, d.kind, "impl") and d.body_text.len > 0) {
+            var hits = std.ArrayList([]const u8){};
+            for (scanNeedles) |n| {
+                if (std.mem.indexOf(u8, d.body_text, n) != null) hits.append(allocator, n) catch unreachable;
+            }
+            if (hits.items.len > 0) {
+                n_with_hits += 1;
+                scan_entries.append(allocator, .{ .property = .{
+                    .key = declLabel(allocator, d),
+                    .value = .{ .string = joinSpaced(allocator, hits.items) },
+                } }) catch unreachable;
+            }
+        }
+    }
+
+    if (n_with_caps == 0 and n_with_hits == 0) {
+        return .{ .title = "std/caps", .sections = &.{
+            .{ .heading = "capabilities", .entries = &.{
+                .{ .note = "no cap(...) entries or surface-scan hits — nothing declared" },
+            } },
+        } };
+    }
+
+    var coverage = std.ArrayList(Entry).initCapacity(allocator, 4) catch unreachable;
+    coverage.append(allocator, .{ .property = .{ .key = "declarations_with_caps", .value = .{ .integer = @intCast(n_with_caps) } } }) catch unreachable;
+    coverage.append(allocator, .{ .property = .{ .key = "cap_entries_total", .value = .{ .integer = @intCast(n_entries) } } }) catch unreachable;
+    coverage.append(allocator, .{ .property = .{ .key = "procs_with_scan_hits", .value = .{ .integer = @intCast(n_with_hits) } } }) catch unreachable;
+    coverage.append(allocator, .{ .note = "cap(...) entries are author claims; [scan] hits are lexical surface matches — inferred, never proof" }) catch unreachable;
+
+    var sections = std.ArrayList(Section).initCapacity(allocator, 3) catch unreachable;
+    sections.append(allocator, .{ .heading = "coverage", .entries = coverage.toOwnedSlice(allocator) catch &.{} }) catch unreachable;
+    if (decl_entries.items.len > 0) {
+        sections.append(allocator, .{ .heading = "cap(...) declarations", .entries = decl_entries.toOwnedSlice(allocator) catch &.{} }) catch unreachable;
+    }
+    if (scan_entries.items.len > 0) {
+        var scan_section = std.ArrayList(Entry).initCapacity(allocator, scan_entries.items.len + 1) catch unreachable;
+        for (scan_entries.items) |e| scan_section.append(allocator, e) catch unreachable;
+        scan_section.append(allocator, .{ .note = "surface scan is lexical — comments and string literals count; absence proves nothing" }) catch unreachable;
+        sections.append(allocator, .{ .heading = "surface scan — inferred", .entries = scan_section.toOwnedSlice(allocator) catch &.{} }) catch unreachable;
+    }
+
+    return .{
+        .title = "std/caps",
+        .sections = sections.toOwnedSlice(allocator) catch &.{},
+    };
+}

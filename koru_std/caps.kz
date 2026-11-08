@@ -1,0 +1,346 @@
+// caps.kz — SPIKE: capability census + surface scan.
+//
+// Collects `cap(...)` entries from vertical/inline annotation blocks on
+// every event_decl and proc_decl in the merged program, and runs a naive
+// substring scan over proc body text (the "opaque" hostline is just a
+// string in the AST — ProcDecl.body.text).
+//
+//   koruc <file> caps
+//
+// Entries are opaque: `cap(io)`, `cap(io|network)`, `cap(auto)` — this
+// module defines no vocabulary, it reports what authors wrote and what
+// the surface scan saw. Declared vs scanned divergence is the finding.
+
+~import std/compiler
+
+~[comptime]
+
+const std = @import("std");
+const ast = @import("ast");
+
+fn dottedPath(alloc: std.mem.Allocator, p: *const ast.DottedPath) []const u8 {
+    var buf = std.ArrayList(u8){};
+    for (p.segments, 0..) |seg, i| {
+        if (i > 0) buf.append(alloc, '.') catch unreachable;
+        buf.appendSlice(alloc, seg) catch unreachable;
+    }
+    return buf.items;
+}
+
+/// "module:subject" for a dotted path — the canonical key every consumer
+/// compares on (same convention as rules.kz).
+fn pathKey(alloc: std.mem.Allocator, module: ?[]const u8, p: *const ast.DottedPath) []const u8 {
+    const subj = dottedPath(alloc, p);
+    var buf = std.ArrayList(u8){};
+    if (module) |mq| {
+        buf.appendSlice(alloc, mq) catch unreachable;
+        buf.append(alloc, ':') catch unreachable;
+    }
+    buf.appendSlice(alloc, subj) catch unreachable;
+    return buf.items;
+}
+
+// Naive surface scan: substring needles over raw body text. Hits in
+// comments and strings count — this is a lexical scan, not a parse.
+// (`import(` was tried and dropped: it substring-matches every
+// `@import(` in the compiler internals — pure noise.)
+const scanNeedles = [_][]const u8{
+    "std.fs.",     "std.net.",    "std.time.",   "std.crypto.",
+    "std.process", "std.posix.",  "std.heap.",   "std.Thread",
+    "fetch(",
+};
+
+fn capEntries(alloc: std.mem.Allocator, anns: []const []const u8, out: *std.ArrayList([]const u8)) void {
+    for (anns) |ann| {
+        const t = std.mem.trim(u8, ann, " \t");
+        if (t.len > 4 and std.mem.startsWith(u8, t, "cap(") and std.mem.endsWith(u8, t, ")")) {
+            out.append(alloc, t[4 .. t.len - 1]) catch unreachable;
+        }
+    }
+}
+
+~std/compiler:command.declare {
+    "name": "caps",
+    "description": "cap(...) census; `caps <subject>` prints one node's declared capability set with provenance"
+}
+
+~[comptime|command]pub tor caps {
+    program: *const std/compiler:Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []string,
+}
+
+~proc caps|zig {
+    const joinPath = struct {
+        fn f(alloc: std.mem.Allocator, module: []const u8, p: *const ast.DottedPath) []const u8 {
+            var buf = std.ArrayList(u8){};
+            if (module.len > 0) {
+                buf.appendSlice(alloc, module) catch unreachable;
+                buf.append(alloc, ':') catch unreachable;
+            }
+            for (p.segments, 0..) |seg, i| {
+                if (i > 0) buf.append(alloc, '.') catch unreachable;
+                buf.appendSlice(alloc, seg) catch unreachable;
+            }
+            return buf.items;
+        }
+    }.f;
+
+    var arena_state = std.heap.ArenaAllocator.init(allocator);
+    defer arena_state.deinit();
+    const aa = arena_state.allocator();
+
+    // ---- tree mode: `caps <subject>` — declared-capability tree ----
+    // Self-declared only: cap(...) entries on procs are the leaves;
+    // tors/flows are wiring. Proc bodies are opaque — edges inside |zig
+    // are invisible, so a proc's declaration must be self-contained.
+    // The walk is assumes' reachability: flows own keys via impl_of or
+    // their head invocation; every invocation inside becomes a callee.
+    if (argv.len > 0) {
+        const subject_arg = argv[0];
+
+        var decls = std.ArrayList(CapDecl){};
+        {
+            var stack = std.ArrayList([]const ast.Item){};
+            stack.append(aa, program.items) catch unreachable;
+            while (stack.items.len > 0) {
+                const items = stack.pop().?;
+                for (items) |*it| switch (it.*) {
+                    .module_decl => |m| stack.append(aa, m.items) catch unreachable,
+                    .event_decl => |e| decls.append(aa, .{
+                        .key = pathKey(aa, e.module, &e.path),
+                        .kind = "contract",
+                        .module = e.module,
+                        .dotted = dottedPath(aa, &e.path),
+                        .target = null,
+                        .annotations = e.annotations,
+                        .body_text = "",
+                    }) catch unreachable,
+                    .proc_decl => |p| decls.append(aa, .{
+                        .key = pathKey(aa, p.module, &p.path),
+                        .kind = "impl",
+                        .module = p.module,
+                        .dotted = dottedPath(aa, &p.path),
+                        .target = p.target,
+                        .annotations = p.annotations,
+                        .body_text = p.body.text,
+                    }) catch unreachable,
+                    else => {},
+                };
+            }
+        }
+
+        // Subject: bare name (last key segment) or full key, deduped —
+        // a tor and its impl procs share one key and are one subject.
+        var subject_keys = std.ArrayList([]const u8){};
+        {
+            const isCandidate = struct {
+                fn call(k: []const u8, subj: []const u8) bool {
+                    const colon = std.mem.lastIndexOfScalar(u8, k, ':');
+                    const tail = if (colon) |ci| k[ci + 1 ..] else k;
+                    return std.mem.eql(u8, tail, subj) or std.mem.eql(u8, k, subj);
+                }
+            }.call;
+            for (decls.items) |d| {
+                if (!isCandidate(d.key, subject_arg)) continue;
+                var dup = false;
+                for (subject_keys.items) |k| {
+                    if (std.mem.eql(u8, k, d.key)) dup = true;
+                }
+                if (!dup) subject_keys.append(aa, d.key) catch unreachable;
+            }
+        }
+        if (subject_keys.items.len == 0) {
+            std.debug.print("caps: no declaration '{s}' in this program\n", .{subject_arg});
+            return;
+        }
+        if (subject_keys.items.len > 1) {
+            std.debug.print("caps: '{s}' is ambiguous — qualify it (module:name):", .{subject_arg});
+            for (subject_keys.items) |k| std.debug.print(" {s}", .{k});
+            std.debug.print("\n", .{});
+            return;
+        }
+        const subject_full = subject_keys.items[0];
+
+        const flows = ast.allFlows(aa, program);
+        defer _ = aa.free(flows);
+
+        const headKey = struct {
+            fn call(f: *const ast.Flow, aa_param: std.mem.Allocator) []const u8 {
+                if (f.impl_of) |io| {
+                    return pathKey(aa_param, io.module_qualifier, &io);
+                }
+                const head = f.inv();
+                return pathKey(aa_param, head.path.module_qualifier, &head.path);
+            }
+        }.call;
+
+        var visited = std.StringHashMapUnmanaged(void){};
+        var order = std.ArrayList([]const u8){};
+        var frontier = std.ArrayList([]const u8){};
+
+        const visitKey = struct {
+            fn call(
+                key: []const u8,
+                aa_param: std.mem.Allocator,
+                visited_param: *std.StringHashMapUnmanaged(void),
+                order_param: *std.ArrayList([]const u8),
+                frontier_param: *std.ArrayList([]const u8),
+                decls_param: []const CapDecl,
+            ) void {
+                if (key.len == 0) return;
+                if (visited_param.contains(key)) return;
+                visited_param.put(aa_param, key, {}) catch unreachable;
+                order_param.append(aa_param, key) catch unreachable;
+                for (decls_param) |d| {
+                    if (std.mem.eql(u8, d.key, key)) {
+                        frontier_param.append(aa_param, key) catch unreachable;
+                        return;
+                    }
+                }
+            }
+        }.call;
+
+        const walkBody = struct {
+            fn call(
+                f: *const ast.Flow,
+                aa_param: std.mem.Allocator,
+                visited_param: *std.StringHashMapUnmanaged(void),
+                order_param: *std.ArrayList([]const u8),
+                frontier_param: *std.ArrayList([]const u8),
+                decls_param: []const CapDecl,
+            ) void {
+                var cont_stack = std.ArrayList(ast.Continuation){};
+                cont_stack.append(aa_param, f.body) catch unreachable;
+                while (cont_stack.items.len > 0) {
+                    const c = cont_stack.pop().?;
+                    if (c.node) |n| switch (n) {
+                        .invocation => |inv| {
+                            const k = pathKey(aa_param, inv.path.module_qualifier, &inv.path);
+                            visitKey(k, aa_param, visited_param, order_param, frontier_param, decls_param);
+                        },
+                        .label_with_invocation => |lwi| {
+                            const k = pathKey(aa_param, lwi.invocation.path.module_qualifier, &lwi.invocation.path);
+                            visitKey(k, aa_param, visited_param, order_param, frontier_param, decls_param);
+                        },
+                        .foreach => |fe| for (fe.branches) |br| for (br.body) |cc| cont_stack.append(aa_param, cc) catch unreachable,
+                        .conditional => |cd| for (cd.branches) |br| for (br.body) |cc| cont_stack.append(aa_param, cc) catch unreachable,
+                        .switch_result => |sr| for (sr.branches) |br| for (br.body) |cc| cont_stack.append(aa_param, cc) catch unreachable,
+                        .conditional_block => |cb| for (cb.nodes) |nd| switch (nd) {
+                            .invocation => |inv| {
+                                const k = pathKey(aa_param, inv.path.module_qualifier, &inv.path);
+                                visitKey(k, aa_param, visited_param, order_param, frontier_param, decls_param);
+                            },
+                            else => {},
+                        },
+                        else => {},
+                    };
+                    for (c.continuations) |cc| cont_stack.append(aa_param, cc) catch unreachable;
+                }
+            }
+        }.call;
+
+        visitKey(subject_full, aa, &visited, &order, &frontier, decls.items);
+        while (frontier.items.len > 0) {
+            const key = frontier.pop().?;
+            for (flows) |*f| {
+                if (!std.mem.eql(u8, headKey(f, aa), key)) continue;
+                walkBody(f, aa, &visited, &order, &frontier, decls.items);
+            }
+        }
+
+        // Report: every reached node in discovery order, caps attributed
+        // per declaration. Scan hits are the inferred tier, bracketed.
+        std.debug.print("caps tree: {s} — {d} nodes reached\n", .{ subject_full, order.items.len });
+        for (order.items) |key| {
+            var printed = false;
+            for (decls.items) |d| {
+                if (!std.mem.eql(u8, d.key, key)) continue;
+                var caps = std.ArrayList([]const u8){};
+                capEntries(aa, d.annotations, &caps);
+                if (std.mem.eql(u8, d.kind, "contract")) {
+                    if (caps.items.len == 0) continue;
+                    printed = true;
+                    std.debug.print("  contract {s}:{s}:", .{ d.module, d.dotted });
+                    for (caps.items) |c| std.debug.print(" {s}", .{c});
+                    std.debug.print("\n", .{});
+                } else {
+                    printed = true;
+                    std.debug.print("  impl {s}:{s}|{s}:", .{ d.module, d.dotted, d.target orelse "zig" });
+                    if (caps.items.len == 0) {
+                        std.debug.print(" (no cap entries)", .{});
+                    } else {
+                        for (caps.items) |c| std.debug.print(" {s}", .{c});
+                    }
+                    var hits = std.ArrayList([]const u8){};
+                    for (scanNeedles) |n| {
+                        if (std.mem.indexOf(u8, d.body_text, n) != null) hits.append(aa, n) catch unreachable;
+                    }
+                    if (hits.items.len > 0) {
+                        std.debug.print("  [scan]", .{});
+                        for (hits.items) |h| std.debug.print(" {s}", .{h});
+                    }
+                    std.debug.print("\n", .{});
+                }
+            }
+            if (!printed) std.debug.print("  {s} — no declared caps\n", .{key});
+        }
+        return;
+    }
+
+    // ---- census mode: no args — every decl with entries or hits ----
+    var items_stack = std.ArrayList([]const ast.Item){};
+    items_stack.append(aa, program.items) catch unreachable;
+
+    var n_cap_decls: usize = 0;
+    var n_scan_hits: usize = 0;
+    var out = std.ArrayList(u8){};
+    const w = out.writer(aa);
+
+    while (items_stack.items.len > 0) {
+        const items = items_stack.pop().?;
+        for (items) |*it| {
+            switch (it.*) {
+                .module_decl => |m| items_stack.append(aa, m.items) catch unreachable,
+                .event_decl => |e| {
+                    // Skip the std world — the census is about user code.
+                    if (e.module.len >= 4 and std.mem.startsWith(u8, e.module, "std.")) continue;
+                    var caps = std.ArrayList([]const u8){};
+                    capEntries(aa, e.annotations, &caps);
+                    if (caps.items.len == 0) continue;
+                    n_cap_decls += 1;
+                    w.print("CAP tor {s}", .{joinPath(aa, e.module, &e.path)}) catch unreachable;
+                    for (caps.items) |c| w.print("  {s}", .{c}) catch unreachable;
+                    w.print("\n", .{}) catch unreachable;
+                },
+                .proc_decl => |p| {
+                    if (p.module.len >= 4 and std.mem.startsWith(u8, p.module, "std.")) continue;
+                    var caps = std.ArrayList([]const u8){};
+                    capEntries(aa, p.annotations, &caps);
+                    const body = p.body.text;
+                    var hits = std.ArrayList([]const u8){};
+                    for (scanNeedles) |n| {
+                        if (std.mem.indexOf(u8, body, n) != null) {
+                            hits.append(aa, n) catch unreachable;
+                        }
+                    }
+                    if (caps.items.len == 0 and hits.items.len == 0) continue;
+                    n_cap_decls += 1;
+                    w.print("CAP proc {s}|{s}", .{ joinPath(aa, p.module, &p.path), p.target orelse "zig" }) catch unreachable;
+                    for (caps.items) |c| w.print("  decl:{s}", .{c}) catch unreachable;
+                    if (hits.items.len > 0) {
+                        n_scan_hits += 1;
+                        w.print("  scan:", .{}) catch unreachable;
+                        for (hits.items) |h| w.print(" {s}", .{h}) catch unreachable;
+                    }
+                    w.print("\n", .{}) catch unreachable;
+                },
+                else => {},
+            }
+        }
+    }
+
+    std.debug.print("caps — {d} decls with cap entries or scan hits ({d} with scan hits)\n\n{s}", .{ n_cap_decls, n_scan_hits, out.items });
+}
+
+~part explain

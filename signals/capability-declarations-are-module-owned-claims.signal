@@ -1,0 +1,6 @@
+name: capability-declarations-are-module-owned-claims
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: a cap(...) annotation entry declares an effect kind the module claims for its own procs — collected by std/caps as data (census, transitive tree, explain), never gated or enforced (vs capability-verified: a claim that was run; vs capability-added: a capability that shipped)
