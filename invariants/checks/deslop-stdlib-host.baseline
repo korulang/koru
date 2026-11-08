@@ -1,3 +1,11 @@
+# Re-pinned 1256/1127 -> 1283/1139 (2026-11-08): roll fired on the
+# json.emit:__jwesc clean-run fast-path commit. Decomposed: ZERO delta
+# from the staged koru_std file — measured 1283/1139 with
+# json.emitdrive.kz stashed, identical both sides (the fast-path scan is
+# emitted-Zig string content, below the host fingerprint's token floor
+# and absent from every named cluster). The +27/+12 is committed drift
+# under rolls that missed — store.new/trellis/fmt/grid catch+var-decl
+# clusters lead the board as documented. Re-pinned to measured.
 # Re-pinned 1246/1119 -> 1256/1127 (2026-11-03): measured on the merged
 # ch-tighten-c + map-each tree — igate's refusal shells join the store.new
 # catch-shell family (clusters #1/#4) and the map.each/string-map.each
@@ -70,8 +78,8 @@
 # io.blk.kz shared shapes) now fingerprint cross-file instead of
 # same-file. The +7/+9 is the file-boundary relabel; the new size-parse
 # code is under the token floor. Re-pinned to measured.
-clusters=1256
-members=1127
+clusters=1283
+members=1139
 # 1039/915: the roll fired on the |? coverage commit ("coverage: |? no
 # longer suppresses panic arms, and refuses where no union exists") —
 # that commit touches src/ checkers, in-repo tests, and a concept frag;
@@ -128,5 +136,5 @@ members=1127
 # documented). control.for.kz's synthetic stays unparseable both
 # sides of this diff (37 -> 39 errors — nested template arms; it was
 # already in the escaped set, so its host text never counted).
-clusters=1256
-members=1127
+clusters=1283
+members=1139

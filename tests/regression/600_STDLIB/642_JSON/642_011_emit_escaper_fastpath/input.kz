@@ -1,0 +1,35 @@
+// PIN: emit's __jwesc clean-run fast path — strings with no escape-needed
+// byte bulk-copy; escapes at 16-byte vector boundaries, partial tails,
+// all-escape runs, control chars, and multibyte UTF-8 all stay byte-exact.
+threadlocal var sbuf: [16384]u8 = undefined;
+
+~import std/io
+~import std/json
+
+~pub tor strs {} -> []string
+~proc strs|zig {
+    return &.{
+        "0123456789abcdef",
+        "0123456789abcde\"",
+        "0123456789abcdef\"GHIJ",
+        "aaaaaaaaaaaaaaaa\"bbbbbbbbbbbbbbbb",
+        "\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"",
+        "",
+        "short",
+        "short\"",
+        "0123456789abcde",
+        "0123456789abcdefg\"",
+        "line1\nline2\ttab",
+        "\x01\x02control",
+        "utf8 h\xc3\xa9llo w\xc3\xb6rld",
+        "ends with escape\"",
+    };
+}
+
+~strs(): ss
+|> std/json:emit.ln(value: { cases: ss }): out
+|> std/io:print.ln("{{ out:s }}")
+
+~strs(): ss3
+|> std/json:emit.into(value: { cases: ss3 }, buf: sbuf[0..]): n
+|> std/io:print.ln("INTO:{{ sbuf[0..n]:s }}")
