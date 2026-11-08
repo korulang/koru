@@ -49,6 +49,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 053: Cross-Module Type Reference (Basic - Parser Level)\n//\n// Tests that the parser correctly captures cross-module type syntax in the AST.\n// The syntax module/path:Type should be parsed and stored with the module path separated.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/220_COMPILATION/220_001_cross_module_type_basic/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "process-user",
             "path": ["process-user"],

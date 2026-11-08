@@ -1,0 +1,12 @@
+name: ast-shape
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: the commit changes the AST's own vocabulary — a new Item variant,
+  a field added to an existing node, a serializer surface gaining or
+  losing a payload. Distinct from capability-added (a language surface
+  grew): this fires when the tree consumers walk changes shape, so
+  --ast-json/--ast-canon readers, emitters' item switches, and golden
+  ASTs all inherit the delta. The commit message should name the new
+  shape and which consumers were swept.

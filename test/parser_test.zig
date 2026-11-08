@@ -620,3 +620,112 @@ test "when condition: grouped real expression is accepted at file parse" {
     try testing.expect(cont.condition != null);
     try testing.expectEqualStrings("!(e.act == 1)", cont.condition.?);
 }
+test "whole-line comments become .comment items (.k)" {
+    const allocator = testing.allocator;
+
+    // Comment-or-blank runs coalesce into ONE .comment item per block;
+    // blank lines inside the run ride in the content verbatim.
+    const source =
+        \\// header line one
+        \\// header line two
+        \\
+        \\tor ask { line: string }
+        \\
+        \\// doc for ask
+        \\// second doc line
+        \\
+        \\// trailing doc group merges across the blank
+        \\tor other { x: i32 }
+    ;
+
+    var p = try parser.Parser.init(allocator, source, "test.k", &[_][]const u8{}, null);
+    defer p.deinit();
+
+    var result = try p.parse();
+    defer result.deinit();
+
+    try testing.expect(!p.reporter.hasErrors());
+    const items = result.source_file.items;
+
+    // comment(header), event_decl(ask), comment(doc block), event_decl(other)
+    try testing.expectEqual(@as(usize, 4), items.len);
+    try testing.expect(items[0] == .comment);
+    try testing.expectEqualStrings("// header line one\n// header line two", items[0].comment.content);
+    try testing.expect(items[2] == .comment);
+    try testing.expectEqualStrings(
+        "// doc for ask\n// second doc line\n\n// trailing doc group merges across the blank",
+        items[2].comment.content,
+    );
+}
+
+test "host-facet comments keep host_line bytes AND gain .comment twin" {
+    const allocator = testing.allocator;
+
+    const source =
+        \\// zig header
+        \\const x = 1; // trailing note is not a whole-line comment
+        \\
+        \\~tor ask { line: string }
+    ;
+
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer p.deinit();
+
+    var result = try p.parse();
+    defer result.deinit();
+
+    try testing.expect(!p.reporter.hasErrors());
+    const items = result.source_file.items;
+
+    // host_line(// zig header), .comment twin (flushed when `const x`
+    // arrives), host_line(const x...), event_decl
+    try testing.expectEqual(@as(usize, 4), items.len);
+    try testing.expect(items[0] == .host_line);
+    try testing.expectEqualStrings("// zig header", items[0].host_line.content);
+    try testing.expect(items[1] == .comment);
+    try testing.expectEqualStrings("// zig header", items[1].comment.content);
+    try testing.expect(items[2] == .host_line);
+    try testing.expect(std.mem.indexOf(u8, items[2].host_line.content, "// trailing note") != null);
+}
+
+test "c-style host facets classify /* */ blocks; zig does not" {
+    const allocator = testing.allocator;
+
+    const js_source =
+        \\/* block comment
+        \\   spanning lines */
+        \\
+        \\~tor ask { line: string }
+    ;
+
+    var pj = try parser.Parser.init(allocator, js_source, "test.kjs", &[_][]const u8{}, null);
+    defer pj.deinit();
+    var rj = try pj.parse();
+    defer rj.deinit();
+
+    // Two host_lines (one per source line) + ONE .comment spanning the block.
+    var comment_count: usize = 0;
+    var host_count: usize = 0;
+    for (rj.source_file.items) |item| {
+        switch (item) {
+            .comment => |c| {
+                comment_count += 1;
+                try testing.expectEqualStrings("/* block comment\n   spanning lines */", c.content);
+            },
+            .host_line => host_count += 1,
+            else => {},
+        }
+    }
+    try testing.expectEqual(@as(usize, 1), comment_count);
+    try testing.expectEqual(@as(usize, 2), host_count);
+
+    // `.kz` is Zig — no block comments: the same lines stay pure host bytes.
+    var pz = try parser.Parser.init(allocator, js_source, "test.kz", &[_][]const u8{}, null);
+    defer pz.deinit();
+    var rz = try pz.parse();
+    defer rz.deinit();
+
+    for (rz.source_file.items) |item| {
+        try testing.expect(item != .comment);
+    }
+}

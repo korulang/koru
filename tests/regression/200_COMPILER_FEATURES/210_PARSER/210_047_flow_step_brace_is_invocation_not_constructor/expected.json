@@ -121,6 +121,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// PIN: a source-block event invoked at a flow-step must parse as an INVOCATION,\n// regardless of whether the brace block spans one line or several.\n//\n// THE BUG (silent, invisible since 2026-09): the parser decided\n// branch-constructor vs source-block-invocation purely by whether the `{ }`\n// spanned a newline — single line → branch_constructor, multiline → invocation.\n// So `|> render { x: 1 }` (one line) was silently eaten as a branch constructor\n// of `setup` — a VOID event with no branches — and compiled clean, exit 0.\n//\n// DESIRED: `|>` + `name { ... }` is always an invocation (constructions are\n// marked with `=>`). Layout is irrelevant. This test pins the single-line case\n// to the invocation reading. It is RED until the parser stops guessing by newline.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "render",
             "path": ["render"],

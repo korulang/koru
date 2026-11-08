@@ -24,11 +24,20 @@ test "parse immediate return syntax" {
         mut_result.deinit();
     }
     
-    // Should have 3 items: event decl, host line (comment), and immediate impl
-    try testing.expectEqual(@as(usize, 3), result.source_file.items.len);
-    
-    // Check the immediate impl (now at index 2)
-    const immediate = result.source_file.items[2].immediate_impl;
+    // Should have 4 items: event decl, host line (comment bytes), the
+    // comment's semantic `.comment` twin, and immediate impl
+    try testing.expectEqual(@as(usize, 4), result.source_file.items.len);
+
+    // The whole-line comment surfaces as a `.comment` item beside its
+    // untouched host_line twin.
+    try testing.expect(result.source_file.items[2] == .comment);
+    try testing.expectEqualStrings(
+        "// Immediate return - just return success",
+        result.source_file.items[2].comment.content,
+    );
+
+    // Check the immediate impl (now at index 3)
+    const immediate = result.source_file.items[3].immediate_impl;
     
     // Event path should be test.mock
     try testing.expectEqual(@as(usize, 2), immediate.event_path.segments.len);

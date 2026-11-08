@@ -31,6 +31,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_073: effect-only event — no terminal `|` branches.\n// Doc: \"An event with only `!` branches and no `|` is fine\".",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_073_effect_branch_only_no_terminal/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "lines-of",
             "path": ["lines-of"],

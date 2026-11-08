@@ -1567,6 +1567,11 @@ pub const VisitorEmitter = struct {
                 try emitter.emitHostLine(self.code_emitter, host_body);
                 self.allocator.free(host_body);
             },
+            .comment => {
+                // Semantic twin of comment host_lines — metadata for tooling,
+                // never emitted. The bytes already reached the host through
+                // the host_line items (or are .k trivia dead_strip removes).
+            },
             .host_type_decl => |*host_type| {
                 // HostTypeDecl doesn't have module info, and they're typically user-defined
                 // Skip filtering and emit directly

@@ -31,6 +31,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 052: Lenient parsing with multiple errors\n// Parser should continue past errors and create parse-error nodes",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "valid-before",
             "path": ["valid-before"],
@@ -60,6 +70,16 @@
         },
         {
             "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 8,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// This event has an unclosed brace - should create parse-error node",
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
@@ -108,6 +128,16 @@
         },
         {
             "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 17,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// Another broken event - unclosed annotation",
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",

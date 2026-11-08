@@ -58,6 +58,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_079: the `->` producer carries a Zig expression at body position as\n// an `.expression` Node (not an invocation — invocations always have parens).\n// `! ask _ -> \"Alice\"` produces the resume value; the bare string is an\n// `.expression` Node carrying the Zig source. (`|>` cannot introduce a value —\n// that is KORU103; the producer glyph is `->`.)",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_079_effect_branch_resume_expression/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "prompt-user",
             "path": ["prompt-user"],

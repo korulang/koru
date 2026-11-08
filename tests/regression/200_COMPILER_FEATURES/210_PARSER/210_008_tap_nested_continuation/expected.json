@@ -157,6 +157,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 058: Parse Tap with Nested Continuation\n// MUST_COMPILE_ONLY\n//\n// This test verifies that the parser correctly nests continuations\n// based on indentation, not flattening them into a single array.\n//\n// When we write:\n//   source -> * | Transition t |> log() | done |> _\n//\n// The parser should create:\n//   tap.continuations[0] = { branch: \"Transition\", nested: [...] }\n//   tap.continuations[0].nested[0] = { branch: \"done\", ... }\n//\n// NOT:\n//   tap.continuations[0] = { branch: \"Transition\", ... }\n//   tap.continuations[1] = { branch: \"done\", ... }  // WRONG - should be nested!",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "host_line",
             "module": "input",
             "location": {
@@ -239,6 +249,16 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
                 "line": 28,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// THE TAP TO ANALYZE:\n// This has a nested continuation: | Transition |> log() | done |> _\n// The | done |> line is INDENTED, so it should be NESTED under Transition",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
+                "line": 26,
                 "col": 1
             }
         },

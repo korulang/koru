@@ -31,6 +31,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_072: simple effect-branch event declaration.\n// `! each` (effect) precedes `| done` (terminal) per ordering rule.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_072_effect_branch_simple_decl/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "for",
             "path": ["for"],

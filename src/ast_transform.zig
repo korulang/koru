@@ -261,6 +261,13 @@ pub fn cloneNode(allocator: std.mem.Allocator, node: ast.Item) !ast.Item {
                 .module = if (line.module.len > 0) try allocator.dupe(u8, line.module) else "",
             } };
         },
+        .comment => |c| {
+            return .{ .comment = .{
+                .content = try allocator.dupe(u8, c.content),
+                .location = c.location,
+                .module = if (c.module.len > 0) try allocator.dupe(u8, c.module) else "",
+            } };
+        },
         else => return node, // TODO: Implement other node types
     }
 }

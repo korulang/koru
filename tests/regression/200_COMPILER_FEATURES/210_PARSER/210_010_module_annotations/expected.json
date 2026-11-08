@@ -22,6 +22,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test that module annotations are captured in the AST",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_010_module_annotations/input.kz",
+                "line": 3,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "event",
             "path": ["test", "event"],

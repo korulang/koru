@@ -613,6 +613,7 @@ fn restampModule(item: *ast.Item, module_name: []const u8) void {
         .proc_decl => |*p| p.module = module_name,
         .flow => |*f| f.module = module_name,
         .host_line => |*h| h.module = module_name,
+        .comment => |*c| c.module = module_name,
         .import_decl => |*i| i.module = module_name,
         .host_type_decl => |*h| h.module = module_name,
         .event_tap => |*t| t.module = module_name,

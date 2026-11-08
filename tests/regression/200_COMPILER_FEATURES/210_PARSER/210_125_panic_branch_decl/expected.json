@@ -148,6 +148,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_125: panic branch (`| ?!oom`) at event decl.\n//\n// A THIRD branch kind alongside required (`|`) and optional (`| ?`):\n//   required `|`     — omit handler => compile error (you must decide)\n//   optional `| ?`   — omit handler => synthesized no-op (safe to ignore)\n//   panic    `| ?!`  — omit handler => synthesized @panic(...) (UNSAFE to\n//                      ignore; the path must not silently proceed)\n//\n// It is the typed, branch-shaped form of \"assert, don't fall back / let it\n// fail loudly\": the failure is visible in the type, recovery is opt-in,\n// ignoring it is loud. First customer: std/list:new OOM.\n//\n// This test pins ONLY the parse: a decl with a panic branch produces an AST\n// branch whose `is_panic` is true (and `is_optional` is false). Symmetric\n// with 210_076 (optional effect branch decl) which pins `is_optional`.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_125_panic_branch_decl/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "alloc",
             "path": ["alloc"],

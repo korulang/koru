@@ -40,6 +40,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test: Conditional import with flag OFF\n// When --profile flag is NOT passed, the import should be skipped entirely\n// The AST should NOT contain any import_decl for this line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_028_conditional_import_flag_off/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "test",
             "path": ["test"],

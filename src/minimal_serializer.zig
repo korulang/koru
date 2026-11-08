@@ -35,6 +35,10 @@ pub const MinimalSerializer = struct {
                     try self.buffer.appendSlice(self.allocator, line);
                     try self.buffer.append(self.allocator, '\n');
                 },
+                .comment => |c| {
+                    try self.buffer.appendSlice(self.allocator, c.content);
+                    try self.buffer.append(self.allocator, '\n');
+                },
                 .event_decl => |event| {
                     // Generate basic event structure
                     try self.buffer.appendSlice(self.allocator, "// Event: ");

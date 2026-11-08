@@ -76,6 +76,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_077: `!*` residual in consumer dispatch (metatype-bound,\n// engaging form). Per the pay-for-nothing rule (see EFFECT_BRANCHES.md),\n// bare `!* |> _` is rejected — residual must engage. The optional\n// `?warning` branch is already silently ignorable without any marker\n// at the dispatch site; the metatype-bound residual here demonstrates\n// the reflective-observer shape, where the consumer pays the runtime\n// cost in exchange for tier-1 reflection on which branch fired.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_residual_dispatch/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "tokenize",
             "path": ["tokenize"],

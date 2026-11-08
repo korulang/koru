@@ -8,8 +8,17 @@
             "path": "std/compiler",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 2,
-                "col": 0
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
+                "line": 1,
+                "col": 1
             }
         },
         {
@@ -18,7 +27,7 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
                 "line": 2,
-                "col": 0
+                "col": 1
             }
         },
         {
@@ -27,7 +36,7 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
                 "line": 3,
-                "col": 0
+                "col": 1
             }
         },
         {
@@ -36,7 +45,7 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
                 "line": 4,
-                "col": 0
+                "col": 1
             }
         },
         {
@@ -45,7 +54,7 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
                 "line": 5,
-                "col": 0
+                "col": 1
             }
         },
         {
@@ -54,7 +63,7 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
                 "line": 6,
-                "col": 0
+                "col": 1
             }
         },
         {
@@ -63,16 +72,17 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
                 "line": 7,
-                "col": 0
+                "col": 1
             }
         },
         {
-            "type": "host_line",
+            "type": "comment",
+            "content": "// ============================================================================\n// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION\n// ============================================================================\n// Test: Source with Captured Continuation Bindings\n// Feature: Source parameters capture continuation bindings in their scope\n// Verifies: Scope capture for template metaprogramming\n// ============================================================================",
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 8,
-                "col": 0
+                "line": 1,
+                "col": 1
             }
         },
         {
@@ -80,8 +90,8 @@
             "path": "std/io",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 11,
-                "col": 0
+                "line": 9,
+                "col": 1
             }
         },
         {
@@ -89,8 +99,18 @@
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 12,
-                "col": 0
+                "line": 11,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// Event that provides user data",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
+                "line": 11,
+                "col": 1
             }
         },
         {
@@ -109,7 +129,7 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
                 "line": 12,
-                "col": 0
+                "col": 1
             }
         },
         {
@@ -121,8 +141,8 @@
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 18,
-                "col": 0
+                "line": 15,
+                "col": 1
             }
         },
         {
@@ -130,8 +150,18 @@
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 19,
-                "col": 0
+                "line": 18,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// Event that takes Source parameter for HTML rendering",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
+                "line": 18,
+                "col": 1
             }
         },
         {
@@ -143,7 +173,7 @@
                 "fields": [
                     {
                         "name": "source",
-                        "type": "Source<HTML>",
+                        "type": "Source",
                         "is_source": true,
                         "is_file": false,
                         "is_embed_file": false,
@@ -159,7 +189,7 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
                 "line": 19,
-                "col": 0
+                "col": 1
             }
         },
         {
@@ -167,8 +197,18 @@
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 22,
-                "col": 0
+                "line": 21,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// Comptime proc that receives Source with captured scope",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
+                "line": 21,
+                "col": 1
             }
         },
         {
@@ -180,8 +220,8 @@
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 28,
-                "col": 0
+                "line": 23,
+                "col": 1
             }
         },
         {
@@ -189,8 +229,18 @@
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 29,
-                "col": 0
+                "line": 28,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// Test: Source block syntax",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
+                "line": 28,
+                "col": 1
             }
         },
         {
@@ -205,15 +255,15 @@
                             "text": "<div>\n    <h1>Module-level test</h1>\n    <p>Syntax validated</p>\n</div>",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                                "line": 36,
-                                "col": 0
+                                "line": 35,
+                                "col": 1
                             },
                             "scope": {
                                 "bindings": [
 
                                 ]
                             },
-                            "phantom_type": null
+                            "phantom_type": "HTML"
                         }
                     }
                 ],
@@ -227,30 +277,20 @@
                     "binding": null,
                     "binding_type": "branch_payload",
                     "condition": null,
+                    "location": {
+                        "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
+                        "line": 34,
+                        "col": 1
+                    },
                     "step":                     {
-                        "type": "invocation",
-                        "invocation": {
-                            "event": ["print", "ln"],
-                            "args": [
-                                {
-                                    "name": "expr",
-                                    "value": "h.html",
-                                    "expression_value": {
-                                        "text": "h.html",
-                                        "location": {
-                                            "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                                            "line": 36,
-                                            "col": 0
-                                        },
-                                        "scope": {
-                                            "bindings": [
+                        "type": "branch_constructor",
+                        "branch_constructor": {
+                            "branch_name": "",
+                            "fields": [
 
-                                            ]
-                                        }
-                                    }
-                                }
                             ],
-                            "variant": null
+                            "plain_value": "h |> std/io:print.ln(h.html)",
+                            "has_expressions": true
                         }
                     },
                     "continuations": [
@@ -262,8 +302,8 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 30,
-                "col": 0
+                "line": 29,
+                "col": 1
             }
         }
     ]

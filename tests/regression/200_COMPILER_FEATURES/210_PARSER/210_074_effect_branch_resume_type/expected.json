@@ -31,6 +31,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_074: effect branch with explicit `->` resume type.\n// `! ask T -> U`: yield a T, resume with a U.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_074_effect_branch_resume_type/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "prompt-user",
             "path": ["prompt-user"],

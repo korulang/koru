@@ -31,6 +31,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test the parentheses rules for event invocations\n\n// VALID: Zero params, no source block → requires ()",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "voidCall",
             "path": ["voidCall"],
@@ -71,6 +81,16 @@
         },
         {
             "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 7,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// VALID: Zero params, source block → NO ()",
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
@@ -145,6 +165,16 @@
         },
         {
             "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 13,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// VALID: With params, source block → requires () for params",
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
@@ -233,6 +263,16 @@
         },
         {
             "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 19,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// VALID: Chained void calls",
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
@@ -338,6 +378,16 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
                 "line": 25,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// INVALID CASES (should be parser errors):\n// voidCall                          // Missing () when no source block",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 24,
                 "col": 1
             }
         }

@@ -55,6 +55,11 @@ pub fn printProgram(allocator: std.mem.Allocator, program: *const ast.Program, o
 
     var prev: ?*const ast.Item = null;
     for (program.items) |*item| {
+        // `.comment` items from host facets are metadata twins — their bytes
+        // already print through the `host_line` items. Only `.k`-sourced
+        // comments (no host channel) print here; skipping them keeps them out
+        // of the blank-line policy's prev/cur tracking entirely.
+        if (item.* == .comment and !commentPrints(item.comment)) continue;
         if (wantsBlankBefore(prev, item)) try p.write("\n");
         try p.printItem(item);
         prev = item;
@@ -77,12 +82,21 @@ pub fn printItemSource(allocator: std.mem.Allocator, item: *const ast.Item) Prin
 /// and (b) after a comment host_line (a comment attaches to what follows).
 /// Blank source lines are not in the tree, so this is pure layout policy —
 /// any deterministic rule round-trips; this one keeps prints readable.
+/// A `.comment` item prints only when its bytes have no other channel —
+/// `.k`-sourced comments. Host-facet comments print via their `host_line`
+/// twins; printing both would duplicate every comment line.
+fn commentPrints(c: ast.Comment) bool {
+    return std.mem.endsWith(u8, c.location.file, ".k");
+}
+
 fn wantsBlankBefore(prev: ?*const ast.Item, cur: *const ast.Item) bool {
     const p = prev orelse return false;
     const prev_is_host = p.* == .host_line;
     const cur_is_host = cur.* == .host_line;
     if (prev_is_host and cur_is_host) return false;
     if (prev_is_host and isCommentLine(p.host_line.content)) return false;
+    // A comment attaches to what follows it — same rule as comment host_lines.
+    if (p.* == .comment) return false;
     return true;
 }
 
@@ -138,6 +152,10 @@ const Printer = struct {
         switch (item.*) {
             .host_line => |h| {
                 try self.write(h.content);
+                try self.write("\n");
+            },
+            .comment => |c| {
+                try self.write(c.content);
                 try self.write("\n");
             },
             .import_decl => |imp| try self.printImport(&imp),
@@ -876,5 +894,38 @@ test "round-trip: effect branches, labels, nesting" {
         \\| more m |> @loop(current: m, target: 5)
         \\| done d |> _
     );
+}
+
+test "ast-json deserialize -> canonical print composition" {
+    const Parser = @import("parser").Parser;
+    const ast_json = @import("ast_json");
+    const allocator = std.testing.allocator;
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const source =
+        \\import std/io
+        \\
+        \\tor ask {}
+        \\| count i64
+        \\| miss
+        \\| quit
+        \\
+        \\ask()
+        \\| count n |> _
+        \\| miss |> _
+        \\| quit |> _
+    ;
+
+    var parser = try Parser.init(a, source, "test.k", &[_][]const u8{}, null);
+    var result = try parser.parse();
+
+    const json = try ast_json.serialize(a, &result.source_file);
+    const program = try ast_json.deserialize(a, json);
+    const printed = try printProgram(a, &program, .{ .tilde = "" });
+    const direct = try printProgram(a, &result.source_file, .{ .tilde = "" });
+    try std.testing.expectEqualStrings(direct, printed);
 }
 

@@ -40,6 +40,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_076: optional effect branch (`! ?warning`) at event decl.\n// Symmetric with `| ?name` — consumers may omit handlers without\n// exhaustiveness error; unhandled calls become no-ops.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_effect_branch_decl/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "tokenize",
             "path": ["tokenize"],

@@ -291,7 +291,7 @@ fn canonicalizeItem(ctx: *Context, item: *ast.Item) !void {
                 try canonicalizeContinuation(ctx, @constCast(cont));
             }
         },
-        .import_decl, .host_line, .host_type_decl, .parse_error => {
+        .import_decl, .host_line, .comment, .host_type_decl, .parse_error => {
             // No paths to canonicalize
         },
         .native_loop => |*loop| {

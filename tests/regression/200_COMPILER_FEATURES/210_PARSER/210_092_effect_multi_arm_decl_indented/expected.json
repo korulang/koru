@@ -247,6 +247,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_092: multi-arm effect-branch decl — INDENTED form (parse-accept).\n//\n// An effect's resume output generalizes from a single anonymous `-> T`\n// (210_074: `! ask T -> U`) to a flat SUM of named arms. The arms are spelled\n// as `|` branches indented exactly ONE level under the `!` line:\n//\n//     ! ask i32\n//         | halved i32        <- resume-arm of `ask` (named, carries i32)\n//         | timeout           <- resume-arm of `ask` (named, no payload)\n//     | done i32              <- terminal branch of the EVENT (base indent)\n//\n// Grammar rule being pinned: `|` arms attached to a `!` (indented one level)\n// are that effect's resume sum; `|` arms at the event's base indent are\n// terminal branches. \"Never nest `!`\" => the sum is flat; arms are ALWAYS\n// exactly one level in, never deeper.\n//\n// `| done` is NOT a special branch — it's an ordinary terminal, named by\n// convention. The discriminator is indentation, not the name.\n//\n// PINNED FAILING (parse-accept): today the decl loop (parser.zig:1801) collects\n// all `!`/`|` lines into a FLAT sibling list, so `| halved`/`| timeout` parse as\n// terminal branches of the event, not as `ask`'s resume sum. This snapshot\n// captures the intended AST; it goes green when the parser binds indented `|`\n// arms to the preceding `!` as `resume_arms`.\n//\n// Same AST (modulo source locations) as the single-line form, 210_093.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_092_effect_multi_arm_decl_indented/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "request",
             "path": ["request"],

@@ -22,6 +22,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// TEST: Nested continuations with when-guards should parse without parse-error nodes.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "run",
             "path": ["run"],

@@ -1160,6 +1160,13 @@ pub fn cloneItem(allocator: std.mem.Allocator, item: *const ast.Item) CloneError
         .host_line => |line| {
             return .{ .host_line = try cloneHostLine(allocator, &line) };
         },
+        .comment => |c| {
+            return .{ .comment = ast.Comment{
+                .content = try allocator.dupe(u8, c.content),
+                .location = c.location,
+                .module = if (c.module.len > 0) try allocator.dupe(u8, c.module) else "",
+            } };
+        },
         .host_type_decl => |host_type| {
             return .{ .host_type_decl = try cloneHostTypeDecl(allocator, &host_type) };
         },

@@ -976,6 +976,19 @@ pub const Parser = struct {
     is_kmd: bool,
     kmd_fence: ?KmdFence = null,
 
+    // Whole-line comment-block tracking (see ast.Comment). `pending_comment_*`
+    // marks the open run of comment-or-blank lines at top level; `first` is
+    // the first comment line's index, `last` the most recent one (blanks
+    // between them ride inside the emitted content). `comment_block_open` is
+    // the `/* … */` state for c-style host facets — it only ever lives inside
+    // an open run (a run ends at the first non-comment line, where it is
+    // false). `c_style_comments` is true for `.kjs`/`.kc`/`.kcs`/`.kgpu` —
+    // Zig and `.k` have no block comments.
+    c_style_comments: bool = false,
+    pending_comment_first: ?usize = null,
+    pending_comment_last: usize = 0,
+    comment_block_open: bool = false,
+
     // FOUNDATIONAL: Module context for all parsed items
     module_name: []const u8, // Canonical module path (e.g., "input", "lib/fs")
 
@@ -996,6 +1009,11 @@ pub const Parser = struct {
     // transferred to ast.Program.parts on success (field reset to empty),
     // freed by deinit on error paths.
     parts: std.ArrayList(ast.PartDecl) = .{ .items = &.{}, .capacity = 0 },
+
+    // Lines written back into `self.lines` by `~` synthesis and import-gate
+    // normalization are allocPrint'd — every other entry is a borrowed slice
+    // of `source`, so these need explicit freeing in deinit.
+    synthesized_lines: std.ArrayList([]u8) = .{ .items = &.{}, .capacity = 0 },
 
     // Parse mode: false = lenient (continue past errors), true = fail-fast (stop at first error)
     fail_fast: bool,
@@ -1054,6 +1072,65 @@ pub const Parser = struct {
     /// Get current source location for error reporting and AST metadata
     fn getCurrentLocation(self: *Parser) errors.SourceLocation {
         return self.getLineLocation(self.current, 0);
+    }
+
+    /// Replace `self.lines[idx]` with an owned synthesized line, tracked for
+    /// deinit — the array's other entries are borrowed source slices.
+    fn setSynthesizedLine(self: *Parser, idx: usize, owned: []u8) !void {
+        errdefer self.allocator.free(owned);
+        try self.synthesized_lines.append(self.allocator, owned);
+        self.lines[idx] = owned;
+    }
+
+    /// Whole-line comment predicate for the top-level item loop. `//` counts
+    /// in every non-`.kmd` facet; `/* … */` counts only for c-style host
+    /// facets (`.kjs`/`.kc`/`.kcs`/`.kgpu` — Zig and `.k` have no block
+    /// comments). `comment_block_open` tracks an unclosed block across lines;
+    /// it only ever lives inside an open comment run — a run ends at the
+    /// first non-comment line, where the state is false. A line is comment
+    /// content only when the comment owns the WHOLE line: `code // note` and
+    /// `code /* note */` stay host bytes, as does `*/ code` closing a block.
+    fn lineIsCommentContent(self: *Parser, line: []const u8) bool {
+        if (self.is_kmd) return false;
+        const t = lexer.trim(line);
+        if (t.len == 0) return false;
+        if (self.comment_block_open) {
+            if (std.mem.indexOf(u8, t, "*/")) |close| {
+                self.comment_block_open = false;
+                return lexer.trim(t[close + 2 ..]).len == 0;
+            }
+            return true;
+        }
+        if (std.mem.startsWith(u8, t, "//")) return true;
+        if (!self.c_style_comments or !std.mem.startsWith(u8, t, "/*")) return false;
+        if (std.mem.indexOf(u8, t[2..], "*/")) |close| {
+            return lexer.trim(t[2 + close + 2 ..]).len == 0;
+        }
+        self.comment_block_open = true;
+        return true;
+    }
+
+    /// Emit the accumulated comment run as one `.comment` item. Content is
+    /// the verbatim source slice from the first to the last comment line —
+    /// interior blank lines ride inside, edge blanks are excluded by
+    /// construction. Host-facet comment lines already became `host_line`
+    /// items on their way through; this is the additive semantic twin.
+    fn flushCommentBlock(self: *Parser, items: *std.ArrayList(ast.Item)) !void {
+        const first = self.pending_comment_first orelse return;
+        const last = self.pending_comment_last;
+        self.pending_comment_first = null;
+        self.comment_block_open = false;
+        var content = std.ArrayList(u8){};
+        defer content.deinit(self.allocator);
+        for (self.lines[first .. last + 1], first..) |l, i| {
+            if (i > first) try content.append(self.allocator, '\n');
+            try content.appendSlice(self.allocator, l);
+        }
+        try items.append(self.allocator, .{ .comment = .{
+            .content = try content.toOwnedSlice(self.allocator),
+            .location = self.getLineLocation(first, lexer.getIndent(self.lines[first])),
+            .module = try self.allocator.dupe(u8, self.module_name),
+        } });
     }
 
     /// Append the current line as a host_line item (verbatim host bytes —
@@ -1234,6 +1311,13 @@ pub const Parser = struct {
         const is_k = if (file_ext) |ext| std.mem.eql(u8, ext, ".k") else false;
         // `.kmd` is the document host — Markdown hostlines (docs/KMD.md).
         const is_kmd = if (file_ext) |ext| std.mem.eql(u8, ext, ".kmd") else false;
+        // `/* … */` block comments exist in the c-style hosts only — Zig has
+        // `//` alone, `.k` has no host at all.
+        const c_style_comments = if (file_ext) |ext|
+            std.mem.eql(u8, ext, ".kjs") or std.mem.eql(u8, ext, ".kc") or
+                std.mem.eql(u8, ext, ".kcs") or std.mem.eql(u8, ext, ".kgpu")
+        else
+            false;
 
         return Parser{
             .allocator = allocator,
@@ -1246,6 +1330,7 @@ pub const Parser = struct {
             .is_compiler_library = false, // Default to false, caller can set if needed
             .is_k = is_k,
             .is_kmd = is_kmd,
+            .c_style_comments = c_style_comments,
             .module_name = module_name,
             .fail_fast = false, // Default to lenient mode (continue past errors)
             .registry_transferred = false,
@@ -1257,6 +1342,8 @@ pub const Parser = struct {
     pub fn deinit(self: *Parser) void {
         if (self.pending_prose.len > 0) self.allocator.free(self.pending_prose);
         if (self.gate_env_map) |*m| m.deinit();
+        for (self.synthesized_lines.items) |l| self.allocator.free(l);
+        self.synthesized_lines.deinit(self.allocator);
         self.allocator.free(self.lines);
         self.reporter.deinit();
         self.context_stack.deinit(self.allocator);
@@ -1382,6 +1469,21 @@ pub const Parser = struct {
             var line = self.lines[self.current];
             var trimmed = lexer.trim(line);
 
+            // Whole-line comment blocks: comment lines accumulate (blank
+            // lines don't break a run) and flush as ONE `.comment` item when
+            // code resumes. Dispatch below is untouched — comment lines in
+            // host facets still become `host_line` items on their way through;
+            // this only observes and emits the additive semantic twin.
+            if (self.pending_comment_first == null) self.comment_block_open = false;
+            const comment_content = self.lineIsCommentContent(line);
+            if (self.pending_comment_first != null and trimmed.len != 0 and !comment_content) {
+                try self.flushCommentBlock(&items);
+            }
+            if (comment_content) {
+                if (self.pending_comment_first == null) self.pending_comment_first = self.current;
+                self.pending_comment_last = self.current;
+            }
+
             // `.kmd`: the host text is Markdown — document lines, not code.
             // A `~` is the Koru switch only at column 0 outside fences (second
             // char not `~`, space, or tab — `~~`/`~~~` are strikethrough and
@@ -1470,7 +1572,7 @@ pub const Parser = struct {
                 // Synthesize the leading `~` the surface no longer writes so the
                 // existing construct machinery runs unchanged.
                 if (trimmed[0] != '|' and trimmed[0] != '!') {
-                    self.lines[self.current] = try std.fmt.allocPrint(self.allocator, "~{s}", .{trimmed});
+                    try self.setSynthesizedLine(self.current, try std.fmt.allocPrint(self.allocator, "~{s}", .{trimmed}));
                     line = self.lines[self.current];
                     trimmed = lexer.trim(line);
                 }
@@ -1481,6 +1583,9 @@ pub const Parser = struct {
             // before each Koru construct — including imports (`~import`).
 
             if (lexer.startsWith(line, "~")) {
+                // A `~` construct may consume lines a `/* */` comment block
+                // was tracking — the block state cannot be trusted across it.
+                self.comment_block_open = false;
                 // Check if this is a module-level annotation: ~[annotation] on its own line
                 const after_tilde = lexer.trim(trimmed[1..]);
 
@@ -1587,7 +1692,7 @@ pub const Parser = struct {
                             if (keep) {
                                 // Re-enter the main loop on a plain ~import line.
                                 const normalized_line = try std.fmt.allocPrint(self.allocator, "~{s}", .{construct_content});
-                                self.lines[next_line_idx] = normalized_line;
+                                try self.setSynthesizedLine(next_line_idx, normalized_line);
                                 self.current = next_line_idx;
                             } else {
                                 self.current = next_line_idx + 1;
@@ -1685,7 +1790,7 @@ pub const Parser = struct {
                                 // `.k` re-synthesizes the `~` itself, and its
                                 // no-tilde wall refuses a synthesized one.
                                 const normalized_line = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ if (self.is_k) "" else "~", result.remaining });
-                                self.lines[line_with_bracket] = normalized_line;
+                                try self.setSynthesizedLine(line_with_bracket, normalized_line);
                                 self.current = line_with_bracket;
                             }
                             continue;
@@ -1786,7 +1891,7 @@ pub const Parser = struct {
 
                             // Kept — normalize "~[entries]import ..." to "~import ..."
                             const normalized_line = try std.fmt.allocPrint(self.allocator, "~{s}", .{after_close});
-                            self.lines[self.current] = normalized_line;
+                            try self.setSynthesizedLine(self.current, normalized_line);
                         } else if (std.mem.startsWith(u8, after_close, "part ")) {
                             // Conditional part: `~[entries]part <tag>` gates the
                             // sibling-file join itself — the same entry vocabulary
@@ -2037,6 +2142,9 @@ pub const Parser = struct {
                 self.current += 1;
             }
         }
+
+        // A comment run at EOF has no following code line to flush it.
+        try self.flushCommentBlock(&items);
 
         // KEBAB-CANONICAL: no parse-boundary normalization. Names stay
         // byte-for-byte as written through the whole pipeline; kebab -> snake

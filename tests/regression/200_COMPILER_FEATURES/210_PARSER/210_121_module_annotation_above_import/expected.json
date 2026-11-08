@@ -40,6 +40,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// A ``-line always begins a NEW Koru construct, so a module annotation placed\n// directly above `import` must stay module-level — no blank line required, and\n// no collapse into the import. Pins the PARSE003 bug surfaced by 330_070.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_121_module_annotation_above_import/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "import_decl",
             "path": "std/io",
             "location": {

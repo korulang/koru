@@ -175,6 +175,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_093: multi-arm effect-branch decl — SINGLE-LINE form (parse-accept).\n//\n// The unindented shorthand for the indented form (210_092). `|` arms riding the\n// `!` line ARE that effect's resume sum; unambiguous because the event's\n// terminal branches live on their own lines at base indent:\n//\n//     ! ask i32 | halved i32 | timeout    <- `ask` yields i32, resumes with\n//                                            one of {halved i32, timeout}\n//     | done i32                          <- terminal branch (base indent)\n//\n// Both spellings collapse to the SAME AST (modulo source locations): an effect\n// branch `ask` carrying a flat resume sum of arms [halved i32, timeout], plus a\n// terminal branch `done`. This pin and 210_092 share identical `branches`\n// structure — that equivalence IS the thing being pinned.\n//\n// PINNED FAILING (parse-accept): same gap as 210_092 — the flat decl-branch\n// collection doesn't yet peel same-line `|` arms into the preceding `!`'s\n// resume sum.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_093_effect_multi_arm_decl_single_line/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "request",
             "path": ["request"],

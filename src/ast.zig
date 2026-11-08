@@ -258,6 +258,25 @@ pub const HostLine = struct {
     }
 };
 
+/// A whole-line comment BLOCK — the semantic citizen extracted from source
+/// trivia. `content` is the verbatim block text (comment markers and interior
+/// blank lines preserved, edge blanks trimmed); `location` names the block's
+/// first line. In host-embedded facets the same bytes ALSO exist as per-line
+/// `host_line` items — the byte channel stays authoritative for emission, and
+/// this item is the additive semantic channel for tooling (docs, glance, IDE).
+/// Only comments occupying whole lines qualify: trailing `code // note` stays
+/// embedded in its host_line, and comment text inside proc bodies stays opaque.
+pub const Comment = struct {
+    content: []const u8,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
+    module: []const u8 = "",
+
+    pub fn deinit(self: *Comment, allocator: std.mem.Allocator) void {
+        allocator.free(self.content);
+        if (self.module.len > 0) allocator.free(self.module);
+    }
+};
+
 pub const ModuleDecl = struct {
     logical_name: []const u8, // The name used in code (e.g., "io", "math")
     canonical_path: []const u8, // Full resolved path to the module file
@@ -422,6 +441,7 @@ pub const Item = union(enum) {
     immediate_impl: ImmediateImpl,
     import_decl: ImportDecl,
     host_line: HostLine,
+    comment: Comment,
     host_type_decl: HostTypeDecl,
     parse_error: ParseErrorNode,
 
@@ -436,6 +456,7 @@ pub const Item = union(enum) {
         switch (self.*) {
             .module_decl => |*m| m.deinit(allocator),
             .host_line => |*line| line.deinit(allocator),
+            .comment => |*c| c.deinit(allocator),
             .event_decl => |*e| e.deinit(allocator),
             .proc_decl => |*p| p.deinit(allocator),
             .flow => |*f| f.deinit(allocator),
@@ -2468,7 +2489,7 @@ pub const ASTNode = union(enum) {
                         break :blk result;
                     },
                     // Leaf nodes (no children to traverse for transforms)
-                    .event_decl, .proc_decl, .event_tap, .label_decl, .immediate_impl, .import_decl, .host_line, .host_type_decl, .parse_error, .native_loop, .fused_event, .inlined_event, .inline_code, .facet_decl => {
+                    .event_decl, .proc_decl, .event_tap, .label_decl, .immediate_impl, .import_decl, .host_line, .comment, .host_type_decl, .parse_error, .native_loop, .fused_event, .inlined_event, .inline_code, .facet_decl => {
                         break :blk try allocator.alloc(ASTNode, 0);
                     },
                 }

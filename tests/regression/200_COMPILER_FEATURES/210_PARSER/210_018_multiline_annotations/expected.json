@@ -49,6 +49,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// ============================================================================\n// Regression test: annotations may appear on a line separate from the construct\n// This tests flow calls, event declarations, and proc definitions\n// ============================================================================",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "import_decl",
             "path": "std/build",
             "location": {
@@ -59,6 +69,16 @@
         },
         {
             "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
+                "line": 8,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// Flow call with annotation on separate line",
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
@@ -117,6 +137,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Flow call with compound annotation on separate line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
+                "line": 14,
+                "col": 1
+            }
+        },
+        {
             "type": "flow",
             "invocation": {
                 "event": ["step"],
@@ -167,6 +197,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Event definition with annotation on separate line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
+                "line": 20,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "signal",
             "path": ["test", "signal"],
@@ -196,6 +236,16 @@
         },
         {
             "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
+                "line": 26,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// Proc definition with annotation on separate line",
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",

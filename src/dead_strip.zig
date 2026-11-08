@@ -362,6 +362,13 @@ pub const DeadStripPass = struct {
                     new_mod.items = filtered_items;
                     try result.append(self.allocator, .{ .module_decl = new_mod });
                 },
+                // `.comment` items are the semantic twin of comment host
+                // lines — same cargo policy, decided by variant instead of
+                // content-sniffing. `//@koru:` markers never parse as
+                // `.comment` (they stay `host_line`), so no carve-out here.
+                .comment => {
+                    self.stripped_count += 1;
+                },
                 // Comment-only host lines are cargo: rulings, essays, pin
                 // citations frozen into every produced artifact. `//@koru:`
                 // markers are not cargo — the inline emitter reads them.

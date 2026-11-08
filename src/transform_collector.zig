@@ -274,6 +274,10 @@ fn getItemKey(allocator: std.mem.Allocator, item: *const ast.Item) ![]u8 {
             const hash = std.hash.Wyhash.hash(0, line);
             return try std.fmt.allocPrint(allocator, "host:{x}", .{hash});
         },
+        .comment => |c| {
+            const hash = std.hash.Wyhash.hash(0, c);
+            return try std.fmt.allocPrint(allocator, "comment:{x}", .{hash});
+        },
     }
 }
 

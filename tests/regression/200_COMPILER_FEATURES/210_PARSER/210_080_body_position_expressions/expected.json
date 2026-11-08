@@ -103,6 +103,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_080: an effect arm PRODUCES its resume value with `->`, and the\n// produced value is any Zig expression without trailing `(...)` or `{...}`\n// (those would be an invocation). `->` is the produce glyph for a `-> T` effect\n// (not `|>`, which only chains; not `=>`, which constructs a branch — KORU102).\n//\n// Shapes exercised here, all produced with `->`:\n//  - string literal:      \"Alice\"\n//  - integer literal:     42\n//  - bare identifier:     q\n//  - arithmetic:          1 + 2",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "parse_error",
             "code": "PARSE003",
             "message": "tor declaration missing input shape",

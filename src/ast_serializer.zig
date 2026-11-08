@@ -312,6 +312,15 @@ pub const AstSerializer = struct {
                 try self.writeString(line.module);
                 try self.write(" } }");
             },
+            .comment => |c| {
+                try self.write(".{ .comment = .{ .content = ");
+                try self.writeString(c.content);
+                try self.write(", .location = ");
+                try self.serializeSourceLocation(&c.location);
+                try self.write(", .module = ");
+                try self.writeString(c.module);
+                try self.write(" } }");
+            },
             .event_decl => |event| {
                 try self.write(".{ .event_decl = ");
                 try self.serializeEventDecl(&event);
@@ -1853,6 +1862,11 @@ pub const AstSerializer = struct {
                 try self.write(",\n");
                 try self.serializeHostLineJson(&item.host_line);
             },
+            .comment => {
+                try self.writeString("comment");
+                try self.write(",\n");
+                try self.serializeCommentJson(&item.comment);
+            },
             .event_tap => {
                 try self.writeString("event_tap");
                 try self.write(",\n");
@@ -2621,6 +2635,25 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("\"location\": ");
         try self.serializeParserLocationJson(&line.location);
+    }
+
+    /// Unlike host_line, `.comment` serializes its content — the whole point
+    /// of the item is that tooling (docs, glance, IDE) can read the comment
+    /// text without re-scanning source.
+    fn serializeCommentJson(self: *AstSerializer, c: *const ast.Comment) !void {
+        try self.writeIndent();
+        try self.write("\"content\": ");
+        try self.writeString(c.content);
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write("\"module\": ");
+        try self.writeString(c.module);
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write("\"location\": ");
+        try self.serializeParserLocationJson(&c.location);
     }
 
     fn serializeParseErrorNodeJson(self: *AstSerializer, error_node: *const ast.ParseErrorNode) !void {

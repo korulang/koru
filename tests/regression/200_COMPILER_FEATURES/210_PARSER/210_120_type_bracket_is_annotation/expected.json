@@ -67,6 +67,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// PIN: a trailing `[]` on a type position is an OPAQUE compiler annotation —\n// `*Resource[active!]` parses to type_annotations [\"active!\"] with\n// phantom=null (zero obligation checking — the accepted cost, ruled\n// 2026-10-24: the bracket lane never carries a taxonomy). The phantom lane\n// is ANGLE brackets: `*Resource<active!>` → type \"*Resource\",\n// phantom=\"active!\". Both spellings on one decl pin the split.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_120_type_bracket_is_annotation/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "event_decl",
             "name": "use-sq",
             "path": ["use-sq"],

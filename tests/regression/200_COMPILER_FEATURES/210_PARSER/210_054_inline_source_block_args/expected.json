@@ -31,6 +31,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test 210_054: Inline Source block with args\n// Ensures inline { ... } Source blocks parse correctly even with arguments.",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "host_line",
             "module": "input",
             "location": {
@@ -162,6 +172,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Inline Source block on one line with args + nested braces",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 22,
+                "col": 1
+            }
+        },
+        {
             "type": "host_line",
             "module": "input",
             "location": {
@@ -244,6 +264,16 @@
         },
         {
             "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 27,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// Inline Source block inside a pipeline continuation with args",
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",

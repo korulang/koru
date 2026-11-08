@@ -76,6 +76,16 @@
             }
         },
         {
+            "type": "comment",
+            "content": "// Test conditional imports with annotations\n//\n// This test verifies that conditional imports are DEADSTRIPPED when their\n// flags are not set. Since we run without --profile, --test, or --debug flags,\n// all conditional imports below should be completely absent from the AST.\n//\n// The unconditional import should be parsed normally.\n\n// Unconditional import (baseline) - should appear in AST",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_003_conditional_imports/input.kz",
+                "line": 1,
+                "col": 1
+            }
+        },
+        {
             "type": "import_decl",
             "path": "std/compiler",
             "location": {
@@ -86,6 +96,16 @@
         },
         {
             "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_003_conditional_imports/input.kz",
+                "line": 12,
+                "col": 1
+            }
+        },
+        {
+            "type": "comment",
+            "content": "// Conditional imports - should NOT appear in AST (deadstripped)",
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_003_conditional_imports/input.kz",
