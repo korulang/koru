@@ -20,6 +20,6 @@ var exchange_loop = koru_orisha.koru_pump.Exchange{ .fd = 0, .raw = req_loop };
 
 // [GET /t] is request-free — the router collects literal '->' arms into
 // handler-lite and a lite hit ships the complete pre-rendered response
-// head-carried (a.body is empty by design), so this answer reads a.head.
-~orisha:answer(x: &exchange_hit): a |> std/io:print.ln("{{ a.head:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)
+// wire-carried — since orisha 06d2b61 the whole message rides in .body (allocated renders free once via release-body), so this answer reads a.body.
+~orisha:answer(x: &exchange_hit): a |> std/io:print.ln("{{ a.body:s }}") |> orisha:release-body(a.body, allocated: a.body_allocated)
 ~orisha:answer(x: &exchange_loop): b |> std/io:print.ln("{{ b.body:s }}") |> orisha:release-body(b.body, allocated: b.body_allocated)
