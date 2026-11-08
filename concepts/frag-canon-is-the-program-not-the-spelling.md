@@ -47,6 +47,25 @@ active gated part is ungated. That is the AST's fact, not a printer
 choice; preserving the gate would need a PartDecl field first. Measured:
 the 8 part-decl tree-diffs (140_020–140_028) flipped to pass.
 
+Fourth ruling, same day (printer round, 68→4 tree-diffs): the trivia
+ruling has a boundary the printer must respect — `had_explicit_label` is
+invisible to canon but NOT semantics-free at reparse. The parser's
+implicit-`expr` remap consumes a single slot: a bare positional arg takes
+it (name→`expr`, `expression_value` captured), while an explicit `expr:`
+label skips the check, letting a SECOND non-field arg (`capacity:`)
+remap onto `expr` too. So "the printer normalizes to explicit" is false
+for expression args — explicit `name:` is not always tree-equivalent to
+the bare spelling the author wrote. `printArg` now emits a captured
+expression bare iff `!had_explicit_label`, named otherwise; the flag
+stays canon-trivia, but the printer reads it as SPELLING PROVENANCE, not
+preference. Same boundary produced three more grounded emissions:
+`Field.default` (`b: i32 = 5`), `Continuation.produce`/`post_condition`
+(the `each` stage grammar), destructure `sub` nesting, non-plain decl
+branch names via the `[…]` metadata channel, and line-initial `|>` steps
+when a continuation list mixes chain steps with named arms (the flat
+multi-line chain only reparses flat when steps stand on `|>`-initial
+lines). Measured: 1768→1831 pass, tree-diffs 68→4.
+
 Open questions: whether other provenance-adjacent fields deserve the
 same ruling as they surface (`module_path`, transform `marks`,
 `produced_by`-style fields); and whether canon-trivia is the right

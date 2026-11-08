@@ -312,6 +312,8 @@ const Printer = struct {
             return self.unprintable("shape field with expression value");
         try self.print("{s}: ", .{f.name});
         try self.printFieldType(f);
+        // `b: i32 = 5` — the default tail is stored stripped of `= ` (400_185).
+        if (f.default) |d| try self.print(" = {s}", .{d});
     }
 
     fn printFieldType(self: *Printer, f: *const ast.Field) PrintError!void {
@@ -330,6 +332,15 @@ const Printer = struct {
             }
             try self.write("]");
         }
+    }
+
+    /// Plain branch names print bare; anything else needs the `[…]` channel.
+    /// Same alphabet `writeBranchName` uses for continuation arms.
+    fn branchNameIsPlain(name: []const u8) bool {
+        for (name) |ch| {
+            if (!(std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '-' or ch == '.')) return false;
+        }
+        return name.len > 0;
     }
 
     /// A payload of exactly one field named `__type_ref` is the parse of a
@@ -351,7 +362,15 @@ const Printer = struct {
         } else if (br.is_optional) {
             try self.write("?");
         }
-        try self.write(br.name);
+        // Branch names that are not plain identifiers ride the bracket
+        // metadata channel: `| [bug: Bug reports] f64` parses the inner text
+        // verbatim as the name (350_026). A bare `bug: Bug reports` re-parses
+        // as name `bug` plus a ` Bug reports f64` payload type.
+        if (branchNameIsPlain(br.name)) {
+            try self.write(br.name);
+        } else {
+            try self.print("[{s}]", .{br.name});
+        }
 
         if (br.payload.is_wildcard) {
             try self.write(" *");
@@ -504,11 +523,17 @@ const Printer = struct {
     /// no source spelling — hard error (canon hazard if the corpus hits it).
     fn printChildren(self: *Printer, conts: []const ast.Continuation, depth: usize) PrintError!void {
         var seen_branch = false;
+        // A list mixing unnamed `|>` steps with named arms only reparses flat
+        // when the steps stand on their own `|>`-initial lines: the inline
+        // `a |> b` + following arm-lines spelling nests the arms under the
+        // last step (210_193's flat multi-line chain). Emit those steps
+        // line-initial so the arms stay siblings.
+        const mixed = hasBranchCont(conts) and hasChainCont(conts);
         for (conts) |*c| {
             const is_chain = c.branch.len == 0 and !c.is_catchall;
             if (is_chain) {
                 if (seen_branch) return self.unprintable("chain continuation after branch continuation");
-                try self.printChainCont(c, depth);
+                try self.printChainCont(c, depth, mixed);
             } else {
                 seen_branch = true;
                 try self.printBranchCont(c, depth);
@@ -516,9 +541,36 @@ const Printer = struct {
         }
     }
 
-    fn printChainCont(self: *Printer, c: *const ast.Continuation, depth: usize) PrintError!void {
+    fn hasBranchCont(conts: []const ast.Continuation) bool {
+        for (conts) |*c| {
+            if (c.branch.len > 0 or c.is_catchall) return true;
+        }
+        return false;
+    }
+
+    fn hasChainCont(conts: []const ast.Continuation) bool {
+        for (conts) |*c| {
+            if (c.branch.len == 0 and !c.is_catchall) return true;
+        }
+        return false;
+    }
+
+    /// Only invocation steps have a grounded line-initial `|>` spelling;
+    /// `->`/`=>`/label/terminal chain links keep the inline joiner.
+    fn chainContIsInvocation(c: *const ast.Continuation) bool {
+        const n = c.node orelse return false;
+        return n == .invocation;
+    }
+
+    fn printChainCont(self: *Printer, c: *const ast.Continuation, depth: usize, line_form: bool) PrintError!void {
         try self.printContHeaderChecks(c);
-        try self.printNodeJoined(c, depth);
+        if (line_form and chainContIsInvocation(c)) {
+            try self.write("\n");
+            try self.writeIndent(depth);
+            try self.printNodeJoined(c, depth, "|> ");
+        } else {
+            try self.printNodeJoined(c, depth, " |> ");
+        }
     }
 
     fn printBranchCont(self: *Printer, c: *const ast.Continuation, depth: usize) PrintError!void {
@@ -549,7 +601,14 @@ const Printer = struct {
             try self.printDestructure(c.destructure);
         }
         if (c.condition) |cond| try self.print(" when {s}", .{cond});
-        try self.printNodeJoined(c, depth + 1);
+        // `! each i { double: i * 2 }` — the produce stage rides after the
+        // pre-`when`, and a `when` AFTER it is the post-condition (320_179/180).
+        if (c.produce.len > 0) {
+            try self.write(" ");
+            try self.printDestructure(c.produce);
+        }
+        if (c.post_condition) |pc| try self.print(" when {s}", .{pc});
+        try self.printNodeJoined(c, depth + 1, " |> ");
     }
 
     fn hasBranchChildren(conts: []const ast.Continuation) bool {
@@ -618,6 +677,12 @@ const Printer = struct {
         for (fields, 0..) |*f, i| {
             if (i > 0) try self.write(", ");
             for (f.annotations) |a| try self.print("[{s}]", .{a});
+            if (f.sub.len > 0) {
+                // Nested named-group entry: `addr: { city: string }` (642_002).
+                try self.print("{s}: ", .{f.name});
+                try self.printDestructure(f.sub);
+                continue;
+            }
             if (f.type_text) |t| {
                 // Named-group field-list entry: `name: Type`.
                 try self.print("{s}: {s}", .{ f.name, t });
@@ -637,7 +702,9 @@ const Printer = struct {
     /// Write a continuation's node with its joiner, then its children.
     /// Branch children of this node indent one level deeper than the line
     /// that carries it (`depth` is that level already, passed by the caller).
-    fn printNodeJoined(self: *Printer, c: *const ast.Continuation, depth: usize) PrintError!void {
+    /// `pipe_joiner`: `" |> "` inline, or `"|> "` after a caller-written
+    /// newline+indent for the line-initial chain-step spelling.
+    fn printNodeJoined(self: *Printer, c: *const ast.Continuation, depth: usize, pipe_joiner: []const u8) PrintError!void {
         const node = &(c.node orelse {
             // A branch with no node is `| name |> _`? No — the corpus spells
             // empty handlers with an explicit terminal node. Null node has no
@@ -652,23 +719,23 @@ const Printer = struct {
         const close_depth = if (hasBranchChildren(c.continuations)) depth else line_depth;
         switch (node.*) {
             .invocation => |*inv| {
-                try self.write(" |> ");
+                try self.write(pipe_joiner);
                 try self.printInvocation(inv, close_depth);
             },
             .label_with_invocation => |*lwi| {
-                try self.write(" |> ");
+                try self.write(pipe_joiner);
                 if (!lwi.is_declaration)
                     return self.unprintable("label_with_invocation jump form (spelling not grounded)");
                 try self.print("#{s} ", .{lwi.label});
                 try self.printInvocation(&lwi.invocation, close_depth);
             },
             .label_jump => |*lj| {
-                try self.write(" |> ");
+                try self.write(pipe_joiner);
                 try self.print("@{s}(", .{lj.label});
                 try self.printArgs(lj.args);
                 try self.write(")");
             },
-            .label_apply => |label| try self.print(" |> @{s}", .{label}),
+            .label_apply => |label| try self.print("{s}@{s}", .{ pipe_joiner, label }),
             .terminal => try self.write(" |> _"),
             .branch_constructor => |*ctor| try self.printCtor(ctor),
             // Bare expressions PRODUCE a value; the glyph is `->` (KORU103
@@ -754,8 +821,13 @@ const Printer = struct {
         // One-line content renders as inline braces (`capture { n: 0[i64] }`)
         // — safe in every position since the gatherer became brace-aware
         // (netBraces, pinned by 210_139; this printer used to carry per-line
-        // state to dodge the misattachment).
-        if (std.mem.indexOfScalar(u8, src.text, '\n') == null) {
+        // state to dodge the misattachment). A body that OPENS with the sigil
+        // (`{ ~add-numbers(…): r |> … }`, 395_003) does NOT survive inline:
+        // the `~` reads as a host->Koru switch inside the braces and the
+        // reparse grows a phantom continuation. Multi-line keeps it block text.
+        const trimmed_text = std.mem.trimLeft(u8, src.text, " \t");
+        const sigil_lead = std.mem.startsWith(u8, trimmed_text, self.tilde) and self.tilde.len > 0;
+        if (!sigil_lead and std.mem.indexOfScalar(u8, src.text, '\n') == null) {
             try self.print(" {{ {s} }}", .{src.text});
             return;
         }
@@ -785,10 +857,19 @@ const Printer = struct {
             return self.unprintable("source arg in multi-arg call (spelling not grounded)");
         if (a.expression_value) |ev| {
             // Expression params capture verbatim; the arg's `name` is the
-            // param name. Canonical form is ALWAYS named: positional works
-            // for most texts but mis-parses when the expression starts with
-            // '{' (020_010), and named capture is verified equivalent.
-            try self.print("{s}: {s}", .{ a.name, ev.text });
+            // param name. An arg the author wrote BARE (`had_explicit_label`
+            // false) prints bare: the parser's implicit-`expr` remap gives a
+            // positional arg the `expr` name AND consumes the single remap
+            // slot, while an explicit `expr:` label skips the slot check —
+            // a second non-field arg then remaps onto `expr` too and the tree
+            // diverges (699_CHANNEL's `capacity:` args). Named capture is
+            // kept for `{`-leading expressions, which only parse labelled
+            // (020_010).
+            if (!a.had_explicit_label) {
+                try self.write(ev.text);
+            } else {
+                try self.print("{s}: {s}", .{ a.name, ev.text });
+            }
             return;
         }
         // Punned args are canonical-POSITIONAL: the parser derives the name
