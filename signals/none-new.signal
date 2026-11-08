@@ -1,0 +1,7 @@
+name: none-new
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: folded into `acknowledged-none` — declare that name. "Nothing new to
+  declare" is the canonical no-signal token; a bespoke synonym adds nothing.
