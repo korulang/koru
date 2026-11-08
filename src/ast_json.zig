@@ -116,8 +116,22 @@ fn writeValue(comptime T: type, value: T, allocator: std.mem.Allocator, buf: *st
                     try writeString(buf, allocator, value);
                 } else {
                     try buf.append(allocator, '[');
-                    for (value, 0..) |item, i| {
-                        if (i > 0) try buf.append(allocator, ',');
+                    var first = true;
+                    for (value) |item| {
+                        // Canon mode drops host-facet `.comment` items: in
+                        // `.kz`/`.kjs`/… their bytes already round-trip as
+                        // `host_line` items (the authoritative channel — see
+                        // ast.Comment), while the twin's block content can
+                        // drift on reparse (interior blank lines, block
+                        // merges). `.k`-sourced comments are the SOLE channel
+                        // and stay — same predicate as ast_printer's
+                        // commentPrints.
+                        if (comptime p.child == ast.Item) {
+                            if (strip_trivia and item == .comment and
+                                !std.mem.endsWith(u8, item.comment.location.file, ".k")) continue;
+                        }
+                        if (!first) try buf.append(allocator, ',');
+                        first = false;
                         try writeValue(p.child, item, allocator, buf, strip_trivia);
                     }
                     try buf.append(allocator, ']');
@@ -367,6 +381,45 @@ test "round-trip: parsed program (event + branches + proc + host lines)" {
     // Spot-check structure survived.
     try std.testing.expectEqualStrings(parse_result.source_file.main_module_name, back.main_module_name);
     try std.testing.expectEqual(parse_result.source_file.items.len, back.items.len);
+}
+
+test "serializeCanon: host-facet comment items excluded, .k comments kept" {
+    const allocator = std.testing.allocator;
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const items = try a.alloc(ast.Item, 3);
+    items[0] = .{ .host_line = .{ .content = try a.dupe(u8, "// hi") } };
+    items[1] = .{ .comment = .{
+        .content = try a.dupe(u8, "// hi"),
+        .location = .{ .file = "input.kz", .line = 1, .column = 1 },
+    } };
+    items[2] = .{ .comment = .{
+        .content = try a.dupe(u8, "// pure koru"),
+        .location = .{ .file = "input.k", .line = 1, .column = 1 },
+    } };
+
+    const program = ast.Program{
+        .items = items,
+        .main_module_name = try a.dupe(u8, "input"),
+        .allocator = a,
+    };
+
+    const canon = try serializeCanon(allocator, &program);
+    defer allocator.free(canon);
+    const canon_str = canon;
+
+    // The .kz comment twin is gone; the .k comment (sole channel) remains.
+    try std.testing.expect(std.mem.indexOf(u8, canon_str, "pure koru") != null);
+    try std.testing.expect(std.mem.indexOf(u8, canon_str, "\"comment\":{\"content\":\"// hi\"") == null);
+    // host_line is untouched, and full serialize keeps both comments.
+    try std.testing.expect(std.mem.indexOf(u8, canon_str, "host_line") != null);
+
+    const full = try serialize(allocator, &program);
+    defer allocator.free(full);
+    try std.testing.expect(std.mem.indexOf(u8, full, "\"comment\":{\"content\":\"// hi\"") != null);
 }
 
 test "round-trip: Arg.had_explicit_label survives" {

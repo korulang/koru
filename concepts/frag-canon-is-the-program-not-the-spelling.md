@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-canon-is-the-program-not-the-spelling
-provenance: canon-trivia ruling landed 2026-11-08 chasing BLOCK_EDITOR.md §10 round-trip numbers — 1212 of 1288 tree-diffs were had_explicit_label alone
+provenance: canon-trivia ruling landed 2026-11-08 chasing BLOCK_EDITOR.md §10 round-trip numbers — 1212 of 1288 tree-diffs were had_explicit_label alone; item-level extension same day — 11 host-facet .comment twin diffs reclassified as non-program
 ts: 2026-11-08
 ---
 
@@ -21,6 +21,16 @@ file mirrors source extension — `.k` prints are `.k` dialect, not
 `.kz`), corpus round-trip went 542→1747 pass / 178 fail / 157 skip.
 The remaining fails are purely semantic printer gaps — the canon
 surface now measures exactly printer completeness, nothing else.
+
+Second ruling, same day: the strip is not only field-granular. Host-facet
+`.comment` items are metadata TWINS — the same bytes already round-trip as
+`host_line` items, the authoritative channel (frag-comments-are-first-class-
+ast-items) — so canon drops them at the items-array level, gated by the
+printer's own `commentPrints` predicate (`location.file` ends `.k`). `.k`
+comments are the sole channel and stay. A twin's block content can drift on
+reparse (interior blank lines, block merges) without the program changing —
+11 corpus tree-diffs were exactly that (87→76). The predicate must mirror the
+printer's: two spellings of "which comments are real" would drift apart.
 
 Open questions: whether other provenance-adjacent fields deserve the
 same ruling as they surface (`module_path`, transform `marks`,
