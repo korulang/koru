@@ -200,6 +200,40 @@ The pipeline a block editor needs already exists and is load-bearing:
   transform annotations 13, continuation-without-node 8, source-block
   phantom 5, immediate_impl annotations 1); **10 reparse-error**.
   ~84% → **~89% clean pass**; the gap list is now purely semantic.
+
+### Round-trip fix queue (classified 2026-11-08, 87 tree-diffs)
+
+Per-file signature classification of all 87 `.tree.diff`s (report:
+`$TMPDIR/koru-roundtrip-report/failures/`):
+
+| Class | Count | Signature fields | Suspected root cause / fix site |
+|---|---|---|---|
+| scope-capture + arg-name | ~55 | `expression_value`, `scope`, `bindings`, `value_ref`, `name` | Reparse resolves the callee's `input_shape` differently → named args remap to `expr` and gain `expression_value` (see 450_001 below). Fix site: parser shape-resolution determinism vs printed output, or printer arg spelling |
+| comment-content | 11 | `content` | Comment items (new AST work) not emitted by printer — needs a `comment` case in `ast_printer` |
+| part-decl | 8 (+1 mixed) | `parts`, `tag` | `part` decls not printed — printer item case |
+| produce/post_condition | ~9 (+mixed) | `produce`, `post_condition` | `each`-loop produce stages / supervised policy args not printed |
+| param defaults | 2 | (unclassified) | `Field.default` not printed (400_185/186) |
+| module_path | 1 | `module_path` | 350_026 pattern-branch metadata channel |
+| arg-name stragglers | ~2 | `name` | 642_002 schema emit, misc |
+
+**Deepest class diagnosed — 450_001** (`std/node:spawn(f, id: "room-42",
+cell: room_state)`): original parse keeps `id: "room-42"` as plain
+`name:"id"`; reparse of the printed `spawn(expr: f, id: "room-42", …)`
+yields `name:"expr"` + `expression_value{text,scope{bindings:[f]}}`.
+The parser's arg remap (`parser.zig:5844-5883`) fired on reparse —
+`id` did not match the resolved `input_shape` fields, so it was renamed
+to the implicit `expr: Expression` param and scope-captured. Open
+question: why the resolved shape differs between original and reparse
+(same imports, same path) — candidate: shape resolution is
+context/order-sensitive and printing perturbs it, or the original
+parse resolved a different spawn decl variant. Next probe: dump the
+resolved `EventDecl.input` for `std/node:spawn` under both parses.
+
+**Easiest real fixes**: comment-content (printer emits `//` lines for
+`comment` items — the parallel session's AST work needs its print
+half) and part-decl (printer emits `part` decls). Both are bounded
+single-case printer additions, verifiable by filtered
+`--roundtrip` runs.
 - **IDE groundwork**: `frontend_introspect.zig` (parse+imports, powers
   `glance`, names hover/definition as future work),
   `frontend_hover.zig`.
