@@ -181,19 +181,25 @@ The pipeline a block editor needs already exists and is load-bearing:
   fields (`--ast-json`, `--ast-canon`). Used by the metacircular backend.
 - **JSON → AST**: same module reconstructs the typed `Program` — the
   backend reads it at runtime.
-- **AST → source**: `ast_printer.zig` + `--print`. Corpus round-trip,
-  facet-corrected (repo harness writes `input.kz` unconditionally —
-  every `.k` print dies at PARSE003; harness bug, not printer bug):
-  **542 pass / 1378 fail / 157 skip** of 2077 positive tests. Of the
-  1288 tree-diffs, **1212 differ only in `had_explicit_label`**
-  (provenance flag — semantically identical trees); 76 have real field
-  diffs across ~8 enumerable classes (`part` decls not printed,
-  `produce`/`post_condition` stages, param `default`s, multiline-chain
-  arm regrouping, positional-arg naming, Source scope bindings, named
-  destructure subs, `module_path`); 80 unprintable = documented
-  ungrounded spellings; 10 reparse. ~84% of the corpus round-trips
-  clean-or-provenance-only today; an editor that owns the document
-  doesn't care about provenance flags.
+- **AST → source**: `ast_printer.zig` + `--print`. Corpus round-trip
+  via `scripts/roundtrip_harness.sh` (now enrolled as
+  `./run_regression.sh --roundtrip [filter]` — delegates like
+  `--todo-sweep`, writes no snapshot). **Latest run (2026-11-08, after
+  two fixes): 1747 pass / 178 fail / 157 skip** of ~2082 positive
+  tests. The fixes: (a) `had_explicit_label` reclassified as canon
+  trivia alongside `location`/`indent` (`ast_json.isTrivia`) — it is
+  pun-vs-explicit spelling provenance, not program; (b) harness
+  facet bug — reparse file now mirrors the source extension (`.k` →
+  `input.k`), since `--print` emits facet-matching dialect. Remaining
+  178 fails: **87 tree-diff** — all real printer gaps, no provenance
+  left (field histogram: `expression_value`/`scope`/`bindings` Source
+  captures, `produce`/`post_condition` stages, `part` decls
+  `parts`/`tag`, continuation-regrouping clusters, destructure subs,
+  `module_path`, comment `content`); **81 unprintable** = documented
+  ungrounded spellings (chain-after-branch 34, call-site-variant 20,
+  transform annotations 13, continuation-without-node 8, source-block
+  phantom 5, immediate_impl annotations 1); **10 reparse-error**.
+  ~84% → **~89% clean pass**; the gap list is now purely semantic.
 - **IDE groundwork**: `frontend_introspect.zig` (parse+imports, powers
   `glance`, names hover/definition as future work),
   `frontend_hover.zig`.
@@ -240,15 +246,17 @@ spellings (the two-spellings-one-tree diffs prove it), `--print`
 emits exactly one, and the backend consumes the AST/JSON and never
 sees surface at all.
 
-**"Fully round-trippable" = the enumerable gap list**: ~76 real field
-diffs in ~8 construct classes + ~80 unprintable spellings + 10 reparse
-+ `.k` comment capture (commissioned separately) + the
-`had_explicit_label` canon-trivia question. Bounded worklist, not a
-chasm — the same shape as every other gap-closing program in this
-repo. The open ruling that sizes it: teaching tool (canonical
-normalization acceptable) vs real editor (untouched regions must
-survive byte-identical → comments and the 76 diffs become blockers,
-not polish).
+**"Fully round-trippable" = the enumerable gap list**: 87 real field
+diffs (Source/Expression scope captures, produce/post_condition,
+part decls, chain regrouping, destructure subs, module_path, comment
+content) + 81 unprintable spellings + 10 reparse. Bounded worklist,
+not a chasm — the same shape as every other gap-closing program in
+this repo. ~~`had_explicit_label` canon-trivia question~~ — resolved
+2026-11-08: stripped from canon (provenance, not program). The open
+ruling that sizes it: teaching tool (canonical normalization
+acceptable) vs real editor (untouched regions must survive
+byte-identical → comments and the 87 diffs become blockers, not
+polish).
 
 ## 11. Transform-effect census (measured this session)
 

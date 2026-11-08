@@ -66,11 +66,11 @@ run_one() {
     # every relative resolution — koru.json paths, parent auto-imports,
     # sibling modules — behaves exactly as it does for the original. Holds the
     # test's auxiliary files with the printed source in place of the original.
-    # The canonical print is ALWAYS .kz-dialect source (pure-.k is a separate
-    # projection facet, not built yet), so the reparse file is input.kz
-    # regardless of the source facet — the tree is dialect-neutral and the
-    # module name stays "input". Removed after the check.
-    local reparse_src="input.kz"
+    # The canonical print mirrors the SOURCE facet (.k in → .k out, .kz in →
+    # .kz out), so the reparse file keeps the same extension — a pure-.k print
+    # reparsed as .kz would land as host lines, not Koru. The module name
+    # stays "input". Removed after the check.
+    local reparse_src="input.${src##*.}"
     local ctx="$dir.roundtrip-ctx"
     rm -rf "$ctx"; mkdir -p "$ctx"
     (cd "$dir" && find . -mindepth 1 -maxdepth 1 ! -name "$src" -exec cp -R {} "$ctx/" \;)

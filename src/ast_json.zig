@@ -51,11 +51,13 @@ pub fn serialize(allocator: std.mem.Allocator, program: *const ast.Program) ![]u
 }
 
 /// Canonical serialization: identical to `serialize` but with layout/provenance
-/// trivia stripped — `location` (source coordinates) and `indent` (raw source
-/// indentation on continuations). Two parses of the same PROGRAM (e.g. the
-/// original file and its canonical reprint) compare byte-equal under this dump
-/// even though every node's coordinates differ. This is the tree-equality
-/// surface for the printer round-trip harness.
+/// trivia stripped — `location` (source coordinates), `indent` (raw source
+/// indentation on continuations), and `had_explicit_label` (whether the author
+/// spelled an argument label or used the pun form — the printer normalizes to
+/// explicit, so the flag is provenance, not program). Two parses of the same
+/// PROGRAM (e.g. the original file and its canonical reprint) compare
+/// byte-equal under this dump even though every node's coordinates differ.
+/// This is the tree-equality surface for the printer round-trip harness.
 pub fn serializeCanon(allocator: std.mem.Allocator, program: *const ast.Program) ![]u8 {
     var buf = std.ArrayList(u8){};
     errdefer buf.deinit(allocator);
@@ -63,11 +65,14 @@ pub fn serializeCanon(allocator: std.mem.Allocator, program: *const ast.Program)
     return buf.toOwnedSlice(allocator);
 }
 
-/// Trivia fields carry WHERE the source was written, never WHAT the program is.
-/// Matched by name: the AST uses `location` (errors.SourceLocation) and `indent`
-/// (Continuation) uniformly for these.
+/// Trivia fields carry WHERE or HOW the source was written, never WHAT the
+/// program is. Matched by name: the AST uses `location` (errors.SourceLocation)
+/// and `indent` (Continuation) for coordinates/whitespace, and
+/// `had_explicit_label` (Arg) for pun-vs-explicit spelling preference.
 fn isTrivia(name: []const u8) bool {
-    return std.mem.eql(u8, name, "location") or std.mem.eql(u8, name, "indent");
+    return std.mem.eql(u8, name, "location") or
+        std.mem.eql(u8, name, "indent") or
+        std.mem.eql(u8, name, "had_explicit_label");
 }
 
 fn writeString(buf: *std.ArrayList(u8), allocator: std.mem.Allocator, s: []const u8) !void {

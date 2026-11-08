@@ -363,6 +363,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --no-rebuild                           Skip compiler rebuild (for rapid iteration)"
     echo "  --skip-units                           Skip unit tests (default: run on a full board, skipped on a filtered run)"
     echo "  --run-units                            Run unit tests even on a filtered run"
+    echo "  --roundtrip [filter]                   Canonical-printer round-trip sweep (delegates to scripts/roundtrip_harness.sh; no snapshot)"
     echo "  --cross-targets                        Run JS/C# equivalence checks for tests whose LANGUAGES opt in (default: off)"
     echo "  --no-cross-targets                     Skip JS/C# equivalence checks (default)"
     echo "  --verbose                              Show full stderr output on failures (not truncated)"
@@ -722,6 +723,22 @@ while [[ $# -gt 0 ]]; do
             # board would make the board a function of who last remembered to
             # run one.
             exec "$SCRIPT_DIR/scripts/todo_sweep.sh" "${@:2}"
+            ;;
+        --roundtrip)
+            # Canonical-printer round-trip category: parse → --print → reparse
+            # → tree-compare (canon JSON) + print-stability (byte-compare), over
+            # every positive regression test. Like --todo-sweep it never
+            # contributes to the suite's verdict — it runs the harness and
+            # exits with its own code, writing no snapshot. The board measures
+            # "does the program compile and run"; this measures "does the
+            # program survive being printed and reparsed" — a different axis
+            # the per-test path never exercises. This is the substrate the
+            # block editor's save path and the language beautifier both stand
+            # on (BLOCK_EDITOR.md §10/§13).
+            if [ "$REBUILD_COMPILER" = "true" ]; then
+                (cd "$SCRIPT_DIR" && zig build) || exit 1
+            fi
+            exec "$SCRIPT_DIR/scripts/roundtrip_harness.sh" "${@:2}"
             ;;
         --run-units)
             # Unit tests are the default for a full board; this is the escape
