@@ -53,6 +53,20 @@ pub fn printProgram(allocator: std.mem.Allocator, program: *const ast.Program, o
         try p.write("]\n\n");
     }
 
+    // Part declarations (`part <tag>` / `~part <tag>`): module-level join
+    // directives, not items — the loader consumes Program.parts to merge the
+    // `stem.<tag>.<ext>` siblings. They are program content (a printed file
+    // that drops them would silently skip the join the declaration exists to
+    // make loud), so they print as a block before the items. The tree records
+    // no interleaving with items, so block placement is canonical; array order
+    // is source order and is preserved.
+    if (program.parts.len != 0) {
+        for (program.parts) |part| {
+            try p.print("{s}part {s}\n", .{ p.tilde, part.tag });
+        }
+        if (program.items.len != 0) try p.write("\n");
+    }
+
     var prev: ?*const ast.Item = null;
     for (program.items) |*item| {
         // `.comment` items from host facets are metadata twins — their bytes
@@ -841,6 +855,21 @@ test "round-trip: event + proc + flow with branches" {
         \\| positive p |> check(value: p)
         \\| zero |> _
         \\| negative n |> check(n)
+    );
+}
+
+test "round-trip: part declarations ride Program.parts, not items" {
+    try expectRoundTrip(
+        \\~part math
+        \\~part extra
+        \\
+        \\~tor ask {}
+        \\| count i64
+        \\| miss
+        \\
+        \\~ask()
+        \\| count n |> _
+        \\| miss |> _
     );
 }
 

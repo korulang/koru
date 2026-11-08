@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-canon-is-the-program-not-the-spelling
-provenance: canon-trivia ruling landed 2026-11-08 chasing BLOCK_EDITOR.md §10 round-trip numbers — 1212 of 1288 tree-diffs were had_explicit_label alone; item-level extension same day — 11 host-facet .comment twin diffs reclassified as non-program
+provenance: canon-trivia ruling landed 2026-11-08 chasing BLOCK_EDITOR.md §10 round-trip numbers — 1212 of 1288 tree-diffs were had_explicit_label alone; item-level extension same day — 11 host-facet .comment twin diffs reclassified as non-program; program-level extension same day — Program.parts ruled content, printer emits the join directives
 ts: 2026-11-08
 ---
 
@@ -31,6 +31,21 @@ comments are the sole channel and stay. A twin's block content can drift on
 reparse (interior blank lines, block merges) without the program changing —
 11 corpus tree-diffs were exactly that (87→76). The predicate must mirror the
 printer's: two spellings of "which comments are real" would drift apart.
+
+Third ruling, same day: the content side of the boundary now has a
+program-level (non-item) member. `Program.parts` — the `part <tag>` /
+`~part <tag>` join directives — is program content, not trivia: a print
+that drops them silently skips the `stem.<tag>.<ext>` sibling merge the
+declaration exists to make loud (a missing part file is KORU201, never a
+silent miss). Canon keeps the field; `ast_printer.printProgram` emits the
+parts as a block after module annotations and before items, facet-aware
+(`part` under `.k`, `~part` under host-embedded facets). The tree records
+no interleaving with items, so block placement is the canonical order.
+Boundary note: gated forms (`[flag]part`, `~[flag]part`) evaluate their
+gate at parse — the AST carries only surviving tags, so a print of an
+active gated part is ungated. That is the AST's fact, not a printer
+choice; preserving the gate would need a PartDecl field first. Measured:
+the 8 part-decl tree-diffs (140_020–140_028) flipped to pass.
 
 Open questions: whether other provenance-adjacent fields deserve the
 same ruling as they surface (`module_path`, transform `marks`,
