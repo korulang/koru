@@ -2,8 +2,9 @@
 // Joined via `~part pairwise` in kernel.kz; merged into the kernel module.
 //
 // The pairwise transform: triangular i<j pair iteration over kernel data,
-// emitted as block-scoped `while` loops (measured 2026-10-23 on clbg_nbody:
-// while-spelling 0.63s vs for-spelling 0.66s, checksum-identical).
+// emitted as `for` capture loops (emit-for-not-while; a `while` spelling
+// measured faster on clbg_nbody 2026-10-23 did NOT transfer — on the
+// step-fused shootout nest it blocked NEON vectorization, 1.97s vs 1.30s).
 
 
 // ============================================================================
@@ -262,40 +263,24 @@
     // The symmetric writes become implicit when j is the outer element.
     // ========================================================================
 
-    // Emitted as `while` rather than `for` capture loops: measured 2026-10-23
-    // on clbg_nbody (5 bodies, triangular pair loop, 24M steps) — `for`
-    // spelling landed 0.66s, `while` 0.63s (min-of-5, ReleaseFast, arm64),
-    // checksum-identical. Same semantics; LLVM unrolls/schedules the
-    // explicit-increment form measurably better on this loop nest shape.
-    // Bare `var i`/`var j` is REQUIRED — re-binding them through
-    // `const i = __koru_i` guards lost the entire gain (measured 0.66s).
     const code = if (known_len) |len|
         std.fmt.allocPrint(allocator,
-            \\{{
             \\const {0s} = {1s}.ptr;
-            \\var i: usize = 0;
-            \\while (i < {2d}) : (i += 1) {{
-            \\    var j: usize = i + 1;
-            \\    while (j < {2d}) : (j += 1) {{
+            \\for (0..{2d}) |i| {{
+            \\    for (i + 1..{2d}) |j| {{
             \\        {3s}
             \\    }}
-            \\}}
             \\}}
             ,
             .{ ptr_name, binding_name, len, body_code.items }
         ) catch unreachable
     else
         std.fmt.allocPrint(allocator,
-            \\{{
             \\const {0s} = {1s}.ptr;
-            \\const __koru_n = {1s}.len;
-            \\var i: usize = 0;
-            \\while (i < __koru_n) : (i += 1) {{
-            \\    var j: usize = i + 1;
-            \\    while (j < __koru_n) : (j += 1) {{
+            \\for (0..{1s}.len) |i| {{
+            \\    for (i + 1..{1s}.len) |j| {{
             \\        {2s}
             \\    }}
-            \\}}
             \\}}
             ,
             .{ ptr_name, binding_name, body_code.items }

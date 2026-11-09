@@ -900,24 +900,15 @@ const codegen_utils_kernel = @import("codegen_utils");
                                 .{ store_ref, store_ref, op_src }
                             ) catch unreachable
                         else
-                            // `while` not `for`: same measured exception as the
-                            // known-length site below — 0.63s vs 0.66s on
-                            // clbg_nbody, checksum-identical; the `for`
-                            // capture spelling loses the gain on this nest.
                             std.fmt.allocPrint(alloc,
                                 \\
-                                \\{{
-                                \\const __koru_n = {s}.len;
-                                \\var i: usize = 0;
-                                \\while (i < __koru_n) : (i += 1) {{
-                                \\    var j: usize = i + 1;
-                                \\    while (j < __koru_n) : (j += 1) {{
+                                \\for (0..{s}.len) |i| {{
+                                \\    for (i + 1..{s}.len) |j| {{
                                 \\        {s}
                                 \\    }}
                                 \\}}
-                                \\}}
                                 ,
-                                .{ store_ref, op_src }
+                                .{ store_ref, store_ref, op_src }
                             ) catch unreachable;
                         code.appendSlice(alloc, store_pair_loop) catch unreachable;
                         continue;
@@ -972,21 +963,12 @@ const codegen_utils_kernel = @import("codegen_utils");
                             .{ elem_count, elem_count, op_src }
                         ) catch unreachable
                     else
-                        // `while` not `for`: measured 2026-10-23 on clbg_nbody —
-                        // 0.63s vs 0.66s checksum-identical; the explicit-increment
-                        // form schedules better under LLVM on this nest shape.
-                        // Block-scoped so `i`/`j` don't shadow a following
-                        // `for |i|` capture or collide with a second pairwise.
                         std.fmt.allocPrint(alloc,
                             \\
-                            \\{{
-                            \\var i: usize = 0;
-                            \\while (i < {d}) : (i += 1) {{
-                            \\    var j: usize = i + 1;
-                            \\    while (j < {d}) : (j += 1) {{
+                            \\for (0..{d}) |i| {{
+                            \\    for (i + 1..{d}) |j| {{
                             \\        {s}
                             \\    }}
-                            \\}}
                             \\}}
                             ,
                             .{ elem_count, elem_count, op_src }

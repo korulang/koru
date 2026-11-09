@@ -51,6 +51,21 @@ a measured emitted shape needs a pin on the OUTPUT, because the revert
 arrives as a parallel implementation, not an edit — and it will not be
 a faithful copy.
 
-Open question: whether `while` is systematically better or nest-shape-specific.
-Measured once, on one benchmark; other kernel workloads may land differently —
-re-measure before extending the choice to `self`/`step`/`reduce` emissions.
+2026-11-09 answered the open question with a second nest, and the answer
+split the ruling from the observation. On the shootout's step-fused
+kernel_fused nest (same `std/kernel:step` + pairwise + self constructs,
+50M iterations, ReleaseFast arm64, interleaved min-of-3) the `while`
+spelling measured 1.97s against 1.29–1.30s for the `for` spelling of the
+*same emitted file* — checksum-identical, and the difference is visible
+in the binary: `for` produces `fsqrt.2d`/`fdiv.2d` NEON vectorization,
+`while` compiles scalar. Isolating the two loops showed only the INNER
+triangular leg's spelling matters (outer `while` + inner `for` = 1.28s;
+outer `for` + inner `while` = 1.96s). So "measured choice" is confirmed
+as a fact — the spelling IS load-bearing — but the October ruling that
+followed from one nest does not generalize: `while` won 5% on
+clbg_nbody and loses 34% here. The measured-exception class was retired
+the same day: counted loops emit `for`, unconditionally, and the eight
+kernel pairwise allowlist entries were removed. The concept survives as
+the reason the rule is absolute — a per-nest measurement cannot be
+encoded in one spelling, so the only honest default is the one that
+vectorizes on the nest that loses most.

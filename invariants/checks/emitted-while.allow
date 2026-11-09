@@ -7,11 +7,10 @@
 #   reason      — why the trip count genuinely is not nameable before the loop
 #                 starts. Mandatory. An entry matching no site fails the check.
 #
-# An exemption is normally a ruling that this while is NOT a counted loop.
-# A second class is admitted: a MEASURED EXCEPTION — a counted loop whose
-# while shape benchmarked faster on the real emitted artifact, with the
-# measurement pinned in a comment at the emit site and cited in the reason
-# here, so the ruling can be revisited when the compiler landscape changes.
+# An entry matching no site fails the check. Counted loops are `for`,
+# unconditionally — the measured-exception class was retired 2026-11-09
+# after the kernel pairwise `while` win on clbg_nbody failed to transfer
+# (step-fused shootout nest: 1.97s while vs 1.30s for, vectorization lost).
 # Everything not listed here is a violation until converted to `for`.
 
 io.blk.kz | while (_v > 0)                    | digit-extraction loop; the trip count is the digit count of a runtime value, unknowable before the divisions run (moved with the print.blk family split out of io.kz)
@@ -35,14 +34,6 @@ json.parse.kz | while (i < raw.len)         | escape-decode walk over a JSON str
 json.parse.kz | while (p.* < s.len and s[p.*] >= '0' and s[p.*] <= '9') | digit-run scan in __jnum (integer, fraction, and exponent legs share the fingerprint); the run length is however many digits the literal carries
 json.parse.kz | while (true)                | element/member loops in __jskip, __jobj, and the array reader — each iterates until the input delivers ',' , ']' or '}', so the trip count is however many items the document holds (also the one-time-seen fast path after a non-empty marker check)
 json.parsehelpers.kz | while (true)            | same element/member loops, moved with the ParseH split — iterates until the input delivers ',' , ']' or '}'; the trip count is however many items the document holds
-kernel.kz | while (i < __koru_n)             | measured exception — pairwise pair loop over store-backed kernel data (dynamic len): on clbg_nbody (arm64, Zig 0.15.2, ReleaseFast, min-of-5) the bare-while shape measured 0.63s vs 0.66s for the `for` capture spelling, checksum 338799744 identical; canonical-trip-count and const-rebinding variants did not recover it; comment pinned at the emit site
-kernel.kz | while (j < __koru_n)             | same measured exception — inner leg of the triangular pair loop
-kernel.kz | while (i < {d})                  | measured exception — fused pairwise loop over a known-shape kernel array: same clbg_nbody measurement as the `__koru_n` site, comment pinned at the emit site
-kernel.kz | while (j < {d})                  | same measured exception — inner leg of the triangular pair loop
-kernel.pairwise.kz | while (i < {2d})        | measured exception — standalone `std/kernel:pairwise` transform, known length: same clbg_nbody measurement (0.63s vs 0.66s `for`, checksum-identical), comment pinned at the emit site
-kernel.pairwise.kz | while (j < {2d})        | same measured exception — inner leg of the triangular pair loop
-kernel.pairwise.kz | while (i < __koru_n)    | same measured exception — standalone `std/kernel:pairwise` transform, dynamic length
-kernel.pairwise.kz | while (j < __koru_n)    | same measured exception — inner leg of the triangular pair loop
 store.oindex.kz | while (__koru_ep < __koru_ep_h) | binary-search lower-bound probe over the sorted index directory: the probe halves its window until empty, so the trip count is the search itself, not a nameable bound
 store.oindex.kz | while (__koru_ea < __koru_ea_h) | same binary-search shape — the upper-bound probe that resumes an ordered range walk past a finished key
 store.oindex.kz | while (true) | survival member cursor over a routed index bucket: the entry is re-located by binary search each iteration because mid-walk inserts shift positions — the count is however many members remain, a data property
