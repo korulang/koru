@@ -28,6 +28,7 @@ because "no mirror" is exactly the state this file exists to make expensive.
 | `field:new.on-stack` | no-green-usage |
 | `fmt:fmt.blk` | no-green-usage |
 | `fmt:ln` | `115_026_fmt_ln_in_module` |
+| `guide:add` | pins-unimplemented-surface |
 | `io:eprint` | no-green-usage |
 | `io:eprint.ln` | no-green-usage |
 | `io:print` | `115_035_io_print_in_module` |

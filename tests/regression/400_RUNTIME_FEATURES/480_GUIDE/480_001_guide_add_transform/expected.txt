@@ -1,0 +1,2 @@
+When booking fails, check payment_methods first.
+An edge fired unarmed — check vocabulary().

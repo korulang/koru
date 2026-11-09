@@ -1,0 +1,280 @@
+// guide.kz — std/guide: attach teaching surfaces to tors/edges as dead
+// AST data, looked up by key at runtime.
+//
+// The module is deliberately dumb: it stores (key -> template) pairs
+// harvested from the program AST at compile time and answers key lookups.
+// It does not know what a template IS — rendering is the caller's job
+// (Liquid engine or whatever the smart tool chooses).
+//
+// Attach (write side, comptime|norun — dead data, never executed):
+//   std/guide:add(my-thing) { ...template... }
+//   std/guide:add(book-flight | error) { ...lesson... }
+//
+// Read (evaluated expression, dynamic key):
+//   std/guide:lookup(table, key: guide:key("book-flight", branch))
+//   | guide template |> ...render/inject...
+//   | not-found |> ...silence is default...
+//
+// The key contract: BOTH sides build keys through guide:key so the
+// attach-time name and the query-time string can never drift.
+
+const std = @import("std");
+const Root = @import("root");
+
+// ============================================================================
+// ADD — attach a teaching surface. Comptime-harvested, never run.
+// `target` is the Expression naming what this attaches to (a tor, or
+// `tor | branch` for an edge); `source` is the template body.
+// ============================================================================
+
+// Target syntax follows the std/taps transition idiom — `source -> dest`
+// parsed from the Expression text, with glob wildcards:
+//   std/guide:add(book-flight -> error) { ... }   // one edge
+//   std/guide:add(book-flight -> *)     { ... }   // every edge of a tor
+//   std/guide:add(* -> error)           { ... }   // that edge, any tor
+//   std/guide:add(book-flight)          { ... }   // tor-level (no arrow)
+
+// `add` IS the transform: each guide:add(...) invocation is intercepted by
+// the transform runner (import std/guide puts it in the AST; the runner
+// finds it — no pass wiring, no import magic). The proc harvests the
+// entry; table delivery is the remaining piece.
+
+~[comptime|transform]pub tor add {
+    expr: Expression,
+    source: Source,
+    invocation: *const Invocation,
+    item: *const std/compiler:Item,
+    program: *const std/compiler:Program,
+    allocator: std.mem.Allocator
+} -> SiteResult
+
+~proc add|zig {
+    // Harvest this invocation: normalize expr -> canonical key, append
+    // (key, template) to guide_table.txt in the compile cwd. SPIKE delivery —
+    // production path is AST `appended` injection; file I/O proves the loop.
+    const key = targetKey(allocator, expr) catch return .{};
+    // Templates may be multiline — collapse whitespace so TSV stays one-line.
+    var clean: [4096]u8 = undefined;
+    var cn: usize = 0;
+    for (source.text) |c| {
+        if (cn + 1 >= clean.len) break;
+        clean[cn] = if (c == '\n' or c == '\r' or c == '\t') ' ' else c;
+        cn += 1;
+    }
+    const tmpl = clean[0..cn];
+
+    const f = std.fs.cwd().createFile("guide_table.txt", .{ .truncate = false }) catch return .{};
+    defer f.close();
+    const end = f.getEndPos() catch 0;
+    f.seekTo(end) catch return .{};
+    const line = std.fmt.allocPrint(allocator, "{s}\t{s}\n", .{ key, tmpl }) catch return .{};
+    defer allocator.free(line);
+    f.writeAll(line) catch {};
+    return .{};
+}
+
+// ============================================================================
+// KEY — the attach/query contract. One builder, both sides.
+// Canonical form mirrors the taps `src -> dest` idiom:
+// "<tor>-><branch>"; tor-level attaches use the bare tor name
+// (branch "" yields just the tor).
+// ============================================================================
+
+~pub tor key { tor: string, branch: string } -> string
+
+~proc key|zig {
+    if (branch.len == 0) return tor;
+    var buf: [512]u8 = undefined;
+    const s = std.fmt.bufPrint(&buf, "{s}->{s}", .{ tor, branch }) catch return "";
+    return std.heap.page_allocator.dupe(u8, s) catch "";
+}
+
+// ============================================================================
+// DEFAULT — the read side, invoked as `std/guide(key)`. Module-as-tor:
+// the table is module-internal compiled data (transform harvest), not a
+// caller param. `guide` binds the template; `not-found` is the silent
+// default until harvest lands — an empty table truthfully finds nothing.
+// ============================================================================
+
+~pub tor default { expr: Expression }
+| guide string
+| not-found
+
+// Match one pattern side: "*" matches anything; otherwise exact.
+fn sideMatches(pat: []const u8, actual: []const u8) bool {
+    if (std.mem.eql(u8, pat, "*")) return true;
+    return std.mem.eql(u8, pat, actual);
+}
+
+// Pattern "src->dest" (or bare "src") against query key. Returns specificity:
+// 2 = both sides concrete, 1 = one wildcard side, 0 = full wildcard/no match.
+fn matchKey(pattern: []const u8, query: []const u8) usize {
+    const arrow = std.mem.indexOf(u8, pattern, "->");
+    const qarrow = std.mem.indexOf(u8, query, "->");
+    if (arrow == null and qarrow == null) {
+        return if (sideMatches(pattern, query)) 2 else 0;
+    }
+    if (arrow == null or qarrow == null) return 0;
+    const ps = pattern[0..arrow.?];
+    const pd = pattern[arrow.? + 2 ..];
+    const qs = query[0..qarrow.?];
+    const qd = query[qarrow.? + 2 ..];
+    if (!sideMatches(ps, qs) or !sideMatches(pd, qd)) return 0;
+    const wild = (std.mem.eql(u8, ps, "*") or std.mem.eql(u8, pd, "*"));
+    return if (wild) 1 else 2;
+}
+
+~proc default|zig {
+    const qkey = targetKey(std.heap.page_allocator, expr) catch
+        return .{ .not_found = .{} };
+    // Table lives beside the executable (transform writes it to the compile
+    // cwd, which is also where the binary lands) — cwd is NOT reliable.
+    var exebuf: [4096]u8 = undefined;
+    const exe = std.fs.selfExePath(&exebuf) catch
+        return .{ .not_found = .{} };
+    const dir = std.fs.path.dirname(exe) orelse ".";
+    const tpath = std.fmt.allocPrint(std.heap.page_allocator, "{s}/guide_table.txt", .{dir}) catch
+        return .{ .not_found = .{} };
+    const f = std.fs.cwd().openFile(tpath, .{}) catch
+        return .{ .not_found = .{} };
+    defer f.close();
+    const data = f.readToEndAlloc(std.heap.page_allocator, 1 << 20) catch
+        return .{ .not_found = .{} };
+    defer std.heap.page_allocator.free(data);
+
+    // Pass 1: exact key match. Pass 2: best wildcard specificity.
+    var best_score: usize = 0;
+    var best_tmpl: ?[]const u8 = null;
+    var it = std.mem.splitScalar(u8, data, '\n');
+    while (it.next()) |line| {
+        const tab = std.mem.indexOfScalar(u8, line, '\t') orelse continue;
+        const k = line[0..tab];
+        const t = line[tab + 1 ..];
+        if (std.mem.eql(u8, k, qkey)) {
+            const out = std.heap.page_allocator.dupe(u8, t) catch t;
+            return .{ .guide = out };
+        }
+        const score = matchKey(k, qkey);
+        if (score > best_score) {
+            best_score = score;
+            best_tmpl = t;
+        }
+    }
+    if (best_tmpl) |t| {
+        const out = std.heap.page_allocator.dupe(u8, t) catch t;
+        return .{ .guide = out };
+    }
+    return .{ .not_found = .{} };
+}
+
+// ============================================================================
+// COLLECT — comptime pass: walk the program AST for std.guide:add
+// invocations, harvest (key, template) pairs, emit guide_table.txt.
+// Mirrors std/build:collect's traversal; the output is DATA (a lookup
+// table), not build.zig — delivery channel TBD (generated module vs
+// session registry). Spike emits TSV: key \t template per line.
+// ============================================================================
+
+const ProseEntry = struct {
+    key: []const u8,
+    template: []const u8,
+};
+
+fn isGuideAdd(path: anytype) bool {
+    const mq = path.module_qualifier orelse return false;
+    return std.mem.eql(u8, mq, "std.guide") and
+        path.segments.len == 1 and
+        std.mem.eql(u8, path.segments[0], "add");
+}
+
+// target expression text -> canonical key, taps-style `src -> dest`.
+// `book-flight -> error` -> "book-flight->error"; `book-flight` ->
+// "book-flight"; wildcards preserved verbatim (`* -> error` -> "*->error").
+// Whitespace is stripped; `->` becomes `->` with no surrounding space.
+fn targetKey(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
+    var buf: [1024]u8 = undefined;
+    var n: usize = 0;
+    var i: usize = 0;
+    var pending_arrow = false;
+    while (i < text.len and n + 2 < buf.len) : (i += 1) {
+        if (i + 1 < text.len and text[i] == '-' and text[i + 1] == '>') {
+            pending_arrow = true;
+            i += 1;
+            continue;
+        }
+        const c = text[i];
+        if (c == ' ' or c == '\t' or c == '\n' or c == '\r') continue;
+        if (pending_arrow) {
+            buf[n] = '-'; buf[n + 1] = '>'; n += 2;
+            pending_arrow = false;
+        }
+        buf[n] = c;
+        n += 1;
+    }
+    return try allocator.dupe(u8, buf[0..n]);
+}
+
+// Resolve the source side of `src -> dest`: bare names get the declaring
+// module's prefix (unqualified = local, same rule as tor invocation);
+// qualified paths (`app/x`, `std/bridge:run`) and wildcards pass verbatim.
+fn resolveTarget(allocator: std.mem.Allocator, text: []const u8, module_name: []const u8) ![]u8 {
+    const arrow = std.mem.indexOf(u8, text, "->") orelse text.len;
+    const src = std.mem.trim(u8, text[0..arrow], " \t");
+    const qualified = std.mem.indexOfAny(u8, src, "/:") != null or
+        std.mem.eql(u8, src, "*");
+    if (qualified or module_name.len == 0) {
+        return try allocator.dupe(u8, src);
+    }
+    return try std.fmt.allocPrint(allocator, "{s}/{s}", .{ module_name, src });
+}
+
+fn harvestFlow(allocator: std.mem.Allocator, flow: anytype, module_name: []const u8, entries: *std.ArrayList(ProseEntry)) !void {
+    if (!isGuideAdd(flow.inv().path)) return;
+    var expr_text: ?[]const u8 = null;
+    var source_text: ?[]const u8 = null;
+    for (flow.inv().args) |arg| {
+        if (std.mem.eql(u8, arg.name, "expr")) expr_text = arg.value;
+        if (std.mem.eql(u8, arg.name, "source")) source_text = arg.value;
+    }
+    const t = expr_text orelse return;
+    const s = source_text orelse return;
+    const resolved = try resolveTarget(allocator, t, module_name);
+    const ekey = try targetKey(allocator, resolved);
+    try entries.append(allocator, .{ .key = ekey, .template = s });
+}
+
+fn walkItems(allocator: std.mem.Allocator, items: anytype, module_name: []const u8, entries: *std.ArrayList(ProseEntry)) !void {
+    for (items) |item| {
+        switch (item) {
+            .flow => |flow| try harvestFlow(allocator, flow, module_name, entries),
+            .module_decl => |module| try walkItems(allocator, module.items, module.logical_name, entries),
+            else => {},
+        }
+    }
+}
+
+~[comptime]pub tor collect {
+    ctx: koru_compiler_types.CompilerContext,
+    output_path: string
+} -> koru_compiler_types.CompilerContext
+
+~proc collect|zig {
+    const allocator = ctx.allocator;
+    var entries = std.ArrayList(ProseEntry){ .items = &.{}, .capacity = 0 };
+    errdefer entries.deinit(allocator);
+
+    try walkItems(allocator, ctx.ast.items, "main", &entries);
+
+    // Emit TSV table next to the output binary.
+    var out_path_buf: [4096]u8 = undefined;
+    const out_path = std.fmt.bufPrint(&out_path_buf, "{s}.guide_table", .{output_path}) catch "guide_table.txt";
+    const out_file = std.fs.cwd().createFile(out_path, .{}) catch return ctx;
+    defer out_file.close();
+    var w = out_file.writer(allocator);
+    defer w.deinit();
+    for (entries.items) |e| {
+        w.print("{s}\t{s}\n", .{ e.key, e.template }) catch {};
+    }
+    w.flush() catch {};
+    return ctx;
+}

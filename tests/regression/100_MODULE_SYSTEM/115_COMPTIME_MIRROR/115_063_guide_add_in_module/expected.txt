@@ -1,0 +1,1 @@
+mod Module-resident lesson: check its own bindings first.
