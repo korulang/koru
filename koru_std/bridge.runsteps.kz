@@ -37,7 +37,7 @@ fn runSteps(br: *Bridge, source: []const u8, items: []const TurnItem, sh: []cons
         const item = std.mem.trim(u8, source[it.start..it.end], " \t\r\n");
         if (isDefineItem(item)) {
             all_residue = false;
-            switch (installDefine(br, item)) {
+            switch (defineStepRecord(br, item, step, total, sh)) {
                 .defined => |d| writer.print("step {d}/{d} defined: {s}\n", .{ step, total, d }) catch {},
                 .parse_error => |e| {
                     wire_failures += 1;
@@ -48,7 +48,7 @@ fn runSteps(br: *Bridge, source: []const u8, items: []const TurnItem, sh: []cons
         }
         // The wire gate holds per item; a refused slice is a step line.
         if (wireGate(br, item)) |e| {
-            if (!reportGateRefusal(br, item, e, step, total, writer)) {
+            if (refusedStepRecord(br, item, e, step, total, sh, writer) == null) {
                 all_residue = false;
                 wire_failures += 1;
             }

@@ -1,0 +1,54 @@
+// Koru Standard Library: the `itemrec` part of bridge — call_step
+// records for items that never reach the dispatcher (define, gate
+// refusal/residue, all-prose collapse, single-item refusals), plus
+// the verdict-coupled handlers that emit them. Joined via
+// `~part itemrec` in bridge.kz; merged into the bridge module.
+
+/// installDefine + its call_step record, returning the define output for
+/// the caller's prose line — the record emits inside so every define
+/// path (single-item and per-step) is covered by construction.
+fn defineStepRecord(br: *Bridge, item: []const u8, step: u32, of: u32, sh: []const u8) Interp.define_event.Output {
+    const out = installDefine(br, item);
+    switch (out) {
+        .defined => emitItemRecord(br, "defined", "", "", step, of, sh),
+        .parse_error => |e| emitItemRecord(br, "parse-error", e.message, "", step, of, sh),
+    }
+    return out;
+}
+
+/// reportGateRefusal + its call_step record — returns the residue name
+/// or null on a wire failure, so the caller counts the strike.
+fn refusedStepRecord(br: *Bridge, item: []const u8, e: GateRejection, step: u32, of: u32, sh: []const u8, writer: anytype) ?[]const u8 {
+    const rn = reportGateRefusal(br, item, e, step, of, writer);
+    emitItemRecord(br, if (rn != null) "residue" else "parse-error",
+        if (rn != null) "" else e.message, rn orelse "", step, of, sh);
+    return rn;
+}
+
+/// The single-item wire-gate refusal, record included: residue-bind when
+/// the text is keepable, else the parse-error return. Lives here so the
+/// item-coverage record and the verdict can't drift apart.
+fn refusedSingleItem(br: *Bridge, source: []const u8, e: GateRejection, sh: []const u8) run_event.Output {
+    if (e.not_invocation or isNoteAttempt(br, source)) {
+        const prose = std.mem.trim(u8, source, " \t\r\n");
+        const rn = bindResidue(br, prose);
+        if (rn.len > 0) {
+            emitItemRecord(br, "residue", "", rn, 1, 1, sh);
+            return .{ .residue = .{ .report = residueNote(rn, prose),
+                .observer = !e.not_invocation, .bound = rn, .text = prose } };
+        }
+    }
+    emitItemRecord(br, "parse-error", e.message, "", 1, 1, sh);
+    var err = mkErr("parse-error", e.message);
+    err.line = e.line; err.column = e.column;
+    return .{ .@"error" = err };
+}
+
+/// One residue record per item for the all-prose collapse — the turn
+/// binds one residue value but the coverage invariant counts items.
+fn emitResidueRecords(br: *Bridge, items: []const TurnItem, rn: []const u8, sh: []const u8) void {
+    for (items, 0..) |_, idx| {
+        emitItemRecord(br, "residue", "", rn, @intCast(idx + 1), @intCast(items.len), sh);
+    }
+}
+

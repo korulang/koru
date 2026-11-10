@@ -1,0 +1,69 @@
+// Koru Standard Library: the `dispatch` part of bridge — one wire
+// item through the session scope: normalization, mounted scopes,
+// the trace sink, and the runtime run. Joined via `~part dispatch`
+// in bridge.kz; merged into the bridge module at load.
+
+/// One wire item's dispatch outcome plus its per-dispatch records. `steps`
+/// slices the bridge's call_sink — valid only until the next
+/// dispatchThroughScope call, so the caller serializes (emitCallSteps)
+/// before dispatching the next item.
+const ScopeDispatch = struct {
+    out: Runtime.run_event.Output,
+    steps: []const Interp.TraceEntry,
+};
+
+/// One wire item dispatched through the session: the runtime run with the
+/// bridge's pool, defined-flows table, and — when the model has introspection —
+/// the host verbs, plus the session binder so every link gets its `rN`.
+/// Typed positions were admitted by the gate; here they normalize to
+/// canonical quoted wire so eval sees one representation.
+fn dispatchThroughScope(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environment) ScopeDispatch {
+    // Page-backed like the rest of the wire layer — the normalized text
+    // must outlive the whole dispatch, and the arena dies at prepare().
+    // The session lookup reads mounted scopes too: a typed arg on a
+    // mounted verb normalizes by its own manifest.
+    withSessionGate(br);
+    const wire = Runtime.wireNormalize(std.heap.page_allocator, src, sessionInputLookup, hostInputLookup);
+    clearSessionGate();
+    // The session's mounted scopes ride the interpreter's channel for
+    // this run — a mounted verb then dispatches, validates, borrows, and
+    // discharges exactly like a bound one, against this same pool.
+    Interp.setRunMountedScopes(br.mounted_scopes.items);
+    defer Interp.clearRunMountedScopes();
+    // The call_step sink: the interpreter appends each dispatch's record
+    // as it lands; the caller renders before the next item runs.
+    br.call_sink.clearRetainingCapacity();
+    Interp.setTraceSink(&br.call_sink);
+    defer Interp.setTraceSink(null);
+    const out = Runtime.run_event.handler(.{
+        .source = wire,
+        .scope = br.scope,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+        .defined = br.defined,
+        .lenient = true,
+        .host_dispatch = if (br.introspection) @as(?Interp.HostDispatchFn, hostDispatch) else null,
+        .session_env = br.session_env,
+        .session_bind_fn = @as(?Interp.SessionBindFn, sessionBindAdapter),
+        .session_bind_env = br.session_env,
+        .session_bind_counter = &br.bound_count,
+        .turn_env = turn_env,
+    });
+    return .{ .out = out, .steps = br.call_sink.items };
+}
+
+/// Dispatch one wire item AND emit its records — the runsteps/run-exec
+/// call sites' one-stop: outcome for the prose switch, records already
+/// serialized before the next item can dispatch.
+fn dispatchAndRecord(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environment, step: u32, of: u32, sh: []const u8) Runtime.run_event.Output {
+    const d = dispatchThroughScope(br, src, turn_env);
+    emitCallSteps(br, d.steps, outcomeKind(d.out), step, of, sh);
+    return d.out;
+}
+
+/// One turn's state hash — bumps the turn counter as it hashes, so every
+/// `run` call numbers itself exactly once.
+fn turnStateHash(br: *Bridge) []const u8 {
+    br.turn_count += 1;
+    return stateHash(br);
+}

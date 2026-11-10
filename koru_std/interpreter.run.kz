@@ -782,6 +782,8 @@ fn executeFlow(
                 }
             }
 
+            armPendingStep(event_name, event_cost, inv.args, flow.body.continuations, ctx.allocator);
+
             // Evaluate args against environment before dispatching
             // This resolves binding references like "v.num" to actual values
             var evaluated_args = try ctx.allocator.alloc(ast.Arg, inv.args.len);
@@ -797,8 +799,6 @@ fn executeFlow(
             // Create invocation with evaluated args
             var evaluated_inv = inv.*;
             evaluated_inv.args = evaluated_args;
-
-            armPendingStep(event_name, event_cost, inv.args, evaluated_args, flow.body.continuations, ctx.allocator);
 
             // REPL-DEFINED FLOW (the runtime define). An tor the session
             // defined at runtime dispatches to its body: params bound into the
@@ -856,7 +856,7 @@ fn executeFlow(
                         }
                     }
                 }
-                this_trace_idx = appendPendingStep(ctx, dispatch_bound_name, dispatch_result.branch, Value.fromDispatch(dispatch_result.branch, dispatch_result.fields).toJsonAlloc(ctx.allocator));
+                this_trace_idx = appendPendingStep(ctx, dispatch_bound_name, dispatch_result.branch, Value.fromDispatch(dispatch_result.branch, dispatch_result.fields).toJsonAlloc(ctx.allocator), evaluated_args);
             }
 
             // Book the dispatch into the ledger — minted obligations

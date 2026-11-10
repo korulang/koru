@@ -31,7 +31,7 @@
         {
             const trimmed = std.mem.trim(u8, source, " \t\r\n");
             if (std.mem.startsWith(u8, trimmed, "tor ")) {
-                return switch (installDefine(br, source)) {
+                return switch (defineStepRecord(br, source, 1, 1, sh)) {
                     .defined => |d| .{ .defined = d },
                     .parse_error => |e| blk: {
                         var err = mkErr("parse-error", e.message);
@@ -50,20 +50,7 @@
         // membership (event-denied), field shapes (validation-error),
         // possession, budget.
         if (wireGate(br, source)) |e| {
-            // RESIDUE: prose is not an invocation, but it is not garbage
-            // either — bind the refused text and hand the turn back to the
-            // agent as `residue`, so the model can re-emit it through a real
-            // verb. Nothing strands: the value, the handle, and the outcome
-            // all survive.
-            if (e.not_invocation or isNoteAttempt(br, source)) {
-                const prose = std.mem.trim(u8, source, " \t\r\n");
-                const rn = bindResidue(br, prose);
-                if (rn.len > 0) return .{ .residue = .{ .report = residueNote(rn, prose),
-                    .observer = !e.not_invocation, .bound = rn, .text = prose } };
-            }
-            var err = mkErr("parse-error", e.message);
-            err.line = e.line; err.column = e.column;
-            return .{ .@"error" = err };
+            return refusedSingleItem(br, source, e, sh);
         }
 
         // A one-item turn has no later items — no turn env to seed.
@@ -85,8 +72,11 @@
     if (all_prose) {
         const trimmed = std.mem.trim(u8, source, " \t\r\n");
         const rn = bindResidue(br, trimmed);
-        if (rn.len > 0) return .{ .residue = .{ .report = residueNote(rn, trimmed),
-            .observer = isNoteAttempt(br, trimmed), .bound = rn, .text = trimmed } };
+        if (rn.len > 0) {
+            emitResidueRecords(br, items, rn, sh);
+            return .{ .residue = .{ .report = residueNote(rn, trimmed),
+                .observer = isNoteAttempt(br, trimmed), .bound = rn, .text = trimmed } };
+        }
         // Bind failed — fall through to the per-item loop, which reports
         // per-step refusals instead of lying about a single binding.
     }

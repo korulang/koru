@@ -26,5 +26,15 @@ the prose.
 
 Open: `armed` captures the arm *words* at a node but not guard
 outcomes; `fired_guides` is a placeholder until the guide ledger
-exists; arg-eval failures produce no record (the dispatch never
-armed).
+exists. `state_hash` is a replay address only — every dispatch mints
+an `rN`, so identical failing calls hash differently; stall detection
+is a call-identity comparison `(verb, resolved args, branch, payload)`
+against session history, derived at analysis, never read off the hash.
+
+Evolved 2026-11-11: two coverage holes closed. Every item now yields
+at least one record — zero-dispatch items (residue, define, gate
+refusal, all-prose collapse) emit a minimal record via `emitItemRecord`,
+pinned by the gate_probe coverage case. And `pending_step` became a
+stack armed *before* arg eval, so `UnboundName` and other eval throws
+produce `failed:true` records instead of silent gaps — defined flows
+recurse through the same dispatch path, which is why it is a stack.

@@ -21,7 +21,6 @@
 //   | dispatch-error e |> respond(status: 500, body: e.tor)
 
 ~[runtime]
-
 ~import std/build
 
 const std = @import("std");
@@ -501,6 +500,7 @@ pub const InterpreterThreadState = struct {
 ~part validate
 ~part trace
 ~part callrec
+~part argfmt
 ~part tilde
 ~part handles
 ~part flowsrc

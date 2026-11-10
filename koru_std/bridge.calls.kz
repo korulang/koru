@@ -115,6 +115,23 @@ fn emitCallSteps(br: *Bridge, steps: []const Interp.TraceEntry, outcome: []const
     }
 }
 
+/// One record for an item that never reached the dispatcher — residue,
+/// define, gate refusal. The item-coverage invariant (every item yields
+/// >=1 record) makes these first-class: `verb` is empty, `item_outcome`
+/// carries the step verdict, `error` carries the refusal detail when the
+/// item failed as wire. `bound` names the residue binding when one was
+/// minted.
+fn emitItemRecord(br: *Bridge, item_outcome: []const u8, detail: []const u8, bound: []const u8, step: u32, of: u32, sh: []const u8) void {
+    const alloc = br.session_arena.allocator();
+    const w = br.call_log.writer(alloc);
+    br.call_seq += 1;
+    w.print("{{\"type\":\"call_step\",\"seq\":{d},\"turn\":{d},\"step\":{d},\"of\":{d},\"item_outcome\":\"{s}\",\"state_hash\":\"{s}\",\"verb\":\"\",\"args\":[],\"armed\":[],\"arm_word\":\"\",\"arm_name\":\"\",\"branch\":\"\",\"payload\":null,\"bound\":", .{ br.call_seq, br.turn_count, step, of, item_outcome, sh }) catch return;
+    w.writeAll(Interp.jsonQuote(alloc, bound)) catch return;
+    w.print(",\"handles\":\"[]\",\"used\":0,\"fired_guides\":[],\"failed\":false,\"error\":", .{}) catch return;
+    w.writeAll(Interp.jsonQuote(alloc, detail)) catch return;
+    w.writeAll("}\n") catch return;
+}
+
 // `take-calls` — drain the session's call_step JSONL. The gate prints it
 // as a framed block beside the verdict; tau-agent drains to its side
 // channel. Drain semantics: each call returns what accumulated since the
@@ -127,68 +144,4 @@ fn emitCallSteps(br: *Bridge, steps: []const Interp.TraceEntry, outcome: []const
     const out = alloc.dupe(u8, br.call_log.items) catch "";
     br.call_log.clearRetainingCapacity();
     return out;
-}
-/// One wire item's dispatch outcome plus its per-dispatch records. `steps`
-/// slices the bridge's call_sink — valid only until the next
-/// dispatchThroughScope call, so the caller serializes (emitCallSteps)
-/// before dispatching the next item.
-const ScopeDispatch = struct {
-    out: Runtime.run_event.Output,
-    steps: []const Interp.TraceEntry,
-};
-
-/// One wire item dispatched through the session: the runtime run with the
-/// bridge's pool, defined-flows table, and — when the model has introspection —
-/// the host verbs, plus the session binder so every link gets its `rN`.
-/// Typed positions were admitted by the gate; here they normalize to
-/// canonical quoted wire so eval sees one representation.
-fn dispatchThroughScope(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environment) ScopeDispatch {
-    // Page-backed like the rest of the wire layer — the normalized text
-    // must outlive the whole dispatch, and the arena dies at prepare().
-    // The session lookup reads mounted scopes too: a typed arg on a
-    // mounted verb normalizes by its own manifest.
-    withSessionGate(br);
-    const wire = Runtime.wireNormalize(std.heap.page_allocator, src, sessionInputLookup, hostInputLookup);
-    clearSessionGate();
-    // The session's mounted scopes ride the interpreter's channel for
-    // this run — a mounted verb then dispatches, validates, borrows, and
-    // discharges exactly like a bound one, against this same pool.
-    Interp.setRunMountedScopes(br.mounted_scopes.items);
-    defer Interp.clearRunMountedScopes();
-    // The call_step sink: the interpreter appends each dispatch's record
-    // as it lands; the caller renders before the next item runs.
-    br.call_sink.clearRetainingCapacity();
-    Interp.setTraceSink(&br.call_sink);
-    defer Interp.setTraceSink(null);
-    const out = Runtime.run_event.handler(.{
-        .source = wire,
-        .scope = br.scope,
-        .handle_pool = &br.pool,
-        .auto_discharge = false,
-        .defined = br.defined,
-        .lenient = true,
-        .host_dispatch = if (br.introspection) @as(?Interp.HostDispatchFn, hostDispatch) else null,
-        .session_env = br.session_env,
-        .session_bind_fn = @as(?Interp.SessionBindFn, sessionBindAdapter),
-        .session_bind_env = br.session_env,
-        .session_bind_counter = &br.bound_count,
-        .turn_env = turn_env,
-    });
-    return .{ .out = out, .steps = br.call_sink.items };
-}
-
-/// Dispatch one wire item AND emit its records — the runsteps/run-exec
-/// call sites' one-stop: outcome for the prose switch, records already
-/// serialized before the next item can dispatch.
-fn dispatchAndRecord(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environment, step: u32, of: u32, sh: []const u8) Runtime.run_event.Output {
-    const d = dispatchThroughScope(br, src, turn_env);
-    emitCallSteps(br, d.steps, outcomeKind(d.out), step, of, sh);
-    return d.out;
-}
-
-/// One turn's state hash — bumps the turn counter as it hashes, so every
-/// `run` call numbers itself exactly once.
-fn turnStateHash(br: *Bridge) []const u8 {
-    br.turn_count += 1;
-    return stateHash(br);
 }

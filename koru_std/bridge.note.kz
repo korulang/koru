@@ -89,10 +89,10 @@ fn isNoteAttempt(br: *Bridge, item: []const u8) bool {
 
 /// A gate-refused item binds as residue when the text is keepable — plain
 /// prose (`not_invocation`) or a malformed `note(`/`note:` that still
-/// deserves the observer. Returns true when the item bound, so the turn's
-/// all-residue flag survives; false when the refusal printed as a wire
-/// failure and the caller counts the strike.
-fn reportGateRefusal(br: *Bridge, item: []const u8, e: GateRejection, step: u32, total: u32, writer: anytype) bool {
+/// deserves the observer. Returns the residue name when the item bound
+/// (the call_step record names it too); null on a wire failure, which
+/// the caller counts as a strike.
+fn reportGateRefusal(br: *Bridge, item: []const u8, e: GateRejection, step: u32, total: u32, writer: anytype) ?[]const u8 {
     if (e.not_invocation or isNoteAttempt(br, item)) {
         const rn = bindResidue(br, item);
         if (rn.len > 0) {
@@ -102,9 +102,9 @@ fn reportGateRefusal(br: *Bridge, item: []const u8, e: GateRejection, step: u32,
             } else {
                 writer.print("step {d}/{d} residue bound: {s} — your note did not parse as wire, but the observer kept it. Well-formed: note(text: \"...\"); to reach the user, say(text: \"...\")\n", .{ step, total, rn }) catch {};
             }
-            return true;
+            return rn;
         }
     }
     writer.print("step {d}/{d} parse-error: {s}\n", .{ step, total, e.message }) catch {};
-    return false;
+    return null;
 }

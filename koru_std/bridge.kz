@@ -12,12 +12,10 @@
 // tors that may act on what the bridge holds, and — through each obligation's
 // recorded discharge tor — the knowledge of how to release it. That is what
 // makes hanging up able to actually release rather than merely forget.
-
 ~[comptime|runtime]
 ~import std/interpreter
 ~import std/runtime
 // `const std` and the interpreter-type re-exports moved to the `types` part.
-
 // Bridge: persistent session state
 // ============================================================================
 // GET_HANDLES - Query handles currently on the bridge
@@ -69,6 +67,8 @@
 ~part wirerun
 ~part runsteps
 ~part calls
+~part itemrec
+~part dispatch
 ~part core
 ~part note
 ~part state

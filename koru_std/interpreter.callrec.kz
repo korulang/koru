@@ -70,141 +70,87 @@ pub fn sinkTraceEntries(trace: *const std.ArrayListUnmanaged(TraceEntry)) void {
     s.appendSlice(std.heap.page_allocator, trace.items) catch {};
 }
 
-/// The dispatch about to run — stashed with its pre-dispatch record
-/// fields so a throw still names its call. Threadlocal for the same
-/// reason as the sink: one interpreter run at a time per thread.
-threadlocal var pending_step: ?TraceEntry = null;
+/// A dispatch in flight — its pre-dispatch record fields plus the raw
+/// arg slice the JSON render needs. Evaluated values reach the record
+/// through appendPendingStep's `eval_args` param, so an eval throw
+/// leaves them empty and the failed record renders `value:""` — honest,
+/// since evaluation never completed.
+const PendingStep = struct {
+    entry: TraceEntry,
+    raw_args: []const ast.Arg,
+};
 
-/// Arm the record for the dispatch about to run: verb, args (raw +
-/// evaluated + ref flags), the arm words at this node, the cost charged.
-fn armPendingStep(event_name: []const u8, event_cost: u64, raw_args: []const ast.Arg, evaluated_args: []const ast.Arg, conts: []const ast.Continuation, allocator: std.mem.Allocator) void {
-    pending_step = .{
-        .event = event_name,
-        .bound = "",
-        .arm = null,
-        .json = "",
-        .branch = "",
-        .args = renderCallArgs(allocator, raw_args, evaluated_args),
-        .armed = renderArmedArms(allocator, conts),
-        .arm_word = "",
-        .used = event_cost,
-        .handles = "",
-        .failed = false,
-        .error_msg = "",
-    };
+/// In-flight dispatches, innermost last — a stack, not a slot: defined
+/// flows recurse through this same dispatch path, so an outer call's
+/// pending record must survive its body's inner dispatches. Arming
+/// pushes, completing pops the top (LIFO matches call nesting), a throw
+/// drains all — every real dispatch attempt still gets its record.
+threadlocal var pending_stack: std.ArrayListUnmanaged(PendingStep) = .{};
+
+/// Arm the record for the dispatch about to run: verb, the arm words at
+/// this node, the cost charged, and the raw arg slice (evaluated values
+/// reach the record via appendPendingStep's eval_args param). Called
+/// BEFORE arg eval so an eval throw (UnboundName) still names its call.
+fn armPendingStep(event_name: []const u8, event_cost: u64, raw_args: []const ast.Arg, conts: []const ast.Continuation, allocator: std.mem.Allocator) void {
+    pending_stack.append(std.heap.page_allocator, .{
+        .entry = .{
+            .event = event_name,
+            .bound = "",
+            .arm = null,
+            .json = "",
+            .branch = "",
+            .args = "",
+            .armed = renderArmedArms(allocator, conts),
+            .arm_word = "",
+            .used = event_cost,
+            .handles = "",
+            .failed = false,
+            .error_msg = "",
+        },
+        .raw_args = raw_args,
+    }) catch {};
 }
 
-/// Complete the pending record with the dispatch's outcome and land it in
-/// the trace — returns its index so the arm patch can find it. Handles
-/// snapshot the pool post-dispatch.
-fn appendPendingStep(ctx: *InterpreterContext, bound_name: []const u8, branch: []const u8, json: []const u8) usize {
-    var step_entry = pending_step orelse TraceEntry{
-        .event = "", .bound = "", .arm = null, .json = "",
-        .branch = "", .args = "", .armed = "", .arm_word = "", .used = 0,
-        .handles = "", .failed = false, .error_msg = "",
+/// Complete the innermost pending record with the dispatch's outcome and
+/// land it in the trace — `eval_args` are the post-eval arg slice (empty
+/// on the failure path, which renders raw+ref with `value:""`). Returns
+/// the trace index so the arm patch can find it.
+fn appendPendingStep(ctx: *InterpreterContext, bound_name: []const u8, branch: []const u8, json: []const u8, eval_args: []const ast.Arg) usize {
+    const p = if (pending_stack.items.len > 0) pending_stack.pop().? else PendingStep{
+        .entry = .{ .event = "", .bound = "", .arm = null, .json = "",
+            .branch = "", .args = "", .armed = "", .arm_word = "", .used = 0,
+            .handles = "", .failed = false, .error_msg = "" },
+        .raw_args = &.{},
     };
+    var step_entry = p.entry;
+    step_entry.args = renderCallArgs(ctx.allocator, p.raw_args, eval_args);
     step_entry.bound = bound_name;
     step_entry.branch = branch;
     step_entry.json = json;
-    step_entry.handles = if (ctx.handle_pool) |p| renderHeldHandles(p) else "[]";
+    step_entry.handles = if (ctx.handle_pool) |pool| renderHeldHandles(pool) else "[]";
     const idx = ctx.trace.items.len;
     ctx.trace.append(ctx.allocator, step_entry) catch {};
-    pending_step = null;
     return idx;
 }
 
-/// The dispatch that threw still gets its record — `failed` names it so
-/// a `dispatch-error` tail is not a silent gap in the stream.
+/// A throw still records every dispatch it interrupted: the innermost
+/// pending (the one that threw — eval or dispatch) gets `failed` and the
+/// error; outer in-flight dispatches get their records with empty
+/// outcome fields — they were dispatched, their result never arrived.
+/// Args render raw+ref only: eval never completed, so `value` stays "".
 fn recordFailedStep(ctx: *InterpreterContext, allocator: std.mem.Allocator, err: anyerror) void {
-    const p = pending_step orelse return;
-    var fe = p;
-    fe.failed = true;
-    fe.error_msg = ctx.error_detail orelse @errorName(err);
-    ctx.trace.append(allocator, fe) catch {};
-    pending_step = null;
-}
-
-/// Quote + escape one string for JSON emission — record fields carry wire
-/// text (args, arm words) that may hold quotes or backslashes. The bridge's
-/// call_step renderer uses the same quoter so both sides escape identically.
-pub fn jsonQuote(allocator: std.mem.Allocator, s: []const u8) []const u8 {
-    var out = std.ArrayList(u8){};
-    const w = out.writer(allocator);
-    w.writeByte('"') catch return "\"\"";
-    for (s) |c| {
-        switch (c) {
-            '"' => w.writeAll("\\\"") catch return "\"\"",
-            '\\' => w.writeAll("\\\\") catch return "\"\"",
-            '\n' => w.writeAll("\\n") catch return "\"\"",
-            '\r' => w.writeAll("\\r") catch return "\"\"",
-            '\t' => w.writeAll("\\t") catch return "\"\"",
-            else => {
-                if (c < 0x20) {
-                    w.print("\\u{x:0>4}", .{c}) catch return "\"\"";
-                } else {
-                    w.writeByte(c) catch return "\"\"";
-                }
-            },
+    if (pending_stack.items.len == 0) return;
+    const items = pending_stack.items;
+    for (items, 0..) |p, i| {
+        var fe = p.entry;
+        fe.args = renderCallArgs(allocator, p.raw_args, &.{});
+        fe.handles = if (ctx.handle_pool) |pool| renderHeldHandles(pool) else "[]";
+        if (i == items.len - 1) {
+            fe.failed = true;
+            fe.error_msg = ctx.error_detail orelse @errorName(err);
         }
+        ctx.trace.append(allocator, fe) catch {};
     }
-    w.writeByte('"') catch return "\"\"";
-    return out.items;
+    pending_stack.clearRetainingCapacity();
 }
 
-/// Reference-vs-literal for one raw wire arg: quoted strings, the literal
-/// words, and numerics are literals; everything else (bare names, field
-/// paths, expressions) references the binding environment.
-fn argIsRef(raw: []const u8) bool {
-    const t = std.mem.trim(u8, raw, " \t");
-    if (t.len == 0 or t[0] == '"') return false;
-    if (std.mem.eql(u8, t, "true") or std.mem.eql(u8, t, "false") or std.mem.eql(u8, t, "null")) return false;
-    const c = t[0];
-    if (std.ascii.isDigit(c) or c == '-') return false;
-    return true;
-}
-
-/// `[{name,raw,value,ref}]` — raw is the pre-eval wire text (the
-/// reference/literal truth), value the evaluated arg the dispatcher saw.
-fn renderCallArgs(allocator: std.mem.Allocator, raw: []const ast.Arg, evaluated: []const ast.Arg) []const u8 {
-    var out = std.ArrayList(u8){};
-    const w = out.writer(allocator);
-    w.writeByte('[') catch return "[]";
-    for (raw, 0..) |a, i| {
-        if (i > 0) w.writeByte(',') catch return "[]";
-        const ev: []const u8 = if (i < evaluated.len) evaluated[i].value else "";
-        w.writeAll("{\"name\":") catch return "[]";
-        w.writeAll(jsonQuote(allocator, a.name)) catch return "[]";
-        w.writeAll(",\"raw\":") catch return "[]";
-        w.writeAll(jsonQuote(allocator, a.value)) catch return "[]";
-        w.writeAll(",\"value\":") catch return "[]";
-        w.writeAll(jsonQuote(allocator, ev)) catch return "[]";
-        w.print(",\"ref\":{s}}}", .{if (argIsRef(a.value)) "true" else "false"}) catch return "[]";
-    }
-    w.writeByte(']') catch return "[]";
-    return out.items;
-}
-
-/// `[{w,b,g}]` — every arm the model wrote at this dispatch node: word,
-/// binding name ("" when unbound or destructured), `when` guard (null
-/// when absent). This is what makes bare vs armed-mismatch scoreable.
-fn renderArmedArms(allocator: std.mem.Allocator, conts: []const ast.Continuation) []const u8 {
-    var out = std.ArrayList(u8){};
-    const w = out.writer(allocator);
-    w.writeByte('[') catch return "[]";
-    for (conts, 0..) |c, i| {
-        if (i > 0) w.writeByte(',') catch return "[]";
-        w.writeAll("{\"w\":") catch return "[]";
-        w.writeAll(jsonQuote(allocator, c.branch)) catch return "[]";
-        w.writeAll(",\"b\":") catch return "[]";
-        w.writeAll(jsonQuote(allocator, c.binding orelse "")) catch return "[]";
-        w.writeAll(",\"g\":") catch return "[]";
-        if (c.condition) |g| {
-            w.writeAll(jsonQuote(allocator, g)) catch return "[]";
-        } else {
-            w.writeAll("null") catch return "[]";
-        }
-        w.writeByte('}') catch return "[]";
-    }
-    w.writeByte(']') catch return "[]";
-    return out.items;
-}
