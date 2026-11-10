@@ -1,0 +1,10 @@
+name: new-surface
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: folded into `capability-added` — declare that name. Minted as an
+      orphan by the bridge state() host-verb commit (8d803fab9), which
+      used the wrong vocabulary; "a new spellable thing on an existing
+      plane" is capability-added's "a capability that did not exist".
+      Drained 2026-11-10.

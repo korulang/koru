@@ -1,0 +1,15 @@
+name: canon-boundary
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: a commit reclassifies a field or construct across the canon
+  trivia boundary — what serializeCanon counts as "same program" vs
+  "same spelling". Fires when isTrivia gains or loses a field
+  (location/indent/had_explicit_label today), when the printer's
+  normalization choices change what provenance can survive a
+  print→reparse, or when a tree-diff class turns out to be spelling
+  rather than semantics. The signal exists because the round-trip
+  harness's pass rate is only meaningful if canon strips exactly the
+  provenance and nothing else — every reclassification moves hundreds
+  of corpus diffs at once (had_explicit_label alone was 1212).
