@@ -18,7 +18,9 @@
 import orisha
 import std/io
 
-orisha:static(name: "site", root: "testdata")
+orisha:static(site) {
+    "root": "testdata"
+}
 
 orisha:handler = orisha:router(req)
 ! [GET /api/health] => response { status: 200, body: "ok", content_type: "application/json" }
