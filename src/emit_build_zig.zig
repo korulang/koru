@@ -296,16 +296,6 @@ pub fn emitBuildZig(
         \\    // koru_allocator() backs onto std.heap.c_allocator (real libc malloc/free,
         \\    // not a debug allocator that munmaps on every free) — needs libc linked.
         \\    __koru_exe.linkLibC();
-        \\    // KORU_BACKEND_LIBPATH: path-list dirs added as -L for linkSystemLibrary.
-        \\    // An explicit -Dtarget disables zig's host lib discovery — pinned-glibc
-        \\    // hosts (KORU_BACKEND_TARGET=x86_64-linux-gnu.2.31) point this at dirs
-        \\    // holding dev .so symlinks, e.g. /usr/lib/x86_64-linux-gnu.
-        \\    if (std.process.getEnvVarOwned(__koru_b.allocator, "KORU_BACKEND_LIBPATH")) |__koru_lp| {
-        \\        var __koru_it = std.mem.splitScalar(u8, __koru_lp, std.fs.path.delimiter);
-        \\        while (__koru_it.next()) |__koru_d| {
-        \\            if (__koru_d.len != 0) __koru_exe.addLibraryPath(.{ .cwd_relative = __koru_d });
-        \\        }
-        \\    } else |_| {}
         \\
         \\
     );
