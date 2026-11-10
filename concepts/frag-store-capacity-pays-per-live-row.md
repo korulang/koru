@@ -10,7 +10,7 @@ ts: 2026-11-10
 tags: [koru, store, memory, mmap, benchmarks]
 ---
 
-# Store capacity is a bound on rows — the memory bill is per live row, lazy inbound and sticky outbound
+# Store capacity selects a shape — the container's bill is per live row, lazy inbound and sticky outbound
 
 The folk model — declaring capacity preallocates RAM — is measurably
 false on the native target, and the reason is that the store never asks
@@ -18,6 +18,30 @@ the OS for anything at declaration. Its SoA columns emit as `[CAP]T =
 undefined` inside one static struct: bss, demand-zero pages. Nothing
 allocates, nothing memsets, nothing commits. The kernel faults a page
 on first write and owns it until exit.
+
+## The fork — capacity selects a shape, not a size
+
+`capacity:` absent or `1` does not emit a one-row container; it emits
+a different construct — the reactive VALUE (`is_plural = CAP > 1` is
+the whole fork, `store.new.kz:548`). The seed's value types mint the
+cell type at comptime (`@typeInfo`/`@Type` over an anonymous struct),
+one global instance holds the fields at their declared defaults, and
+writes dispatch on a field ordinal through the same apply/write/
+announce event family — no rows, no `len`, no handles, no brand, and
+no laziness question: a handful of scalars, always resident. Reads
+lower to direct member access.
+
+The value shape is deliberately narrower, and the narrowing is
+structural: its write plumbing carries ONE `value` parameter, so all
+fields must share one scalar type — a mixed-type capacity-1 store
+refuses at `new` ("all fields must share one scalar type for now",
+the per-field-event slice of 690_020 tier 1). The container has no
+such constraint — per-field typed columns are its native shape.
+
+So the capacity argument is a shape selector: `1` → a reactive value
+whose memory story is trivial (always resident, compiler-known size);
+`>1` → the container whose bill is per live row. Everything measured
+below is the container side — the only side where laziness exists.
 
 Measured this session (macOS arm64, `capacity: 16777215`, the row
 ceiling):
@@ -62,8 +86,10 @@ The interpretation that matters: O10's capacity ruling was never a
 memory decision — "silent autogrow is the exact shape the no-silent-perf
 ruling kills" — and the measurement confirms it. Capacity is a
 structural bound that makes worst-case memory a compile-time fact and
-exhaustion an explicit `| full` branch; the laziness is inherited from
-the OS substrate for free. Sibling:
+exhaustion an explicit `| full` branch; on the value side the same
+argument is a shape fork with an even smaller honest surface (one
+scalar type, one value, always present). The laziness is inherited
+from the OS substrate for free. Sibling:
 frag-extent-pays-per-touch-not-per-declaration — the grid/pool face of
 the same mechanism; this is the store face plus the boundaries.
 
