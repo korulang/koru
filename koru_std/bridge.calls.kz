@@ -91,7 +91,7 @@ fn emitCallSteps(br: *Bridge, steps: []const Interp.TraceEntry, outcome: []const
     const w = br.call_log.writer(alloc);
     for (steps) |t| {
         br.call_seq += 1;
-        w.print("{{\"type\":\"call_step\",\"seq\":{d},\"turn\":{d},\"step\":{d},\"of\":{d},\"outcome\":\"{s}\",\"state_hash\":\"{s}\",\"verb\":", .{ br.call_seq, br.turn_count, step, of, outcome, sh }) catch return;
+        w.print("{{\"type\":\"call_step\",\"seq\":{d},\"turn\":{d},\"step\":{d},\"of\":{d},\"item_outcome\":\"{s}\",\"state_hash\":\"{s}\",\"verb\":", .{ br.call_seq, br.turn_count, step, of, outcome, sh }) catch return;
         w.writeAll(Interp.jsonQuote(alloc, t.event)) catch return;
         w.writeAll(",\"args\":") catch return;
         w.writeAll(if (t.args.len > 0) t.args else "[]") catch return;
