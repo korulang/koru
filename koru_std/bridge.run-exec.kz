@@ -4,7 +4,7 @@
 
 ~proc run|zig {
     br.touch();
-
+    const sh = turnStateHash(br);
     // SEQUENCING (frag-partial-programs): a turn is a run of items, each
     // routed by the same rules below. One item takes the exact historical
     // path (discrimination, wire gate, single dispatch) — every current
@@ -67,7 +67,7 @@
         }
 
         // A one-item turn has no later items — no turn env to seed.
-        return runOutcome(br, dispatchThroughScope(br, source, null), run_event.Output);
+        return runOutcome(br, dispatchAndRecord(br, source, null, 1, 1, sh), run_event.Output);
     }
 
     // ALL-PROSE FAST PATH: a turn of pure prose is ONE message, not N items —
@@ -91,7 +91,7 @@
         // per-step refusals instead of lying about a single binding.
     }
 
-    const steps = runSteps(br, source, items);
+    const steps = runSteps(br, source, items, sh);
     if (steps.all_residue) return .{ .residue = .{
         .report = steps.report, .observer = isNoteAttempt(br, source), .bound = "", .text = "" } };
     return .{ .partial = .{

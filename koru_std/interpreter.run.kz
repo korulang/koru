@@ -159,6 +159,7 @@
                 allocator,
             );
             const stable_last_event = std.heap.page_allocator.dupe(u8, budget_state.last_event) catch budget_state.last_event;
+            sinkTraceEntries(&ctx.trace);
             return .{ .exhausted = .{
                 .used = budget_state.used,
                 .last_event = stable_last_event,
@@ -176,6 +177,8 @@
             dispatcher,
             allocator,
         );
+
+        recordFailedStep(&ctx, allocator, err);
 
         return .{ .dispatch_error = .{
             .event_name = ctx.failing_event_name orelse stable_event_name,
@@ -201,6 +204,7 @@
                 .trace = renderTrace(&ctx.trace, allocator),
             } };
         }
+        sinkTraceEntries(&ctx.trace);
         return .{ .unhandled_branch = .{
             .branch = u.branch,
             .payload = u.toJsonBuf(),
@@ -794,6 +798,8 @@ fn executeFlow(
             var evaluated_inv = inv.*;
             evaluated_inv.args = evaluated_args;
 
+            armPendingStep(event_name, event_cost, inv.args, evaluated_args, flow.body.continuations, ctx.allocator);
+
             // REPL-DEFINED FLOW (the runtime define). An tor the session
             // defined at runtime dispatches to its body: params bound into the
             // env, body re-parsed and executed. Every call the body makes runs
@@ -850,14 +856,7 @@ fn executeFlow(
                         }
                     }
                 }
-                this_trace_idx = ctx.trace.items.len;
-                ctx.trace.append(ctx.allocator, .{
-                    .event = event_name,
-                    .bound = dispatch_bound_name,
-                    .arm = null,
-                    .json = Value.fromDispatch(dispatch_result.branch, dispatch_result.fields)
-                        .toJsonAlloc(ctx.allocator),
-                }) catch {};
+                this_trace_idx = appendPendingStep(ctx, dispatch_bound_name, dispatch_result.branch, Value.fromDispatch(dispatch_result.branch, dispatch_result.fields).toJsonAlloc(ctx.allocator));
             }
 
             // Book the dispatch into the ledger — minted obligations
@@ -937,6 +936,7 @@ fn executeFlow(
                 // `get-user-details -> {...} bound: r4 as u`.
                 if (this_trace_idx) |ti| {
                     ctx.trace.items[ti].arm = binding_name;
+                    ctx.trace.items[ti].arm_word = cont.branch;
                 }
 
                 // expr_bindings for `if`/`when` conditions — same scope the

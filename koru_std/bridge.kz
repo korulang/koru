@@ -19,110 +19,6 @@
 // `const std` and the interpreter-type re-exports moved to the `types` part.
 
 // Bridge: persistent session state
-pub const Bridge = struct {
-    pool: HandlePool,
-    allocator: std.mem.Allocator,
-    session_id: []const u8,
-    /// The registered scope this session's resources belong to. Discharge is
-    /// dispatched through it, so a bridge with no reachable scope can hold
-    /// handles but cannot release them — and `close` reports exactly that.
-    scope: []const u8,
-    created_at: i64,
-    last_active: i64,
-    /// Runtime-defined flows (the REPL define) — durable per session, so a
-    /// verb defined on one turn is callable on the next, and its calls run
-    /// through the same possession machinery as any other dispatch.
-    defined: *DefinedFlows,
-    /// Session grant for the introspection verbs `vocabulary()` and
-    /// `grammar()`: when set they dispatch as host verbs through the normal
-    /// wire path; when not, they are event-denied like any unvocabularied
-    /// word. There is no other way to ask the session what it knows.
-    introspection: bool,
-    /// The world dir this session's defined flows persist into, or null —
-    /// set by `create(world: ...)`, owned here, freed by deinit.
-    world: ?[]const u8,
-    /// Durable session bindings — values a turn named that stay named on
-    /// the next turn. `run` auto-binds every result as `r{N}` and the
-    /// `bind` host verb writes here directly; both are seeded into each
-    /// run's env, so `r3.user_id` three turns later resolves for real.
-    /// Owned by `session_arena` — never the run arena, which resets per run.
-    session_env: *Environment,
-    /// Everything a bound name points at lives here; `deinit` frees it all
-    /// in one shot — tracking individual dupes across a growing env is the
-    /// leak the leak check just caught. Heap-allocated because the env's
-    /// allocator captures the arena's ADDRESS — a struct field's address
-    /// changes when `init` returns the Bridge by value.
-    session_arena: *std.heap.ArenaAllocator,
-    /// Next auto-bind ordinal — names are `r1`, `r2`, … in run order.
-    bound_count: u64,
-    /// Scopes mounted at runtime by `std/bridge:mount` (the `mount` part).
-    /// The lib handles ride beside them until `deinit` — a module the pool
-    /// still holds handles against cannot leave.
-    mounted_scopes: std.ArrayListUnmanaged(Runtime.ScopeRuntime),
-    mounted_libs: std.ArrayListUnmanaged(std.DynLib),
-
-    pub fn init(allocator: std.mem.Allocator, session_id: []const u8, scope: []const u8, introspection: bool, world: []const u8) Bridge {
-        const defined = allocator.create(DefinedFlows) catch @panic("std/bridge:create: OOM minting defined-flows table");
-        defined.* = DefinedFlows.init(allocator);
-        const session_arena = allocator.create(std.heap.ArenaAllocator) catch @panic("std/bridge:create: OOM minting session arena");
-        session_arena.* = std.heap.ArenaAllocator.init(allocator);
-        const session_env = allocator.create(Environment) catch @panic("std/bridge:create: OOM minting session env");
-        session_env.* = Environment.init(session_arena.allocator());
-        const world_owned: ?[]const u8 = if (world.len > 0) allocator.dupe(u8, world) catch world else null;
-        var pool = HandlePool.init(allocator);
-        pool.bridge_id = session_id;
-        return .{
-            .pool = pool,
-            .allocator = allocator,
-            .session_id = allocator.dupe(u8, session_id) catch session_id,
-            .scope = allocator.dupe(u8, scope) catch scope,
-            .created_at = std.time.milliTimestamp(),
-            .last_active = std.time.milliTimestamp(),
-            .defined = defined,
-            .introspection = introspection,
-            .world = world_owned,
-            .session_env = session_env,
-            .session_arena = session_arena,
-            .bound_count = 0,
-            .mounted_scopes = .{},
-            .mounted_libs = .{},
-        };
-    }
-
-    pub fn touch(self: *Bridge) void {
-        self.last_active = std.time.milliTimestamp();
-    }
-
-    pub fn getHandleCount(self: *Bridge) u32 {
-        var count: u32 = 0;
-        for (self.pool.handles.items) |h| {
-            if (!h.discharged) count += 1;
-        }
-        return count;
-    }
-
-    // dischargeAll lives in the `mount` part — the hang-up sweep itself.
-
-    pub fn deinit(self: *Bridge) void {
-        self.allocator.free(self.session_id);
-        self.allocator.free(self.scope);
-        if (self.world) |w| self.allocator.free(w);
-        self.pool.deinit();
-        self.defined.deinit();
-        self.allocator.destroy(self.defined);
-        self.session_env.deinit();
-        self.allocator.destroy(self.session_env);
-        self.session_arena.deinit();
-        self.allocator.destroy(self.session_arena);
-        // `close` discharges everything the pool holds before this runs —
-        // a mounted module's code is only unloaded once no handle's
-        // discharge path still lives inside it.
-        for (self.mounted_libs.items) |*lib| lib.close();
-        self.mounted_libs.deinit(self.allocator);
-        self.mounted_scopes.deinit(self.allocator);
-    }
-};
-
 // ============================================================================
 // GET_HANDLES - Query handles currently on the bridge
 // ============================================================================
@@ -172,5 +68,7 @@ pub const Bridge = struct {
 ~part mount
 ~part wirerun
 ~part runsteps
+~part calls
+~part core
 ~part note
 ~part state

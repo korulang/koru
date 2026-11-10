@@ -23,6 +23,8 @@ koru_std/benchmarking.climb.kz	100
 koru_std/benchmarking.kz	24
 koru_std/bridge.affordances.kz	86
 koru_std/bridge.bind.kz	183
+koru_std/bridge.calls.kz	194
+koru_std/bridge.core.kz	126
 koru_std/bridge.custody.kz	65
 koru_std/bridge.define.kz	27
 koru_std/bridge.deflines.kz	27
@@ -30,7 +32,7 @@ koru_std/bridge.error.kz	105
 koru_std/bridge.grants.kz	62
 koru_std/bridge.hostverbs.kz	110
 koru_std/bridge.items.kz	9
-koru_std/bridge.kz	176
+koru_std/bridge.kz	74
 koru_std/bridge.mount.kz	176
 koru_std/bridge.note.kz	110
 koru_std/bridge.render.kz	97
@@ -45,7 +47,7 @@ koru_std/bridge.turn.kz	71
 koru_std/bridge.turnscan.kz	47
 koru_std/bridge.types.kz	11
 koru_std/bridge.wiregate.kz	58
-koru_std/bridge.wirerun.kz	89
+koru_std/bridge.wirerun.kz	55
 koru_std/bridge.world.kz	104
 koru_std/build_image.kz	357
 koru_std/build.app.kz	19
@@ -149,6 +151,7 @@ koru_std/interpreter.argref.kz	31
 koru_std/interpreter.args.kz	7
 koru_std/interpreter.arith.kz	41
 koru_std/interpreter.arms.kz	52
+koru_std/interpreter.callrec.kz	210
 koru_std/interpreter.checks.kz	53
 koru_std/interpreter.contracts.kz	82
 koru_std/interpreter.custody.kz	82
@@ -166,7 +169,7 @@ koru_std/interpreter.guards.kz	63
 koru_std/interpreter.handles.kz	186
 koru_std/interpreter.interp.kz	83
 koru_std/interpreter.invargs.kz	80
-koru_std/interpreter.kz	553
+koru_std/interpreter.kz	517
 koru_std/interpreter.literal.kz	40
 koru_std/interpreter.mint.kz	37
 koru_std/interpreter.mounted.kz	509
@@ -178,7 +181,8 @@ koru_std/interpreter.resdispatch.kz	72
 koru_std/interpreter.run.kz	1070
 koru_std/interpreter.runcached.kz	152
 koru_std/interpreter.select.kz	30
-koru_std/interpreter.trace.kz	64
+koru_std/interpreter.tilde.kz	42
+koru_std/interpreter.trace.kz	51
 koru_std/interpreter.validate.kz	7
 koru_std/interpreter.wireexpr.kz	59
 koru_std/invariants.kz	179

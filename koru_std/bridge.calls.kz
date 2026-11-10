@@ -1,0 +1,194 @@
+// Koru Standard Library: the `calls` part of bridge — the `call_step`
+// record stream. Joined via `~part calls` in bridge.kz; merged into the
+// bridge module at load.
+//
+// Every dispatch a turn runs lands in `br.call_log` as one JSONL object —
+// the per-dispatch TraceEntry the interpreter already keeps, stamped with
+// the turn/item context only the bridge knows (seq, turn, step/of,
+// outcome, state_hash). Consumers drain it through `take-calls`; the
+// model-facing prose is rendered from the same entries upstream, so the
+// log and what the model saw cannot disagree.
+//
+// `outcome` is the ITEM's verdict kind — derived from the
+// Runtime.run_event.Output variant, never hand-listed — stamped on every
+// dispatch record of that item. Per-dispatch fate lives in `branch`,
+// `payload`, and `failed`.
+
+/// The item verdict a dispatch outcome maps to — the same word the
+/// step-report prose leads with. `abandoned` is a `result` whose value
+/// branch is the abandon marker.
+fn outcomeKind(r: Runtime.run_event.Output) []const u8 {
+    return switch (r) {
+        .result => |v| if (std.mem.eql(u8, v.value.branch, "abandoned")) "abandoned" else "result",
+        .unhandled_branch => "unhandled-branch",
+        .exhausted => "exhausted",
+        .parse_error => "parse-error",
+        .validation_error => "validation-error",
+        .shape_error => "shape-error",
+        .event_denied => "event-denied",
+        .dispatch_error => "dispatch-error",
+        .scope_not_found => "scope-not-found",
+    };
+}
+
+/// FNV-1a over the session's canonical state text — durable bindings
+/// (sorted `name=<json>`), held handle ids, defined-flow render, bound
+/// counter, scope. Deterministic across identical states: the bindings
+/// map iterates in hash order, so entries sort before hashing. Used for
+/// stall detection and replay addressing — it must change when the state
+/// does, not when the hash table does.
+fn stateHash(br: *Bridge) []const u8 {
+    const alloc = std.heap.page_allocator;
+    var entries = std.ArrayList([]const u8){};
+    defer entries.deinit(alloc);
+
+    var sit = br.session_env.bindings.iterator();
+    while (sit.next()) |e| {
+        const line = std.fmt.allocPrint(alloc, "{s}={s}", .{ e.key_ptr.*, e.value_ptr.toJsonAlloc(alloc) }) catch continue;
+        entries.append(alloc, line) catch {};
+    }
+    const held = Interp.renderHeldHandles(&br.pool);
+    entries.append(alloc, std.fmt.allocPrint(alloc, "held={s}", .{held}) catch "") catch {};
+    var defined_buf = std.ArrayList(u8){};
+    defer defined_buf.deinit(alloc);
+    appendDefinedLines(&defined_buf, alloc, br.defined);
+    entries.append(alloc, std.fmt.allocPrint(alloc, "defined={s}", .{defined_buf.items}) catch "") catch {};
+    entries.append(alloc, std.fmt.allocPrint(alloc, "bound={d} scope={s}", .{ br.bound_count, br.scope }) catch "") catch {};
+
+    std.mem.sort([]const u8, entries.items, {}, struct {
+        fn lt(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.lt);
+
+    var h: u64 = 14695981039346656037;
+    for (entries.items) |line| {
+        for (line) |c| {
+            h ^= c;
+            h *%= 1099511628211;
+        }
+        h ^= 0xff;
+        h *%= 1099511628211;
+    }
+    var hex: [16]u8 = undefined;
+    const digits = "0123456789abcdef";
+    var i: usize = 16;
+    while (i > 0) {
+        i -= 1;
+        hex[i] = digits[h & 0xf];
+        h >>= 4;
+    }
+    return alloc.dupe(u8, &hex) catch "";
+}
+
+/// Append this item's dispatch records to the session's call log — one
+/// JSONL object per TraceEntry, stamped with the item context the bridge
+/// alone knows. Empty `steps` (prose, define, gate-refused items) writes
+/// nothing: a call_step exists only where a dispatch ran.
+fn emitCallSteps(br: *Bridge, steps: []const Interp.TraceEntry, outcome: []const u8, step: u32, of: u32, sh: []const u8) void {
+    if (steps.len == 0) return;
+    const alloc = br.session_arena.allocator();
+    const w = br.call_log.writer(alloc);
+    for (steps) |t| {
+        br.call_seq += 1;
+        w.print("{{\"type\":\"call_step\",\"seq\":{d},\"turn\":{d},\"step\":{d},\"of\":{d},\"outcome\":\"{s}\",\"state_hash\":\"{s}\",\"verb\":", .{ br.call_seq, br.turn_count, step, of, outcome, sh }) catch return;
+        w.writeAll(Interp.jsonQuote(alloc, t.event)) catch return;
+        w.writeAll(",\"args\":") catch return;
+        w.writeAll(if (t.args.len > 0) t.args else "[]") catch return;
+        w.writeAll(",\"armed\":") catch return;
+        w.writeAll(if (t.armed.len > 0) t.armed else "[]") catch return;
+        w.writeAll(",\"arm_word\":") catch return;
+        w.writeAll(Interp.jsonQuote(alloc, t.arm_word)) catch return;
+        w.writeAll(",\"arm_name\":") catch return;
+        w.writeAll(Interp.jsonQuote(alloc, t.arm orelse "")) catch return;
+        w.writeAll(",\"branch\":") catch return;
+        w.writeAll(Interp.jsonQuote(alloc, t.branch)) catch return;
+        w.writeAll(",\"payload\":") catch return;
+        w.writeAll(if (t.json.len > 0) t.json else "{}") catch return;
+        w.writeAll(",\"bound\":") catch return;
+        w.writeAll(Interp.jsonQuote(alloc, t.bound)) catch return;
+        w.writeAll(",\"handles\":") catch return;
+        w.writeAll(if (t.handles.len > 0) t.handles else "[]") catch return;
+        w.print(",\"used\":{d},\"fired_guides\":[],\"failed\":{s},\"error\":", .{ t.used, if (t.failed) "true" else "false" }) catch return;
+        w.writeAll(Interp.jsonQuote(alloc, t.error_msg)) catch return;
+        w.writeAll("}\n") catch return;
+    }
+}
+
+// `take-calls` — drain the session's call_step JSONL. The gate prints it
+// as a framed block beside the verdict; tau-agent drains to its side
+// channel. Drain semantics: each call returns what accumulated since the
+// last, so a consumer that forgets cannot replay stale records into a
+// later turn's log.
+~pub tor take-calls { br: *Bridge<session> } -> string
+
+~proc take-calls|zig {
+    const alloc = br.session_arena.allocator();
+    const out = alloc.dupe(u8, br.call_log.items) catch "";
+    br.call_log.clearRetainingCapacity();
+    return out;
+}
+/// One wire item's dispatch outcome plus its per-dispatch records. `steps`
+/// slices the bridge's call_sink — valid only until the next
+/// dispatchThroughScope call, so the caller serializes (emitCallSteps)
+/// before dispatching the next item.
+const ScopeDispatch = struct {
+    out: Runtime.run_event.Output,
+    steps: []const Interp.TraceEntry,
+};
+
+/// One wire item dispatched through the session: the runtime run with the
+/// bridge's pool, defined-flows table, and — when the model has introspection —
+/// the host verbs, plus the session binder so every link gets its `rN`.
+/// Typed positions were admitted by the gate; here they normalize to
+/// canonical quoted wire so eval sees one representation.
+fn dispatchThroughScope(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environment) ScopeDispatch {
+    // Page-backed like the rest of the wire layer — the normalized text
+    // must outlive the whole dispatch, and the arena dies at prepare().
+    // The session lookup reads mounted scopes too: a typed arg on a
+    // mounted verb normalizes by its own manifest.
+    withSessionGate(br);
+    const wire = Runtime.wireNormalize(std.heap.page_allocator, src, sessionInputLookup, hostInputLookup);
+    clearSessionGate();
+    // The session's mounted scopes ride the interpreter's channel for
+    // this run — a mounted verb then dispatches, validates, borrows, and
+    // discharges exactly like a bound one, against this same pool.
+    Interp.setRunMountedScopes(br.mounted_scopes.items);
+    defer Interp.clearRunMountedScopes();
+    // The call_step sink: the interpreter appends each dispatch's record
+    // as it lands; the caller renders before the next item runs.
+    br.call_sink.clearRetainingCapacity();
+    Interp.setTraceSink(&br.call_sink);
+    defer Interp.setTraceSink(null);
+    const out = Runtime.run_event.handler(.{
+        .source = wire,
+        .scope = br.scope,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+        .defined = br.defined,
+        .lenient = true,
+        .host_dispatch = if (br.introspection) @as(?Interp.HostDispatchFn, hostDispatch) else null,
+        .session_env = br.session_env,
+        .session_bind_fn = @as(?Interp.SessionBindFn, sessionBindAdapter),
+        .session_bind_env = br.session_env,
+        .session_bind_counter = &br.bound_count,
+        .turn_env = turn_env,
+    });
+    return .{ .out = out, .steps = br.call_sink.items };
+}
+
+/// Dispatch one wire item AND emit its records — the runsteps/run-exec
+/// call sites' one-stop: outcome for the prose switch, records already
+/// serialized before the next item can dispatch.
+fn dispatchAndRecord(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environment, step: u32, of: u32, sh: []const u8) Runtime.run_event.Output {
+    const d = dispatchThroughScope(br, src, turn_env);
+    emitCallSteps(br, d.steps, outcomeKind(d.out), step, of, sh);
+    return d.out;
+}
+
+/// One turn's state hash — bumps the turn counter as it hashes, so every
+/// `run` call numbers itself exactly once.
+fn turnStateHash(br: *Bridge) []const u8 {
+    br.turn_count += 1;
+    return stateHash(br);
+}

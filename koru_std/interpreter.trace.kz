@@ -1,27 +1,14 @@
 // Koru Standard Library: the `trace` part of interpreter.kz — the run's
-// dispatch trace and the durable naming a failure report needs. Joined via
-// `~part trace` in interpreter.kz; merged into the interpreter module at load.
-
-/// One dispatched call's outcome in a run's trace — a chain's middle is
-/// invisible to the model unless each link's issued value is named and
-/// shown. `bound` is the durable session name (rN) when the host supplied a
-/// binder; `arm` is the `|` arm's binding name when one armed it.
-pub const TraceEntry = struct {
-    event: []const u8,
-    bound: []const u8,
-    arm: ?[]const u8,
-    json: []const u8,
-};
-
-/// The host's session binder: mints the next durable name for a dispatched
-/// result and stores the value where later turns can read it. The bridge
-/// supplies one so mid-chain results get rN names too, not only terminals.
-pub const SessionBindFn = *const fn (se: *Environment, counter: *u64, v: Value) []const u8;
+// dispatch trace rendering and the durable naming a failure report
+// needs. Joined via `~part trace` in interpreter.kz; merged into the
+// interpreter module at load. The TraceEntry record itself and the
+// call_step field builders live in the `callrec` part.
 
 /// Render the dispatch trace as report lines — `event -> <json> bound: rN
 /// (as arm)`. A single-link turn renders nothing: the `result:` line already
 /// carries it, and duplicating one call's outcome is noise, not teaching.
 pub fn renderTrace(trace: *std.ArrayListUnmanaged(TraceEntry), allocator: std.mem.Allocator) []const u8 {
+    sinkTraceEntries(trace);
     if (trace.items.len <= 1) return "";
     var tb = std.ArrayListUnmanaged(u8){};
     const tw = tb.writer(allocator);

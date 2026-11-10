@@ -8,7 +8,7 @@
 /// their trace line). Execution continues past every refusal — a partial
 /// program RUNS, and the model learns every step's outcome in one
 /// observation instead of discovering failures one turn at a time.
-fn runSteps(br: *Bridge, source: []const u8, items: []const TurnItem) StepRun {
+fn runSteps(br: *Bridge, source: []const u8, items: []const TurnItem, sh: []const u8) StepRun {
     var report = std.ArrayList(u8){};
     defer report.deinit(br.allocator);
     // The turn's lexical env — an arm binding (`| ok b |>`) lands here so
@@ -55,7 +55,7 @@ fn runSteps(br: *Bridge, source: []const u8, items: []const TurnItem) StepRun {
             continue;
         }
         all_residue = false;
-        const result = dispatchThroughScope(br, item, &turn_env);
+        const result = dispatchAndRecord(br, item, &turn_env, step, total, sh);
         switch (result) {
             .result => |r| {
                 used_total += r.used;
