@@ -1,0 +1,117 @@
+// Koru Standard Library: the `state` part of bridge.kz — the session's live
+// state as one rendered read, behind the `state()` host verb. Joined via
+// `~part state` in bridge.kz; merged into the bridge module at load.
+//
+// `vocabulary()` answers what may be said; `state()` answers what IS — the
+// durable bindings with their values (vocabulary renders names and field
+// shapes only), the turn's arm bindings marked ephemeral, this item's own
+// bindings (a chain's `| ok u |>` lives here on single-item turns, where
+// no turn env exists), the handles the session still holds, the flows it
+// has defined, and this item's dispatch path so far. The model and the
+// context assembler read the same surface: what the gate holds is what
+// the prompt may claim.
+
+/// `state()` dispatch — args already refused by the shared no-fields
+/// check in hostDispatch; the render is the whole answer.
+fn hostState(view: *const Interp.HostView, out: *Interp.DispatchResult) anyerror!void {
+    const S = struct { threadlocal var field_buf: [1]Interp.NamedField = undefined; };
+    S.field_buf[0] = .{ .name = "__type_ref", .value = .{ .string_val = renderState(view) } };
+    out.* = .{ .branch = "", .fields = S.field_buf[0..1] };
+}
+
+fn renderState(view: *const Interp.HostView) []const u8 {
+    const allocator = view.allocator;
+    var out = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+    out.appendSlice(allocator, "state()") catch unreachable;
+
+    appendStateBindings(&out, allocator, "durable", view.session_env);
+    appendStateBindings(&out, allocator, "turn", view.turn_env);
+    appendStateItemBindings(&out, allocator, view);
+
+    out.appendSlice(allocator, "\nheld: ") catch unreachable;
+    if (view.handle_pool) |pool| {
+        out.appendSlice(allocator, Interp.renderHeldHandles(pool)) catch unreachable;
+    } else {
+        out.appendSlice(allocator, "[]") catch unreachable;
+    }
+
+    out.appendSlice(allocator, "\ndefined:") catch unreachable;
+    const defined_mark = out.items.len;
+    appendDefinedLines(&out, allocator, view.defined);
+    if (out.items.len == defined_mark) out.appendSlice(allocator, " (none)") catch unreachable;
+
+    if (view.trace) |t| {
+        if (t.items.len > 0) {
+            out.appendSlice(allocator, "\npath:") catch unreachable;
+            for (t.items) |e| {
+                out.append(allocator, '\n') catch unreachable;
+                out.appendSlice(allocator, "  ") catch unreachable;
+                out.appendSlice(allocator, e.event) catch unreachable;
+                out.appendSlice(allocator, " -> ") catch unreachable;
+                out.appendSlice(allocator, e.json) catch unreachable;
+                if (e.bound.len > 0) {
+                    out.appendSlice(allocator, " bound: ") catch unreachable;
+                    out.appendSlice(allocator, e.bound) catch unreachable;
+                }
+                if (e.arm) |a| {
+                    out.appendSlice(allocator, " as ") catch unreachable;
+                    out.appendSlice(allocator, a) catch unreachable;
+                }
+            }
+        }
+    }
+
+    return out.toOwnedSlice(allocator) catch unreachable;
+}
+
+/// One env layer of the state read: `durable` names survive across turns,
+/// `turn` names die with it — the label is the honesty, so both render the
+/// same `name = <json>` shape and differ only in which table answered.
+fn appendStateBindings(out: *std.ArrayList(u8), allocator: std.mem.Allocator, label: []const u8, env: ?*Environment) void {
+    out.append(allocator, '\n') catch unreachable;
+    out.appendSlice(allocator, label) catch unreachable;
+    out.appendSlice(allocator, ":") catch unreachable;
+    var any = false;
+    if (env) |e| {
+        var it = e.bindings.iterator();
+        while (it.next()) |entry| {
+            any = true;
+            out.append(allocator, '\n') catch unreachable;
+            out.appendSlice(allocator, "  ") catch unreachable;
+            out.appendSlice(allocator, entry.key_ptr.*) catch unreachable;
+            out.appendSlice(allocator, " = ") catch unreachable;
+            out.appendSlice(allocator, entry.value_ptr.toJsonAlloc(allocator)) catch unreachable;
+        }
+    }
+    if (!any) out.appendSlice(allocator, " (none)") catch unreachable;
+}
+
+/// The item's own bindings — run-env names neither the session nor the
+/// turn claimed. The run env is seeded with both layers' copies, so the
+/// diff is the honest read: `u` bound by `call | ok u |>` inside THIS
+/// item shows here (single-item turns have no turn env to hold it),
+/// while names earlier items or turns bound stay in their own sections.
+fn appendStateItemBindings(out: *std.ArrayList(u8), allocator: std.mem.Allocator, view: *const Interp.HostView) void {
+    out.append(allocator, '\n') catch unreachable;
+    out.appendSlice(allocator, "item:") catch unreachable;
+    var any = false;
+    if (view.run_env) |re| {
+        var it = re.bindings.iterator();
+        while (it.next()) |entry| {
+            const name = entry.key_ptr.*;
+            if (view.session_env) |se| {
+                if (se.get(name) != null) continue;
+            }
+            if (view.turn_env) |te| {
+                if (te.get(name) != null) continue;
+            }
+            any = true;
+            out.append(allocator, '\n') catch unreachable;
+            out.appendSlice(allocator, "  ") catch unreachable;
+            out.appendSlice(allocator, name) catch unreachable;
+            out.appendSlice(allocator, " = ") catch unreachable;
+            out.appendSlice(allocator, entry.value_ptr.toJsonAlloc(allocator)) catch unreachable;
+        }
+    }
+    if (!any) out.appendSlice(allocator, " (none)") catch unreachable;
+}

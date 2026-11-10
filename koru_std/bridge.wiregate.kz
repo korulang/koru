@@ -14,13 +14,13 @@
 const GateRejection = struct { message: []const u8, line: u32, column: u32, not_invocation: bool };
 
 // The introspection-granted host verbs' field vocabularies — one table the
-// scanner, the dispatch, and the prompt render all read. note's text and
-// bind's value are plain strings — quoted wire like every other field.
-// vocabulary/grammar take none.
+// scanner, dispatch, and prompt render all read; note/bind/abandon take
+// plain-string fields, vocabulary/grammar/state take none.
 const HostVerbSpec = struct { name: []const u8, fields: []const Runtime.InputFieldSpec, doc: []const u8 = "" };
 const host_verbs = [_]HostVerbSpec{
     .{ .name = "vocabulary", .fields = &.{} },
     .{ .name = "grammar", .fields = &.{} },
+    .{ .name = "state", .fields = &.{}, .doc = " — reads live session state: bound values with contents, arm names by scope (durable/turn/item), held handles, defined flows" },
     .{ .name = "bind", .fields = &.{ .{ .name = "name", .type_name = "string" }, .{ .name = "value", .type_name = "string" } } },
     .{ .name = "note", .fields = &.{ .{ .name = "text", .type_name = "string" } },
         .doc = " — speaks to the observer, not the user: reasoning, plans, and \"why I'm stuck\" go here" },

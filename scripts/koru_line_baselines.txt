@@ -39,6 +39,7 @@ koru_std/bridge.run-exec.kz	106
 koru_std/bridge.run.kz	39
 koru_std/bridge.runsteps.kz	144
 koru_std/bridge.session.kz	20
+koru_std/bridge.state.kz	117
 koru_std/bridge.steps.kz	27
 koru_std/bridge.turn.kz	71
 koru_std/bridge.turnscan.kz	47
@@ -49,6 +50,8 @@ koru_std/bridge.world.kz	104
 koru_std/build_image.kz	357
 koru_std/build.app.kz	19
 koru_std/build.kz	586
+koru_std/caps.explain.kz	138
+koru_std/caps.kz	346
 koru_std/ccp_aspirational.kz	108
 koru_std/ccp.kz	109
 koru_std/cell.fleet.kz	69
@@ -136,6 +139,8 @@ koru_std/grid.slice.kz	163
 koru_std/grid.stored.kz	235
 koru_std/grid.sweep.kz	305
 koru_std/grid.walk.kz	320
+koru_std/guide.kz	280
+koru_std/heap.kz	134
 koru_std/http.kz	215
 koru_std/index.kz	7
 koru_std/indexes.k	14
@@ -164,7 +169,7 @@ koru_std/interpreter.invargs.kz	80
 koru_std/interpreter.kz	553
 koru_std/interpreter.literal.kz	40
 koru_std/interpreter.mint.kz	37
-koru_std/interpreter.mounted.kz	510
+koru_std/interpreter.mounted.kz	509
 koru_std/interpreter.names.kz	18
 koru_std/interpreter.parse.kz	52
 koru_std/interpreter.pool.kz	236
@@ -202,8 +207,8 @@ koru_std/kernel.fields.kz	108
 koru_std/kernel.fpga.kz	192
 koru_std/kernel.fpgaemit.kz	179
 koru_std/kernel.fpgatb.kz	120
-koru_std/kernel.kz	2363
-koru_std/kernel.pairwise.kz	356
+koru_std/kernel.kz	2345
+koru_std/kernel.pairwise.kz	341
 koru_std/kernel.scan.kz	109
 koru_std/koru.kz	211
 koru_std/liquid_template.kz	145

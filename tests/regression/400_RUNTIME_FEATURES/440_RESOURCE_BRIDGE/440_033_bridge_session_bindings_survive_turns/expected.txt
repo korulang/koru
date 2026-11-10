@@ -11,6 +11,7 @@ pub tor produce {} -> string
 pub tor echo { text: string }
 vocabulary()
 grammar()
+state() — reads live session state: bound values with contents, arm names by scope (durable/turn/item), held handles, defined flows
 bind(name: string, value: string)
 note(text: string) — speaks to the observer, not the user: reasoning, plans, and "why I'm stuck" go here
 abandon(reason: string) — ends the session with your reason: what you tried, what blocked you

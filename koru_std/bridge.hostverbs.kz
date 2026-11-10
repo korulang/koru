@@ -87,17 +87,17 @@ pub fn hostDispatch(
     out: *Interp.DispatchResult,
 ) anyerror!void {
     if (hostInputLookup(name) == null) return error.EventDenied;
-    const is_vocab = std.mem.eql(u8, name, "vocabulary");
     if (std.mem.eql(u8, name, "bind")) return hostBind(view, inv, out);
     if (std.mem.eql(u8, name, "note")) return hostNote(view, inv, out);
     if (std.mem.eql(u8, name, "abandon")) return hostAbandon(view, inv, out);
     if (inv.args.len != 0) {
         view.error_detail.* = std.fmt.allocPrint(view.allocator,
             "'{s}' takes no fields — call it bare: {s}()", .{ name, name })
-            catch "'vocabulary'/'grammar' take no fields";
+            catch "'vocabulary'/'grammar'/'state' take no fields";
         return error.DispatchFailed;
     }
-    const text = (if (is_vocab)
+    if (std.mem.eql(u8, name, "state")) return hostState(view, out);
+    const text = (if (std.mem.eql(u8, name, "vocabulary"))
         renderVocabulary(view.allocator, view.scope_name, view.defined, true, view.session_env, view.mounted)
     else
         renderGrammar(view.allocator, view.scope_name, view.defined, true, view.mounted)) orelse {

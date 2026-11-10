@@ -238,12 +238,11 @@ fn dispatchThroughOwner(
         if (derr != error.EventDenied) return derr;
         const hd = ctx.host_dispatch orelse return derr;
         const view = HostView{
-            .scope_name = ctx.scope_name,
-            .defined = ctx.defined,
-            .allocator = ctx.allocator,
-            .error_detail = &ctx.error_detail,
-            .session_env = ctx.session_env,
-            .mounted = ctx.mounted,
+            .scope_name = ctx.scope_name, .defined = ctx.defined,
+            .allocator = ctx.allocator, .error_detail = &ctx.error_detail,
+            .session_env = ctx.session_env, .mounted = ctx.mounted,
+            .turn_env = ctx.turn_env, .run_env = ctx.env,
+            .handle_pool = ctx.handle_pool, .trace = &ctx.trace,
         };
         try hd(event_name, evaluated_inv, &view, dispatch_result);
     };

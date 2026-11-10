@@ -12,20 +12,20 @@
 
 pub const Invocation = ast.Invocation;
 pub const DispatchFn = *const fn(*const ast.Invocation, *DispatchResult) anyerror!void;
-// The slice of interpreter state a host verb may see: which scope it sits
-// under, the session's defined table, an allocator for its render, and the
-// error channel it teaches through. Deliberately NOT *InterpreterContext —
-// a fn-ptr type naming the struct that stores it is a dependency loop.
+// HostView — the slice of interpreter state a host verb may see.
+// Deliberately NOT *InterpreterContext: a fn-ptr naming its storing
+// struct is a dependency loop. The env fields are the binding layers a
+// state render labels: session (durable), turn (multi-item arms), run
+// (this item's own); handle_pool/trace are the held-handle and path reads.
 pub const HostView = struct {
     scope_name: []const u8,
     defined: ?*DefinedFlows,
     allocator: std.mem.Allocator,
     error_detail: *?[]const u8,
-    // The session's durable binding table — a host verb that persists a
-    // value (the bridge's `bind`) writes here. null = no session.
     session_env: ?*Environment = null,
-    // The session's mounted scopes — a vocabulary render must see them.
     mounted: ?[]const @import("root").koru_std.koru_runtime.ScopeRuntime = null,
+    turn_env: ?*Environment = null, run_env: ?*Environment = null,
+    handle_pool: ?*HandlePool = null, trace: ?*const std.ArrayListUnmanaged(TraceEntry) = null,
 };
 // Dispatch-detail/dispatch-pool channels moved to the `resdispatch` part —
 // the threadlocals a generated dispatcher reports and resolves through.

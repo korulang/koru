@@ -101,8 +101,7 @@ pub const Bridge = struct {
         return count;
     }
 
-    // dischargeAll — the hang-up sweep over the installed scope set —
-    // moved to the `mount` part, beside the module lifecycle it governs.
+    // dischargeAll lives in the `mount` part — the hang-up sweep itself.
 
     pub fn deinit(self: *Bridge) void {
         self.allocator.free(self.session_id);
@@ -174,3 +173,4 @@ pub const Bridge = struct {
 ~part wirerun
 ~part runsteps
 ~part note
+~part state

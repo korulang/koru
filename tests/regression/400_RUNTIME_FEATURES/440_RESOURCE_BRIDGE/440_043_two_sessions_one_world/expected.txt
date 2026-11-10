@@ -8,7 +8,7 @@ backup = read(path: src)
   agent> backup(src: "hello.txt", dst: "again.txt")
   world< {"branch":"","value":"wrote"}
   agent> vocabulary()
-  world< {"branch":"","value":"pub tor read { path: string } -> string\npub tor write { path: string, text: string } -> string\nvocabulary()\ngrammar()\nbind(name: string, value: string)\nnote(text: string) — speaks to the observer, not the user: reasoning, plans, and \"why I'm stuck\" go here\nabandon(reason: string) — ends the session with your reason: what you tried, what blocked you\nbackup(src: string, dst: string)"}
+  world< {"branch":"","value":"pub tor read { path: string } -> string\npub tor write { path: string, text: string } -> string\nvocabulary()\ngrammar()\nstate() — reads live session state: bound values with contents, arm names by scope (durable/turn/item), held handles, defined flows\nbind(name: string, value: string)\nnote(text: string) — speaks to the observer, not the user: reasoning, plans, and \"why I'm stuck\" go here\nabandon(reason: string) — ends the session with your reason: what you tried, what blocked you\nbackup(src: string, dst: string)"}
   agent> backup(src: "hello.txt", dst: "b-copy.txt")
   world< {"branch":"","value":"wrote"}
   agent> format-disk()

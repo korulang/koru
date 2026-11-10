@@ -63,7 +63,7 @@ pub fn custodySubject(buf: []u8, args: []const ast.Arg) []const u8 {
 /// list — "not the count `run` returns today" (430_056 ruling): a host or
 /// shell line addresses them by name. Page-backed like the other durable
 /// strings; the reporter for the hand-back may never die beneath the host.
-fn renderHeldHandles(pool: *HandlePool) []const u8 {
+pub fn renderHeldHandles(pool: *HandlePool) []const u8 {
     var buf = std.ArrayList(u8){};
     defer buf.deinit(std.heap.page_allocator);
     const w = buf.writer(std.heap.page_allocator);
