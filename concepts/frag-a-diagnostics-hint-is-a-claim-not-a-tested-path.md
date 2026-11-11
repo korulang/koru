@@ -1,8 +1,8 @@
 ---
 type: belief
 id: frag-a-diagnostics-hint-is-a-claim-not-a-tested-path
-provenance: KORU103 rejects `|> finished d` and hints "produce a value with `->` (e.g. `-> finished d`)". Writing exactly that emitted `_ = finished d;`, invalid Zig. Found 2026-08-07 restructuring orisha's server loop; fixed and pinned as 350_017. Second instance 2026-09-28: PARSE006's hint named `fields[0]` for EVERY bare arg — `mm-of(1,2,3)` against `{kind,a,b}` hinted `kind: 2`, `kind: 3`; in-session it fabricated a name the callee never declared. Fixed to name the parameter at the argument's position; pinned 100_087
-ts: 2026-09-28
+provenance: KORU103 rejects `|> finished d` and hints "produce a value with `->` (e.g. `-> finished d`)". Writing exactly that emitted `_ = finished d;`, invalid Zig. Found 2026-08-07 restructuring orisha's server loop; fixed and pinned as 350_017. Second instance 2026-09-28: PARSE006's hint named `fields[0]` for EVERY bare arg — `mm-of(1,2,3)` against `{kind,a,b}` hinted `kind: 2`, `kind: 3`; in-session it fabricated a name the callee never declared. Fixed to name the parameter at the argument's position; pinned 100_087. Evolved 2026-11-11 — KORU092's hint named 2 of 3 legal escapes (omitted the `: name` produce bind); a consumer read the refusal as a missing `|>` idiom and filed a language-gap audit against constructs that already worked
+ts: 2026-11-11
 ---
 
 # A diagnostic's hint is a claim about the language, not a tested path through the compiler
@@ -43,3 +43,17 @@ which is what makes them credible.
 
 Related: [[frag-a-diagnostic-that-names-a-line-must-translate-it]] asks a
 diagnostic to be legible; this asks it to be *true*.
+
+The mirror case, 2026-11-11: KORU092's hint taught two escapes — leave the
+slot unfilled, or `: _` at the source — and stayed silent on the third that
+was already legal: bind the produce at the call (`keep(...): name`). A
+consumer wiring `take-calls` drains hit the refusal, could not see the
+binding escape in the hint, and filed three "missing language surface"
+findings — generic tors, invisible arm bindings, a `tap` combinator — two
+of which dissolved under an hour of probes. The hint did not name a wrong
+spelling; it named an *incomplete set*, and the omission was load-bearing
+in exactly the way the KORU103 case was: it retired the doubt that would
+have made the consumer test the escape it was not shown. A hint that
+under-specifies the legal surface is the same defect class as one that
+asserts a lowering that does not exist — both are prose about the language
+where a fact about the compiler was owed.

@@ -2568,8 +2568,8 @@ fn auditDeadThreads(
                     cont.location,
                     "the {s} produced by '{s}' has nowhere to land — every parameter downstream that could take it is already written",
                     .{ info.return_type.?, eventLeafName(info) },
-                    "leave the slot that should take it unfilled so the thread elects it, or drop the value at its source with `: _`. An unnamed produce cannot be referenced; `|>` forwards it or refuses.",
-                    .{},
+                    "bind the produce at the call (`{s}(...): name`), leave the slot that should take it unfilled so the thread elects it, or drop the value at its source with `: _`. An unnamed produce cannot be referenced; `|>` forwards it or refuses.",
+                    .{eventLeafName(info)},
                 );
             }
         }
