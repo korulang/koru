@@ -1,0 +1,154 @@
+// ============================================================================
+// ~part qeuler — a general quadratic radicand ax^2+bx+c reaches the
+// Euler lane through two exact pre-steps; eulerLane itself stays the
+// x^2+c core and re-enters this file from its shape check.
+//
+//   b != 0   shift x -> x - b/(2a).  An antiderivative of F(x-h)
+//            back-substitutes x -> x+h — dx is shift-invariant.
+//   b == 0,  scale the variable: x -> x*inv(sqrt a) makes
+//   a != 1   sq(a*x^2+c) spell sq(x^2+c) and dx picks up inv(sqrt a)
+//            — an x-free algebraic coefficient (a>0 only; a<0 is
+//            the arcsin family — a different answer class, refused by
+//            name).  Scaling needs no rational division: c/a is never
+//            materialized.
+//
+// Both recurse into eulerLane: the shift composes with the scaling
+// (2x^2+3x+1 shifts to 2x^2+c' then scales), and the depth bound
+// carries through.  c == 0 with b != 0 is NOT a refusal — the shift
+// lands on x^2 - b^2/(4a) and constructs.
+// ============================================================================
+
+// Does n contain the integration variable (atom 3) anywhere?  An sq
+// leaf whose radicand is x-free is a base-field algebraic constant —
+// the euler share-check and transform both key off this.
+fn nodeHasX(n: *const SNode) bool {
+    switch (n.kind) {
+        .dec, .rsum => return false,
+        .atom => return n.atom == 3,
+        .sq, .inv, .log, .atan, .exp => return nodeHasX(n.kid),
+        .add, .mul => {
+            for (n.kids) |k| {
+                if (nodeHasX(k)) return true;
+            }
+            return false;
+        },
+    }
+}
+
+// The quadratic pre-step dispatcher.  nt_var is the normed integrand,
+// uc the shared radicand's canon, up its Rat poly (len 3 expected).
+fn eulerQuadPre(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    up: []Rat,
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    if (up.len != 3 or ratIsZero(&up[2])) {
+        lane_extra.* = "euler-radicand-shape";
+        return null;
+    }
+    const at = try ratToString(alloc, &up[2]);
+    defer alloc.free(at);
+    const bt = try ratToString(alloc, &up[1]);
+    defer alloc.free(bt);
+    if (!ratIsZero(&up[1])) {
+        // shift x -> x - h with h = b/(2a); recurse; back-subst x -> x+h.
+        const sh_txt = try std.fmt.allocPrint(alloc, "((x)+(-1e0*(({s})*inv((2e0*({s}))))))", .{ bt, at });
+        defer alloc.free(sh_txt);
+        const sh = try parseTree(alloc, sh_txt);
+        defer nodeFree(alloc, sh);
+        const nsh = (try nodeSubstTheta(alloc, nt_var, sh)) orelse return null;
+        defer nodeFree(alloc, nsh);
+        const nshn = try norm(alloc, nsh);
+        defer nodeFree(alloc, nshn);
+        var inner_anti: ?[]u8 = null;
+        defer if (inner_anti) |ia| alloc.free(ia);
+        const sub = try eulerLane(alloc, nshn, max_order, max_deg, null, &inner_anti, depth + 1, lane_extra);
+        if (sub == null) return null;
+        alloc.free(sub.?.elementary);
+        const ia = inner_anti orelse {
+            lane_extra.* = "euler-inner-no-anti";
+            return null;
+        };
+        const an = parseTree(alloc, ia) catch @panic("std/sym:qeuler anti parse");
+        defer nodeFree(alloc, an);
+        const ann = norm(alloc, an) catch @panic("std/sym:qeuler anti norm");
+        defer nodeFree(alloc, ann);
+        const bk_txt = try std.fmt.allocPrint(alloc, "((x)+(({s})*inv((2e0*({s})))))", .{ bt, at });
+        defer alloc.free(bk_txt);
+        const bk = try parseTree(alloc, bk_txt);
+        defer nodeFree(alloc, bk);
+        return eulerBackSubst(alloc, ann, bk, const_txt, anti_out, lane_extra);
+    }
+    // b == 0: scale the variable when a > 0, a != 1, c != 0.  The
+    // scale factor spells sqrt(inv a) — sq*sq folds on the constant radicand
+    // where inv(sq)*inv(sq) does not.
+    if (ratIsOne(&up[2]) or ratIsZero(&up[0]) or !up[2].n.isPositive()) {
+        lane_extra.* = "euler-radicand-shape";
+        return null;
+    }
+    const sc_txt = try std.fmt.allocPrint(alloc, "√(inv(({s})))", .{at});
+    defer alloc.free(sc_txt);
+    const iv_txt = try std.fmt.allocPrint(alloc, "(x*({s}))", .{sc_txt});
+    defer alloc.free(iv_txt);
+    const iv = try parseTree(alloc, iv_txt);
+    defer nodeFree(alloc, iv);
+    const nx = (try nodeSubstTheta(alloc, nt_var, iv)) orelse return null;
+    defer nodeFree(alloc, nx);
+    const nxn = try norm(alloc, nx);
+    defer nodeFree(alloc, nxn);
+    // dx -> dx/sqrt a: the scaled integrand carries the coefficient.
+    const scn = try parseTree(alloc, sc_txt);
+    defer nodeFree(alloc, scn);
+    const with_dx = try nodePair(alloc, .mul, try nodeClone(alloc, nxn), try nodeClone(alloc, scn));
+    defer nodeFree(alloc, with_dx);
+    const wdn = try norm(alloc, with_dx);
+    defer nodeFree(alloc, wdn);
+    var inner_anti: ?[]u8 = null;
+    defer if (inner_anti) |ia| alloc.free(ia);
+    const sub = try eulerLane(alloc, wdn, max_order, max_deg, null, &inner_anti, depth + 1, lane_extra);
+    if (sub == null) return null;
+    alloc.free(sub.?.elementary);
+    const ia = inner_anti orelse {
+        lane_extra.* = "euler-inner-no-anti";
+        return null;
+    };
+    const an = parseTree(alloc, ia) catch @panic("std/sym:qeuler anti parse");
+    defer nodeFree(alloc, an);
+    const ann = norm(alloc, an) catch @panic("std/sym:qeuler anti norm");
+    defer nodeFree(alloc, ann);
+    const bk_txt = try std.fmt.allocPrint(alloc, "(x*√(({s})))", .{at});
+    defer alloc.free(bk_txt);
+    const bk = try parseTree(alloc, bk_txt);
+    defer nodeFree(alloc, bk);
+    return eulerBackSubst(alloc, ann, bk, const_txt, anti_out, lane_extra);
+}
+
+// Shared tail of both pre-steps: back-substitute the inner
+// antiderivative, re-norm, emit checked-exact.
+fn eulerBackSubst(
+    alloc: std.mem.Allocator,
+    ann: *const SNode,
+    bk: *const SNode,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    const res = (try nodeSubstTheta(alloc, ann, bk)) orelse {
+        lane_extra.* = "euler-subst-rsum";
+        return null;
+    };
+    defer nodeFree(alloc, res);
+    const resn = norm(alloc, res) catch @panic("std/sym:qeuler res norm");
+    defer nodeFree(alloc, resn);
+    const atxt = try canonOf(alloc, resn);
+    const anti = try antiWithConst(alloc, atxt, const_txt);
+    defer alloc.free(anti);
+    const blob = try std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=risch-euler-subst-constructed;checked-exact", .{anti});
+    return elemRet(blob, anti, anti_out);
+}

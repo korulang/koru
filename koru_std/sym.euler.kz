@@ -3,26 +3,23 @@
 //
 //   t = x + sqrt(x^2+c)   <=>   x = (t^2 - c)/(2t)
 //   sqrt(x^2+c) = (t^2+c)/(2t)      dx/dt = (t^2+c)/(2t^2)
-//
-// The conjugate parameter t = sqrt(u) - x rationalizes identically
-// (t*conj = c), but this spelling makes log(t) emit as log(x + sqrt(u))
-// — the asinh-form textbook answer — instead of -log(sqrt(u) - x).
+// The conjugate t = sqrt(u)-x rationalizes identically (t*conj = c);
+// this spelling emits log(t) as log(x+sqrt u) — the asinh form.
 //
 // When every radical leaf shares one radicand u = c + x^2 the whole
 // integrand rationalizes in t; the decider re-enters at depth + 1 and
-// the answer back-substitutes t -> sqrt(u) - x via nodeSubstTheta.
-// checked-exact rides the chain rule exactly as gsub/sqsub — no
-// post-check.  Refusals name the shape the transform cannot promise:
+// the answer back-substitutes t -> x + sqrt(u).  checked-exact rides
+// the chain rule exactly as gsub/sqsub — no post-check.  Refusals:
 //   euler-radicand-mixed  different radicands under one integrand
-//   euler-radicand-shape  u is not c + x^2 — a linear term, a leading
-//                         coefficient != 1, or a missing/zero constant
-//                         (x^2 alone is a different animal)
+//   euler-radicand-shape  u not reachable as x^2+C — even after the
+//                         qeuler shift/factor pre-steps (x^2 alone and
+//                         a<0 stay refused by name)
 //   euler-inner / euler-subst-rsum / euler-inner-no-anti
 // ============================================================================
 
-// The forward transform, applied under the lane's radicand precheck:
-// every x (atom 3) becomes x(t) and every sq leaf becomes sqrt(t).
-// Consumes nothing; the caller owns the raw (un-normed) result.
+// The forward transform, applied under the lane's radicand precheck —
+// x (atom 3) -> x(t), radicand-bearing sq leaves -> sqrt(t), dec-radicand
+// sqs ride through as constants.  Consumes nothing.
 fn nodeSubstEuler(alloc: std.mem.Allocator, n: *const SNode, xt: *const SNode, sqt: *const SNode) anyerror!*SNode {
     switch (n.kind) {
         .dec => return try nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
@@ -30,7 +27,7 @@ fn nodeSubstEuler(alloc: std.mem.Allocator, n: *const SNode, xt: *const SNode, s
             if (n.atom == 3) return try nodeClone(alloc, xt);
             return try nodeAtom(alloc, n.atom);
         },
-        .sq => return try nodeClone(alloc, sqt), // radicand is u by the lane precheck
+        .sq => return try nodeClone(alloc, if (nodeHasX(n.kid)) sqt else n), // u by the precheck
         .inv, .log, .atan, .exp => return try nodeUnary(alloc, n.kind, try nodeSubstEuler(alloc, n.kid, xt, sqt)),
         .add, .mul => {
             const kids = try alloc.alloc(*SNode, n.kids.len);
@@ -63,13 +60,18 @@ fn eulerLane(
     var sqs = std.ArrayList(*const SNode){};
     defer sqs.deinit(alloc);
     try collectSqKids(alloc, nt_var, &sqs);
-    if (sqs.items.len == 0) return null;
-    // every radical must share one radicand — unlike sqsub there is no
-    // fixed target; the transform exists only if a single u carries all
-    // of them.
-    const uc = try canonOf(alloc, sqs.items[0].kid);
+    // x-free-radicand sqs are algebraic coefficients, not the variable.
+    var rads = std.ArrayList(*const SNode){};
+    defer rads.deinit(alloc);
+    for (sqs.items) |q| {
+        if (nodeHasX(q.kid)) try rads.append(alloc, q);
+    }
+    if (rads.items.len == 0) return null;
+    // every radical must share one radicand — the transform exists
+    // only if a single u carries all of them.
+    const uc = try canonOf(alloc, rads.items[0].kid);
     defer alloc.free(uc);
-    for (sqs.items[1..]) |q| {
+    for (rads.items[1..]) |q| {
         const kc = try canonOf(alloc, q.kid);
         defer alloc.free(kc);
         if (!std.mem.eql(u8, kc, uc)) {
@@ -78,22 +80,20 @@ fn eulerLane(
         }
     }
     // u must be c + x^2: quadratic, leading coefficient 1, no linear
-    // term, nonzero constant — else this substitution does not
-    // rationalize and the lane stays silent by name.
-    const u = sqs.items[0].kid;
+    // term, nonzero constant — else the ~qeuler pre-steps (shift for
+    // b, lead-factor for a) get the first word.
+    const u = rads.items[0].kid;
     const up = (try polyOfNode(alloc, u)) orelse {
         lane_extra.* = "euler-radicand-shape";
         return null;
     };
     defer polyFree(alloc, up);
     if (up.len != 3 or !ratIsOne(&up[2]) or !ratIsZero(&up[1]) or ratIsZero(&up[0])) {
-        lane_extra.* = "euler-radicand-shape";
-        return null;
+        return eulerQuadPre(alloc, nt_var, up, max_order, max_deg, const_txt, anti_out, depth, lane_extra);
     }
-    // Transform pieces, spelled in the inner variable (canon text "x"
-    // is t here):  x = (t*t - c)/(2t),  sqrt = (t*t + c)/(2t),
-    // dx/dt = (t*t + c)/(2t*t).  ratToString spells the constant as
-    // n or n/d and parseTree normalizes it back to a canon dec/inv.
+    // Transform pieces, spelled in the inner variable (canon "x" is t):
+    // x = (t*t-c)/(2t), sqrt = (t*t+c)/(2t), dx/dt = (t*t+c)/(2t*t).
+    // ratToString spells c as n or n/d; parseTree re-normalizes it.
     const ct = try ratToString(alloc, &up[0]);
     defer alloc.free(ct);
     const xt_txt = try std.fmt.allocPrint(alloc, "(((x*x)+(-1e0*({s})))*inv((2e0*x)))", .{ct});

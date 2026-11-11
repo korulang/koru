@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-an-algebraic-pre-step-substitutes-the-variable-not-the-element
-provenance: sym B9/B9b/B10/B10c/B10d, 2026-11 — after the dlog lane exhausted
+provenance: sym B9/B9b/B10/B10c/B10d/B10e, 2026-11 — after the dlog lane exhausted
   per-element substitution, the remaining "arg-nonrational" refusals
   (atan(sqrt x), e^{sqrt x}, log(sqrt x)) turned out to need a
   different move entirely: substitute the variable, not an element.
@@ -11,7 +11,10 @@ provenance: sym B9/B9b/B10/B10c/B10d, 2026-11 — after the dlog lane exhausted
   paragraph had named as out of reach.  B10c closed the inverse-law
   pair: log(exp u) -> u, the mirror of the exp(log u) -> u fold that
   had been folding silently all along.  B10d paid the conjugate-
-  expansion debt B10 itself named — both folds, canon-side.
+  expansion debt B10 itself named — both folds, canon-side.  B10e
+  generalized Euler's lane to sqrt(a*x^2+b*x+c) via shift and scale
+  pre-steps — and the generalization only held because the norm
+  side grew two more mul-fold arms the scale factor required.
 ts: 2026-11-05
 tags: [koru, stdlib, sym, risch, integration, substitution, algebraic]
 ---
@@ -108,10 +111,39 @@ conjugate's varying kid carries its own −1 (the canon spelling of
 back into the coefficient — canon-of-negation, not string
 equality, is the matching test.
 
+B10e closed the last named boundary item — the general quadratic
+√(a·x²+b·x+c) — with pre-steps around the pre-step, each still
+variable-substitution machinery: a nonzero linear term shifts
+x -> x − b/(2a) (the completing-square move, exact because
+shift-back is the same node substitution in reverse), and a leading
+coefficient a > 1 scales x -> x·√(1/a) with dx picking up the
+√(1/a) coefficient. Both paths re-enter eulerLane at depth+1 on a
+now-shaped x²+c radicand; the all-or-nothing discipline is
+inherited, not re-implemented.
+
+But the scale path only held because the canon grew again — the
+third recurrence of the same lesson. √(1/a) for non-terminating
+a (a=3) spells sq(inv(3e0)): its radicand is an inv node, so the
+lane's "x-free radicand is an algebraic coefficient" predicate had
+to replace the narrower dec-kind test. And inside the scaled
+radicand, sq(inv a)·sq(inv a) → inv(a) needed the sq·sq fold's
+nonneg predicate extended to inv-of-positive-dec — which then
+produced 3·inv(3) in a form the factor-level pair-cancel cannot
+see, because dec factors are absorbed into the coefficient *before*
+the cancel scans. The third new arm cancels inv-of-dec against the
+coefficient directly when the division is exact. Three layers of
+the same canon-gap-masquerades-as-capability-gap pattern, this
+time all inside the one substitution the coefficient needed. The
+block of mul-fold arms the wall forced out of sym.kz now lives in
+sym.conj with the other canon merges — the wall's split
+coincidentally found the right home.
+
 What the family is NOT: it does not integrate mixed radicands
-(√(1+x²)·√(1+2x²) refuses euler-radicand-mixed), other quadratic
-shapes (a leading coefficient or linear term needs a scaling or
-shift pre-step the lane does not have), or integrands whose
-transformed F(t) is non-elementary (exp(x)·√(1+x²) refuses
-euler-inner). The boundary moved again; it did not disappear.
-True-tower coefficient fields ℚ(x,θ) remain the named next work.
+(√(1+x²)·√(1+2x²) refuses euler-radicand-mixed), negative-leading
+quadratics (√(4−x²) is the arcsin class — a real lane, not this
+one's pre-step), zero-constant radicands (√(x²), √(4x²+4x+1) =
+√((2x+1)²) are absolute-value shapes, non-elementary spellings),
+or integrands whose transformed F(t) is non-elementary
+(exp(x)·√(1+x²) refuses euler-inner). The boundary moved again;
+it did not disappear. True-tower coefficient fields ℚ(x,θ)
+remain the named next work.
