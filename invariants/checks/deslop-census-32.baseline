@@ -305,3 +305,14 @@ members=2558
 # KORU030 cross-checker class, documented 2026-10-31).
 clusters=1982
 members=2559
+# Re-pinned 1982/2559 -> 1992/2582 (2026-11-11): same roll, same diff —
+# the nameListInto + emitAssignment folds described in
+# deslop-census.baseline. HEAD alone measured 2003/2581 (+21/+22 of
+# committed drift between sampled rolls); the folds recovered 11
+# clusters, and the residual +10/+23 is the documented small-idiom
+# classes: emitter_test / visitor_emitter_test /
+# glob_matcher_spec_test fixture literals, requires-fixture AST twins,
+# annotation_parser test decls, and uncommitted foreign src/ work the
+# census reads.
+clusters=1992
+members=2582

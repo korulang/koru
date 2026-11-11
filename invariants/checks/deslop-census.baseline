@@ -220,3 +220,19 @@ members=970
 # phantom_semantic_checker twins). Growth is committed drift between
 # sampled rolls plus uncommitted foreign main.zig work in the tree —
 # the census reads the working tree; none of it is this diff.
+# Re-pinned 860/970 -> 860/973 (2026-11-11): the roll fired on the
+# checker/emitter dedup commit. This diff FOLDS two named offenders
+# rather than growing them: nameListInto lifted verbatim to
+# errors.nameListInto (the shared diagnostics module both checkers
+# already import — the KORU021/KORU030 twin rule guards semantic walls,
+# and a name-list formatter is not a wall), and the cs/js emitAssignment
+# pair folded to codegen_utils.emitCapturedAssignment behind comptime
+# HostTarget — the frag-dedup vocabulary-table removal unit for emitter
+# twins. HEAD alone measured 872/977: +12/+7 of committed drift between
+# sampled rolls; the folds recovered 12 clusters / 4 members. Residual
+# +3 members are the documented classes (emitter_test /
+# visitor_emitter_test scaffolding, requires-fixture twins, remaining
+# per-target emitter pairs) plus uncommitted foreign src/ work the
+# census reads.
+clusters=860
+members=973

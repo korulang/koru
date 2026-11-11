@@ -797,11 +797,11 @@ const Emitter = struct {
         try self.cells.append(self.allocator, .{ .name = name, .owner = owner, .cs_ty = cs_ty });
     }
 
-    fn write(self: *Emitter, text: []const u8) CsEmitError!void {
+    pub fn write(self: *Emitter, text: []const u8) CsEmitError!void {
         try self.buf.appendSlice(self.allocator, text);
     }
 
-    fn writeFmt(self: *Emitter, comptime fmt: []const u8, args: anytype) CsEmitError!void {
+    pub fn writeFmt(self: *Emitter, comptime fmt: []const u8, args: anytype) CsEmitError!void {
         try self.buf.print(self.allocator, fmt, args);
     }
 
@@ -1723,7 +1723,7 @@ const Emitter = struct {
     /// Write a KORU expression as C# — through codegen_utils's `.cs` arm:
     /// `and`/`or` → `&&`/`||`, `.len` → `.Length`, `++` → `+`, unknown
     /// `@builtins` refuse.
-    fn writeCsExpr(self: *Emitter, expr: []const u8) CsEmitError!void {
+    pub fn writeCsExpr(self: *Emitter, expr: []const u8) CsEmitError!void {
         try self.writeLowered(expr, .koru_expr);
     }
 
@@ -2425,7 +2425,7 @@ const Emitter = struct {
                 }
             },
             .assignment => |asgn| {
-                try self.emitAssignment(&asgn, indent);
+                try codegen_utils.emitCapturedAssignment(self, .cs, &asgn, indent);
                 try self.emitPreambleContinuations(cont.continuations, indent);
             },
             .inline_code => |text| {
@@ -2469,32 +2469,6 @@ const Emitter = struct {
         try self.write(" };\n");
         try self.emitPreambleContinuations(continuations, inner);
         try self.writeFmt("{s}}}\n", .{indent});
-    }
-
-    /// Emit a `captured { … }` write as field stores into the cell — snapshot
-    /// semantics (RHS temps hoist before any store), same ruling as both
-    /// other targets.
-    fn emitAssignment(self: *Emitter, asgn: anytype, indent: []const u8) CsEmitError!void {
-        if (asgn.fields.len > 1) {
-            try self.writeFmt("{s}{{\n", .{indent});
-            const inner = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
-            defer self.allocator.free(inner);
-            for (asgn.fields, 0..) |field, i| {
-                try self.writeFmt("{s}var __koru_asgn_{d} = ", .{ inner, i });
-                try self.writeCsExpr(if (field.expression_str) |e| e else field.type);
-                try self.write(";\n");
-            }
-            for (asgn.fields, 0..) |field, i| {
-                try self.writeFmt("{s}{s}.{s} = __koru_asgn_{d};\n", .{ inner, asgn.target, field.name, i });
-            }
-            try self.writeFmt("{s}}}\n", .{indent});
-            return;
-        }
-        for (asgn.fields) |field| {
-            try self.writeFmt("{s}{s}.{s} = ", .{ indent, asgn.target, field.name });
-            try self.writeCsExpr(if (field.expression_str) |e| e else field.type);
-            try self.write(";\n");
-        }
     }
 
     /// The call-site `: name` bind, or null when there is nothing to NAME
@@ -2931,7 +2905,7 @@ const Emitter = struct {
                     }
                 },
                 .assignment => |asgn| {
-                    try self.emitAssignment(&asgn, body_indent);
+                    try codegen_utils.emitCapturedAssignment(self, .cs, &asgn, body_indent);
                     try self.emitPreambleContinuations(cont.continuations, body_indent);
                 },
                 .inline_code => |text| {

@@ -901,3 +901,44 @@ test "candidate writer counts what it wrote, not what it was handed" {
     try std.testing.expectEqual(@as(usize, 2), written);
     try std.testing.expectEqualStrings("input:drop, std.string:free", out.items);
 }
+
+pub fn nameListInto(buf: []u8, items: anytype) []const u8 {
+    var fbs = std.io.fixedBufferStream(buf);
+    const w = fbs.writer();
+    var truncated = false;
+    // End of the last COMPLETE element: the marker goes after it, never
+    // through the middle of a name (see the fallback below for the one case
+    // where the buffer cannot hold it there).
+    var last_complete: usize = 0;
+    for (items, 0..) |b, i| {
+        const need = b.name.len + (if (i > 0) @as(usize, 2) else 0);
+        if (fbs.pos + need > buf.len) {
+            truncated = true;
+            break;
+        }
+        // Cannot fail: `need` was checked against the buffer above, so a
+        // partial element never reaches the list.
+        if (i > 0) w.writeAll(", ") catch unreachable;
+        w.writeAll(b.name) catch unreachable;
+        last_complete = fbs.pos;
+    }
+    if (!truncated) {
+        if (fbs.pos == 0) return "(none)";
+        return fbs.getWritten();
+    }
+    // Truncated: spend the tail on a marker, so the hint cannot read as the
+    // complete set. A list that FITS still uses the whole buffer — the
+    // marker costs room only when there is something to mark.
+    const marker = ", \u{2026}";
+    // A buffer too small for the marker itself can only say "there is more".
+    if (last_complete == 0 or buf.len < marker.len) return "\u{2026}";
+    if (last_complete + marker.len > buf.len) {
+        // No room for the marker after the last complete name, so it comes
+        // out of that name's own bytes — clipped, but never silent.
+        const keep = buf.len - marker.len;
+        @memcpy(buf[keep..][0..marker.len], marker);
+        return buf[0..buf.len];
+    }
+    @memcpy(buf[last_complete..][0..marker.len], marker);
+    return buf[0 .. last_complete + marker.len];
+}

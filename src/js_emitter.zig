@@ -518,11 +518,11 @@ const Emitter = struct {
         return id;
     }
 
-    fn write(self: *Emitter, text: []const u8) JsEmitError!void {
+    pub fn write(self: *Emitter, text: []const u8) JsEmitError!void {
         try self.buf.appendSlice(self.allocator, text);
     }
 
-    fn writeFmt(self: *Emitter, comptime fmt: []const u8, args: anytype) JsEmitError!void {
+    pub fn writeFmt(self: *Emitter, comptime fmt: []const u8, args: anytype) JsEmitError!void {
         try self.buf.print(self.allocator, fmt, args);
     }
 
@@ -983,7 +983,7 @@ const Emitter = struct {
     ///
     /// Everything else passes through verbatim, exactly as
     /// emitter_helpers.emitValue passes a value through for Zig.
-    fn writeJsExpr(self: *Emitter, expr: []const u8) JsEmitError!void {
+    pub fn writeJsExpr(self: *Emitter, expr: []const u8) JsEmitError!void {
         try self.writeLowered(expr, .koru_expr);
     }
 
@@ -1849,7 +1849,7 @@ const Emitter = struct {
         indent: []const u8,
     ) JsEmitError!bool {
         switch (node) {
-            .assignment => |asgn| try self.emitAssignment(&asgn, indent),
+            .assignment => |asgn| try codegen_utils.emitCapturedAssignment(self, .js, &asgn, indent),
             .inline_code => |text| try self.emitPreamble(text, indent),
             // A `@L(…)` jump ENDS its arm: it re-seeds the fold and the `while`
             // header decides what happens next. The Zig lowering makes that literal
@@ -1926,43 +1926,6 @@ const Emitter = struct {
         }
         try self.emitPreambleContinuations(continuations, indent);
         return true;
-    }
-
-    /// Emit a `captured { … }` write as field stores into the cell.
-    ///
-    /// SNAPSHOT SEMANTICS (ruled 2026-07-02, pinned 320_102): every field
-    /// expression reads the INCOMING cell state, then all stores land — so the
-    /// meaning of a `captured { }` literal cannot depend on its field order. With
-    /// two or more fields the right-hand sides hoist into block-scoped temps
-    /// before any store; a lone field cannot observe itself, so it stores
-    /// directly. Same decision, same reasoning, same output shape as the Zig
-    /// reference (emitter_helpers.zig:10432) — only the `let`/`const` spelling
-    /// differs.
-    ///
-    /// Temps are index-named inside their own block: a field NAME can be an
-    /// element write (`arr[i]`), which is not an identifier, and the block keeps
-    /// two assignment nodes at the same depth from colliding.
-    fn emitAssignment(self: *Emitter, asgn: anytype, indent: []const u8) JsEmitError!void {
-        if (asgn.fields.len > 1) {
-            try self.writeFmt("{s}{{\n", .{indent});
-            const inner = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
-            defer self.allocator.free(inner);
-            for (asgn.fields, 0..) |field, i| {
-                try self.writeFmt("{s}const __koru_asgn_{d} = ", .{ inner, i });
-                try self.writeJsExpr(if (field.expression_str) |e| e else field.type);
-                try self.write(";\n");
-            }
-            for (asgn.fields, 0..) |field, i| {
-                try self.writeFmt("{s}{s}.{s} = __koru_asgn_{d};\n", .{ inner, asgn.target, field.name, i });
-            }
-            try self.writeFmt("{s}}}\n", .{indent});
-            return;
-        }
-        for (asgn.fields) |field| {
-            try self.writeFmt("{s}{s}.{s} = ", .{ indent, asgn.target, field.name });
-            try self.writeJsExpr(if (field.expression_str) |e| e else field.type);
-            try self.write(";\n");
-        }
     }
 
     /// Emit the body of a terminal continuation spliced inline by a template

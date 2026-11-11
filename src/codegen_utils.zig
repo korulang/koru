@@ -1256,6 +1256,69 @@ pub const HostShape = struct {
     }
 };
 
+/// Emit a `captured { … }` write as field stores into the cell — the cs/js
+/// spelling of the Zig reference's `.assignment` arm (emitter_helpers.zig).
+///
+/// SNAPSHOT SEMANTICS (ruled 2026-07-02, pinned 320_102): every field
+/// expression reads the INCOMING cell state, then all stores land — so the
+/// meaning of a `captured { }` literal cannot depend on its field order. With
+/// two or more fields the right-hand sides hoist into block-scoped temps
+/// before any store; a lone field cannot observe itself, so it stores
+/// directly. Temps are index-named inside their own block: a field NAME can
+/// be an element write (`arr[i]`), which is not an identifier, and the block
+/// keeps two assignment nodes at the same depth from colliding.
+///
+/// `t` is comptime so the untaken arm's expression writer is never analyzed —
+/// each instantiation sees only its own emitter's `writeCsExpr`/`writeJsExpr`
+/// and error set. The per-target dialect folds to its vocabulary (`var` vs
+/// `const`, which writer), the removal unit frag-dedup-is-lift-then-delete
+/// names for emitter twins.
+pub fn emitCapturedAssignment(
+    self: anytype,
+    comptime t: HostTarget,
+    asgn: anytype,
+    indent: []const u8,
+) !void {
+    const kw: []const u8 = switch (t) {
+        .cs => "var",
+        .js => "const",
+        .zig => unreachable, // the Zig target spells this inline in emitter_helpers
+    };
+    if (asgn.fields.len > 1) {
+        try self.writeFmt("{s}{{\n", .{indent});
+        const inner = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+        defer self.allocator.free(inner);
+        for (asgn.fields, 0..) |field, i| {
+            try self.writeFmt("{s}{s} __koru_asgn_{d} = ", .{ inner, kw, i });
+            try writeCapturedExpr(self, t, if (field.expression_str) |e| e else field.type);
+            try self.write(";\n");
+        }
+        for (asgn.fields, 0..) |field, i| {
+            try self.writeFmt("{s}{s}.{s} = __koru_asgn_{d};\n", .{ inner, asgn.target, field.name, i });
+        }
+        try self.writeFmt("{s}}}\n", .{indent});
+        return;
+    }
+    for (asgn.fields) |field| {
+        try self.writeFmt("{s}{s}.{s} = ", .{ indent, asgn.target, field.name });
+        try writeCapturedExpr(self, t, if (field.expression_str) |e| e else field.type);
+        try self.write(";\n");
+    }
+}
+
+/// The target's Koru-expression writer for `emitCapturedAssignment`. Comptime
+/// `t` keeps the untaken emitter's method out of the instantiation, so each
+/// call site resolves against exactly one error set.
+fn writeCapturedExpr(self: anytype, comptime t: HostTarget, expr: []const u8) !void {
+    if (t == .cs) {
+        try self.writeCsExpr(expr);
+    } else if (t == .js) {
+        try self.writeJsExpr(expr);
+    } else {
+        unreachable;
+    }
+}
+
 fn exprIdentChar(c: u8) bool {
     return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
         (c >= '0' and c <= '9') or c == '_';
