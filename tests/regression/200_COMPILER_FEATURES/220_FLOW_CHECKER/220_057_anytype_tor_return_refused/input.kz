@@ -1,0 +1,2 @@
+~tor peek { } -> anytype
+~peek -> 1

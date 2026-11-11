@@ -907,6 +907,18 @@ pub const FlowChecker = struct {
                 .{ field.name, field.type },
             );
         }
+        // The return type lands in the same emitted struct position —
+        // `-> anytype` leaked KORU207 identically (probed 2026-11-11).
+        if (ev.return_type) |rt| {
+            if (typeTextHasAnytype(rt)) {
+                try self.reporter.addErrorAtLocation(
+                    .KORU213,
+                    decl_loc,
+                    "tor return type '{s}' — `anytype` is a parameter qualifier, not a type; tors return concrete types (parametric generics are comptime codegen, not a type grammar)",
+                    .{rt},
+                );
+            }
+        }
     }
 
     /// Scan the `= <expr>` tails of a `-> { ... }` record return type.

@@ -1,0 +1,1 @@
+tor return type 'anytype' — `anytype` is a parameter qualifier, not a type; tors return concrete types (parametric generics are comptime codegen, not a type grammar)
