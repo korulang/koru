@@ -42,7 +42,47 @@ The operation surface is the one a calculator wants — `add`/`sub`/`mul`/`div`,
 
 ## std/quantity — dimensions are a group, not a string
 
-`std/quantity` packs a magnitude, a canonical `Dim`, and optional uncertainty-with-covariance into one linear string. `Dim` is `[7]i32` — the free abelian group on the seven SI base generators, the same object `QuantityKernel.lean` proves things about — so `m/s · s → m` is group law, not string surgery, and a unit mismatch on `add` refuses `dim-mismatch` while `equiv` still compares canonical text. Uncertainty propagates through the covariance-carrying lanes; lanes the sigma math can't honestly cover refuse `sym-unc` rather than approximate silently.
+`std/quantity` packs a magnitude, a canonical `Dim`, and optional uncertainty-with-covariance into one linear string. `Dim` is `[7]i32` — the free abelian group on the seven SI base generators, the same object `QuantityKernel.lean` proves things about — so `m/s · s → m` is group law, not string surgery:
+
+```koru
+import std/io
+import std/quantity
+
+std/quantity:lit(5*m/s)
+| exact v |> std/quantity:lit(3*s)
+    | exact t |> std/quantity:mul(a: v, b: t)
+        | exact d |> std/quantity:render(n: d): o |> std/io:print.ln("{{ o:s }}") |> std/io:free(content: o)
+        | mixed-cov |> std/io:print.ln("mixed-cov")
+        | bad x |> std/io:print.ln("{{ x:s }}")
+        | sym-unc |> std/io:print.ln("sym-unc")
+    | bad x |> std/io:print.ln("bad")
+| bad y |> std/io:print.ln("bad")
+```
+
+prints `1.5e1|m^1 s^0 kg^0 A^0 K^0 mol^0 cd^0|-` — fifteen metres, dimensionally normal by construction. `m/s ÷ s` lands `m^1 s^-2`, and `4 N · 2 m` renders the same canonical dim string as `8 J`, so `equiv` on quantities is string equality. A unit mismatch on `add` refuses `dim-mismatch`; quantity text that never passed `lit` can't reach the ops at all — the same `external`/`exact` mark discharge `std/num` runs, applied at the pack boundary.
+
+### Case study: uncertainty is arithmetic, not annotation
+
+A quantity's third field is a linearized (GUM-adjacent) sigma. Two independent measurements combine in quadrature — `lit(2.0*kg, unc: 0.1) + lit(1.0*kg, unc: 0.1)` renders `3e0|…kg…|1.41e-1`, the √2·0.1 that quadrature demands. Under `mul`/`div` the relative sigmas combine, and the magnitude stays a `std/num` decimal underneath, so the precision budget is the caller's, not the machine's.
+
+<RegressionTestLink
+  tests={[
+    { name: "615_023 quadrature add", directory: "615_023_quantity_uncertainty_add", categorySlug: "600_STDLIB/615_NUM", description: "Independent sigmas add in quadrature — sqrt(0.1^2 + 0.1^2) = 1.41e-1." },
+    { name: "615_029 dim composition", directory: "615_029_quantity_dim_composition", categorySlug: "600_STDLIB/615_NUM", description: "(m/s)*s -> m, (m/s)/s -> m/s^2, and N*m ≡ J by canonical equivalence." },
+    { name: "615_027 untainted refusal", directory: "615_027_reject_untainted_quantity", categorySlug: "600_STDLIB/615_NUM", description: "Quantity text that skipped lit/ingest cannot reach the ops." }
+  ]}
+/>
+
+### Case study: shared-source covariance cancels honestly
+
+An uncertainty can be tagged with the source it stems from: `unc: 0.1, cov: bias`. Two `@bias` sigmas are fully correlated, so they add *linearly* — `2 m ± 0.1@bias + 1 m ± 0.1@bias` renders `3e0|…|2e-1@bias`, not the quadrature 0.14. The interesting arm is subtraction: `2 m ± 0.1@bias − 1 m ± 0.1@bias` renders `1e0|…|-` — the shared bias cancels to nothing and the difference is *certain*, which is the correct physics of a common-mode error. And two different sources refuse: `@bias + @other` answers `mixed-cov`, because the correlation between two unknowably-related sources cannot be assumed — the lane names its boundary rather than laundering independence into the result.
+
+<RegressionTestLink
+  tests={[
+    { name: "615_030 covariance arms", directory: "615_030_quantity_covariance", categorySlug: "600_STDLIB/615_NUM", description: "Same-group adds linearly, negated instances cancel the bias outright, mul composes relative sigmas." },
+    { name: "615_031 mixed-cov refusal", directory: "615_031_quantity_mixed_cov_refusal", categorySlug: "600_STDLIB/615_NUM", description: "Two different covariance groups refuse by name; one-sided tags propagate conservatively." }
+  ]}
+/>
 
 ## The holonomic lane — certificates, not witnesses
 
@@ -53,7 +93,7 @@ The operation surface is the one a calculator wants — `add`/`sub`/`mul`/`div`,
 - `cert-sum`/`cert-prod` compose certificates through companion-basis elimination over ℚ(x) — the standard linear-algebra proof of the classical closure theorems, so the output is theorem-grade; `HolonomicClosure.lean` checks the same statement. `cert-compose` refuses by name (`not-generally-holonomic`) because composition of D-finite functions isn't, in general.
 - `cert-bridge` projects an ODE certificate into its P-recursive coefficient recurrence — the D-finite ⇔ P-recursive equivalence (Stanley 1980; Kauers & Paule §7), machine-checked as `HolonomicBridge.lean`; `det=1` flags exactly the hypothesis that makes the recurrence determine the sequence.
 - `cert-of`/`cert-series` are the theorem upgrade: derive the ODE *structurally*, then let the recurrence *generate* the tail — every coefficient forced by the annihilating equation rather than merely witnessed.
-- `decide-integral`/`decide-ode`/`decide-field` are the decision tower. A rational integrand is always elementary (Liouville), and Hermite reduction in Horowitz–Ostrogradsky form builds its whole rational part from one square linear system over ℚ. The result is checked exactly, `Q + (B/D⁻)' + C/D* = N/D`, and the remaining squarefree log part is named as `log-integrand` because the grammar has no log node to build it with. Non-rational holonomic integrands get shifted certificates instead (antiderivatives of D-finite functions stay D-finite, a closure corollary with the same sources). `decide-ode` checks Kovacic's three necessary conditions (Kovacic, *J. Symbolic Computation* 1986) on exact pole orders and the order at infinity. It returns `proven-no-liouvillian-solution` only when all three cases fail, which is why Airy's equation is proven non-Liouvillian. When a case survives, it names the open cases instead of guessing. What the tower can't reach says `unresolved` with its search bounds named.
+- `decide-integral`/`decide-ode`/`decide-field` are the decision tower. A rational integrand is always elementary (Liouville): Hermite reduction in Horowitz–Ostrogradsky form builds its rational part from one square linear system over ℚ, checked exactly (`Q + (B/D⁻)' + C/D* = N/D`), and the Trager lane then builds the log part for residue cofactor polynomials up to degree 4 as an `rsum` — `1/(1+x⁴)` answers a certified residue sum, not a named gap. Non-rational integrands route through a substitution family: the dlog lane rewrites any element whose derivative the integrand carries (exp, log, sqrt, atan elements all qualify), the primitive-monomial cascade integrates polynomial-in-θ shapes like `log²x` or `atan(x)(1+atan x)`, and two global substitutions — `t = √x` and Euler's `t = x + √(x²+c)` with shift/scale pre-steps for general quadratics — rationalize whole integrands at once. Every constructed answer re-derives to the integrand, `checked-exact`; answers that can't be differentiated back (residue sums inside opaque text, non-elementary integrands like `1/(x+log x)`) refuse by named lane. `decide-ode` checks Kovacic's three necessary conditions (Kovacic, *J. Symbolic Computation* 1986) on exact pole orders and the order at infinity. It returns `proven-no-liouvillian-solution` only when all three cases fail, which is why Airy's equation is proven non-Liouvillian. When a case survives, it names the open cases instead of guessing. What the tower can't reach says `unresolved` with its search bounds named.
 
 ```koru
 // x/(1+x^2)^2 -> -1/(2(1+x^2)), no log part
@@ -77,7 +117,12 @@ That prints `decide(layer=elementary)|antiderivative=(-5e-1*inv((1e0+(x*x))))|no
     { name: "615_046 the P-recursive bridge", directory: "615_046_sym_cert_bridge", categorySlug: "600_STDLIB/615_NUM", description: "ODE to recurrence with the det flag carrying Lean's packaging hypothesis." },
     { name: "615_047 certified series", directory: "615_047_sym_cert_series", categorySlug: "600_STDLIB/615_NUM", description: "cert-of derives the ODE structurally; the recurrence generates a certified tail." },
     { name: "615_048 the decision tower", directory: "615_048_sym_decide_integral", categorySlug: "600_STDLIB/615_NUM", description: "Elementary, holonomic-special, witness-fallback, and honest unresolved paths." },
-    { name: "615_051 Hermite and Kovacic", directory: "615_051_sym_hermite_kovacic", categorySlug: "600_STDLIB/615_NUM", description: "Rational parts constructed and checked exactly; Kovacic proves only when every case fails." }
+    { name: "615_051 Hermite and Kovacic", directory: "615_051_sym_hermite_kovacic", categorySlug: "600_STDLIB/615_NUM", description: "Rational parts constructed and checked exactly; Kovacic proves only when every case fails." },
+    { name: "615_061 the Trager log part", directory: "615_061_sym_trager_rsum", categorySlug: "600_STDLIB/615_NUM", description: "Residue-sum antiderivatives built and checked for cofactor degrees up to 4." },
+    { name: "615_066 cascades in log and atan", directory: "615_066_sym_primmon_atan", categorySlug: "600_STDLIB/615_NUM", description: "Primitive-monomial integration for polynomial-in-element shapes; rsum-carrying assemblies refuse by name." },
+    { name: "615_067 sqrt substitution", directory: "615_067_sym_sqrt_subst", categorySlug: "600_STDLIB/615_NUM", description: "t = sqrt(x) rationalizes atan(sqrt x), e^{sqrt x}, log(sqrt x); mixed radicands refuse." },
+    { name: "615_068 Euler's first substitution", directory: "615_068_sym_euler_subst", categorySlug: "600_STDLIB/615_NUM", description: "t = x + sqrt(x^2+c) lands asinh-form answers checked-exact." },
+    { name: "615_069 general quadratics", directory: "615_069_sym_euler_quadratic", categorySlug: "600_STDLIB/615_NUM", description: "sqrt(ax^2+bx+c) reaches Euler through completing-square shift and sqrt(1/a) scale pre-steps." }
   ]}
 />
 
@@ -124,7 +169,7 @@ std/sym:rel-new(): r0
 
 The surface's shape is defined by its edges as much as its operations. `cert-compose` refuses because composition isn't generally holonomic. `decide-ode` proves non-Liouvillian only when every Kovacic case is excluded, and otherwise names the open cases. `cert-series` on `x` says `under-determined` — its recurrence genuinely leaves a seed free. Tainted operands, undeclared axes, lawless generators, dim mismatches, malformed external certificates — each is a named refusal, not a silent path. Discovery is witness-grade; declaration and derivation are theorem-grade; and the line between them is drawn where the Lean proofs draw it.
 
-Open rungs, honestly: the log part of a rational integral is named, not built. Constructing it (Rothstein–Trager, or Lazard–Rioboo–Trager to stay over ℚ) needs a `log` node in the grammar, and that same node is the first step of transcendental Risch. The Kovacic case algorithms, which would turn `open-cases` into constructed solutions, are not run. `g(name, arg)` application (composition and addition theorems like `exp(x+y)=exp(x)exp(y)`) needs substitution machinery — band 2. Nonlinear jet relations are honest-refusal territory. And the exact-op multiplication gap versus the C bigint implementations narrows, not closes, with Karatsuba.
+Open rungs, honestly: the rational log part is built only through the residue-sum lane, and only for cofactor polynomials up to degree 4 — a quintic stays a named `rsum` refusal rather than an unreadable root tower. The substitution family covers a real but bounded slice of the elementary class: denominators in θ with no dlog factor (`1/(x+log x)`) are non-elementary by Liouville-in-the-extension and refuse honestly, `√(4−x²)`-class radicands are the arcsin family the Euler lane names but doesn't take, and mixed radicands refuse rather than partially transform. The Kovacic case algorithms, which would turn `open-cases` into constructed solutions, are not run. `g(name, arg)` application (composition and addition theorems like `exp(x+y)=exp(x)exp(y)`) needs substitution machinery — band 2. Nonlinear jet relations are honest-refusal territory. And the exact-op multiplication gap versus the C bigint implementations narrows, not closes, with Karatsuba.
 
 ## Where the math comes from
 

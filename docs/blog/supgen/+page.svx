@@ -80,7 +80,7 @@ Each refusal names a distinct reason:
 - `not-found`: `derive-ode(√(1+x), max-order: 0, …)`. No certificate exists within the declared bounds, and the bounds are part of the answer.
 - `unclassifiable` from `decide-ode`, with the open Kovacic cases named. `y'' = (x²+1)·y` reports `open-cases=1`, and it does have the Liouvillian solution `e^{x²/2}`. A proof of non-Liouvillian (Airy's `y'' = x·y`, `y'' = x³·y`) is issued only when all three of Kovacic's necessary conditions fail.
 
-Rational integrands now leave the holonomic lane entirely. `decide-integral` runs Hermite reduction and returns the whole rational part of the antiderivative, checked exactly. `x/(1+x²)²` gives `−1/(2(1+x²))`. For `(x+1)/x²` it returns the rational part `−1/x` and names the remaining log part `1/x`, because the grammar has no `log` node to build it with.
+Rational integrands now leave the holonomic lane entirely. `decide-integral` runs Hermite reduction and returns the whole rational part of the antiderivative, checked exactly. `x/(1+x²)²` gives `−1/(2(1+x²))`, and `(x+1)/x²` completes to `−1/x + log x` — the Trager residue-sum lane builds the log part directly (cofactor degrees up to 4, `1/(1+x⁴)` included). A broader substitution family extends past the rational case: dlog substitution for exp/log/sqrt/atan elements, primitive-monomial cascades, `t = √x`, and Euler's `t = x + √(x²+c)` for quadratic radicands — all `checked-exact` by differentiation.
 
 <RegressionTestLink
   test={{ name: "615_051 Hermite and Kovacic", directory: "615_051_sym_hermite_kovacic", categorySlug: "600_STDLIB/615_NUM", description: "Rational parts constructed and checked exactly; Kovacic proves only when every case fails." }}
@@ -92,7 +92,7 @@ The SymPy oracle (`tests/benchmarks/016_num_precision_race/sympy_oracle.py`) che
 
 ## Open rungs
 
-The log part of a rational integral is named but not built. Building it (Rothstein–Trager, or Lazard–Rioboo–Trager to stay over ℚ) needs a `log` node, and that node is also the first step toward transcendental Risch over `exp`/`log` towers. The Kovacic case algorithms, which would turn `open-cases` into constructed solutions, are not run. `derive-ode` is witness-grade by construction: `verified=N` is a count of checked coefficients, not a proof. The theorem-grade route is `cert-of`, which derives the ODE structurally.
+The rational log part is built through the residue-sum lane up to cofactor degree 4; a quintic stays a named `rsum` refusal. The substitution family covers a bounded slice of the elementary class — dlog-free denominators in θ (`1/(x+log x)`) are non-elementary and refuse honestly, negative-leading quadratics (`√(4−x²)`) are the arcsin class the Euler lane names but doesn't take. The Kovacic case algorithms, which would turn `open-cases` into constructed solutions, are not run. `derive-ode` is witness-grade by construction: `verified=N` is a count of checked coefficients, not a proof. The theorem-grade route is `cert-of`, which derives the ODE structurally.
 
 ## Where the math comes from
 
