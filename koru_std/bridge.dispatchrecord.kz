@@ -1,0 +1,39 @@
+// Koru Standard Library: the `dispatchrecord` part of bridge — one
+// wire item dispatched AND its call_step records emitted at the single
+// boundary, including the item-coverage record for zero-dispatch
+// outcomes. Joined via `~part dispatchrecord` in bridge.kz; merged
+// into the bridge module at load.
+
+/// The `error` detail for a zero-dispatch item record — the outcome
+/// variant's own message text. Dispatch outcomes carry their detail on
+/// the TraceEntry (`failed`/`error_msg`); an item that never reached the
+/// dispatcher (interpreter parse/validation refusal, scope-not-found,
+/// budget exhaustion before the first arm) has no entry to carry it.
+fn outcomeDetail(r: Runtime.run_event.Output) []const u8 {
+    return switch (r) {
+        .result => "",
+        .unhandled_branch => |u| u.payload,
+        .exhausted => |e| e.last_event,
+        .parse_error => |e| e.message,
+        .validation_error => |e| e,
+        .shape_error => |e| e.message,
+        .event_denied => |e| e,
+        .dispatch_error => |e| e.message,
+        .scope_not_found => |e| e,
+    };
+}
+
+/// Dispatch one wire item AND emit its records — the runsteps/run-exec
+/// call sites' one-stop: outcome for the prose switch, records already
+/// serialized before the next item can dispatch.
+fn dispatchAndRecord(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environment, step: u32, of: u32, sh: []const u8) Runtime.run_event.Output {
+    const d = dispatchThroughScope(br, src, turn_env);
+    emitCallSteps(br, d.steps, outcomeKind(d.out), step, of, sh);
+    // Item-coverage invariant: an item whose run produced no dispatch
+    // records (interpreter parse/validation refusal, scope-not-found,
+    // pre-first-arm budget exhaustion) still yields exactly one record —
+    // the item verdict itself, detail in `error`.
+    if (d.steps.len == 0)
+        emitItemRecord(br, outcomeKind(d.out), outcomeDetail(d.out), "", step, of, sh);
+    return d.out;
+}

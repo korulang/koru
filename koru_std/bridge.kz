@@ -29,7 +29,6 @@
 // ============================================================================
 // CLOSE - Hang up: release everything the session still holds
 // ============================================================================
-//
 // VOID, and that is load-bearing rather than minimal. Auto-discharge can only
 // insert a disposer with nothing to bind — `auto_discharge_inserter.zig:2742`
 // refuses any tor carrying a branch or a bare return, because the inserter
@@ -69,6 +68,7 @@
 ~part calls
 ~part itemrec
 ~part dispatch
+~part dispatchrecord
 ~part core
 ~part note
 ~part state

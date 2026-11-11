@@ -81,8 +81,17 @@
 # twin emit.ln's transform-arm shape (the documented part-file
 # decl-shell category), and the named residual clusters are
 # interpreter.*/proto/quantity/bridge.turn — untouched by this diff.
+# Re-pinned members 345->349 (2026-11-11): the roll fired on the
+# call_step item-coverage commit series. The +4 members is part-file
+# decl-shell growth — today's call_step v2 splits (itemrec/dispatch/
+# argfmt parts off interpreter.run) plus this commit's own
+# bridge.dispatchrecord part (outcomeDetail + dispatchAndRecord moved
+# out of bridge.dispatch to satisfy the line-pin wall; parts are flat,
+# no nested ~part). Uncommitted guide.kz/index.kz drift in the shared
+# checkout counts per the row's uncommitted-work clause. Clusters
+# measured 324 — under pin; only members grew.
 clusters=336
-members=345
+members=349
 skipped=2
 spellings=120
 # 70/111: store.keyed.kz joined io.blk-style import preamble clone w/ interpreter.select.kz (3 shared compiler-module imports, boilerplate)

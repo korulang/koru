@@ -52,15 +52,6 @@ fn dispatchThroughScope(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environ
     return .{ .out = out, .steps = br.call_sink.items };
 }
 
-/// Dispatch one wire item AND emit its records — the runsteps/run-exec
-/// call sites' one-stop: outcome for the prose switch, records already
-/// serialized before the next item can dispatch.
-fn dispatchAndRecord(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environment, step: u32, of: u32, sh: []const u8) Runtime.run_event.Output {
-    const d = dispatchThroughScope(br, src, turn_env);
-    emitCallSteps(br, d.steps, outcomeKind(d.out), step, of, sh);
-    return d.out;
-}
-
 /// One turn's state hash — bumps the turn counter as it hashes, so every
 /// `run` call numbers itself exactly once.
 fn turnStateHash(br: *Bridge) []const u8 {
