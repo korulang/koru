@@ -1,0 +1,8 @@
+name: grammar-audit-narrow
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: register-on-miss artifact — minted by the KORU213 return-type
+      commit's Signal: line. Tombstoned 2026-11-11; the audit result it
+      describes lives in the commit message and 220_056/220_057.
