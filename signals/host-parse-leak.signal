@@ -1,0 +1,10 @@
+name: host-parse-leak
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: register-on-miss artifact — minted by the KORU213 commit's
+      Signal: line. The belief it named already lives in
+      frag-a-diagnostics-hint-is-a-claim-not-a-tested-path (a refusal
+      the host grammar enforced is a Koru diagnostic owed). Tombstoned
+      2026-11-11 — refine into a real signal only if the class recurs.
