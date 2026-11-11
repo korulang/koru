@@ -92,6 +92,7 @@ pub const FlowChecker = struct {
                 .event_decl => |*ev| {
                     if (self.mode == .frontend) {
                         try self.checkFieldDefaultsPurity(ev);
+                        try self.checkTorParamTypes(ev);
                     }
                 },
                 // `~event -> expr` bare-return impls are their own item kind;
@@ -132,6 +133,7 @@ pub const FlowChecker = struct {
                             .event_decl => |*ev| {
                                 if (self.mode == .frontend) {
                                     try self.checkFieldDefaultsPurity(ev);
+                                    try self.checkTorParamTypes(ev);
                                 }
                             },
                             .immediate_impl => |*ii| {
@@ -883,6 +885,27 @@ pub const FlowChecker = struct {
         // Output struct. Parse the fields and scan each `= <expr>` tail.
         if (ev.return_type) |rt| {
             try self.checkReturnRecordDefaults(rt, decl_loc);
+        }
+    }
+
+    /// `anytype` is a Zig parameter qualifier, not a type — on a tor field it
+    /// is spliced into the emitted Input struct where Zig's grammar wants a
+    /// type expression, and the refusal surfaced as KORU207 inside generated
+    /// code. Generics stay a comptime codegen mechanism (the type-system
+    /// ruling of 2026-06-13: no parametric grammar for tor params), so a
+    /// field names a concrete type. The scan is word-bounded so `anytypeof`
+    /// or a host type merely containing the letters does not trip it.
+    fn checkTorParamTypes(self: *FlowChecker, ev: *const ast.EventDecl) anyerror!void {
+        var decl_loc = ev.location;
+        decl_loc.line += self.reporter.injection_line_count;
+        for (ev.input.fields) |*field| {
+            if (!typeTextHasAnytype(field.type)) continue;
+            try self.reporter.addErrorAtLocation(
+                .KORU213,
+                decl_loc,
+                "tor field '{s}' declares '{s}' — `anytype` is a parameter qualifier, not a type; tor params take concrete types (parametric generics are comptime codegen, not a field grammar)",
+                .{ field.name, field.type },
+            );
         }
     }
 
@@ -3454,6 +3477,22 @@ test "KORU095 owner is a Koru string type, not a foreign entry" {
     try std.testing.expect(paramTypeIsKoruString("!String"));
     try std.testing.expect(!paramTypeIsKoruString("*File"));
     try std.testing.expect(!paramTypeIsKoruString("i64"));
+}
+
+/// Word-bounded `anytype` scan over a type string — catches the qualifier in
+/// `anytype`, `*anytype`, `?anytype`, `[]anytype`, and record text
+/// `{ v: anytype }` without matching a longer identifier containing the
+/// letters.
+fn typeTextHasAnytype(text: []const u8) bool {
+    var i: usize = 0;
+    while (std.mem.indexOfPos(u8, text, i, "anytype")) |pos| {
+        const end = pos + "anytype".len;
+        const before_ok = pos == 0 or !isIdentifierChar(text[pos - 1]);
+        const after_ok = end >= text.len or !isIdentifierChar(text[end]);
+        if (before_ok and after_ok) return true;
+        i = pos + 1;
+    }
+    return false;
 }
 
 fn pathSegmentsEqual(a: []const []const u8, b: []const []const u8) bool {

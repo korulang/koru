@@ -1,0 +1,8 @@
+// KORU213: `anytype` on a tor input field is a Zig parameter qualifier, not
+// a type — spliced into the emitted Input struct it fails Zig's grammar and
+// surfaced as KORU207 inside generated code. Generics stay comptime codegen
+// (no parametric tor grammar, ruled 2026-06-13); the field names a concrete
+// type or the declaration is refused at check time.
+
+~tor peek { v: anytype }
+~peek -> v
