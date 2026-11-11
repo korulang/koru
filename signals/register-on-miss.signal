@@ -1,0 +1,10 @@
+name: register-on-miss
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: register-on-miss artifact — a `Signal:` line that opened with
+      prose ("the census pin…", "register-on-miss minted…") minted the
+      leading token as a name. Signal names are kebab identifiers
+      declared before the dash, not sentence openers. Tombstoned
+      2026-11-11.
