@@ -1,0 +1,30 @@
+// Koru Standard Library: the `singleitem` part of bridge — the single-item
+// wire-gate refusal and its item-coverage record. Split out of `itemrec` when
+// the guide-era signature change made the file grow past its pin; joined via
+// `~part singleitem` in bridge.kz.
+
+/// The single-item wire-gate refusal, record included: residue-bind when
+/// the text is keepable, else the parse-error return. Lives here so the
+/// item-coverage record and the verdict can't drift apart.
+// The output union is the bridge's OWN `run` tor event (it carries the
+// bridge-only `residue` variant), but naming it here would make this
+// module-level signature resolve `run_event` in every program that compiles
+// std/bridge — including ones that never invoke bridge:run, where the event
+// struct is not emitted (440_004). The caller passes the type; the body is
+// analyzed only inside that tor's proc, where the symbol exists.
+fn refusedSingleItem(comptime Out: type, br: *Bridge, source: []const u8, e: GateRejection, sh: []const u8) Out {
+    if (e.not_invocation or isNoteAttempt(br, source)) {
+        const prose = std.mem.trim(u8, source, " \t\r\n");
+        const rn = bindResidue(br, prose);
+        if (rn.len > 0) {
+            emitItemRecord(br, "residue", "", rn, 1, 1, sh);
+            return .{ .residue = .{ .report = residueNote(rn, prose),
+                .observer = !e.not_invocation, .bound = rn, .text = prose } };
+        }
+    }
+    emitItemRecord(br, "parse-error", e.message, "", 1, 1, sh);
+    var err = mkErr("parse-error", e.message);
+    err.line = e.line; err.column = e.column;
+    return .{ .@"error" = err };
+}
+

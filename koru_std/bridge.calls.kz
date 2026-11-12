@@ -81,40 +81,6 @@ fn stateHash(br: *Bridge) []const u8 {
     return alloc.dupe(u8, &hex) catch "";
 }
 
-/// Append this item's dispatch records to the session's call log — one
-/// JSONL object per TraceEntry, stamped with the item context the bridge
-/// alone knows. Empty `steps` (prose, define, gate-refused items) writes
-/// nothing: a call_step exists only where a dispatch ran.
-fn emitCallSteps(br: *Bridge, steps: []const Interp.TraceEntry, outcome: []const u8, step: u32, of: u32, sh: []const u8) void {
-    if (steps.len == 0) return;
-    const alloc = br.session_arena.allocator();
-    const w = br.call_log.writer(alloc);
-    for (steps) |t| {
-        br.call_seq += 1;
-        w.print("{{\"type\":\"call_step\",\"seq\":{d},\"turn\":{d},\"step\":{d},\"of\":{d},\"item_outcome\":\"{s}\",\"state_hash\":\"{s}\",\"verb\":", .{ br.call_seq, br.turn_count, step, of, outcome, sh }) catch return;
-        w.writeAll(Interp.jsonQuote(alloc, t.event)) catch return;
-        w.writeAll(",\"args\":") catch return;
-        w.writeAll(if (t.args.len > 0) t.args else "[]") catch return;
-        w.writeAll(",\"armed\":") catch return;
-        w.writeAll(if (t.armed.len > 0) t.armed else "[]") catch return;
-        w.writeAll(",\"arm_word\":") catch return;
-        w.writeAll(Interp.jsonQuote(alloc, t.arm_word)) catch return;
-        w.writeAll(",\"arm_name\":") catch return;
-        w.writeAll(Interp.jsonQuote(alloc, t.arm orelse "")) catch return;
-        w.writeAll(",\"branch\":") catch return;
-        w.writeAll(Interp.jsonQuote(alloc, t.branch)) catch return;
-        w.writeAll(",\"payload\":") catch return;
-        w.writeAll(if (t.json.len > 0) t.json else "{}") catch return;
-        w.writeAll(",\"bound\":") catch return;
-        w.writeAll(Interp.jsonQuote(alloc, t.bound)) catch return;
-        w.writeAll(",\"handles\":") catch return;
-        w.writeAll(if (t.handles.len > 0) t.handles else "[]") catch return;
-        w.print(",\"used\":{d},\"fired_guides\":[],\"failed\":{s},\"error\":", .{ t.used, if (t.failed) "true" else "false" }) catch return;
-        w.writeAll(Interp.jsonQuote(alloc, t.error_msg)) catch return;
-        w.writeAll("}\n") catch return;
-    }
-}
-
 /// One record for an item that never reached the dispatcher — residue,
 /// define, gate refusal. The item-coverage invariant (every item yields
 /// >=1 record) makes these first-class: `verb` is empty, `item_outcome`

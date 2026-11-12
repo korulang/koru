@@ -2,29 +2,21 @@
 // multi-item turn's per-step loop. Joined via `~part runsteps` in
 // bridge.kz; merged into the bridge module at load.
 
-/// Run a segmented turn item by item: define items install into the session,
-/// gate refusals bind residue or strike as wire failures, dispatched items
-/// report value + durable binding (a chain's inner links surface through
-/// their trace line). Execution continues past every refusal — a partial
-/// program RUNS, and the model learns every step's outcome in one
-/// observation instead of discovering failures one turn at a time.
+/// Run a segmented turn item by item; execution continues past every
+/// refusal — a partial program RUNS, and the model learns every step's
+/// outcome in one observation instead of one turn at a time.
 fn runSteps(br: *Bridge, source: []const u8, items: []const TurnItem, sh: []const u8) StepRun {
     var report = std.ArrayList(u8){};
     defer report.deinit(br.allocator);
-    // The turn's lexical env — an arm binding (`| ok b |>`) lands here so
-    // every later item of this reply sees it: the binding's scope is the
-    // rest of the turn's tree, the language's own rule. Arena-owned, dies
-    // when the turn's report is built; session_env's `rN` is the durable
-    // layer above it.
+    // The turn's lexical env: an arm binding lands here so every later item
+    // sees it. Arena-owned, dies with the report; `rN` is the durable layer.
     var turn_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer turn_arena.deinit();
     var turn_env = Environment.init(turn_arena.allocator());
     const writer = report.writer(br.allocator);
     var used_total: u64 = 0;
-    // Steps that failed as wire — parse-error, validation, denied, dispatch —
-    // count here. Residue steps do NOT: prose is the sanctioned channel and
-    // binds for redelivery, but a malformed step beside a working one is a
-    // rejected wire reply and the caller's strike bound needs to see it.
+    // Wire failures (parse/validation/denied/dispatch) count here; residue
+    // does NOT — prose is sanctioned, a malformed sibling is not.
     var wire_failures: u32 = 0;
     var attempted: u32 = 0;
     const total: u32 = @intCast(items.len);
@@ -56,6 +48,10 @@ fn runSteps(br: *Bridge, source: []const u8, items: []const TurnItem, sh: []cons
         }
         all_residue = false;
         const result = dispatchAndRecord(br, item, &turn_env, step, total, sh);
+        // The item's guide lines were rendered by the same lookup that
+        // stamped its call_step records; they follow the step outcome so a
+        // later item's report can never borrow them.
+        const guide_lines = br.guide_text.items;
         switch (result) {
             .result => |r| {
                 used_total += r.used;
@@ -68,6 +64,7 @@ fn runSteps(br: *Bridge, source: []const u8, items: []const TurnItem, sh: []cons
                         else => r.value.toJsonBuf(),
                     } else "";
                     writer.print("step {d}/{d} abandoned: {s}\n", .{ step, total, reason }) catch {};
+                    if (guide_lines.len > 0) writer.print("{s}", .{guide_lines}) catch {};
                     break;
                 }
                 const bound = if (r.bound.len > 0) r.bound else bindResult(br, r.value);
@@ -87,6 +84,7 @@ fn runSteps(br: *Bridge, source: []const u8, items: []const TurnItem, sh: []cons
                     // own words, not the envelope around them.
                     const reason = abandonReason(u.payload);
                     writer.print("step {d}/{d} abandoned: {s}\n", .{ step, total, reason }) catch {};
+                    if (guide_lines.len > 0) writer.print("{s}", .{guide_lines}) catch {};
                     break;
                 }
                 if (u.branch.len == 0) {
@@ -129,6 +127,7 @@ fn runSteps(br: *Bridge, source: []const u8, items: []const TurnItem, sh: []cons
                 writer.print("step {d}/{d} scope-not-found: {s}\n", .{ step, total, e }) catch {};
             },
         }
+        if (guide_lines.len > 0) writer.print("{s}", .{guide_lines}) catch {};
     }
     return .{
         .report = std.heap.page_allocator.dupe(u8, report.items) catch "",

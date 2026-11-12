@@ -29,45 +29,6 @@ fn mkErr(kind: []const u8, message: []const u8) RunError {
     };
 }
 
-// The single-item dispatch boundary: copy the interpreter's fine-grained
-// outcome into run's two-tier shape — findings pass through verbatim, and
-// every failure class packs into RunError with `kind` naming the variant.
-fn runOutcome(br: *Bridge, r: Runtime.run_event.Output, comptime Out: type) Out {
-    return switch (r) {
-        .result => |v| .{ .result = .{
-            .value = v.value, .used = v.used, .handles = v.handles,
-            // The terminal dispatch bound itself via the trace; a turn
-            // that dispatched nothing (pure flow) still needs a name.
-            .bound = if (v.bound.len > 0) v.bound else bindResult(br, v.value),
-            .trace = v.trace,
-        } },
-        .unhandled_branch => |u| .{ .unhandled_branch = .{ .branch = u.branch, .payload = u.payload, .handles = u.handles, .bound = u.bound } },
-        .exhausted => |e| blk: {
-            var err = mkErr("exhausted", "the turn exhausted its cost budget");
-            err.used = e.used; err.last_event = e.last_event; err.handles = e.handles;
-            break :blk .{ .@"error" = err };
-        },
-        .parse_error => |e| blk: {
-            var err = mkErr("parse-error", e.message);
-            err.line = e.line; err.column = e.column;
-            break :blk .{ .@"error" = err };
-        },
-        .validation_error => |e| .{ .@"error" = mkErr("validation-error", e) },
-        .shape_error => |e| blk: {
-            var err = mkErr("shape-error", e.message);
-            err.branch = e.branch; err.field = e.field orelse "";
-            break :blk .{ .@"error" = err };
-        },
-        .event_denied => |e| .{ .@"error" = mkErr("event-denied", e) },
-        .dispatch_error => |e| blk: {
-            var err = mkErr("dispatch-error", e.message);
-            err.event_name = e.event_name; err.trace = e.trace;
-            break :blk .{ .@"error" = err };
-        },
-        .scope_not_found => |e| .{ .@"error" = mkErr("scope-not-found", e) },
-    };
-}
-
 // ============================================================================
 // ERROR-DECODE — the fine-grained arm set for callers that distinguish
 // failure classes. `e` is the RunError a `run`'s `| error` arm bound; each

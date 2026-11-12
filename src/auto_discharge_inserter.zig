@@ -156,6 +156,27 @@ fn synthPanicBody(
     );
 }
 
+fn guideSideMatches(pattern: []const u8, actual: []const u8) bool {
+    return std.mem.eql(u8, pattern, "*") or std.mem.eql(u8, pattern, actual);
+}
+
+/// Escape a guide template for embedding in a synthesized `@panic("...")`
+/// string literal, capped so a long lesson cannot flood the crash line.
+fn guideEscapeForPanic(allocator: std.mem.Allocator, lesson: []const u8) ![]const u8 {
+    var out = std.ArrayList(u8).empty;
+    errdefer out.deinit(allocator);
+    var i: usize = 0;
+    while (i < lesson.len and out.items.len < 240) : (i += 1) {
+        switch (lesson[i]) {
+            '"' => try out.appendSlice(allocator, "\\\""),
+            '\\' => try out.appendSlice(allocator, "\\\\"),
+            '\n', '\r', '\t' => try out.append(allocator, ' '),
+            else => try out.append(allocator, lesson[i]),
+        }
+    }
+    return out.toOwnedSlice(allocator);
+}
+
 /// `errors.writeCandidateNames` wants a plain fn; both the candidate type and
 /// its display rule live on the inserter.
 fn disposalCandidateName(d: AutoDischargeInserter.DisposalEvent) []const u8 {
@@ -200,6 +221,11 @@ pub const AutoDischargeInserter = struct {
     /// in seedRecordFieldObligations (the phantom checker's twin, 699_031).
     prog: ?*const ast.Program = null,
     prototype_mode: bool = false, // When true (~[prototype]), an unhandled required TERMINAL branch is synthesized as a @panic hole instead of a KORU022 error — same body as an unhandled | ?! panic branch (400_160)
+    /// ~[prototype] × std/guide: the teaching table, harvested from
+    /// `std/guide:add` invocation flows already in the AST — the data never
+    /// touches disk. Built lazily on the first hole lookup.
+    guide_entries: std.ArrayList(GuideEntry) = .empty,
+    guide_entries_loaded: bool = false,
 
     /// Error set for recursive functions that need explicit error types
     pub const RecursiveError = std.mem.Allocator.Error || error{ ValidationFailed, NoSpaceLeft };
@@ -208,6 +234,13 @@ pub const AutoDischargeInserter = struct {
     const EventInfo = struct {
         decl: *const ast.EventDecl,
         module_name: []const u8,
+    };
+
+    /// One `guide:add` harvest: canonical `tor->branch` key and template
+    /// text — both BORROWED slices of the comment item that carries them.
+    const GuideEntry = struct {
+        key: []const u8,
+        tmpl: []const u8,
     };
 
     /// A disposal event that can satisfy an obligation
@@ -996,6 +1029,7 @@ pub const AutoDischargeInserter = struct {
         self.event_map.deinit();
         self.label_seed_map.deinit();
         self.verified_produces.deinit();
+        self.guide_entries.deinit(self.allocator);
     }
 
     /// Main entry point - run the auto-discharge pass on a program
@@ -4739,6 +4773,81 @@ pub const AutoDischargeInserter = struct {
         return segments;
     }
 
+    /// Harvest every `guide:add` entry in the program into guide_entries —
+    /// once per run, and only when a prototype hole asks. `guide:add`'s
+    /// transform replaces each invocation flow with a comment item carrying
+    /// `guide-entry\t<key>\t<template>` (its args are all comptime-only, so
+    /// an empty SiteResult would have the runner delete the flow outright) —
+    /// the table lives in the AST as dead data, never on disk.
+    fn ensureGuideEntries(self: *AutoDischargeInserter) !void {
+        if (self.guide_entries_loaded) return;
+        self.guide_entries_loaded = true;
+        const prog = self.prog orelse return;
+        try self.harvestGuideItems(prog.items);
+    }
+
+    fn harvestGuideItems(self: *AutoDischargeInserter, items: []const ast.Item) !void {
+        for (items) |*it| {
+            switch (it.*) {
+                .module_decl => |*m| try self.harvestGuideItems(m.items),
+                .comment => |*c| try self.harvestGuideComment(c),
+                else => {},
+            }
+        }
+    }
+
+    fn harvestGuideComment(self: *AutoDischargeInserter, c: *const ast.Comment) !void {
+        const content = std.mem.trimLeft(u8, c.content, " \t");
+        if (!std.mem.startsWith(u8, content, "guide-entry\t")) return;
+        const body = content["guide-entry\t".len..];
+        const tab = std.mem.indexOfScalar(u8, body, '\t') orelse return;
+        const key = body[0..tab];
+        const tmpl = body[tab + 1 ..];
+        if (key.len == 0 or tmpl.len == 0) return;
+        try self.guide_entries.append(self.allocator, .{ .key = key, .tmpl = tmpl });
+    }
+
+    /// Look up the guide lesson for a prototype hole. Exact `tor->branch`
+    /// keys win across all candidate spellings; `*` sides are wildcards
+    /// ordered by specificity — the same contract as std/guide's lookup.
+    /// The returned template is a BORROWED AST slice — do not free it.
+    fn guideLessonForHole(
+        self: *AutoDischargeInserter,
+        tor_names: []const []const u8,
+        branch: []const u8,
+    ) !?[]const u8 {
+        try self.ensureGuideEntries();
+        const entries = self.guide_entries.items;
+
+        for (tor_names) |tn| {
+            const exact = try std.fmt.allocPrint(self.allocator, "{s}->{s}", .{ tn, branch });
+            defer self.allocator.free(exact);
+            for (entries) |e| {
+                if (std.mem.eql(u8, e.key, exact)) return e.tmpl;
+            }
+        }
+
+        var best_score: usize = 0;
+        var best_tmpl: ?[]const u8 = null;
+        for (entries) |e| {
+            const arrow = std.mem.indexOf(u8, e.key, "->") orelse continue;
+            const ps = e.key[0..arrow];
+            const pd = e.key[arrow + 2 ..];
+            if (pd.len == 0) continue;
+            for (tor_names) |tn| {
+                if (!guideSideMatches(ps, tn)) continue;
+                if (!guideSideMatches(pd, branch)) continue;
+                const wild = std.mem.eql(u8, ps, "*") or std.mem.eql(u8, pd, "*");
+                const score: usize = if (wild) 1 else 2;
+                if (score > best_score) {
+                    best_score = score;
+                    best_tmpl = e.tmpl;
+                }
+            }
+        }
+        return best_tmpl;
+    }
+
     fn pathToString(self: *AutoDischargeInserter, path: ast.DottedPath) ![]const u8 {
         return std.mem.join(self.allocator, ".", path.segments);
     }
@@ -5279,8 +5388,21 @@ pub const AutoDischargeInserter = struct {
             std.debug.print("📋 prototype gaps — tor '{s}' ({s}:{d}):\n", .{
                 ev_name, flow.location.file, flow.location.line,
             });
+            // Guide keys are spelled as the author wrote them in guide:add —
+            // a bare tor name for local tors. Try the full dotted path and
+            // its last segment so `mod.run` still finds a `run->branch` key.
+            var hole_tor_names: [2][]const u8 = .{ ev_name, ev_name };
+            var hole_tor_count: usize = 1;
+            if (std.mem.lastIndexOfScalar(u8, ev_name, '.')) |dot| {
+                hole_tor_names[1] = ev_name[dot + 1 ..];
+                hole_tor_count = 2;
+            }
+            const hole_tors = hole_tor_names[0..hole_tor_count];
             for (missing_prototype.items) |name| {
                 std.debug.print("     hole       — '{s}' unhandled → @panic if reached\n", .{name});
+                if (try self.guideLessonForHole(hole_tors, name)) |lesson| {
+                    std.debug.print("       guide    — {s}\n", .{lesson});
+                }
             }
             for (flow.body.continuations, 0..) |*cont, i| {
                 if (prune_flags[i]) {
@@ -5403,7 +5525,25 @@ pub const AutoDischargeInserter = struct {
         for (missing_prototype.items, 0..) |branch_name, i| {
             const idx = join_idx + missing_optional.items.len +
                 missing_panic.items.len + i;
-            const panic_msg = try std.fmt.allocPrint(
+            // A hole with a guide lesson panics WITH the lesson — the crash
+            // line is the moment the author needs the teaching most.
+            var hole_tor_names: [2][]const u8 = .{ owner_name, owner_name };
+            var hole_tor_count: usize = 1;
+            if (std.mem.lastIndexOfScalar(u8, owner_name, '.')) |dot| {
+                hole_tor_names[1] = owner_name[dot + 1 ..];
+                hole_tor_count = 2;
+            }
+            const hole_tors = hole_tor_names[0..hole_tor_count];
+            const panic_msg = if (try self.guideLessonForHole(hole_tors, branch_name)) |lesson| blk: {
+                const escaped = try guideEscapeForPanic(self.allocator, lesson);
+                const msg = try std.fmt.allocPrint(
+                    self.allocator,
+                    "@panic(\"unhandled branch '{s}' reached — prototype hole (~[prototype]); this path is not built yet. guide: {s}\");",
+                    .{ branch_name, escaped },
+                );
+                self.allocator.free(escaped);
+                break :blk msg;
+            } else try std.fmt.allocPrint(
                 self.allocator,
                 "@panic(\"unhandled branch '{s}' reached — prototype hole (~[prototype]); this path is not built yet\");",
                 .{branch_name},

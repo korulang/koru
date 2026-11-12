@@ -1,0 +1,169 @@
+// Koru Standard Library: the `guide` part of bridge — dispatch-time guide
+// lookup, the per-session fired-set ledger, and the rendered lines that
+// ride the item's own report. Joined via `~part guide` in bridge.kz;
+// merged into the bridge module at load.
+//
+// The table is `std/guide` compiled data: every `std/guide:add(...)` in the
+// program harvests to `<cwd>/guide_table.txt` at build time, and the table
+// lands beside the binary. This is the runtime consumer — at dispatch the
+// trace record already names the (tor, branch) that resolved, so the lookup
+// happens where the fact is, not in a prompt assembler that could disagree
+// with the log.
+//
+// Why the reader lives here and not in a call to `std/guide:lookup`: an
+// import whose symbols nothing references is not emitted into the program
+// (measured — a side-effect-only guide import still runs the add transform
+// and writes the table, but leaves no module to call). The bridge is the
+// runtime reader, so it owns the read. The matching rule is `std/guide`'s
+// exactly (guide.kz: matchKey) — exact key first, then best wildcard
+// specificity; keep the two in step. The KEY CONTRACT is the shared thing:
+// `tor` or `tor->branch`, both sides spelled by the same convention.
+//
+// Two rows can fire on one dispatch, in this order:
+//   1. the EDGE row `tor->branch` — what this outcome means, where it goes
+//      (an ordinary result's branch word is `ok`, so `book-reservation->ok`);
+//   2. the TOR row `tor` — what this verb takes/returns (field truth).
+// Each TABLE key fires at most once per session (per-session graduation; a
+// wildcard row attributes to itself). The fired key is stamped into the
+// call_step record AND its line appended to the item's report from the same
+// lookup, so the model view and the log cannot disagree by construction.
+
+/// One matched table row — the pattern key that fired and its template.
+const GuideMatch = struct {
+    key: []const u8,
+    template: []const u8,
+};
+
+/// Up to two fired rows for one dispatch (edge first, then tor-level).
+const FiredGuides = struct {
+    items: [2]?[]const u8 = .{ null, null },
+    len: u8 = 0,
+};
+
+fn guideSideMatches(pat: []const u8, actual: []const u8) bool {
+    return std.mem.eql(u8, pat, "*") or std.mem.eql(u8, pat, actual);
+}
+
+/// Specificity of one table pattern against the query key: 2 = both sides
+/// concrete, 1 = one wildcard side, 0 = no match. Same rule as
+/// `std/guide`'s matchKey (guide.kz) — a drift here would make the runtime
+/// fire a different row than a Koru-level lookup for the same key.
+fn guideMatchScore(pattern: []const u8, query: []const u8) usize {
+    const parrow = std.mem.indexOf(u8, pattern, "->");
+    const qarrow = std.mem.indexOf(u8, query, "->");
+    if (parrow == null and qarrow == null) {
+        return if (guideSideMatches(pattern, query)) 2 else 0;
+    }
+    if (parrow == null or qarrow == null) return 0;
+    const ps = pattern[0..parrow.?];
+    const pd = pattern[parrow.? + 2 ..];
+    const qs = query[0..qarrow.?];
+    const qd = query[qarrow.? + 2 ..];
+    if (!guideSideMatches(ps, qs) or !guideSideMatches(pd, qd)) return 0;
+    const wild = std.mem.eql(u8, ps, "*") or std.mem.eql(u8, pd, "*");
+    return if (wild) 1 else 2;
+}
+
+/// Read `<exe dir>/guide_table.txt` and return the row matching `qkey`:
+/// exact key first, then the best wildcard specificity. Silence when the
+/// table is absent or nothing matches — the default every read gives.
+fn lookupGuide(alloc: std.mem.Allocator, qkey: []const u8) ?GuideMatch {
+    var exebuf: [4096]u8 = undefined;
+    const exe = std.fs.selfExePath(&exebuf) catch return null;
+    const dir = std.fs.path.dirname(exe) orelse ".";
+    const tpath = std.fmt.allocPrint(std.heap.page_allocator, "{s}/guide_table.txt", .{dir}) catch return null;
+    defer std.heap.page_allocator.free(tpath);
+    const f = std.fs.cwd().openFile(tpath, .{}) catch return null;
+    defer f.close();
+    const data = f.readToEndAlloc(std.heap.page_allocator, 1 << 20) catch return null;
+    defer std.heap.page_allocator.free(data);
+
+    var best_score: usize = 0;
+    var best_key: ?[]const u8 = null;
+    var best_tmpl: ?[]const u8 = null;
+    var it = std.mem.splitScalar(u8, data, '\n');
+    while (it.next()) |line| {
+        const tab = std.mem.indexOfScalar(u8, line, '\t') orelse continue;
+        const k = line[0..tab];
+        const t = line[tab + 1 ..];
+        if (std.mem.eql(u8, k, qkey)) {
+            const owned_key = alloc.dupe(u8, k) catch return null;
+            const owned_tmpl = alloc.dupe(u8, t) catch {
+                alloc.free(owned_key);
+                return null;
+            };
+            return .{ .key = owned_key, .template = owned_tmpl };
+        }
+        const score = guideMatchScore(k, qkey);
+        if (score > best_score) {
+            best_score = score;
+            best_key = k;
+            best_tmpl = t;
+        }
+    }
+    const bk = best_key orelse return null;
+    const bt = best_tmpl orelse return null;
+    const owned_key = alloc.dupe(u8, bk) catch return null;
+    const owned_tmpl = alloc.dupe(u8, bt) catch {
+        alloc.free(owned_key);
+        return null;
+    };
+    return .{ .key = owned_key, .template = owned_tmpl };
+}
+
+/// The branch word a dispatch resolved to — read from the record's own
+/// facts. A failed dispatch IS the tor's `error` edge; a named branch is
+/// its own word (the generated airline tors declare `| ok | error`, so an
+/// ordinary success records `ok`); an ordinary result with no branch word
+/// has no edge row.
+fn guideBranchWord(t: Interp.TraceEntry) []const u8 {
+    if (t.failed) return "error";
+    return t.branch;
+}
+
+/// The item-local rendered guide lines. Cleared at each item boundary so a
+/// refused or defined item can never echo a previous item's teaching.
+fn clearItemGuides(br: *Bridge) void {
+    br.guide_text.clearRetainingCapacity();
+}
+
+/// Fire one TABLE row for this dispatch: skip when it already fired this
+/// session, otherwise record the key in the ledger and append its rendered
+/// line to the item's report. The arena owns the key string.
+fn fireGuideRow(br: *Bridge, m: GuideMatch) ?[]const u8 {
+    defer std.heap.page_allocator.free(m.key);
+    defer std.heap.page_allocator.free(m.template);
+    if (br.guide_fired.contains(m.key)) return null;
+    const arena = br.session_arena.allocator();
+    const owned_key = arena.dupe(u8, m.key) catch return null;
+    br.guide_fired.put(br.allocator, owned_key, {}) catch return null;
+    const w = br.guide_text.writer(arena);
+    w.print("guide {s}: {s}\n", .{ m.key, m.template }) catch {};
+    return owned_key;
+}
+
+/// Every guide row that fires for one dispatch, edge first then tor-level.
+fn fireGuideForEntry(br: *Bridge, t: Interp.TraceEntry) FiredGuides {
+    var fired = FiredGuides{};
+    if (t.event.len == 0) return fired;
+    const branch = guideBranchWord(t);
+    if (branch.len > 0) {
+        var kbuf: [512]u8 = undefined;
+        const q = std.fmt.bufPrint(&kbuf, "{s}->{s}", .{ t.event, branch }) catch null;
+        if (q) |qk| {
+            if (lookupGuide(std.heap.page_allocator, qk)) |m| {
+                if (fireGuideRow(br, m)) |k| {
+                    fired.items[fired.len] = k;
+                    fired.len += 1;
+                }
+            }
+        }
+    }
+    if (lookupGuide(std.heap.page_allocator, t.event)) |m| {
+        if (fireGuideRow(br, m)) |k| {
+            fired.items[fired.len] = k;
+            fired.len += 1;
+        }
+    }
+    return fired;
+}

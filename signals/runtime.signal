@@ -1,0 +1,8 @@
+name: runtime
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: register-on-miss artifact — a prose `Signal:` line minted the bare
+      word "runtime" as a name. Never a signal; protocol noise, tombstoned
+      2026-11-12 (inherited orphan, not authored by the R4 commit).

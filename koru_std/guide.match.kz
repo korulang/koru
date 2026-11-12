@@ -1,0 +1,74 @@
+// guide.match.kz — the table read + match half of std/guide: the row
+// lookup every entry point shares (exact key first, then best wildcard
+// specificity). Split out of guide.kz when the pub match API grew the file
+// past its pin; joined via `~part match`.
+
+/// A matched table row: the PATTERN key that fired (which may be the query
+/// key itself, or a wildcard row like `*->error`) and its template. Both
+/// slices are owned by the caller's allocator.
+pub const GuideMatch = struct {
+    key: []const u8,
+    template: []const u8,
+};
+
+// Shared table read + match for every entry point. `qkey` is already in
+// canonical `src->dest` (or bare-src) form — callers own normalization:
+// `default` runs the Expression text through targetKey, `lookup` takes a
+// caller-built key: string verbatim (guide:key output or a literal).
+// Returns the matched ROW, not just its template: a dispatch that fires a
+// wildcard row must be attributable to the row that actually fired (the
+// call_step `fired_guides` field records that key, never the query).
+pub fn lookupMatch(alloc: std.mem.Allocator, qkey: []const u8) ?GuideMatch {
+    // Table lives beside the executable (the add transform writes it to the
+    // compile cwd, which is also where the binary lands) — cwd is NOT reliable.
+    var exebuf: [4096]u8 = undefined;
+    const exe = std.fs.selfExePath(&exebuf) catch return null;
+    const dir = std.fs.path.dirname(exe) orelse ".";
+    const tpath = std.fmt.allocPrint(std.heap.page_allocator, "{s}/guide_table.txt", .{dir}) catch return null;
+    const f = std.fs.cwd().openFile(tpath, .{}) catch return null;
+    defer f.close();
+    const data = f.readToEndAlloc(std.heap.page_allocator, 1 << 20) catch return null;
+    defer std.heap.page_allocator.free(data);
+
+    // Pass 1: exact key match. Pass 2: best wildcard specificity.
+    var best_score: usize = 0;
+    var best_key: ?[]const u8 = null;
+    var best_tmpl: ?[]const u8 = null;
+    var it = std.mem.splitScalar(u8, data, '\n');
+    while (it.next()) |line| {
+        const tab = std.mem.indexOfScalar(u8, line, '\t') orelse continue;
+        const k = line[0..tab];
+        const t = line[tab + 1 ..];
+        if (std.mem.eql(u8, k, qkey)) {
+            const owned_key = alloc.dupe(u8, k) catch return null;
+            const owned_tmpl = alloc.dupe(u8, t) catch {
+                alloc.free(owned_key);
+                return null;
+            };
+            return .{ .key = owned_key, .template = owned_tmpl };
+        }
+        const score = matchKey(k, qkey);
+        if (score > best_score) {
+            best_score = score;
+            best_key = k;
+            best_tmpl = t;
+        }
+    }
+    const bk = best_key orelse return null;
+    const bt = best_tmpl orelse return null;
+    const owned_key = alloc.dupe(u8, bk) catch return null;
+    const owned_tmpl = alloc.dupe(u8, bt) catch {
+        alloc.free(owned_key);
+        return null;
+    };
+    return .{ .key = owned_key, .template = owned_tmpl };
+}
+
+/// Template-only projection of `lookupMatch` — the tor entry points'
+/// contract. Callers that need attribution use `lookupMatch` directly.
+pub fn lookupTemplate(qkey: []const u8) ?[]const u8 {
+    const m = lookupMatch(std.heap.page_allocator, qkey) orelse return null;
+    std.heap.page_allocator.free(m.key);
+    return m.template;
+}
+

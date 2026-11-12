@@ -18,6 +18,8 @@
 // The key contract: BOTH sides build keys through guide:key so the
 // attach-time name and the query-time string can never drift.
 
+~part match
+
 const std = @import("std");
 const Root = @import("root");
 
@@ -49,6 +51,8 @@ const Root = @import("root");
 } -> SiteResult
 
 ~proc add|zig {
+    const ast = @import("ast");
+
     // Harvest this invocation: normalize expr -> canonical key, append
     // (key, template) to guide_table.txt in the compile cwd. SPIKE delivery —
     // production path is AST `appended` injection; file I/O proves the loop.
@@ -70,7 +74,20 @@ const Root = @import("root");
     const line = std.fmt.allocPrint(allocator, "{s}\t{s}\n", .{ key, tmpl }) catch return .{};
     defer allocator.free(line);
     f.writeAll(line) catch {};
-    return .{};
+
+    // AST delivery: this flow's args are all comptime-only, so an empty
+    // SiteResult would have the runner DELETE the flow — the entry would
+    // survive only in the file above. Replacing the flow with a comment
+    // item carrying `guide-entry\t<key>\t<template>` keeps the table inside
+    // the AST for compile-time consumers (prototype-hole synthesis reads
+    // it there). The comment is inert dead data downstream.
+    const flow = &item.flow;
+    const entry_text = std.fmt.allocPrint(allocator, "guide-entry\t{s}\t{s}", .{ key, tmpl }) catch return .{};
+    allocator.free(key);
+    return .{ .replacement = ast.Item{ .comment = .{
+        .content = entry_text,
+        .location = flow.location,
+    } } };
 }
 
 // ============================================================================
@@ -127,43 +144,21 @@ fn matchKey(pattern: []const u8, query: []const u8) usize {
 ~proc default|zig {
     const qkey = targetKey(std.heap.page_allocator, expr) catch
         return .{ .not_found = .{} };
-    // Table lives beside the executable (transform writes it to the compile
-    // cwd, which is also where the binary lands) — cwd is NOT reliable.
-    var exebuf: [4096]u8 = undefined;
-    const exe = std.fs.selfExePath(&exebuf) catch
-        return .{ .not_found = .{} };
-    const dir = std.fs.path.dirname(exe) orelse ".";
-    const tpath = std.fmt.allocPrint(std.heap.page_allocator, "{s}/guide_table.txt", .{dir}) catch
-        return .{ .not_found = .{} };
-    const f = std.fs.cwd().openFile(tpath, .{}) catch
-        return .{ .not_found = .{} };
-    defer f.close();
-    const data = f.readToEndAlloc(std.heap.page_allocator, 1 << 20) catch
-        return .{ .not_found = .{} };
-    defer std.heap.page_allocator.free(data);
+    if (lookupTemplate(qkey)) |t| return .{ .guide = t };
+    return .{ .not_found = .{} };
+}
 
-    // Pass 1: exact key match. Pass 2: best wildcard specificity.
-    var best_score: usize = 0;
-    var best_tmpl: ?[]const u8 = null;
-    var it = std.mem.splitScalar(u8, data, '\n');
-    while (it.next()) |line| {
-        const tab = std.mem.indexOfScalar(u8, line, '\t') orelse continue;
-        const k = line[0..tab];
-        const t = line[tab + 1 ..];
-        if (std.mem.eql(u8, k, qkey)) {
-            const out = std.heap.page_allocator.dupe(u8, t) catch t;
-            return .{ .guide = out };
-        }
-        const score = matchKey(k, qkey);
-        if (score > best_score) {
-            best_score = score;
-            best_tmpl = t;
-        }
-    }
-    if (best_tmpl) |t| {
-        const out = std.heap.page_allocator.dupe(u8, t) catch t;
-        return .{ .guide = out };
-    }
+// Evaluated-key entry point: `key: string` goes through the emitter's normal
+// expression path, so callers compose keys with guide:key(...) or build them
+// dynamically — interpolation, concatenation, whatever the language gives.
+// The `tor -> branch` transition sugar stays on `default`; both share
+// lookupTemplate, so wildcard semantics can never drift between them.
+~pub tor lookup { key: string }
+| guide string
+| not-found
+
+~proc lookup|zig {
+    if (lookupTemplate(key)) |t| return .{ .guide = t };
     return .{ .not_found = .{} };
 }
 
@@ -264,6 +259,10 @@ fn walkItems(allocator: std.mem.Allocator, items: anytype, module_name: []const 
     errdefer entries.deinit(allocator);
 
     try walkItems(allocator, ctx.ast.items, "main", &entries);
+
+    // No entries, no artifact — an always-imported guide must not drop a
+    // stray .guide_table beside every binary that never attaches a lesson.
+    if (entries.items.len == 0) return ctx;
 
     // Emit TSV table next to the output binary.
     var out_path_buf: [4096]u8 = undefined;

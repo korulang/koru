@@ -1,13 +1,10 @@
 // Resource Bridge Standard Library — persistent handle storage for long-running interactive sessions (Hollywood OS mode)
-//
 // A Bridge owns a HandlePool that outlives any single interpreter run, so a
 // resource opened on one turn is still held on the next — the human or the agent
 // can act on it three turns later and the obligation is still outstanding.
-//
 // The session is itself an obligation: `create` mints `<session!>` and only
 // `close` discharges it, so a bridge cannot be brought into being and forgotten.
 // You cannot forget to hang up.
-//
 // A bridge is bound to a SCOPE at birth. The scope is the vocabulary: the set of
 // tors that may act on what the bridge holds, and — through each obligation's
 // recorded discharge tor — the knowledge of how to release it. That is what
@@ -16,10 +13,7 @@
 ~import std/interpreter
 ~import std/runtime
 // `const std` and the interpreter-type re-exports moved to the `types` part.
-// Bridge: persistent session state
-// ============================================================================
 // GET_HANDLES - Query handles currently on the bridge
-// ============================================================================
 
 ~pub tor get-handles { br: *Bridge<session> } -> u32
 
@@ -66,9 +60,13 @@
 ~part wirerun
 ~part runsteps
 ~part calls
+~part recording
 ~part itemrec
+~part singleitem
 ~part dispatch
 ~part dispatchrecord
+~part guide
+~part outcome
 ~part core
 ~part note
 ~part state

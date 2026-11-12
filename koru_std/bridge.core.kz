@@ -4,56 +4,43 @@
 // Joined via `~part core` in bridge.kz; merged into the bridge
 // module at load.
 //
+
 pub const Bridge = struct {
     pool: HandlePool,
     allocator: std.mem.Allocator,
     session_id: []const u8,
-    /// The registered scope this session's resources belong to. Discharge is
-    /// dispatched through it, so a bridge with no reachable scope can hold
-    /// handles but cannot release them — and `close` reports exactly that.
+    /// The registered scope this session's resources belong to — discharge
+    /// runs through it, so a scopeless bridge holds but cannot release.
     scope: []const u8,
     created_at: i64,
     last_active: i64,
-    /// Runtime-defined flows (the REPL define) — durable per session, so a
-    /// verb defined on one turn is callable on the next, and its calls run
-    /// through the same possession machinery as any other dispatch.
+    /// Runtime-defined flows (the REPL define) — durable per session.
     defined: *DefinedFlows,
-    /// Session grant for the introspection verbs `vocabulary()` and
-    /// `grammar()`: when set they dispatch as host verbs through the normal
-    /// wire path; when not, they are event-denied like any unvocabularied
-    /// word. There is no other way to ask the session what it knows.
+    /// Session grant for the `vocabulary()`/`grammar()` introspection verbs.
     introspection: bool,
-    /// The world dir this session's defined flows persist into, or null —
-    /// set by `create(world: ...)`, owned here, freed by deinit.
+    /// The world dir defined flows persist into, or null (set by create).
     world: ?[]const u8,
-    /// Durable session bindings — values a turn named that stay named on
-    /// the next turn. `run` auto-binds every result as `r{N}` and the
-    /// `bind` host verb writes here directly; both are seeded into each
-    /// run's env, so `r3.user_id` three turns later resolves for real.
-    /// Owned by `session_arena` — never the run arena, which resets per run.
+    /// Durable session bindings (`rN` auto-binds, `bind` writes). Owned by
+    /// `session_arena` — never the run arena, which resets per run.
     session_env: *Environment,
-    /// Everything a bound name points at lives here; `deinit` frees it all
-    /// in one shot — tracking individual dupes across a growing env is the
-    /// leak the leak check just caught. Heap-allocated because the env's
-    /// allocator captures the arena's ADDRESS — a struct field's address
-    /// changes when `init` returns the Bridge by value.
+    /// Everything a bound name points at lives here; deinit frees it in one
+    /// shot. Heap-allocated: the env's allocator captures the arena's address.
     session_arena: *std.heap.ArenaAllocator,
     /// Next auto-bind ordinal — names are `r1`, `r2`, … in run order.
     bound_count: u64,
-    /// Scopes mounted at runtime by `std/bridge:mount` (the `mount` part).
-    /// The lib handles ride beside them until `deinit` — a module the pool
-    /// still holds handles against cannot leave.
+    /// Scopes mounted at runtime by `std/bridge:mount`; libs ride beside them.
     mounted_scopes: std.ArrayListUnmanaged(Runtime.ScopeRuntime),
     mounted_libs: std.ArrayListUnmanaged(std.DynLib),
-    /// The `call_step` stream (the `calls` part): turn/seq counters, the
-    /// per-item trace sink dispatchThroughScope fills, and the JSONL log
-    /// `take-calls` drains. Session-arena owned — records outlive the run
-    /// arena they were captured in because emitCallSteps serializes before
-    /// the next dispatch.
+    /// The call_step stream (the `recording` part): counters, the per-item
+    /// trace sink, the JSONL log. Session-arena owned; serialized at dispatch.
     turn_count: u64,
     call_seq: u64,
     call_sink: std.ArrayListUnmanaged(Interp.TraceEntry),
     call_log: std.ArrayListUnmanaged(u8),
+    /// Guide layer (the `guide` part): TABLE keys fired this session (once
+    /// per key) and the current item's rendered lines.
+    guide_fired: std.StringHashMapUnmanaged(void),
+    guide_text: std.ArrayListUnmanaged(u8),
 
     pub fn init(allocator: std.mem.Allocator, session_id: []const u8, scope: []const u8, introspection: bool, world: []const u8) Bridge {
         const defined = allocator.create(DefinedFlows) catch @panic("std/bridge:create: OOM minting defined-flows table");
@@ -84,6 +71,8 @@ pub const Bridge = struct {
             .call_seq = 0,
             .call_sink = .{},
             .call_log = .{},
+            .guide_fired = .{},
+            .guide_text = .{},
         };
     }
 
@@ -110,6 +99,11 @@ pub const Bridge = struct {
         self.allocator.destroy(self.defined);
         self.session_env.deinit();
         self.allocator.destroy(self.session_env);
+        // Session-arena owned buffers free while the arena is still alive —
+        // the arena's free is a no-op, but the allocator handle must not
+        // point at destroyed memory.
+        self.call_log.deinit(self.session_arena.allocator());
+        self.guide_text.deinit(self.session_arena.allocator());
         self.session_arena.deinit();
         self.allocator.destroy(self.session_arena);
         // `close` discharges everything the pool holds before this runs —
@@ -119,7 +113,8 @@ pub const Bridge = struct {
         self.mounted_libs.deinit(self.allocator);
         self.mounted_scopes.deinit(self.allocator);
         self.call_sink.deinit(std.heap.page_allocator);
-        self.call_log.deinit(self.session_arena.allocator());
+        // The fired-set's key strings are arena-owned; the map itself is not.
+        self.guide_fired.deinit(self.allocator);
     }
 };
 

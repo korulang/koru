@@ -1,7 +1,6 @@
-// Koru Standard Library: the `dispatch` part of bridge — one wire
-// item through the session scope: normalization, mounted scopes,
-// the trace sink, and the runtime run. Joined via `~part dispatch`
-// in bridge.kz; merged into the bridge module at load.
+// Koru Standard Library: the `dispatch` part of bridge — one wire item
+// through the session scope: normalization, mounted scopes, the trace sink,
+// and the runtime run. Joined via `~part dispatch` in bridge.kz.
 
 /// One wire item's dispatch outcome plus its per-dispatch records. `steps`
 /// slices the bridge's call_sink — valid only until the next
@@ -33,6 +32,7 @@ fn dispatchThroughScope(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environ
     // The call_step sink: the interpreter appends each dispatch's record
     // as it lands; the caller renders before the next item runs.
     br.call_sink.clearRetainingCapacity();
+    clearItemGuides(br); // each item owns its guide lines
     Interp.setTraceSink(&br.call_sink);
     defer Interp.setTraceSink(null);
     const out = Runtime.run_event.handler(.{

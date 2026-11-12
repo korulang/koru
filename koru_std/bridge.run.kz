@@ -33,7 +33,7 @@
 | result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32, bound: string, trace: string }
 | error RunError
 | ?defined string
-| ?unhandled-branch { branch: string, payload: string, handles: string, bound: string }
+| ?unhandled-branch { branch: string, payload: string, handles: string, bound: string, guides: string }
 | ?residue { report: string, observer: bool, bound: string, text: string }
 | ?partial { ran: u32, total: u32, used: u64, handles: u32, report: string, wire_failures: u32 }
 

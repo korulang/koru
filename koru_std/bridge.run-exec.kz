@@ -50,7 +50,7 @@
         // membership (event-denied), field shapes (validation-error),
         // possession, budget.
         if (wireGate(br, source)) |e| {
-            return refusedSingleItem(br, source, e, sh);
+            return refusedSingleItem(run_event.Output, br, source, e, sh);
         }
 
         // A one-item turn has no later items — no turn env to seed.
