@@ -42,14 +42,14 @@ The operation surface is the one a calculator wants — `add`/`sub`/`mul`/`div`,
 
 ## std/quantity — dimensions are a group, not a string
 
-`std/quantity` packs a magnitude, a canonical `Dim`, and optional uncertainty-with-covariance into one linear string. `Dim` is `[7]i32` — the free abelian group on the seven SI base generators, the same object `QuantityKernel.lean` proves things about — so `m/s · s → m` is group law, not string surgery:
+`std/quantity` packs a magnitude, a canonical `Dim`, and optional uncertainty-with-covariance into one linear string. `Dim` is `[7]i32` — the free abelian group on the seven SI base generators, the same object `QuantityKernel.lean` proves things about — so `m/s · s → m` is group law, not string surgery — and juxtaposition is multiplication, so `lit(5 m/s)`, `lit(5m/s)` and `lit(5*m/s)` spell the same quantity:
 
 ```koru
 import std/io
 import std/quantity
 
-std/quantity:lit(5*m/s)
-| exact v |> std/quantity:lit(3*s)
+std/quantity:lit(5 m/s)
+| exact v |> std/quantity:lit(3 s)
     | exact t |> std/quantity:mul(a: v, b: t)
         | exact d |> std/quantity:render(n: d): o |> std/io:print.ln("{{ o:s }}") |> std/io:free(content: o)
         | mixed-cov |> std/io:print.ln("mixed-cov")
@@ -69,7 +69,8 @@ A quantity's third field is a linearized (GUM-adjacent) sigma. Two independent m
   tests={[
     { name: "615_023 quadrature add", directory: "615_023_quantity_uncertainty_add", categorySlug: "600_STDLIB/615_NUM", description: "Independent sigmas add in quadrature — sqrt(0.1^2 + 0.1^2) = 1.41e-1." },
     { name: "615_029 dim composition", directory: "615_029_quantity_dim_composition", categorySlug: "600_STDLIB/615_NUM", description: "(m/s)*s -> m, (m/s)/s -> m/s^2, and N*m ≡ J by canonical equivalence." },
-    { name: "615_027 untainted refusal", directory: "615_027_reject_untainted_quantity", categorySlug: "600_STDLIB/615_NUM", description: "Quantity text that skipped lit/ingest cannot reach the ops." }
+    { name: "615_027 untainted refusal", directory: "615_027_reject_untainted_quantity", categorySlug: "600_STDLIB/615_NUM", description: "Quantity text that skipped lit/ingest cannot reach the ops." },
+    { name: "615_070 juxtaposed units", directory: "615_070_quantity_lit_juxtapose", categorySlug: "600_STDLIB/615_NUM", description: "5 m/s, 5m/s and 5*m/s are one quantity; kgm is kg*m; non-unit tails refuse." }
   ]}
 />
 

@@ -47,3 +47,20 @@ representation, not timing — `expr:` arriving as text is why the runtime
 re-parse is honest) and [[frag-taint-is-per-value-signal-is-per-stream]]
 (provenance rides the value; `lit` must not be a quieter way in than
 `ingest`).
+
+**2026-11-01 (later) — the page-spelling closed the gap.** The "expression-
+shaped spelling" caveat had one visible seam left: `*` was mandatory —
+`lit(5*m/s)` parsed, `lit(5 m/s)` and `lit(5m/s)` refused, because the
+split treated whitespace as noise and `5m` as neither number nor unit.
+Juxtaposition is multiplication in every physics text on the planet, so
+the authored lane now scans it: a leading decimal/constant prefix is the
+magnitude, the residual is a longest-match unit run (`mol` before `m`,
+`kg` before nothing-since-`k`-is-no-unit — `kgm` is kg·m), and `*`/`/` keep
+their operator meaning. `lit(5 m/s)`, `lit(5m/s)` and `lit(5*m/s)` emit
+identical packs; `lit(5xyz)` still refuses by name. The DSL no longer
+asks the author to write for the parser where the page already had a
+spelling — the residue that is not expression-shaped shrank to what is
+genuinely ambiguous, not what was merely unimplemented. The grammar lives
+in `~part lit` (`quantity.lit.kz`); `canon` went `~pub` so the part can
+reach the field-compose step — parts are modules for tor visibility, a
+cost measured live.

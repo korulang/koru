@@ -45,6 +45,7 @@
 ~import std/io
 ~import std/num
 ~import std/sym
+~part lit
 
 const std = @import("std");
 
@@ -312,66 +313,8 @@ fn constSym(tok: []const u8) ?[]const u8 {
 // Unit names resolve via unitLookup; the first '/' marks the denominator
 // zone and parens are stripped (a/(b*c) reads as a/b*c under that rule —
 // the same left-of/right-of convention unitScan already uses).
-fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u8, cov_in: []const u8, out: *SplitFields) !void {
-    const s = std.mem.trim(u8, expr_in, " \t\r\n");
-    if (s.len == 0) return error.BadQuantity;
-    var buf = std.ArrayList(u8).initCapacity(alloc, s.len) catch return error.OutOfMemory;
-    defer buf.deinit(alloc);
-    for (s) |ch| {
-        if (ch == '(' or ch == ')' or ch == ' ' or ch == '\t') continue;
-        buf.append(alloc, ch) catch return error.OutOfMemory;
-    }
-    const t = buf.items;
-    var i: usize = 0;
-    var mag_neg = false;
-    if (i < t.len and t[i] == '-') {
-        mag_neg = true;
-        i += 1;
-    }
-    if (i >= t.len) return error.BadQuantity;
-
-    var mag_str: []const u8 = "1e0";
-    var mag_seen = false;
-    var dim: Dim = DIM_ZERO;
-    var scale: i32 = 0;
-    var denom = false;
-    while (i < t.len) {
-        var j = i;
-        while (j < t.len and t[j] != '*' and t[j] != '/') j += 1;
-        const tok = t[i..j];
-        if (tok.len == 0) return error.BadQuantity;
-        if (std.ascii.isDigit(tok[0]) or tok[0] == '.') {
-            if (denom or mag_seen) return error.BadQuantity;
-            mag_seen = true;
-            mag_str = tok;
-        } else if (constSym(tok)) |atom| {
-            if (denom or mag_seen) return error.BadQuantity;
-            mag_seen = true;
-            mag_str = atom;
-        } else {
-            const ud = unitLookup(tok) orelse return error.BadQuantity;
-            const sgn: i32 = if (denom) -1 else 1;
-            for (0..7) |k| dim[k] += sgn * ud.dim[k];
-            scale += sgn * ud.scale;
-        }
-        if (j >= t.len) break;
-        if (t[j] == '/') denom = true;
-        i = j + 1;
-    }
-
-    const unc_str = unc_in;
-    const cov_str = if (cov_in.len == 0) "-" else cov_in;
-    var sbuf: [40]u8 = undefined;
-    const scale_str = scaleCanon(&sbuf, scale) catch return error.BadQuantity;
-
-    out.* = .{
-        .mag = if (mag_neg) try std.fmt.allocPrint(alloc, "-{s}", .{mag_str}) else try alloc.dupe(u8, mag_str),
-        .unc = try alloc.dupe(u8, unc_str),
-        .scale = try alloc.dupe(u8, scale_str),
-        .dim = try dimCanon(alloc, dim),
-        .cov = try alloc.dupe(u8, cov_str),
-    };
-}
+// Maximal valid decimal prefix of t (digits, '.', e/E exponent with
+// sign).  0 means no number leads the token.
 
 // ============================================================================
 // Boundary — mark machinery only
@@ -435,7 +378,7 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
 // The canonicalizer: external field text -> canonical pack. num:parse does
 // the decimal work; the unit scale multiplies through magnitude AND
 // uncertainty (2 g ± 0.1 g -> 2e-3 kg ± 1e-4).
-~tor canon { mag: string<std/num:!external>, unc: string<std/num:!external>, scale: string<std/num:!external>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated> }
+~pub tor canon { mag: string<std/num:!external>, unc: string<std/num:!external>, scale: string<std/num:!external>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated> }
 | exact string<exact!>
 | bad string<std/io:allocated!>
 
@@ -468,45 +411,6 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
     | exact q => exact q
     | bad e => bad e
 | bad m => bad m
-
-// The authored-expression boundary: lit's captured arg text arrives here
-// as a plain string — quoting happened once, at lit's Expression field.
-// Same fields contract as split: numeric text is <external!> until
-// num:parse discharges it in canon.
-~tor split-expr { expr: string, unc: ?string, cov: ?string }
-| fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!> }
-| bad string<std/io:allocated!>
-
-~proc split-expr|zig {
-    var f: SplitFields = undefined;
-    qtySplitExpr(koru_allocator(), expr, unc orelse "0e0", cov orelse "-", &f) catch |err| switch (err) {
-        error.OutOfMemory => @panic("std/quantity: out of memory"),
-        else => return .{ .bad = ownedCopy(expr) },
-    };
-    return .{ .fields = .{
-        .mag = f.mag,
-        .unc = f.unc,
-        .scale = f.scale,
-        .dim = f.dim,
-        .cov = f.cov,
-    } };
-}
-
-// Trusted literal, authored-math spelling: lit(9.81*m/s), lit(π*kg),
-// lit(2*m, unc: 0.1, cov: bias). Numbers and π/φ/e are magnitude (one
-// term, numerator only); unit names multiply/divide through the same
-// unitLookup table the text lane uses. unc is a bare magnitude (the unit
-// is shared); cov names the shared covariance tag. Runtime text goes
-// ingest/parse, not lit — same rule as std/sym.
-~pub tor lit { expr: Expression, unc: ?Expression, cov: ?Expression }
-| exact string<exact!>
-| bad string
-
-~lit = split-expr(expr, unc, cov)
-| fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov)
-    | exact q => exact q
-    | bad e |> std/io:free(content: e) => bad "malformed quantity"
-| bad m |> std/io:free(content: m) => bad "malformed quantity"
 
 // Symbolic literal: a canonical sexpr magnitude plus unit text — `lit` for
 // the MetricSymbolic lane. The unit's scale multiplies through the

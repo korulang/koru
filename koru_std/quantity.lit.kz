@@ -1,0 +1,143 @@
+// ============================================================================
+// ~part lit — the trusted-literal grammar for std/quantity.  lit(expr)
+// captures the authored expression verbatim; the split separates the
+// magnitude (number or constSym atom) from a unit run.  Juxtaposition
+// is multiplication: lit(5 m/s) == lit(5*m/s) == lit(5m/s), and a bare
+// unit run (lit(kgm)) is kg*m — longest match wins (mol over m+ol).
+// Runtime text goes ingest/parse, never lit — same rule as std/sym.
+// ============================================================================
+
+fn numPrefix(t: []const u8) usize {
+    var i: usize = 0;
+    while (i < t.len and (std.ascii.isDigit(t[i]) or t[i] == '.')) i += 1;
+    if (i == 0) return 0;
+    if (i < t.len and (t[i] == 'e' or t[i] == 'E')) {
+        var k = i + 1;
+        if (k < t.len and (t[k] == '+' or t[k] == '-')) k += 1;
+        const d0 = k;
+        while (k < t.len and std.ascii.isDigit(t[k])) k += 1;
+        if (k > d0) i = k; // exponent only counts with digits
+    }
+    return i;
+}
+
+// Juxtaposition is multiplication: parse a run of unit names by
+// longest match (mol over m+ol, kg over k+g since k is no unit).
+fn accumUnits(t: []const u8, dim: *Dim, scale: *i32) error{BadQuantity}!void {
+    var i: usize = 0;
+    while (i < t.len) {
+        var best: ?UnitDef = null;
+        var blen: usize = 0;
+        inline for (.{ "Ohm", "mol", "kg", "cd", "Hz", "Pa", "N", "J", "W", "V", "C", "F", "A", "K", "g", "m", "s" }) |u| {
+            if (t.len - i >= u.len and u.len > blen and std.mem.eql(u8, t[i .. i + u.len], u)) {
+                best = unitLookup(u).?;
+                blen = u.len;
+            }
+        }
+        const ud = best orelse return error.BadQuantity;
+        for (0..7) |k| dim[k] += ud.dim[k];
+        scale.* += ud.scale;
+        i += blen;
+    }
+}
+
+fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u8, cov_in: []const u8, out: *SplitFields) !void {
+    const s = std.mem.trim(u8, expr_in, " \t\r\n");
+    if (s.len == 0) return error.BadQuantity;
+    var buf = std.ArrayList(u8).initCapacity(alloc, s.len) catch return error.OutOfMemory;
+    defer buf.deinit(alloc);
+    for (s) |ch| {
+        if (ch == '(' or ch == ')' or ch == ' ' or ch == '\t') continue;
+        buf.append(alloc, ch) catch return error.OutOfMemory;
+    }
+    const t = buf.items;
+    var i: usize = 0;
+    var mag_neg = false;
+    if (i < t.len and t[i] == '-') {
+        mag_neg = true;
+        i += 1;
+    }
+    if (i >= t.len) return error.BadQuantity;
+
+    var mag_str: []const u8 = "1e0";
+    var mag_seen = false;
+    var dim: Dim = DIM_ZERO;
+    var scale: i32 = 0;
+    var denom = false;
+    while (i < t.len) {
+        var j = i;
+        while (j < t.len and t[j] != '*' and t[j] != '/') j += 1;
+        const tok = t[i..j];
+        if (tok.len == 0) return error.BadQuantity;
+        if (std.ascii.isDigit(tok[0]) or tok[0] == '.') {
+            if (denom or mag_seen) return error.BadQuantity;
+            mag_seen = true;
+            const np = numPrefix(tok);
+            if (np == 0) return error.BadQuantity;
+            mag_str = tok[0..np];
+            if (np < tok.len) try accumUnits(tok[np..], &dim, &scale);
+        } else if (constSym(tok)) |atom| {
+            if (denom or mag_seen) return error.BadQuantity;
+            mag_seen = true;
+            mag_str = atom;
+        } else {
+            const ud = unitLookup(tok);
+            const sgn: i32 = if (denom) -1 else 1;
+            if (ud) |u| {
+                for (0..7) |k| dim[k] += sgn * u.dim[k];
+                scale += sgn * u.scale;
+            } else try accumUnits(tok, &dim, &scale);
+        }
+        if (j >= t.len) break;
+        if (t[j] == '/') denom = true;
+        i = j + 1;
+    }
+
+    const unc_str = unc_in;
+    const cov_str = if (cov_in.len == 0) "-" else cov_in;
+    var sbuf: [40]u8 = undefined;
+    const scale_str = scaleCanon(&sbuf, scale) catch return error.BadQuantity;
+
+    out.* = .{
+        .mag = if (mag_neg) try std.fmt.allocPrint(alloc, "-{s}", .{mag_str}) else try alloc.dupe(u8, mag_str),
+        .unc = try alloc.dupe(u8, unc_str),
+        .scale = try alloc.dupe(u8, scale_str),
+        .dim = try dimCanon(alloc, dim),
+        .cov = try alloc.dupe(u8, cov_str),
+    };
+}
+
+~tor split-expr { expr: string, unc: ?string, cov: ?string }
+| fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!> }
+| bad string<std/io:allocated!>
+
+~proc split-expr|zig {
+    var f: SplitFields = undefined;
+    qtySplitExpr(koru_allocator(), expr, unc orelse "0e0", cov orelse "-", &f) catch |err| switch (err) {
+        error.OutOfMemory => @panic("std/quantity: out of memory"),
+        else => return .{ .bad = ownedCopy(expr) },
+    };
+    return .{ .fields = .{
+        .mag = f.mag,
+        .unc = f.unc,
+        .scale = f.scale,
+        .dim = f.dim,
+        .cov = f.cov,
+    } };
+}
+
+// Trusted literal, authored-math spelling: lit(9.81*m/s), lit(π*kg),
+// lit(2*m, unc: 0.1, cov: bias). Numbers and π/φ/e are magnitude (one
+// term, numerator only); unit names multiply/divide through the same
+// unitLookup table the text lane uses. unc is a bare magnitude (the unit
+// is shared); cov names the shared covariance tag. Runtime text goes
+// ingest/parse, not lit — same rule as std/sym.
+~pub tor lit { expr: Expression, unc: ?Expression, cov: ?Expression }
+| exact string<exact!>
+| bad string
+
+~lit = split-expr(expr, unc, cov)
+| fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov)
+    | exact q => exact q
+    | bad e |> std/io:free(content: e) => bad "malformed quantity"
+| bad m |> std/io:free(content: m) => bad "malformed quantity"
