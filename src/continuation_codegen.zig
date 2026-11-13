@@ -1246,13 +1246,21 @@ fn generateBranchSwitch(
             if (std.mem.eql(u8, binding, "_")) {
                 try buf.appendSlice(allocator, "{\n");
             } else {
+                // The capture name is `binding` + "_" + level. When the binding
+                // starts u/i/f + digit (u0, u2, i32, f16), that spelling lexes
+                // as a Zig numeric primitive (u0_4 -> "u04" leading-zero error;
+                // u2_8 -> u28) — escape the whole capture identifier.
+                const cap_esc = binding.len > 1 and std.ascii.isDigit(binding[1]) and
+                    (binding[0] == 'u' or binding[0] == 'i' or binding[0] == 'f');
                 try buf.append(allocator, '|');
+                if (cap_esc) try buf.appendSlice(allocator, "@\"");
                 try buf.appendSlice(allocator, binding);
                 // Suffix with indent level to avoid shadowing in nested switches
                 try buf.append(allocator, '_');
                 var level_buf: [16]u8 = undefined;
                 const level_str = std.fmt.bufPrint(&level_buf, "{d}", .{indent_level}) catch unreachable;
                 try buf.appendSlice(allocator, level_str);
+                if (cap_esc) try buf.append(allocator, '"');
                 try buf.appendSlice(allocator, "| {\n");
 
                 // Alias original binding name for inline code that references source-level names.
@@ -1262,15 +1270,17 @@ fn generateBranchSwitch(
                 defer allocator.free(ind3);
                 try buf.appendSlice(allocator, ind3);
                 try buf.appendSlice(allocator, "const ");
-                try buf.appendSlice(allocator, binding);
+                try codegen_utils.appendEscapedIdentifier(&buf, allocator, binding);
                 try buf.appendSlice(allocator, " = ");
+                if (cap_esc) try buf.appendSlice(allocator, "@\"");
                 try buf.appendSlice(allocator, binding);
                 try buf.append(allocator, '_');
                 try buf.appendSlice(allocator, level_str);
+                if (cap_esc) try buf.append(allocator, '"');
                 try buf.appendSlice(allocator, ";\n");
                 try buf.appendSlice(allocator, ind3);
                 try buf.appendSlice(allocator, "_ = &");
-                try buf.appendSlice(allocator, binding);
+                try codegen_utils.appendEscapedIdentifier(&buf, allocator, binding);
                 try buf.appendSlice(allocator, ";\n");
             }
         } else {
@@ -1280,7 +1290,7 @@ fn generateBranchSwitch(
         // Generate code for this branch's step and nested continuations
         // Convert single step to array for compatibility with generatePipelineCode
         const pipeline = if (cont.node) |step| &[_]ast.Step{step} else &[_]ast.Step{};
-        const pipeline_code = try generatePipelineCode(
+        var pipeline_code = try generatePipelineCode(
             allocator,
             pipeline,
             cont.continuations,
@@ -1293,6 +1303,21 @@ fn generateBranchSwitch(
             program_items,
         );
         defer allocator.free(pipeline_code);
+        // A binding spelled like a Zig primitive/keyword escapes at the alias
+        // above, but bare references inside arg/inline text still spell the
+        // source name — and `u2` resolves to the primitive, not the local.
+        // Rewrite token-boundary occurrences to the escaped form.
+        if (cont.binding) |binding| {
+            if (!std.mem.eql(u8, binding, "_")) {
+                const escaped = try codegen_utils.escapeZigIdentifier(allocator, binding);
+                defer if (!std.mem.eql(u8, escaped, binding)) allocator.free(escaped);
+                if (!std.mem.eql(u8, escaped, binding)) {
+                    const rewritten = try replaceIdent(allocator, pipeline_code, binding, escaped);
+                    allocator.free(pipeline_code);
+                    pipeline_code = rewritten;
+                }
+            }
+        }
         try buf.appendSlice(allocator, pipeline_code);
 
         // An inlined fmt.blk result is `allocated!`. Auto-discharge cannot
@@ -1308,7 +1333,7 @@ fn generateBranchSwitch(
                     defer allocator.free(ind3);
                     try buf.appendSlice(allocator, ind3);
                     try buf.appendSlice(allocator, "koru_allocator().free(");
-                    try buf.appendSlice(allocator, binding);
+                    try codegen_utils.appendEscapedIdentifier(&buf, allocator, binding);
                     try buf.appendSlice(allocator, ");\n");
                 }
             }

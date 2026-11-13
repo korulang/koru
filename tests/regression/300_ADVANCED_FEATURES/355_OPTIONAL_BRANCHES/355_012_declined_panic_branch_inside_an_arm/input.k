@@ -6,17 +6,12 @@
 // proceed. 355_009 pins that a plain `?` optional stays silent, which is the
 // deliberate contrast.
 //
-// The synthesis reads a flow's own continuations and never descends, so an
-// invocation nested inside an arm gets NO synthesized arm and NO dispatch
-// guard. The written arm's body then runs whatever the callee actually
-// returned. Both takes below decline `| empty`; only the top-level one is
-// currently protected.
-//
-// Measured on both lanes when this was pinned: Zig ran to completion printing
-// the final line, exit 0. JavaScript failed only by accident, with a
-// TypeError, because this arm's body happens to dereference the payload — a
-// body that merely binds it stays silent there too, which is how a shipped
-// consumer (koru-libs dom/app, the row removal) carried it unnoticed.
+// Both takes below decline `| empty` — the first at flow top level, the
+// second nested inside the `for` arm's body. Synthesis descends into arm
+// continuations, so the nested decline gets the same synthesized @panic:
+// the second take's `| empty` fire traps (EXPECT_TRAP) instead of reaching
+// the final print. This pin was RED when written (a538e98c3) and went green
+// when the synthesis learned to descend (00341d7c4).
 import std/io
 import std/store
 import std/control
