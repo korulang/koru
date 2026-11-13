@@ -1,0 +1,13 @@
+// PIN (part): inside a directory module, a `stem.tag.k*` file is part
+// namespace — it joins only through the stem's `~part` declaration and is
+// never independently a `<stem>.<tag>` submodule. Before this wall the
+// directory scan loaded `index.extra.kz` as submodule `host.index.extra`,
+// whose procs then failed KORU050 against the module's own declarations.
+
+const std = @import("std");
+
+~part extra
+
+~pub tor base {} -> u32
+
+~proc base|zig { return 1; }

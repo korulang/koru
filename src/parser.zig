@@ -1436,7 +1436,9 @@ pub const Parser = struct {
                                 std.mem.indexOf(u8, next_trimmed, ":") != null or
                                 std.mem.startsWith(u8, next_trimmed, "pub ") or
                                 std.mem.startsWith(u8, next_trimmed, "tor ") or
-                                std.mem.startsWith(u8, next_trimmed, "proc ");
+                                std.mem.startsWith(u8, next_trimmed, "proc ") or
+                                std.mem.startsWith(u8, next_trimmed, "part ") or
+                                std.mem.startsWith(u8, next_trimmed, "~part ");
                             break :blk looks_like_construct;
                         } else false;
 
@@ -1447,10 +1449,7 @@ pub const Parser = struct {
                             for (result.annotations) |ann| {
                                 try module_annotations.append(self.allocator, try self.allocator.dupe(u8, ann));
                             }
-                            for (result.annotations) |ann| {
-                                self.allocator.free(ann);
-                            }
-                            self.allocator.free(result.annotations);
+                            self.freeParsedAnnotations(result.annotations);
 
                             // For inline syntax, advance to next line; for vertical, parseAnnotationBlock already did
                             if (!used_vertical_syntax) {
@@ -1476,11 +1475,8 @@ pub const Parser = struct {
                         // bullets and pipes tokenize identically).
                         if (std.mem.startsWith(u8, construct_content, "import ")) {
                             self.clearProse(); // imports do not carry prose yet
-                            const keep = try self.gateImportEntries(result.annotations, construct_content, next_line_idx);
-                            for (result.annotations) |ann| {
-                                self.allocator.free(ann);
-                            }
-                            self.allocator.free(result.annotations);
+                            const keep = try self.gateEntries(result.annotations, construct_content, next_line_idx, "import");
+                            self.freeParsedAnnotations(result.annotations);
                             if (keep) {
                                 // Re-enter the main loop on a plain ~import line.
                                 const normalized_line = try std.fmt.allocPrint(self.allocator, "~{s}", .{construct_content});
@@ -1489,6 +1485,23 @@ pub const Parser = struct {
                             } else {
                                 self.current = next_line_idx + 1;
                             }
+                            continue;
+                        }
+
+                        // Conditional part, annotation-block form: the block's
+                        // entries gate the sibling join itself (same vocabulary
+                        // as the inline `~[entries]part` gate). Excluded means
+                        // the tag was never declared — no KORU201 for a file
+                        // that was never expected.
+                        if (std.mem.startsWith(u8, construct_content, "part ")) {
+                            self.clearProse();
+                            const keep = try self.gateEntries(result.annotations, construct_content, next_line_idx, "part");
+                            self.freeParsedAnnotations(result.annotations);
+                            if (keep) {
+                                self.current = next_line_idx;
+                                try self.parsePartDecl(lexer.trim(construct_content["part ".len..]));
+                            }
+                            self.current = next_line_idx + 1;
                             continue;
                         }
 
@@ -1515,10 +1528,7 @@ pub const Parser = struct {
                         const item = self.parseKoruConstruct() catch |err| {
                             self.lines[next_line_idx] = saved_line;
                             // Clean up annotations
-                            for (result.annotations) |ann| {
-                                self.allocator.free(ann);
-                            }
-                            self.allocator.free(result.annotations);
+                            self.freeParsedAnnotations(result.annotations);
                             if (self.fail_fast) {
                                 return err;
                             }
@@ -1534,10 +1544,7 @@ pub const Parser = struct {
                         };
 
                         // Clean up annotations
-                        for (result.annotations) |ann| {
-                            self.allocator.free(ann);
-                        }
-                        self.allocator.free(result.annotations);
+                        self.freeParsedAnnotations(result.annotations);
 
                         // Restore the original line
                         self.lines[next_line_idx] = saved_line;
@@ -1564,11 +1571,8 @@ pub const Parser = struct {
                         if (std.mem.startsWith(u8, result.remaining, "import ")) {
                             const line_with_bracket = self.current - 1;
                             self.clearProse(); // imports do not carry prose yet
-                            const keep = try self.gateImportEntries(result.annotations, result.remaining, line_with_bracket);
-                            for (result.annotations) |ann| {
-                                self.allocator.free(ann);
-                            }
-                            self.allocator.free(result.annotations);
+                            const keep = try self.gateEntries(result.annotations, result.remaining, line_with_bracket, "import");
+                            self.freeParsedAnnotations(result.annotations);
                             if (keep) {
                                 // Re-enter the main loop on a plain import line —
                                 // `.k` re-synthesizes the `~` itself, and its
@@ -1576,6 +1580,21 @@ pub const Parser = struct {
                                 const normalized_line = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ if (self.is_k) "" else "~", result.remaining });
                                 self.lines[line_with_bracket] = normalized_line;
                                 self.current = line_with_bracket;
+                            }
+                            continue;
+                        }
+
+                        // Conditional part, vertical close-bracket form —
+                        // `]part macos`: the block's entries gate the join.
+                        if (std.mem.startsWith(u8, result.remaining, "part ")) {
+                            const line_with_bracket = self.current - 1;
+                            self.clearProse();
+                            const keep = try self.gateEntries(result.annotations, result.remaining, line_with_bracket, "part");
+                            self.freeParsedAnnotations(result.annotations);
+                            if (keep) {
+                                self.current = line_with_bracket;
+                                try self.parsePartDecl(lexer.trim(result.remaining["part ".len..]));
+                                self.current = line_with_bracket + 1;
                             }
                             continue;
                         }
@@ -1591,10 +1610,7 @@ pub const Parser = struct {
                         try ann_str.append(self.allocator, ']');
 
                         // Now safe to free the parsed annotations — they're in ann_str
-                        for (result.annotations) |ann| {
-                            self.allocator.free(ann);
-                        }
-                        self.allocator.free(result.annotations);
+                        self.freeParsedAnnotations(result.annotations);
 
                         // Strip leading ~ from remaining if present (for events/procs); flow
                         // calls won't have one. Then synthesize ~[ann1|ann2|...]construct.
@@ -1639,10 +1655,7 @@ pub const Parser = struct {
                         // parsing which sees the original ~[a|b|c]construct text. Free the
                         // duplicate annotations parsed by parseAnnotationBlock — the normal path
                         // will re-parse them from the source line.
-                        for (result.annotations) |ann| {
-                            self.allocator.free(ann);
-                        }
-                        self.allocator.free(result.annotations);
+                        self.freeParsedAnnotations(result.annotations);
                     }
                 }
 
@@ -1656,13 +1669,9 @@ pub const Parser = struct {
                 if (std.mem.startsWith(u8, after_tilde, "[")) {
                     if (annotation_parser.findBlockClose(after_tilde[1..])) |close_idx| {
                         const after_close = lexer.trim(after_tilde[1 + close_idx + 1 ..]);
+                        const ann_str = after_tilde[1 .. 1 + close_idx];
                         if (std.mem.startsWith(u8, after_close, "import ")) {
-                            const ann_str = after_tilde[1 .. 1 + close_idx];
-                            try self.rejectInvalidAnnotationSeparator(ann_str, self.current);
-                            const entries = try annotation_parser.splitEntries(self.allocator, ann_str);
-                            defer self.allocator.free(entries);
-
-                            const keep = try self.gateImportEntries(entries, after_close, self.current);
+                            const keep = try self.gateTextEntries(ann_str, after_close, "import");
                             if (!keep) {
                                 self.current += 1;
                                 continue;
@@ -1671,6 +1680,17 @@ pub const Parser = struct {
                             // Kept — normalize "~[entries]import ..." to "~import ..."
                             const normalized_line = try std.fmt.allocPrint(self.allocator, "~{s}", .{after_close});
                             self.lines[self.current] = normalized_line;
+                        } else if (std.mem.startsWith(u8, after_close, "part ")) {
+                            // Conditional part: `~[entries]part <tag>` gates the
+                            // sibling-file join itself — the same entry vocabulary
+                            // as the import gate. Excluded means the tag was never
+                            // declared, so an absent part file is no KORU201.
+                            const keep = try self.gateTextEntries(ann_str, after_close, "part");
+                            if (keep) {
+                                try self.parsePartDecl(lexer.trim(after_close["part ".len..]));
+                            }
+                            self.current += 1;
+                            continue;
                         }
                     }
                 }
@@ -2164,12 +2184,7 @@ pub const Parser = struct {
 
         // Supports both inline tor[a|b] and vertical tor[\n-a\n-b\n].
         const result = try self.parseAnnotationBlock(trimmed_after, self.current - 1);
-        defer {
-            for (result.annotations) |ann| {
-                self.allocator.free(ann);
-            }
-            self.allocator.free(result.annotations);
-        }
+        defer self.freeParsedAnnotations(result.annotations);
         // Trailing vertical block (`tor foo[\n- tag\n prose\n]`): the prose
         // belongs to the declaration being built a few lines below.
         self.stashProse(result.prose);
@@ -2225,15 +2240,32 @@ pub const Parser = struct {
         return null;
     }
 
+    /// The textual-entry half of the gate: split `[entries]` off the
+    /// tilde-line and run them through `gateEntries` for the named
+    /// construct. Owns the separator check and the entry slice's free.
+    fn gateTextEntries(self: *Parser, ann_str: []const u8, construct_text: []const u8, kind: []const u8) !bool {
+        try self.rejectInvalidAnnotationSeparator(ann_str, self.current);
+        const entries = try annotation_parser.splitEntries(self.allocator, ann_str);
+        defer self.allocator.free(entries);
+        return self.gateEntries(entries, construct_text, self.current, kind);
+    }
+
+    /// Free a parsed annotation-block result — the entries and the slice.
+    fn freeParsedAnnotations(self: *Parser, annotations: []const []const u8) void {
+        for (annotations) |ann| self.allocator.free(ann);
+        self.allocator.free(annotations);
+    }
+
     /// The import gate — the first consumer of the annotation-entry
     /// vocabulary, and the one that IS the core language: it runs at parse
     /// time and decides what the AST contains. Its contract is therefore the
     /// strictest: every entry MUST evaluate (loud KORU150 otherwise — the
     /// same annotation that is legally inert on an event is an error on an
     /// import, because an inert entry here is silent gating). ANY truthy
-    /// entry keeps the import; an excluded import gets a loud resolution
-    /// report with each entry's verdict and provenance.
-    fn gateImportEntries(self: *Parser, entries: []const []const u8, import_text: []const u8, report_line: usize) !bool {
+    /// entry keeps the declaration; an excluded one gets a loud resolution
+    /// report with each entry's verdict and provenance. `kind` names the
+    /// gated construct ("import", "part") in diagnostics and reports.
+    fn gateEntries(self: *Parser, entries: []const []const u8, construct_text: []const u8, report_line: usize, kind: []const u8) !bool {
         const provider = comptime_eval.Provider{
             .flags = self.compiler_flags,
             .env_map = self.gateEnvMap(),
@@ -2250,8 +2282,8 @@ pub const Parser = struct {
                     .KORU150,
                     report_line + 1,
                     1,
-                    "conditional import: the gate cannot evaluate entry `{s}` ({s}). Entries deciding AST membership must evaluate — the vocabulary is bare flag atoms, comparisons, and/or/not, and flag()/cflag()/env()/command()",
-                    .{ entry, diag },
+                    "conditional {s}: the gate cannot evaluate entry `{s}` ({s}). Entries deciding AST membership must evaluate — the vocabulary is bare flag atoms, comparisons, and/or/not, and flag()/cflag()/env()/command()",
+                    .{ kind, entry, diag },
                 );
             };
             if (res.truthy) any_true = true;
@@ -2260,7 +2292,7 @@ pub const Parser = struct {
             w.print("\n", .{}) catch return error.OutOfMemory;
         }
         if (!any_true and self.report_gates) {
-            std.debug.print("[import gate] {s}:{d}: `{s}` excluded — no entry true\n{s}", .{ self.module_name, report_line + 1, import_text, report.items });
+            std.debug.print("[{s} gate] {s}:{d}: `{s}` excluded — no entry true\n{s}", .{ kind, self.module_name, report_line + 1, construct_text, report.items });
         }
         return any_true;
     }
@@ -2459,10 +2491,7 @@ pub const Parser = struct {
             // Parse annotation block (supports both inline ~[a|b] and vertical ~[\n-a\n-b\n])
             const result = try self.parseAnnotationBlock(after_tilde, self.current);
             defer {
-                for (result.annotations) |ann| {
-                    self.allocator.free(ann);
-                }
-                self.allocator.free(result.annotations);
+                self.freeParsedAnnotations(result.annotations);
             }
             self.stashProse(result.prose);
 
@@ -2862,10 +2891,7 @@ pub const Parser = struct {
         if (std.mem.startsWith(u8, after_tilde, "[")) {
             const result = try self.parseAnnotationBlock(after_tilde, self.current - 1);
             defer {
-                for (result.annotations) |ann| {
-                    self.allocator.free(ann);
-                }
-                self.allocator.free(result.annotations);
+                self.freeParsedAnnotations(result.annotations);
             }
             // We don't need the annotations, just skip past them — but this
             // re-scan is the only place the prose survives when the block was
@@ -3530,10 +3556,7 @@ pub const Parser = struct {
         if (std.mem.startsWith(u8, after_tilde, "[")) {
             const result = try self.parseAnnotationBlock(after_tilde, self.current - 1);
             defer {
-                for (result.annotations) |ann| {
-                    self.allocator.free(ann);
-                }
-                self.allocator.free(result.annotations);
+                self.freeParsedAnnotations(result.annotations);
             }
             // We don't need the annotations, just skip past them — but this
             // re-scan is the only place the prose survives when the block was

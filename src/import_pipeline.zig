@@ -336,6 +336,21 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
                     continue;
                 }
 
+                // A `stem.tag.<ext>` file (one dot in the stem) whose `stem`
+                // names a same-directory file is part namespace, not a
+                // submodule: it joins only through the stem's own `~part tag`
+                // declaration — which may itself be flag-gated — so an
+                // undeclared or gate-excluded file stays dormant rather than
+                // loading as a `<stem>.<tag>` module with its own identity.
+                if (std.mem.indexOfScalar(u8, submod_name, '.')) |dot| {
+                    const owner_stem = submod_name[0..dot];
+                    if (try module_resolver_mod.resolveKoruFileIn(alloc, dir_path, owner_stem)) |owner_path| {
+                        alloc.free(owner_path);
+                        log.debug("SUBMODULE: Skipping part file '{s}' (part namespace of '{s}')\n", .{ file_path, owner_stem });
+                        continue;
+                    }
+                }
+
                 if (seen_stems.contains(submod_name)) continue;
                 try seen_stems.put(try alloc.dupe(u8, submod_name), {});
 

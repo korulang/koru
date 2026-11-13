@@ -1,0 +1,14 @@
+// PIN (part): `~[flag]part <tag>` with the flag UNSET deadstrips the
+// declaration — the tag was never declared, so the absent sibling file is
+// no KORU201 (a gate-excluded part is dormant, not missing). The rest of
+// the program compiles and runs unbothered.
+
+const std = @import("std");
+
+~[partgate]part gated
+
+~pub tor show { v: u32 }
+
+~proc show|zig { std.debug.print("no part {d}\n", .{v}); }
+
+~show(v: 1)

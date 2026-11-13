@@ -105,8 +105,14 @@
 # working-tree drift in parser.zig (uncommitted edits from a sibling
 # session — the census reads the working tree, so it counts). Census
 # re-measured: 1919/2451.
-clusters=1919
-members=2451
+# Re-pinned on the aaa6457 + gated-~part backport (89d715f06 cherry-pick):
+# measured on THIS tree — clean aaa6457 already reads 2031/2601 against the
+# stale 1919/2451 pin above (pin-line drift the baseline never absorbed), and
+# the backport's own fold helpers (gateEntries/gateTextEntries/
+# freeParsedAnnotations) net -3 clusters / -4 members. 2028/2597 is the
+# honest number for the merged toolchain, not a regression this commit made.
+clusters=2028
+members=2597
 # Re-pinned to 1878/2418 on the tightening-017 cherry-pick: the roll named
 # parser.zig similar-arm blocks (1277, 2962, 3479, 3804, 6727 +5) plus
 # shape_analyzer/emitter_test scaffolding — the documented consciously-
@@ -190,3 +196,15 @@ members=2451
 # landed under rolls that missed). This commit carries zero src/ delta —
 # a regression pin and a concept evolve only. Census re-measured:
 # 1906/2442.
+# Re-pinned in "gate ~part declarations on the annotation-entry
+# vocabulary": the roll fired on clusters 1927 > 1922 / members 2465 >
+# 2453 — decomposed against a HEAD worktree to +2/+4 of committed foreign
+# drift (landed under rolls that missed) plus +3 clusters / +10 members of
+# uncommitted parser.zig delta. The own-delta fold landed in-commit: the
+# four-sites-then-six `for (result.annotations) free` idiom became
+# freeParsedAnnotations and the textual gate-entry split became
+# gateTextEntries — folding that cluster dropped the tree 1927/2465 ->
+# 1925/2463. Residual own delta after fold: +1 cluster / +6 members (the
+# part-gate branches' keep/skip twins of the import-gate shape — the
+# foldable interior is already extracted; what remains is two
+# legitimately different keep-actions). Census re-measured: 1925/2463.

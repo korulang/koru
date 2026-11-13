@@ -1,0 +1,3 @@
+~pub tor extra {} -> u32
+
+~proc extra|zig { return 40; }

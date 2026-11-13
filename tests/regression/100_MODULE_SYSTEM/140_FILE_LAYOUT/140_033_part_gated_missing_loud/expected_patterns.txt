@@ -1,0 +1,1 @@
+error\[KORU201\]:.*part 'ghost'

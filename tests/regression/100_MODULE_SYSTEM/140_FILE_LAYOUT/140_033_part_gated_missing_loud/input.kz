@@ -1,0 +1,12 @@
+// PIN (part): a gated `~[flag]part` whose flag IS set is a real declaration
+// — the loud-miss rule survives the gate (declared tag, no file → KORU201,
+// the same refusal `~part ghost` makes). Gating removes the declaration;
+// it never weakens it.
+
+~[partgate]part ghost
+
+~pub tor show { v: u32 }
+
+~proc show|zig { std.debug.print("unreachable\n", .{}); }
+
+~show(v: 1)

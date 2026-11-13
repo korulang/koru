@@ -1,0 +1,11 @@
+// The gated part file: events + procs in one host-embedded file, joined
+// only because the `partgate` flag was set (COMPILER_FLAGS=--partgate).
+
+const std = @import("std");
+
+~pub tor greet {} -> u32
+
+~pub tor show { v: u32 }
+
+~proc greet|zig { return 7; }
+~proc show|zig { std.debug.print("{d}\n", .{v}); }

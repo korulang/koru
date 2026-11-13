@@ -1,0 +1,9 @@
+// PIN (part): `[flag]part <tag>` gates the sibling join on the annotation-
+// entry vocabulary — the same gate `[flag]import` runs. With the flag set,
+// the declaration survives and `input.gated.kz` joins exactly as `part`
+// always did (140_020/021); the part's tors are in scope unqualified.
+// (The pure-Koru view spells it `[flag]part`, the .kz view `~[flag]part`.)
+
+[partgate]part gated
+
+greet(): r |> show(v: r)
