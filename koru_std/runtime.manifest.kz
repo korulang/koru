@@ -44,6 +44,7 @@ fn scopeManifestToJson(alloc: std.mem.Allocator, m: *const ScopeManifest) ![]con
             try out.appendSlice(alloc, ",\"module\":"); jsonAppendString(&out, alloc, create.module);
             try out.appendSlice(alloc, ",\"field\":"); jsonAppendString(&out, alloc, create.field);
             try out.appendSlice(alloc, ",\"resource_type\":"); jsonAppendString(&out, alloc, create.resource_type);
+            if (create.tainted) try out.appendSlice(alloc, ",\"tainted\":true");
             try out.append(alloc, '}');
         }
         try out.append(alloc, ']');
@@ -124,6 +125,7 @@ pub fn scopeManifestForScope(
         var creates = std.ArrayList(ManifestCreate){ .items = &.{}, .capacity = 0 };
         for (obligations.creates_specs) |spec| creates.append(alloc, .{
             .obligation = spec.obligation_name, .module = spec.obligation_module, .field = spec.field_name, .resource_type = spec.resource_type, .branch = spec.branch,
+            .tainted = spec.tainted,
         }) catch continue;
         var discharges = std.ArrayList(ManifestDischarge){ .items = &.{}, .capacity = 0 };
         for (obligations.discharges_specs) |spec| discharges.append(alloc, .{
@@ -183,27 +185,5 @@ pub fn scopeManifestForScope(
     };
 }
 
-/// Human text projection of a scope manifest — the same `open(path: string)`
-/// shape the model prompt uses, so a person reading `explain` sees exactly the
-/// vocabulary the runtime serves.
-pub fn scopeManifestToText(alloc: std.mem.Allocator, m: *const ScopeManifest) []const u8 {
-    var out = std.ArrayList(u8).initCapacity(alloc, 256) catch return "";
-    for (m.events, 0..) |ev, i| {
-        if (i > 0) out.append(alloc, '\n') catch continue;
-        out.appendSlice(alloc, ev.name) catch continue;
-        out.append(alloc, '(') catch continue;
-        for (ev.args, 0..) |arg, ai| {
-            if (ai > 0) out.appendSlice(alloc, ", ") catch continue;
-            out.appendSlice(alloc, arg.name) catch continue;
-            out.appendSlice(alloc, ": ") catch continue;
-            out.appendSlice(alloc, arg.type_name) catch continue;
-            if (arg.phantom) |p| {
-                out.append(alloc, '<') catch continue;
-                out.appendSlice(alloc, p) catch continue;
-                out.append(alloc, '>') catch continue;
-            }
-        }
-        out.append(alloc, ')') catch continue;
-    }
-    return out.toOwnedSlice(alloc) catch "";
-}
+// scopeManifestToText moved to the `manifest-text` part — the human text
+// projection rides beside the JSON serializer.

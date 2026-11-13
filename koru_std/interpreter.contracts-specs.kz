@@ -1,0 +1,31 @@
+// Koru Standard Library: the `contracts-specs` part of interpreter.kz —
+// the obligation-spec type surface: the CreateSpec/DischargeSpec records
+// and the spec-lookup fn types dispatchers answer through. Joined via
+// `~part contracts-specs` in interpreter.kz; merged into the interpreter
+// module at load.
+
+// CreateSpec describes an obligation created by an tor's output field
+pub const CreateSpec = struct {
+    obligation_module: []const u8,  // e.g., "sqlite3"
+    obligation_name: []const u8,    // e.g., "opened"
+    field_name: []const u8,         // which output field holds the handle ID
+    resource_type: []const u8,      // e.g., "Connection"
+    // Outcome branch carrying this create, in source spelling — null = bare
+    // return. A branched tor books only the spec whose branch FIRED.
+    branch: ?[]const u8 = null,
+    // Borrow taint (`<type>` with no `!`): the minted handle is tracked and
+    // typed for possession/gating but owes NO discharge — the sweep
+    // releases it silently and a `<!type>` consume refuses it.
+    tainted: bool = false,
+};
+
+// DischargeSpec describes an obligation discharged by an tor's input arg
+pub const DischargeSpec = struct {
+    obligation_module: []const u8,  // e.g., "sqlite3"
+    obligation_name: []const u8,    // e.g., "opened"
+    arg_name: []const u8,           // which input arg carries the handle ID
+};
+
+// Spec lookup functions - return full specs with field/arg names
+pub const CreatesSpecFn = *const fn([]const u8) []const CreateSpec;    // tor -> []CreateSpec
+pub const DischargesSpecFn = *const fn([]const u8) []const DischargeSpec;  // tor -> []DischargeSpec

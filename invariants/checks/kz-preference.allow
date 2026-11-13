@@ -22,6 +22,9 @@ koru_std/interpreter.args.kz | part file of the interpreter module — a lone .k
 koru_std/interpreter.defined.kz | part file of the interpreter module — same contract-split trigger as interpreter.args
 koru_std/interpreter.validate.kz | part file of the interpreter module — same contract-split trigger as interpreter.args
 koru_std/runtime.runcached.kz | part file of the runtime module — same contract-split trigger as interpreter.args
+koru_std/bridge.affordances.kz | part file of the bridge module — decl-only after affordances-render split; a lone .k part puts the module in contract-split mode (KORU111)
+koru_std/interpreter.pool.kz | part file of the interpreter module — comments-only stub after pool-organ split; same contract-split trigger as interpreter.args
+koru_std/runtime.affordances.kz | part file of the runtime module — comment-only after affordances-gate split; same contract-split trigger as interpreter.args
 tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/140_021_part_tilde_spelling/input.kz | pins host-embedded `~` part declarations — converting vacates the pin
 tests/regression/200_COMPILER_FEATURES/210_PARSER/210_312_empty_source_block_eats_next_decl_kz/input.kz | the test names the .kz spelling — the bug it pins only reproduces on the host-embedded facet
 tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/140_029_dup_tor_across_facets_refused/input.kz | the pin is facet-companion duplication itself — a .k twin changes what the test measures

@@ -1,0 +1,42 @@
+// Koru Standard Library: the `mounted-services` part of interpreter.kz —
+// the host-service ABI a .dylib scope is handed at init: the version
+// field, the MountedHostServices table, and the entry points it names.
+// Joined via `~part mounted-services` in interpreter.kz; merged into the
+// interpreter module at load.
+
+// ============================================================================
+// MOUNTED HOST SERVICES - the ABI a .dylib scope is handed at init
+// ============================================================================
+//
+// A mounted scope's dispatcher is generated code that cannot be linked
+// against this process — the same problem generated dispatchers already
+// have with the pool and the detail slot, answered the same way: a table
+// of host-side entry points the module stores at init. The channels above
+// are the host end of the table; the module's dispatchers call these
+// pointers exactly as in-binary dispatchers call the functions.
+//
+// The version field is the whole compatibility story for now: a module
+// must be built by the same toolchain as the host it mounts into (the
+// struct layouts it reads — Invocation, DispatchResult, the spec records —
+// are compiled, not serialized). A frozen C ABI is a later ruling, not a
+// silent drift today.
+
+// v2: CreateSpec gained `tainted` — a .dylib built against v1 lays the spec
+// records out differently, so the version must move with the layout.
+pub const KORU_MOUNTED_ABI_VERSION: u32 = 2;
+
+pub const MountedHostServices = struct {
+    abi_version: u32,
+    set_dispatch_detail: *const fn ([]const u8) void,
+    register_dispatch_resource: *const fn ([]const u8, *anyopaque) []const u8,
+    resolve_dispatch_resource: *const fn ([]const u8) ?*anyopaque,
+};
+
+pub fn mountedHostServices() MountedHostServices {
+    return .{
+        .abi_version = KORU_MOUNTED_ABI_VERSION,
+        .set_dispatch_detail = &setDispatchDetail,
+        .register_dispatch_resource = &registerDispatchResource,
+        .resolve_dispatch_resource = &resolveDispatchResourceAny,
+    };
+}

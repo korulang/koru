@@ -47,6 +47,7 @@ pub const CreateSpec = struct {
     field_name: []const u8,
     resource_type: []const u8,
     branch: ?[]const u8 = null,
+    tainted: bool = false,
 };
 
 pub const DischargeSpec = struct {
@@ -109,7 +110,7 @@ pub const ScopeRuntime = struct {
 // mints and resolves against the HOST'S pool — the session's handles —
 // not a private table inside the .dylib.
 
-pub const KORU_MOUNTED_ABI_VERSION: u32 = 1;
+pub const KORU_MOUNTED_ABI_VERSION: u32 = 2;
 
 pub const MountedHostServices = struct {
     abi_version: u32,

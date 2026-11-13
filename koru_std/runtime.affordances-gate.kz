@@ -1,0 +1,66 @@
+// Koru Standard Library: the `affordances-gate` part of runtime.kz —
+// the scope-affordances Zig body: which of a scope's declared tors are
+// callable NOW given the resource types the caller holds. Joined via
+// `~part affordances-gate` in runtime.kz; merged into the runtime module
+// at load.
+
+~proc scope-affordances|zig {
+    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena_state.allocator();
+    var out = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+
+    inline for (comptime buildScopeTable()) |scope_info| {
+        if (std.mem.eql(u8, name, scope_info.name)) {
+            const events = scope_info.events_fn.?();
+            for (events) |event_name| {
+                const input = if (scope_info.input_fn) |f| f(event_name) orelse &.{} else &.{};
+                // Callable NOW iff every phantom-typed input names a held
+                // type: `!type` consumes (needs the obligation held),
+                // bare `type` borrows (needs the taint/obligation held).
+                // `type!` on an input is unenforced, and `*` is the wildcard
+                // — neither gates. The spellings judged here are the same
+                // ones assertHandlesHeld enforces at dispatch.
+                var callable = true;
+                for (input) |field| {
+                    const p = field.phantom orelse continue;
+                    if (p.len == 0) continue;
+                    var required = p;
+                    if (required[0] == '!') {
+                        required = required[1..];
+                        if (required.len > 0 and required[required.len - 1] == '!') {
+                            required = required[0 .. required.len - 1];
+                        }
+                    } else if (required[required.len - 1] == '!') {
+                        continue; // creates-on-input: no enforcement, no gate
+                    }
+                    if (std.mem.lastIndexOfScalar(u8, required, ':')) |c| {
+                        required = required[c + 1 ..];
+                    }
+                    if (required.len == 0 or std.mem.eql(u8, required, "*")) continue;
+                    var found = false;
+                    var it = std.mem.splitScalar(u8, held, ',');
+                    while (it.next()) |piece| {
+                        const t = std.mem.trim(u8, piece, " \t\r\n");
+                        if (t.len > 0 and std.mem.eql(u8, t, required)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        callable = false;
+                        break;
+                    }
+                }
+                if (!callable) continue;
+                if (out.items.len > 0) out.append(allocator, '\n') catch unreachable;
+                // Same declaration spelling as scope-vocabulary — outcomes too,
+                // or a callable line would promise a contract it doesn't show.
+                wireSignatureLine(&out, allocator, event_name, input);
+                const branches = if (scope_info.branches_fn) |bf| bf(event_name) else &[_]BranchSpec{};
+                wireDeclOutcome(&out, allocator, branches);
+            }
+            return .{ .ok = out.toOwnedSlice(allocator) catch unreachable };
+        }
+    }
+    return .{ .not_found = .{} };
+}

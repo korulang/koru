@@ -1,0 +1,175 @@
+// Test: tainted handles — a BARE phantom `<type>` on a tor's output mints a
+// custody handle that is tracked and typed but owes NO discharge.
+//
+// Three states, three behaviors, all pinned here:
+//
+//   `-> T<found>`    taint:   mints, borrows, gates affordances — the sweep
+//                             releases it silently (no verb, no leak)
+//   `-> T<found!>`   obliged: mints, borrows, gates — `<!found>` spends it,
+//                             the sweep fires its discharge tor
+//   `h: T<found>`    borrow:  requires a live handle carrying <found> —
+//                             taint or obligation both satisfy it
+//   `h: T<!found>`   consume: requires a live OBLIGATION — a taint refuses
+//   `h: T<*>`        wild:    never gates, never checks
+//
+// The affordance surface is type-level: `scope-affordances` lists a verb
+// callable-now iff every phantom input's type is held — it cannot tell a
+// taint from an obligation (both hold "found"), so `drop` stays listed while
+// only the taint is held; dispatch is where the consume/taint distinction
+// is enforced, and that refusal is pinned below.
+
+~import std/runtime
+~import std/io
+
+const std = @import("std");
+const Interp = @import("root").koru_std.koru_interpreter;
+const rt = @import("root").koru_std.koru_runtime;
+const HandlePool = Interp.HandlePool;
+
+var bridge_pool = HandlePool.init(std.heap.page_allocator);
+
+~pub tor peek { q: string } -> string<found>
+
+~proc peek|zig {
+    _ = q;
+    return "peek_1";
+}
+
+~pub tor deep { q: string } -> string<found!>
+
+~proc deep|zig {
+    _ = q;
+    return "deep_1";
+}
+
+~pub tor use { h: string<found> }
+
+~proc use|zig {
+    std.debug.print("use() ran for '{s}'\n", .{h});
+}
+
+~pub tor drop { h: string<!found> }
+
+~proc drop|zig {
+    std.debug.print("drop() ran for '{s}'\n", .{h});
+}
+
+~pub tor wild { h: string<*> }
+
+~proc wild|zig {
+    std.debug.print("wild() ran for '{s}'\n", .{h});
+}
+
+~pub tor note { t: string }
+
+~proc note|zig {
+    std.debug.print("note() ran '{s}'\n", .{t});
+}
+
+~std/runtime:register(scope: "demo") {
+    peek(1)
+    deep(1)
+    use(1)
+    drop(1)
+    wild(1)
+    note(1)
+}
+
+fn runIt(source: []const u8) rt.run_event.Output {
+    return rt.run_event.handler(.{
+        .source = source, .scope = "demo", .budget = 100,
+        .handle_pool = &bridge_pool, .auto_discharge = false,
+    });
+}
+
+fn afford(held: []const u8) void {
+    switch (rt.scope_affordances_event.handler(.{ .name = "demo", .held = held })) {
+        .ok => |v| std.debug.print("AFF[{s}]:\n{s}\n--\n", .{ held, v }),
+        .not_found => std.debug.print("AFF not-found\n", .{}),
+    }
+}
+
+~tor probe { after_mints: u32 }
+
+~proc probe|zig {
+    _ = after_mints;
+
+    // Nothing held: the phantom-gated verbs are absent, wildcard and
+    // obligation-free verbs stay callable.
+    afford("");
+
+    // Bare `<found>` mints a tracked handle — held count moves.
+    switch (runIt("peek(q: \"x\")")) {
+        .result => |r| std.debug.print("peek ok, held={d}\n", .{r.handles}),
+        else => |tag| std.debug.print("FAIL peek: {s}\n", .{@tagName(tag)}),
+    }
+
+    // Held type "found" unlocks both the borrow and the consume verb.
+    afford("found");
+
+    // The taint satisfies a `<found>` borrow and is NOT spent by it.
+    switch (runIt("use(h: \"peek_1\")")) {
+        .result => |r| std.debug.print("borrow ok, held={d}\n", .{r.handles}),
+        .dispatch_error => |e| std.debug.print("FAIL borrow refused: {s}\n", .{e.message}),
+        else => |tag| std.debug.print("FAIL borrow: {s}\n", .{@tagName(tag)}),
+    }
+
+    // A `<!found>` consume refuses the taint — borrows are not obligations.
+    switch (runIt("drop(h: \"peek_1\")")) {
+        .result => std.debug.print("FAIL: taint consume accepted\n", .{}),
+        .dispatch_error => |e| std.debug.print("taint consume refused: {s}\n", .{e.message}),
+        else => |tag| std.debug.print("taint consume refused ({s})\n", .{@tagName(tag)}),
+    }
+
+    // Forged literal where a phantom is demanded — refused pre-proc.
+    switch (runIt("use(h: \"forged_1\")")) {
+        .result => std.debug.print("FAIL: forged borrow accepted\n", .{}),
+        .dispatch_error => |e| std.debug.print("forged refused: {s}\n", .{e.message}),
+        else => |tag| std.debug.print("forged refused ({s})\n", .{@tagName(tag)}),
+    }
+
+    // `<*>` never gates and never checks — a literal runs the proc.
+    switch (runIt("wild(h: \"literal\")")) {
+        .result => |r| std.debug.print("wild ok, held={d}\n", .{r.handles}),
+        .dispatch_error => |e| std.debug.print("FAIL wild refused: {s}\n", .{e.message}),
+        else => |tag| std.debug.print("FAIL wild: {s}\n", .{@tagName(tag)}),
+    }
+
+    // `<found!>` still mints an obligation; `<!found>` still spends it.
+    switch (runIt("deep(q: \"x\")")) {
+        .result => |r| std.debug.print("deep ok, held={d}\n", .{r.handles}),
+        else => |tag| std.debug.print("FAIL deep: {s}\n", .{@tagName(tag)}),
+    }
+    switch (runIt("drop(h: \"deep_1\")")) {
+        .result => |r| std.debug.print("drop ok, held={d}\n", .{r.handles}),
+        else => |tag| std.debug.print("FAIL drop: {s}\n", .{@tagName(tag)}),
+    }
+
+    // Hang-up sweep: the taint releases silently — no discharge verb fires
+    // (the only drop() above was the explicit consume), nothing strands.
+    const s = rt.get_scope_event.handler(.{ .name = "demo" });
+    switch (s) {
+        .scope => |sc| Interp.dischargeAllHandles("TEST", &bridge_pool,
+            sc.discharges_spec_fn, sc.dispatcher, std.heap.page_allocator, null),
+        .not_found => std.debug.print("FAIL scope gone\n", .{}),
+    }
+    std.debug.print("after sweep, undischarged={d}\n", .{bridge_pool.countUndischarged()});
+
+    // The released taint names nothing now.
+    switch (runIt("use(h: \"peek_1\")")) {
+        .result => std.debug.print("FAIL: spent taint borrow accepted\n", .{}),
+        .dispatch_error => |e| std.debug.print("spent taint refused: {s}\n", .{e.message}),
+        else => |tag| std.debug.print("spent taint refused ({s})\n", .{@tagName(tag)}),
+    }
+}
+
+~std/runtime:run(source: "note(t: \"boot\")", scope: "demo", budget: 100, handle_pool: &bridge_pool, auto_discharge: false)
+| result r |> probe(after_mints: r.handles)
+| unhandled-branch _ |> std/io:print.ln("FAIL unhandled")
+| exhausted _ |> std/io:print.ln("FAIL exhausted")
+| parse-error _ |> std/io:print.ln("FAIL parse")
+| validation-error _ |> std/io:print.ln("FAIL validation")
+| shape-error _ |> std/io:print.ln("FAIL shape")
+| event-denied _ |> std/io:print.ln("FAIL denied")
+| dispatch-error _ |> std/io:print.ln("FAIL dispatch")
+| scope-not-found _ |> std/io:print.ln("FAIL noscope")

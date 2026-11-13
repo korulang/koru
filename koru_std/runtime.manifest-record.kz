@@ -1,0 +1,91 @@
+// Koru Standard Library: the `manifest-record` part of runtime — the
+// scope-manifest record types: the vocabulary minted as a data structure
+// at scope creation. Joined via `~part manifest-record` in runtime.kz;
+// merged into the runtime module at load.
+
+// ============================================================================
+// SCOPE MANIFEST - the vocabulary minted as a data structure at scope creation
+//
+// `register` reshapes the EventEntry records it emits dispatch tables from
+// into this record and embeds it beside the descriptor. One minting, many
+// served views: the `scope-manifest` tor serializes it to JSON for a running
+// contract endpoint (Orisha), `explain` will consume the same record at
+// compile time, and neither view is ever hand-written. Defined flows (session
+// growth) are absent by construction: the record is minted when the scope is
+// created, before any session exists — it is the compiled base.
+
+/// One tor's argument — the caller's side of the surface.
+pub const ManifestArg = struct {
+    name: []const u8,
+    type_name: []const u8,
+    is_optional: bool = false,
+    /// Raw possession spelling: `"!open"` discharges, `"open!"` creates.
+    phantom: ?[]const u8 = null,
+};
+
+/// An obligation an tor MINTS — carried by an output field (or
+/// `__type_ref` for a bare return). Fields mirror CreateSpec so the contract
+/// and the enforcement are the same bytes.
+pub const ManifestCreate = struct {
+    obligation: []const u8,
+    module: []const u8,
+    field: []const u8,
+    resource_type: []const u8, branch: ?[]const u8 = null, // branch carrying the create; null = bare return
+    /// Bare `<type>` phantom: the handle is tracked for possession but owes
+    /// no discharge — not an obligation in the custody sense.
+    tainted: bool = false,
+};
+
+/// An obligation an tor CONSUMES — discharged by a named input arg.
+pub const ManifestDischarge = struct {
+    obligation: []const u8,
+    module: []const u8,
+    arg: []const u8,
+};
+
+/// An output branch's payload field.
+pub const ManifestBranchField = struct {
+    name: []const u8,
+    type_name: []const u8,
+    is_optional: bool = false,
+};
+
+/// An output branch ("shape") an tor can end in.
+pub const ManifestBranch = struct {
+    name: []const u8,
+    fields: []const ManifestBranchField = &.{},
+    is_optional: bool = false,
+};
+
+/// One surface verb: what it takes, what it mints, what it consumes.
+pub const ManifestEvent = struct {
+    name: []const u8,
+    cost: u64 = 1,
+    /// Module that DECLARED the tor (the home that closes the bare-name
+    /// gap), or null for a top-level tor.
+    home: ?[]const u8 = null,
+    args: []const ManifestArg = &.{},
+    creates: []const ManifestCreate = &.{},
+    discharges: []const ManifestDischarge = &.{},
+    branches: []const ManifestBranch = &.{},
+    /// Declaration prose — the vertical annotation block's text, what the
+    /// verb IS. Empty when the decl carried no prose.
+    doc: []const u8 = "",
+};
+
+/// The served contract for one scope: the register block as data.
+pub const ScopeManifest = struct {
+    kind: []const u8 = "koru/scope-manifest",
+    version: u32 = 1,
+    scope: []const u8,
+    events: []const ManifestEvent = &.{},
+    /// Direct `scope(other)` includes named in THIS register block, in
+    /// declaration order. Transitive closures stay implicit.
+    includes: []const []const u8 = &.{},
+    /// The scope's own contract — the annotation-block prose of a module-
+    /// level `contract` tor declaration. It is documentation, not an event:
+    /// never registered, never callable, and the grammar render serves it
+    /// from here so the text ships with the prompt rather than costing a
+    /// model turn to fetch.
+    doc: []const u8 = "",
+};

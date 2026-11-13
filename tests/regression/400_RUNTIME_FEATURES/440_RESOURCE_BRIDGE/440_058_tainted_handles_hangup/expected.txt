@@ -1,0 +1,3 @@
+drop() ran for 'deep_1'
+[BRIDGE] Invoked 'drop' for handle 'deep_1' [main:found]
+held before hang-up: 2

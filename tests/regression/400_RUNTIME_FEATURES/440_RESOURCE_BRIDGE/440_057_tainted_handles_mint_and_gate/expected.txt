@@ -1,0 +1,27 @@
+note() ran 'boot'
+AFF[]:
+pub tor peek { q: string } -> string<found>
+pub tor deep { q: string } -> string<found!>
+pub tor wild { h: string<*> }
+pub tor note { t: string }
+--
+peek ok, held=1
+AFF[found]:
+pub tor peek { q: string } -> string<found>
+pub tor deep { q: string } -> string<found!>
+pub tor use { h: string<found> }
+pub tor drop { h: string<!found> }
+pub tor wild { h: string<*> }
+pub tor note { t: string }
+--
+use() ran for 'peek_1'
+borrow ok, held=1
+taint consume refused: 'h' wants a <found> to spend — 'peek_1' is a borrow taint, not a dischargeable obligation. Mint one through a verb whose signature ends '-> <found!>'
+forged refused: 'h' wants a live <found> — 'forged_1' names nothing the session holds. Mint one through a verb whose signature ends '-> <found!>'
+wild() ran for 'literal'
+wild ok, held=1
+deep ok, held=2
+drop() ran for 'deep_1'
+drop ok, held=1
+after sweep, undischarged=0
+spent taint refused: 'h' wants a live <found> — 'peek_1' names nothing the session holds. Mint one through a verb whose signature ends '-> <found!>'

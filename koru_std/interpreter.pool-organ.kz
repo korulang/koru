@@ -1,0 +1,237 @@
+// Koru Standard Library: the `pool-organ` part of interpreter.kz — the
+// HandlePool record itself: the custody organ every `acquire` mints into
+// and every discharge releases from. Joined via `~part pool-organ` in
+// interpreter.kz; merged into the interpreter module at load.
+//
+// HandlePool is the custody organ: every `acquire` mints, every discharge
+// releases. When a world-mounted bridge installs `on_custody`, each of
+// those events is witnessed into the world's holds.log — the record a
+// successor session reads before it acts. Pool callbacks are null by
+// default: a bare interpreter run records nothing, and nothing here
+// knows a world exists.
+//
+// Handle, CustodyKind, custodySubject and renderHeldHandles live in the
+// `custody`/`custody-witness` parts — the record types and witnesses
+// beside the pool that mints them.
+
+pub const HandlePool = struct {
+    handles: std.ArrayList(Handle),
+    next_id: u32,
+    allocator: std.mem.Allocator,
+    /// The bridge this pool belongs to — stamped onto every handle it mints.
+    /// "" when the pool is a run-local custody record, not a bridge's organ.
+    bridge_id: []const u8 = "",
+    /// Token → resource. The wire speaks strings; a `*T`-typed field on a tor
+    /// cannot be fabricated from text, so a minted handle's token is the key
+    /// under which its typed value lives. Entry dies with the handle's
+    /// discharge — a spent token resolves nothing.
+    resources: std.StringHashMapUnmanaged(*anyopaque) = .{},
+    next_resource: u32 = 1,
+    /// Per-pool mint seed, lazy-mixed on the first mint — the suffix is
+    /// seeded hex, never a countable sequence (OPAQUE MINT ruling).
+    mint_seed: u64 = 0,
+    /// The custody witness, when installed: `on_mint` fires from `acquire`
+    /// (subject carries the creating verb's args — the why of the possess),
+    /// `on_release` fires from every discharge path (explicit verb, sweep,
+    /// hang-up) — all of them funnel through dischargeById/discharge.
+    on_custody: ?*const fn (ctx: *anyopaque, kind: CustodyKind, handle: *const Handle, subject: []const u8) void = null,
+    custody_ctx: ?*anyopaque = null,
+
+    pub fn init(allocator: std.mem.Allocator) HandlePool {
+        return .{
+            .handles = std.ArrayList(Handle){ .items = &.{}, .capacity = 0 },
+            .next_id = 1,
+            .allocator = allocator,
+        };
+    }
+
+    /// Free every handle's duped strings, then the list itself.
+    ///
+    /// `acquire` dupes seven strings per handle; this used to drop the list and
+    /// leak all of them. Invisible for as long as it lived, because every caller
+    /// handed the pool a `page_allocator` that nobody was counting. The first
+    /// pool built on the tracked allocator — a `std/bridge` session — failed the
+    /// produced program's leak check immediately.
+    pub fn deinit(self: *HandlePool) void {
+        for (self.handles.items) |h| {
+            self.allocator.free(h.handle_id);
+            self.allocator.free(h.obligation_module);
+            self.allocator.free(h.obligation_name);
+            self.allocator.free(h.discharge_event);
+            self.allocator.free(h.created_by_event);
+            self.allocator.free(h.resource_type);
+            self.allocator.free(h.scope_name);
+            self.allocator.free(h.bridge_id);
+        }
+        self.handles.deinit(self.allocator);
+        self.resources.deinit(self.allocator);
+    }
+
+    fn noteCustody(self: *HandlePool, kind: CustodyKind, h: *const Handle, subject: []const u8) void {
+        const cb = self.on_custody orelse return;
+        const ctx = self.custody_ctx orelse return;
+        cb(ctx, kind, h, subject);
+    }
+
+    /// Register a new handle and return its pool ID
+    pub fn acquire(
+        self: *HandlePool,
+        handle_id: []const u8,
+        obligation_module: []const u8,
+        obligation_name: []const u8,
+        discharge_event: []const u8,
+        created_by_event: []const u8,
+        resource_type: []const u8,
+        scope_name: []const u8,
+        depends_on: []const u32,
+        subject: []const u8,
+        tainted: bool, // borrow taint (`<type>` bare): tracked, owes no discharge
+    ) !u32 {
+        const id = self.next_id;
+        self.next_id += 1;
+
+        var dep_slice: [4]u32 = .{0} ** 4;
+        var dep_len: u8 = 0;
+        for (depends_on) |dep| {
+            if (dep_len >= dep_slice.len) break;
+            dep_slice[dep_len] = dep;
+            dep_len += 1;
+        }
+
+        try self.handles.append(self.allocator, .{
+            .id = id,
+            .handle_id = try self.allocator.dupe(u8, handle_id),
+            .obligation_module = try self.allocator.dupe(u8, obligation_module),
+            .obligation_name = try self.allocator.dupe(u8, obligation_name),
+            .discharge_event = try self.allocator.dupe(u8, discharge_event),
+            .discharged = false,
+            .created_by_event = try self.allocator.dupe(u8, created_by_event),
+            .resource_type = try self.allocator.dupe(u8, resource_type),
+            .scope_name = try self.allocator.dupe(u8, scope_name),
+            .bridge_id = try self.allocator.dupe(u8, self.bridge_id),
+            .depends_on = dep_slice,
+            .depends_on_len = dep_len,
+            .tainted = tainted,
+        });
+
+        self.noteCustody(.mint, &self.handles.items[self.handles.items.len - 1], subject);
+        return id;
+    }
+
+    /// Whether any undischarged handle depends on `provider_id`. The release
+    /// guard: a provider may not be withdrawn while a dependent holds it.
+    pub fn hasUndischargedDependents(self: *const HandlePool, provider_id: u32) bool {
+        for (self.handles.items) |h| {
+            if (h.discharged) continue;
+            for (h.depends_on[0..h.depends_on_len]) |dep| {
+                if (dep == provider_id) return true;
+            }
+        }
+        return false;
+    }
+
+    /// Mark a handle as discharged by pool ID
+    pub fn dischargeById(self: *HandlePool, id: u32) void {
+        for (self.handles.items) |*h| {
+            if (h.id == id and !h.discharged) {
+                h.discharged = true;
+                self.releaseResource(h.handle_id);
+                self.noteCustody(.release, h, "");
+                return;
+            }
+        }
+    }
+
+    /// Find handle by handle_id string within a specific scope (for explicit discharge)
+    /// Scope isolation prevents cross-scope handle collisions
+    pub fn findByHandleId(self: *HandlePool, handle_id: []const u8, scope_name: []const u8) ?*Handle {
+        for (self.handles.items) |*h| {
+            if (std.mem.eql(u8, h.handle_id, handle_id) and
+                std.mem.eql(u8, h.scope_name, scope_name) and
+                !h.discharged) {
+                return h;
+            }
+        }
+        return null;
+    }
+
+    /// Find handle by handle_id without scope check (for legacy/bridge inspection)
+    pub fn findByHandleIdAnyScope(self: *HandlePool, handle_id: []const u8) ?*Handle {
+        for (self.handles.items) |*h| {
+            if (std.mem.eql(u8, h.handle_id, handle_id) and !h.discharged) {
+                return h;
+            }
+        }
+        return null;
+    }
+
+    /// Mark a handle as discharged by handle_id string (legacy compatibility, no scope check)
+    pub fn discharge(self: *HandlePool, handle_id: []const u8) void {
+        if (self.findByHandleIdAnyScope(handle_id)) |h| {
+            h.discharged = true;
+            self.releaseResource(handle_id);
+            self.noteCustody(.release, h, "");
+        }
+    }
+
+    /// Mint the token a `*T` return rides home on — opaque and pool-unique,
+    /// `h:Type:` + seeded hex. A sequence made spelled guesses resolvable —
+    /// binding what the observation returned is the only legal access. The
+    /// mint itself lives in the `mint` part (line wall).
+    pub fn mintResourceToken(self: *HandlePool, resource_type: []const u8) []const u8 {
+        return poolMintResourceToken(self, resource_type);
+    }
+
+    /// Store a typed value under its token. Called by generated dispatchers at
+    /// pack time — the handle is acquired afterwards, keyed on the same string.
+    /// `token` must come from mintResourceToken: the map does not copy keys.
+    pub fn registerResource(self: *HandlePool, token: []const u8, resource: *anyopaque) void {
+        self.resources.put(self.allocator, token, resource) catch @panic("pool: OOM registering resource");
+    }
+
+    /// The typed value a token names, if the pool holds it. Resolution is a
+    /// lookup, never a fabrication — a token nobody minted resolves nothing.
+    pub fn resolveResource(self: *HandlePool, token: []const u8) ?*anyopaque {
+        return self.resources.get(token);
+    }
+
+    /// A discharged handle's token stops resolving. The entry is dropped;
+    /// the token's bytes are eternal page memory, so nothing is freed here.
+    fn releaseResource(self: *HandlePool, handle_id: []const u8) void {
+        _ = self.resources.fetchRemove(handle_id);
+    }
+
+    /// Get all undischarged handles
+    pub fn getUndischarged(self: *const HandlePool) []const Handle {
+        // Count undischarged
+        var count: usize = 0;
+        for (self.handles.items) |h| {
+            if (!h.discharged) count += 1;
+        }
+        if (count == 0) return &[_]Handle{};
+
+        // Collect them
+        var result = self.allocator.alloc(Handle, count) catch return &[_]Handle{};
+        var i: usize = 0;
+        for (self.handles.items) |h| {
+            if (!h.discharged) {
+                result[i] = h;
+                i += 1;
+            }
+        }
+        return result;
+    }
+
+    /// Get ALL handles (for bridge inspection - includes discharged)
+    pub fn getAllHandles(self: *const HandlePool) []const Handle {
+        return self.handles.items;
+    }
+
+    pub fn countUndischarged(self: *const HandlePool) usize {
+        var count: usize = 0;
+        for (self.handles.items) |h| {
+            if (!h.discharged) count += 1;
+        }
+        return count;
+    }
+};

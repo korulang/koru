@@ -5,13 +5,24 @@
 // Everything here is declaration-level types: the host-dispatch contract
 // (HostView / HostDispatchFn / the dispatch-detail channel), the fn-ptr
 // vocabulary the runtime generates dispatchers against, and the
-// obligation CreateSpec/DischargeSpec specs.
+// obligation CreateSpec/DischargeSpec specs — those moved to the
+// `contracts-specs` part; DispatchResult moved up from interpreter.kz
+// beside the DispatchFn that returns it.
 
 // DISPATCHER TYPE - Function signature for scope dispatchers
 // ============================================================================
 
 pub const Invocation = ast.Invocation;
 pub const DispatchFn = *const fn(*const ast.Invocation, *DispatchResult) anyerror!void;
+
+// ============================================================================
+// DISPATCH RESULT - What dispatchers return to the interpreter
+// ============================================================================
+
+pub const DispatchResult = struct {
+    branch: []const u8,
+    fields: []const NamedField,  // Direct typed field values
+};
 // HostView — the slice of interpreter state a host verb may see.
 // Deliberately NOT *InterpreterContext: a fn-ptr naming its storing
 // struct is a dependency loop. The env fields are the binding layers a
@@ -45,27 +56,8 @@ pub const CostFn = *const fn([]const u8) u64;
 pub const ObligationsArrayFn = *const fn([]const u8) []const []const u8;  // tor -> []obligations
 pub const DischargeEventFn = *const fn([]const u8) ?[]const u8;  // obligation -> tor name
 
-// CreateSpec describes an obligation created by an tor's output field
-pub const CreateSpec = struct {
-    obligation_module: []const u8,  // e.g., "sqlite3"
-    obligation_name: []const u8,    // e.g., "opened"
-    field_name: []const u8,         // which output field holds the handle ID
-    resource_type: []const u8,      // e.g., "Connection"
-    // Outcome branch carrying this create, in source spelling — null = bare
-    // return. A branched tor books only the spec whose branch FIRED.
-    branch: ?[]const u8 = null,
-};
-
-// DischargeSpec describes an obligation discharged by an tor's input arg
-pub const DischargeSpec = struct {
-    obligation_module: []const u8,  // e.g., "sqlite3"
-    obligation_name: []const u8,    // e.g., "opened"
-    arg_name: []const u8,           // which input arg carries the handle ID
-};
-
-// Spec lookup functions - return full specs with field/arg names
-pub const CreatesSpecFn = *const fn([]const u8) []const CreateSpec;    // tor -> []CreateSpec
-pub const DischargesSpecFn = *const fn([]const u8) []const DischargeSpec;  // tor -> []DischargeSpec
+// CreateSpec/DischargeSpec and the spec-lookup fns moved to the
+// `contracts-specs` part — the obligation-spec records and their lookups.
 
 // Input-field lookup - an tor's declared argument vocabulary. Null means
 // the name is not this scope's verb at all (vocabulary membership answers

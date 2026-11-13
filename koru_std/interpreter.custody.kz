@@ -4,7 +4,8 @@
 //
 // The Handle is what a HandlePool mints and discharges; CustodyKind is what
 // the custody log calls those acts; custodySubject renders WHAT the
-// minting verb took, renderHeldHandles WHO still owes.
+// minting verb took, renderHeldHandles WHO still owes — the witnesses
+// moved to the `custody-witness` part.
 
 pub const Handle = struct {
     /// Unique ID within this pool (persistent, incrementing)
@@ -19,6 +20,12 @@ pub const Handle = struct {
     discharge_event: []const u8,
     /// Whether this handle has been discharged
     discharged: bool,
+    /// Borrow taint (`<type>` with no `!`): tracked and typed like an
+    /// obligation — borrows and affordance gating read it — but it owes NO
+    /// discharge. No verb fires for it; the hang-up sweep releases it
+    /// silently, and a `<!type>` consume refuses it (consumes need
+    /// obligations, not borrows).
+    tainted: bool = false,
     /// Which tor created this resource (e.g., "sqlite3:open")
     created_by_event: []const u8,
     /// Resource type name for inspection (e.g., "Connection")
@@ -45,38 +52,5 @@ pub const Handle = struct {
 /// What the custody record saw happen to a handle.
 pub const CustodyKind = enum { mint, release };
 
-/// `name=value, name=value` into `buf` — the custody subject: WHAT the
-/// minting verb took, in the wire's own spellings. Runs at the dispatch
-/// site where the evaluated args still exist; the pool stores no copy —
-/// the witness is synchronous, the slice dies with the call.
-pub fn custodySubject(buf: []u8, args: []const ast.Arg) []const u8 {
-    var fbs = std.io.fixedBufferStream(buf);
-    const w = fbs.writer();
-    for (args, 0..) |a, i| {
-        if (i > 0) w.writeAll(", ") catch break;
-        w.print("{s}={s}", .{ a.name, a.value }) catch break;
-    }
-    return fbs.getWritten();
-}
-
-/// The NAMED handles an under-handled turn leaves on the bridge, as a JSON
-/// list — "not the count `run` returns today" (430_056 ruling): a host or
-/// shell line addresses them by name. Page-backed like the other durable
-/// strings; the reporter for the hand-back may never die beneath the host.
-pub fn renderHeldHandles(pool: *HandlePool) []const u8 {
-    var buf = std.ArrayList(u8){};
-    defer buf.deinit(std.heap.page_allocator);
-    const w = buf.writer(std.heap.page_allocator);
-    w.writeByte('[') catch return "[]";
-    var first = true;
-    for (pool.handles.items) |h| {
-        if (h.discharged) continue;
-        if (!first) w.writeByte(',') catch return "[]";
-        first = false;
-        w.writeByte('"') catch return "[]";
-        w.writeAll(h.handle_id) catch return "[]";
-        w.writeByte('"') catch return "[]";
-    }
-    w.writeByte(']') catch return "[]";
-    return std.heap.page_allocator.dupe(u8, buf.items) catch "[]";
-}
+// custodySubject and renderHeldHandles moved to the `custody-witness`
+// part — the subject render and the held-handles report.

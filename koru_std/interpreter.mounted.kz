@@ -11,7 +11,9 @@
 // owner resolution every check consults, and the checks themselves —
 // held-possession, the dispatch fallback, the arm-word walk, obligation
 // bookkeeping, and the sweep's discharge-owner search — each moved here
-// because each now resolves an owner the bound scope may not be.
+// because each now resolves an owner the bound scope may not be. The
+// host-service ABI a .dylib scope is handed at init lives in the
+// `mounted-services` part.
 
 const ScopeRuntime = @import("root").koru_std.koru_runtime.ScopeRuntime;
 
@@ -51,39 +53,9 @@ pub fn runMountedScopes() ?[]const ScopeRuntime {
 }
 
 // ============================================================================
-// MOUNTED HOST SERVICES - the ABI a .dylib scope is handed at init
+// MOUNTED HOST SERVICES moved to the `mounted-services` part — the ABI
+// version, the MountedHostServices table, and mountedHostServices().
 // ============================================================================
-//
-// A mounted scope's dispatcher is generated code that cannot be linked
-// against this process — the same problem generated dispatchers already
-// have with the pool and the detail slot, answered the same way: a table
-// of host-side entry points the module stores at init. The channels above
-// are the host end of the table; the module's dispatchers call these
-// pointers exactly as in-binary dispatchers call the functions.
-//
-// The version field is the whole compatibility story for now: a module
-// must be built by the same toolchain as the host it mounts into (the
-// struct layouts it reads — Invocation, DispatchResult, the spec records —
-// are compiled, not serialized). A frozen C ABI is a later ruling, not a
-// silent drift today.
-
-pub const KORU_MOUNTED_ABI_VERSION: u32 = 1;
-
-pub const MountedHostServices = struct {
-    abi_version: u32,
-    set_dispatch_detail: *const fn ([]const u8) void,
-    register_dispatch_resource: *const fn ([]const u8, *anyopaque) []const u8,
-    resolve_dispatch_resource: *const fn ([]const u8) ?*anyopaque,
-};
-
-pub fn mountedHostServices() MountedHostServices {
-    return .{
-        .abi_version = KORU_MOUNTED_ABI_VERSION,
-        .set_dispatch_detail = &setDispatchDetail,
-        .register_dispatch_resource = &registerDispatchResource,
-        .resolve_dispatch_resource = &resolveDispatchResourceAny,
-    };
-}
 
 // ============================================================================
 // OWNER RESOLUTION - which scope answers for a verb name
@@ -304,6 +276,15 @@ fn assertHandlesHeld(
                         .{ spec.arg_name, spec.obligation_name, arg.value, h.obligation_name, spec.obligation_name }) catch null;
                     return error.HandleNotHeld;
                 }
+                // A borrow taint carries the type but no obligation — a
+                // `<!type>` consume needs the dischargeable kind. Spending
+                // one would retire a handle nothing owes and lie about it.
+                if (h.tainted) {
+                    ctx.error_detail = std.fmt.allocPrint(ctx.allocator,
+                        "'{s}' wants a <{s}> to spend — '{s}' is a borrow taint, not a dischargeable obligation. Mint one through a verb whose signature ends '-> <{s}!>'",
+                        .{ spec.arg_name, spec.obligation_name, arg.value, spec.obligation_name }) catch null;
+                    return error.HandleNotHeld;
+                }
                 break;
             }
         }
@@ -326,6 +307,9 @@ fn assertHandlesHeld(
         const p = field.phantom orelse continue;
         if (p.len == 0 or p[0] == '!' or p[p.len - 1] == '!') continue;
         const state = if (std.mem.lastIndexOfScalar(u8, p, ':')) |c| p[c + 1 ..] else p;
+        // `<*>` is the wildcard borrow — any held handle satisfies it, so
+        // there is no type to gate on (same rule scope-affordances applies).
+        if (std.mem.eql(u8, state, "*")) continue;
         for (args) |arg| {
             if (!std.mem.eql(u8, arg.name, field.name)) continue;
             const h = pool.findByHandleId(arg.value, ctx.scope_name) orelse {
@@ -412,8 +396,11 @@ fn recordDispatchObligations(
         for (specs) |spec| {
             // A branch-scoped spec acquires only on the outcome that carried it.
             if (spec.branch) |sb| { if (!namesEql(sb, dispatch_result.branch)) continue; }
-            // Find the discharge tor — scope-local obligation name.
-            const discharge_event = if (own.discharge_event_fn) |discharge_fn|
+            // Find the discharge tor — scope-local obligation name. A
+            // borrow taint owes nothing: no verb fires for it, so the
+            // recorded discharge path stays empty and the sweep releases
+            // it silently.
+            const discharge_event = if (spec.tainted) "" else if (own.discharge_event_fn) |discharge_fn|
                 discharge_fn(spec.obligation_name) orelse "unknown"
             else
                 "unknown";
@@ -459,7 +446,7 @@ fn recordDispatchObligations(
                 var subject_buf: [192]u8 = undefined;
                 _ = pool.acquire(hid, spec.obligation_module, spec.obligation_name, discharge_event,
                     event_name, spec.resource_type, ctx.scope_name, dep_ids[0..dep_len],
-                    custodySubject(&subject_buf, evaluated_inv.args)) catch {};
+                    custodySubject(&subject_buf, evaluated_inv.args), spec.tainted) catch {};
             }
         }
     } else if (own.creates_obligations_fn) |creates_fn| {
@@ -478,7 +465,7 @@ fn recordDispatchObligations(
             var subject_buf: [192]u8 = undefined;
             _ = pool.acquire(binding_name, "unknown", obligation, discharge_event,
                 event_name, "unknown", ctx.scope_name, &.{},
-                custodySubject(&subject_buf, evaluated_inv.args)) catch {};
+                custodySubject(&subject_buf, evaluated_inv.args), false) catch {};
         }
     }
 

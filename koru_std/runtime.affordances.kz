@@ -20,51 +20,5 @@
 // cannot drift (same contract as scope-manifest).
 
 // The tor decl moved to the `scopeverbs` part — the scope verbs sit
-// together; the proc stays here.
-
-~proc scope-affordances|zig {
-    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const allocator = arena_state.allocator();
-    var out = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-
-    inline for (comptime buildScopeTable()) |scope_info| {
-        if (std.mem.eql(u8, name, scope_info.name)) {
-            const events = scope_info.events_fn.?();
-            for (events) |event_name| {
-                const input = if (scope_info.input_fn) |f| f(event_name) orelse &.{} else &.{};
-                // Callable NOW iff every `!type` phantom is among the held
-                // resource types.
-                var callable = true;
-                for (input) |field| {
-                    if (field.phantom) |p| {
-                        if (p.len > 0 and p[0] == '!') {
-                            const required = p[1..];
-                            var found = false;
-                            var it = std.mem.splitScalar(u8, held, ',');
-                            while (it.next()) |piece| {
-                                const t = std.mem.trim(u8, piece, " \t\r\n");
-                                if (t.len > 0 and std.mem.eql(u8, t, required)) {
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            if (!found) {
-                                callable = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (!callable) continue;
-                if (out.items.len > 0) out.append(allocator, '\n') catch unreachable;
-                // Same declaration spelling as scope-vocabulary — outcomes too,
-                // or a callable line would promise a contract it doesn't show.
-                wireSignatureLine(&out, allocator, event_name, input);
-                const branches = if (scope_info.branches_fn) |bf| bf(event_name) else &[_]BranchSpec{};
-                wireDeclOutcome(&out, allocator, branches);
-            }
-            return .{ .ok = out.toOwnedSlice(allocator) catch unreachable };
-        }
-    }
-    return .{ .not_found = .{} };
-}
+// together. The proc moved to the `affordances-gate` part — the held-type
+// gate it runs is the possession check, kept beside the surface docs.

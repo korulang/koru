@@ -1,0 +1,65 @@
+// Test: a tainted handle at SESSION hang-up releases silently.
+//
+// The bridge holds two <found> handles at close: `peek_1`, a borrow taint
+// (`-> string<found>` — tracked, typed, owes nothing), and `deep_1`, a real
+// obligation (`-> string<found!>`). The sweep must fire `drop` for the
+// obligation and NOTHING for the taint — no discharge verb exists for it,
+// and no leak is reported: `close` panics on stranded handles, so reaching
+// the print at all is the assertion that the taint was released.
+
+~import std/bridge
+~import std/runtime
+~import std/io
+
+const std = @import("std");
+
+~pub tor peek { q: string } -> string<found>
+
+~proc peek|zig {
+    _ = q;
+    return "peek_1";
+}
+
+~pub tor deep { q: string } -> string<found!>
+
+~proc deep|zig {
+    _ = q;
+    return "deep_1";
+}
+
+~pub tor drop { h: string<!found> }
+
+~proc drop|zig {
+    std.debug.print("drop() ran for '{s}'\n", .{h});
+}
+
+~std/runtime:register(scope: "demo") {
+    peek(1)
+    deep(1)
+    drop(1)
+}
+
+// create mints <session!>; only close discharges it.
+~std/bridge:create(id: "taint-session", scope: "demo"): br |> turn(br): held |> std/bridge:close(br) |> std/io:print.ln("held before hang-up: {{ held:d }}")
+
+// Mint one taint and one obligation on the bridge, then walk away from both.
+~tor turn { br: *std/bridge:Bridge<session> } -> u32
+
+~proc turn|zig {
+    const rt = @import("root").koru_std.koru_runtime;
+    _ = rt.run_event.handler(.{
+        .source = "peek(q: \"x\")",
+        .scope = "demo",
+        .budget = 100,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+    });
+    _ = rt.run_event.handler(.{
+        .source = "deep(q: \"x\")",
+        .scope = "demo",
+        .budget = 100,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+    });
+    return br.getHandleCount();
+}

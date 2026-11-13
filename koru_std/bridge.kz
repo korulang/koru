@@ -32,7 +32,6 @@
 // to release panics; `get-handles` answers the count on either side.
 
 ~pub tor close { br: *Bridge<!session> }
-
 ~proc close|zig {
     dischargeAll(br); custodyMark(br, "session-closed"); br.deinit(); koru_allocator().destroy(br);
 }
@@ -48,6 +47,7 @@
 ~part bind
 ~part residue
 ~part affordances
+~part affordances-render
 ~part turn
 ~part turnscan
 ~part wiregate

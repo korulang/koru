@@ -371,15 +371,9 @@ pub const BudgetState = struct {
 };
 
 // ENVIRONMENT moved to the `env` part — the binding table and seeding.
-
-// ============================================================================
-// DISPATCH RESULT - What dispatchers return to the interpreter
-// ============================================================================
-
-pub const DispatchResult = struct {
-    branch: []const u8,
-    fields: []const NamedField,  // Direct typed field values
-};
+//
+// DISPATCH RESULT moved to the `contracts` part — beside the DispatchFn
+// whose signature returns it.
 
 // ============================================================================
 // INTERPRETER CONTEXT - Passed to the execution loop
@@ -483,6 +477,7 @@ pub const InterpreterThreadState = struct {
 ~part arms
 ~part checks
 ~part contracts
+~part contracts-specs
 ~part define
 ~part expr
 ~part fieldvalue
@@ -491,6 +486,7 @@ pub const InterpreterThreadState = struct {
 ~part names
 ~part parse
 ~part pool
+~part pool-organ
 ~part mint
 ~part run
 ~part refuse
@@ -503,14 +499,17 @@ pub const InterpreterThreadState = struct {
 ~part argfmt
 ~part tilde
 ~part handles
+~part handles-invoke
 ~part flowsrc
 ~part deftable
 ~part defined
 ~part wireexpr
 ~part resdispatch
 ~part custody
+~part custody-witness
 ~part invargs
 ~part mounted
+~part mounted-services
 ~part flowchecks
 ~part defflow
 ~part eval
