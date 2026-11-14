@@ -637,7 +637,7 @@ fn magIsDec(m: []const u8) bool {
 
 // The defect sink: declared string<exact!> so an impossible arm can produce
 // it and satisfy the checker — it panics if ever reached.
-~tor unreachable { } -> string<exact!>
+~pub tor unreachable { } -> string<exact!>
 
 ~proc unreachable|zig {
     @panic("std/quantity: unreachable arm reached");

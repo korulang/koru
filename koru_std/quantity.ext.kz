@@ -60,7 +60,6 @@ fn numPrefix(t: []const u8) usize {
 
 // Juxtaposition is multiplication: parse a run of unit names by
 // longest match (mol over m+ol, kg over k+g since k is no unit).
-
 fn accumUnits(t: []const u8, dim: *Dim, scale: *i32, sgn: i32) bool {
     var i: usize = 0;
     while (i < t.len) {
