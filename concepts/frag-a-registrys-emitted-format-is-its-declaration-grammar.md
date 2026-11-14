@@ -31,6 +31,16 @@ Atomicity falls out of staging: the block builds under an arena and
 emits only on success, so a `dup`/`full`/`unknown-generator`/`bad`
 anywhere voids the whole block — one arm set, not one per entry.
 
+Both spellings remain by design, and the choice is presentational, not
+semantic: the batch block `{ sin=g(cos); cos=(-1e0*g(sin)) }` fuses
+seed+law per entry and is the natural home for cyclic sets (two calls
+collapse into one block whose entries already serialize as the pair);
+the staged `rel-seed(name: x) |> rel-law(name: x) { law }` threads the
+registry through each step when per-entry arm granularity or stepwise
+registry values are wanted. Neither expresses something the other
+cannot — a registry is a value, and the two spellings are two ways to
+construct the same one (615_077 pins both).
+
 Pairs with [[frag-a-phantom-can-only-promise-what-a-producer-can-prove]]
 (registry text stays plain `string` — validity is still parse-under-ctx)
 and the trusted-literal frag (the *authored* lane keeps `lit`-style
