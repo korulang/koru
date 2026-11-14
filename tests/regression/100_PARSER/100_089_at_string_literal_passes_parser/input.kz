@@ -1,0 +1,6 @@
+// PIN (RED — aspirational): `@"path"` is not Koru syntax. It passes the
+// frontend parser today and only dies downstream in backend Zig — the hole
+// that let `std/guide:add(key) @"guides/x.md"}` ride into bench/airline_guides.k
+// as residual include-ref prose. Desired: a frontend refusal naming the `@`.
+// Verified 2026-11-15: this exact line frontend-compiles on main.
+std/io:print.ln(@"guides/hold.payment-failed.md")
