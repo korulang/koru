@@ -59,6 +59,7 @@
 ~part sqsub
 ~part euler
 ~part qeuler
+~part aeuler
 ~part conj
 ~part conjm
 ~part mulfolds

@@ -8,8 +8,8 @@
 //   b == 0,  scale the variable: x -> x*inv(sqrt a) makes
 //   a != 1   sq(a*x^2+c) spell sq(x^2+c) and dx picks up inv(sqrt a)
 //            — an x-free algebraic coefficient (a>0 only; a<0 is
-//            the arcsin family — a different answer class, refused by
-//            name).  Scaling needs no rational division: c/a is never
+//            the arcsin family, ~aeuler's third substitution).
+//            Scaling needs no rational division: c/a is never
 //            materialized.
 //
 // Both recurse into eulerLane: the shift composes with the scaling
@@ -52,6 +52,14 @@ fn eulerQuadPre(
         lane_extra.* = "euler-radicand-shape";
         return null;
     }
+    // a < 0 — the arcsin family, a different answer class the first
+    // substitution cannot reach.  Euler's third substitution goes
+    // through a rational root; the discriminant decides, and the
+    // shift/scale pre-steps both leave its squareness invariant, so
+    // the check lands here before either runs.
+    if (!up[2].n.isPositive()) {
+        return aeulerLane(alloc, nt_var, max_order, max_deg, const_txt, anti_out, depth, lane_extra);
+    }
     const at = try ratToString(alloc, &up[2]);
     defer alloc.free(at);
     const bt = try ratToString(alloc, &up[1]);
@@ -88,7 +96,7 @@ fn eulerQuadPre(
     // b == 0: scale the variable when a > 0, a != 1, c != 0.  The
     // scale factor spells sqrt(inv a) — sq*sq folds on the constant radicand
     // where inv(sq)*inv(sq) does not.
-    if (ratIsOne(&up[2]) or ratIsZero(&up[0]) or !up[2].n.isPositive()) {
+    if (ratIsOne(&up[2]) or ratIsZero(&up[0])) {
         lane_extra.* = "euler-radicand-shape";
         return null;
     }

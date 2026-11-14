@@ -12,8 +12,10 @@
 // the chain rule exactly as gsub/sqsub — no post-check.  Refusals:
 //   euler-radicand-mixed  different radicands under one integrand
 //   euler-radicand-shape  u not reachable as x^2+C — even after the
-//                         qeuler shift/factor pre-steps (x^2 alone and
-//                         a<0 stay refused by name)
+//                         qeuler shift/factor pre-steps (x^2 alone
+//                         stays refused; a<0 is ~aeuler's call)
+//   euler-radicand-roots  a<0 with no rational root (~aeuler) —
+//                         non-real radicand or a Q(√Δ) answer field
 //   euler-inner / euler-subst-rsum / euler-inner-no-anti
 // ============================================================================
 

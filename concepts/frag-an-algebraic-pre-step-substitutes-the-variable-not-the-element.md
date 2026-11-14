@@ -139,11 +139,27 @@ sym.conj with the other canon merges — the wall's split
 coincidentally found the right home.
 
 What the family is NOT: it does not integrate mixed radicands
-(√(1+x²)·√(1+2x²) refuses euler-radicand-mixed), negative-leading
-quadratics (√(4−x²) is the arcsin class — a real lane, not this
-one's pre-step), zero-constant radicands (√(x²), √(4x²+4x+1) =
-√((2x+1)²) are absolute-value shapes, non-elementary spellings),
-or integrands whose transformed F(t) is non-elementary
-(exp(x)·√(1+x²) refuses euler-inner). The boundary moved again;
-it did not disappear. True-tower coefficient fields ℚ(x,θ)
-remain the named next work.
+(√(1+x²)·√(1+2x²) refuses euler-radicand-mixed), zero-constant
+radicands (√(x²), √(4x²+4x+1) = √((2x+1)²) are absolute-value
+shapes, non-elementary spellings), or integrands whose transformed
+F(t) is non-elementary (exp(x)·√(1+x²) refuses euler-inner). The
+boundary moved again; it did not disappear. True-tower coefficient
+fields ℚ(x,θ) remain the named next work.
+
+B11 closed the arcsin class the boundary paragraph above named —
+but on Euler's *third* substitution, not through the pre-steps.
+u = a(x−r)(x−s) with a<0 rationalizes through a rational root:
+t = √u/(r−x) inverts to x = (t²r−as)/(t²−a), √u spells
+a(s−r)t/(t²−a), dx/dt = 2a(s−r)t/(t²−a)² — the same
+rationalize-everything-at-once shape as the first substitution,
+checked-exact by the same chain rule, and the answers come back
+in atan rather than log: 1/√(4−x²) emits
+2·atan(√(4−x²)/(−2−x)), the arcsin family spelled without trig.
+The reach predicate is the discriminant, not the coefficient
+signs: Δ must be a *positive rational square* — and that check
+belongs upstream of the shift/scale pre-steps because both leave
+squareness invariant, so a<0 dispatches straight to the lane.
+Δ≤0 is a non-real radicand; Δ>0 nonsquare is a Q(√Δ) answer
+field — both refuse `euler-radicand-roots`, which is the honest
+boundary now: the extension-field version of this lane is the
+same named debt as the true-tower coefficient fields above.
