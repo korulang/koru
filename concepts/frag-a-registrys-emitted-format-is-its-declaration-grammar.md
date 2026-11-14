@@ -36,3 +36,11 @@ Pairs with [[frag-a-phantom-can-only-promise-what-a-producer-can-prove]]
 and the trusted-literal frag (the *authored* lane keeps `lit`-style
 capture; a registry block is data, not provenance — `src` is a plain
 composable string by design).
+
+Second instance, same day: `unitreg:v1;USD=axis(currency)` declares
+non-SI axes with the identical shape — emitted format and declaration
+grammar are one language, `-decls` merges registries by re-parsing,
+refusals void the block. Two differences measured: unitreg needs no
+two-phase (an `axis(kind)` entry references no other axis — no cycles
+exist to close over), and entries may omit the `=` entirely (a bare
+name is a kindless axis).

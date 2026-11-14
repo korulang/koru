@@ -1,0 +1,173 @@
+// ============================================================================
+// ~part unitreg — declared non-SI axes. `Dim = [7]i32` is the Lean-proven
+// free abelian group on seven generators and never widens; extension units
+// (money, energy, custom) live in a threaded registry instead:
+//   unitreg:v1;USD=axis(currency);EUR=axis(currency);point
+// An entry is `name` (kindless axis) or `name=axis(kind)` — the kind tag
+// groups semantics without touching the algebra. Undeclared atoms refuse
+// `undeclared-axis` at lookup; nothing silently creates an axis.
+//
+// Tors:
+//   unit-reg-new    -> unitreg:v1                                  (allocated!)
+//   unit-reg-put    reg, name, kind -> exact reg' | dup | bad      add one axis
+//   unit-reg-decls  reg, src        -> exact reg' | dup | bad      a block
+//   unit-reg-get    reg, name       -> exact kind | undeclared-axis | bad
+//
+// src is the unitreg:v1 tail grammar — entries `;`-separated, optional
+// prefix — so registry text and declaration text are one language and
+// unit-reg-decls(r, otherRegistryText) merges. Single phase: unlike rel
+// laws, `axis(kind)` references no other axis, so no cycles exist to
+// close over. Atomic: dup/bad anywhere voids the whole block.
+// ============================================================================
+
+const UReg = struct { names: std.ArrayList([]const u8), kinds: std.ArrayList([]const u8) };
+
+fn axisNameOk(nm: []const u8) bool {
+    if (nm.len == 0) return false;
+    if (!(std.ascii.isAlphabetic(nm[0]) or nm[0] == '_')) return false;
+    for (nm[1..]) |ch| {
+        if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return false;
+    }
+    return true;
+}
+
+fn uregFind(g: *const UReg, nm: []const u8) ?usize {
+    for (g.names.items, 0..) |n2, i| {
+        if (std.mem.eql(u8, n2, nm)) return i;
+    }
+    return null;
+}
+
+fn uregParse(alloc: std.mem.Allocator, s: []const u8) !UReg {
+    if (!std.mem.startsWith(u8, s, "unitreg:v1")) return error.Malformed;
+    const tail = s["unitreg:v1".len..];
+    if (tail.len > 0 and tail[0] != ';') return error.Malformed;
+    var g = UReg{ .names = .{}, .kinds = .{} };
+    var it = std.mem.splitScalar(u8, tail, ';');
+    while (it.next()) |ent| {
+        if (ent.len == 0) continue;
+        try uregEntry(alloc, &g, ent);
+    }
+    return g;
+}
+
+// One entry: `name` or `name=axis(kind)`. Names must not already exist.
+fn uregEntry(alloc: std.mem.Allocator, g: *UReg, ent: []const u8) !void {
+    var nm = ent;
+    var kind: []const u8 = "";
+    if (std.mem.indexOfScalar(u8, ent, '=')) |eq| {
+        nm = ent[0..eq];
+        const rhs = ent[eq + 1 ..];
+        if (!std.mem.startsWith(u8, rhs, "axis(") or rhs.len < 6 or rhs[rhs.len - 1] != ')')
+            return error.Malformed;
+        kind = rhs[5 .. rhs.len - 1];
+        if (kind.len == 0 or !axisNameOk(kind)) return error.Malformed;
+    }
+    if (!axisNameOk(nm)) return error.Malformed;
+    if (uregFind(g, nm) != null) return error.Malformed;
+    try g.names.append(alloc, nm);
+    try g.kinds.append(alloc, kind);
+}
+
+fn uregEmit(alloc: std.mem.Allocator, g: *const UReg) ![]u8 {
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    try out.appendSlice(alloc, "unitreg:v1");
+    for (g.names.items, 0..) |nm, i| {
+        try out.append(alloc, ';');
+        try out.appendSlice(alloc, nm);
+        if (g.kinds.items[i].len > 0) {
+            try out.appendSlice(alloc, "=axis(");
+            try out.appendSlice(alloc, g.kinds.items[i]);
+            try out.append(alloc, ')');
+        }
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+~pub tor unit-reg-new {} -> string<std/io:allocated!>
+
+~proc unit-reg-new|zig {
+    return ownedCopy("unitreg:v1");
+}
+
+// Append one axis. `dup` refuses an existing name — re-declaring a kind
+// is a registry delete-and-redeclare, not a silent overwrite.
+~pub tor unit-reg-put { reg: string<std/io:!allocated>, name: string, kind: string }
+| exact string<std/io:allocated!>
+| dup
+| bad
+
+~proc unit-reg-put|zig {
+    defer qtyFree(reg);
+    const alloc = koru_allocator();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var g = uregParse(a, reg) catch return .{ .bad = .{} };
+    if (kind.len > 0 and !axisNameOk(kind)) return .{ .bad = .{} };
+    if (!axisNameOk(name)) return .{ .bad = .{} };
+    if (uregFind(&g, name) != null) return .{ .dup = .{} };
+    g.names.append(a, name) catch @panic("std/quantity:unit-reg-put: oom");
+    g.kinds.append(a, kind) catch @panic("std/quantity:unit-reg-put: oom");
+    const out = uregEmit(alloc, &g) catch @panic("std/quantity:unit-reg-put: emit");
+    return .{ .exact = out };
+}
+
+// Declare a whole block: src is the unitreg:v1 tail grammar —
+// `USD=axis(currency);EUR=axis(currency);point` — optionally prefixed,
+// so registry text composes. dup/bad anywhere voids the block.
+~pub tor unit-reg-decls { reg: string<std/io:!allocated>, src: string }
+| exact string<std/io:allocated!>
+| dup
+| bad
+
+~proc unit-reg-decls|zig {
+    defer qtyFree(reg);
+    const alloc = koru_allocator();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var g = uregParse(a, reg) catch return .{ .bad = .{} };
+    var tail = src;
+    if (std.mem.startsWith(u8, tail, "unitreg:v1")) {
+        tail = tail["unitreg:v1".len..];
+        if (tail.len > 0 and tail[0] != ';') return .{ .bad = .{} };
+    }
+    var it = std.mem.splitScalar(u8, tail, ';');
+    while (it.next()) |ent| {
+        if (ent.len == 0) continue;
+        var nm = ent;
+        var kind: []const u8 = "";
+        if (std.mem.indexOfScalar(u8, ent, '=')) |eq| {
+            nm = ent[0..eq];
+            const rhs = ent[eq + 1 ..];
+            if (!std.mem.startsWith(u8, rhs, "axis(") or rhs.len < 6 or rhs[rhs.len - 1] != ')')
+                return .{ .bad = .{} };
+            kind = rhs[5 .. rhs.len - 1];
+            if (kind.len == 0 or !axisNameOk(kind)) return .{ .bad = .{} };
+        }
+        if (!axisNameOk(nm)) return .{ .bad = .{} };
+        if (uregFind(&g, nm) != null) return .{ .dup = .{} };
+        g.names.append(a, nm) catch @panic("std/quantity:unit-reg-decls: oom");
+        g.kinds.append(a, kind) catch @panic("std/quantity:unit-reg-decls: oom");
+    }
+    const out = uregEmit(alloc, &g) catch @panic("std/quantity:unit-reg-decls: emit");
+    return .{ .exact = out };
+}
+
+// The kind a declared axis carries — "" for a kindless one.
+~pub tor unit-reg-get { reg: string<*>, name: string }
+| exact string<std/io:allocated!>
+| undeclared-axis
+| bad
+
+~proc unit-reg-get|zig {
+    const alloc = koru_allocator();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var g = uregParse(ar, reg) catch return .{ .bad = .{} };
+    const i = uregFind(&g, name) orelse return .{ .undeclared_axis = .{} };
+    return .{ .exact = ownedCopy(g.kinds.items[i]) };
+}

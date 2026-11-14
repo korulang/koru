@@ -46,6 +46,7 @@
 ~import std/num
 ~import std/sym
 ~part lit
+~part unitreg
 
 const std = @import("std");
 

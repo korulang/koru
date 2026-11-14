@@ -1,0 +1,6 @@
+unitreg:v1;USD=axis(currency);EUR=axis(currency);point
+kind:currency
+undeclared-axis
+unitreg:v1;USD;EUR=axis(currency);JPY=axis(currency)
+dup
+bad
