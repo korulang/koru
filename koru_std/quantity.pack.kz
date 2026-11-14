@@ -1,0 +1,121 @@
+// ============================================================================
+// ~part pack — the canonical pack surface for std/quantity. The wire text
+// `mag|dim|unc[@cov][|!ext=...]` is split, validated, composed and unpacked
+// here; op lanes in the parent consume the record form. Canonical pack text
+// also round-trips through qtySplitText: parse(render(q)) is identity.
+//
+// Tors:
+//   split     s:external -> mag,unc,scale,dim,cov,ext fields
+//   canon     fields -> exact pack | bad          (same contract as pack)
+//   pack      fields -> exact pack | bad          trusted construction
+//   pack-sym  sym mag variant of pack
+//   unpack    n:exact  -> mag,unc,scale,dim,cov,ext
+// ============================================================================
+
+// The parse boundary: splits "mag+-unc@cov unit" into RAW field strings and
+// issues <std/num:external!> on the numeric fields — num:parse discharges
+// them in `canon`. dim/cov come out owned (<std/io:allocated!>).
+~tor pack-unreachable { } -> string<exact!>
+
+~proc pack-unreachable|zig {
+    @panic("std/quantity: unreachable arm reached");
+}
+
+~pub tor split { s: string<!external> }
+| fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!>, ext: string<std/io:allocated!> }
+| bad string<std/io:allocated!>
+
+// The canonicalizer: external field text -> canonical pack. num:parse does
+// the decimal work; the unit scale multiplies through magnitude AND
+// uncertainty (2 g ± 0.1 g -> 2e-3 kg ± 1e-4).
+~pub tor canon { mag: string<std/num:!external>, unc: string<std/num:!external>, scale: string<std/num:!external>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated>, ext: string<std/io:!allocated> }
+| exact string<exact!>
+| bad string<std/io:allocated!>
+
+~canon = mag-lane(s: mag)
+| dec dm |> std/num:parse(s: dm)
+    | bad e |> std/num:drop(s: unc) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) |> std/io:free(content: ext) => bad e
+    | exact pm |> std/num:parse(s: unc)
+        | bad e |> std/num:free(n: pm) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) |> std/io:free(content: ext) => bad e
+        | exact pu |> std/num:parse(s: scale)
+            | bad e |> std/num:free(n: pm) |> std/num:free(n: pu) |> std/io:free(content: dim) |> std/io:free(content: cov) |> std/io:free(content: ext) => bad e
+            | exact ps |> std/num:dup(n: ps): sd |> std/num:mul(a: pm, b: sd.a): ms |> std/num:mul(a: pu, sd.b): us |> pack(mag: ms, unc: us, dim, cov, ext)
+                | exact q => exact q
+                | bad |> pack-unreachable(): q => exact q
+| sym sm |> std/sym:parse(s: sm)
+    | bad e |> std/num:drop(s: unc) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) |> std/io:free(content: ext) => bad e
+    | exact sy |> std/num:parse(s: unc)
+        | bad e |> std/sym:free(n: sy) |> std/num:drop(s: scale) |> std/io:free(content: dim) |> std/io:free(content: cov) |> std/io:free(content: ext) => bad e
+        | exact pu |> std/num:parse(s: scale)
+            | bad e |> std/sym:free(n: sy) |> std/num:free(n: pu) |> std/io:free(content: dim) |> std/io:free(content: cov) |> std/io:free(content: ext) => bad e
+            | exact ps |> std/num:dup(n: ps): sd |> std/sym:of-dec(n: sd.a): ss |> std/sym:mul(a: sy, b: ss): ms |> std/num:mul(a: pu, sd.b): us |> pack-sym(mag: ms, unc: us, dim, cov, ext)
+                | exact q => exact q
+                | bad |> pack-unreachable(): q => exact q
+
+// Pack canonical fields into the qty string. Consumes all four inputs —
+// dim/cov are discharged by the pack itself (their bytes land in the pack).
+// dim must be canonical: a malformed dim is an internal defect, panicked.
+fn packEmit(alloc: std.mem.Allocator, mag: []const u8, unc: []const u8, dim: []const u8, cov: []const u8, ext: []const u8) ?[]u8 {
+    defer qtyFree(dim);
+    defer qtyFree(cov);
+    defer qtyFree(ext);
+    var d: Dim = undefined;
+    if (!dimParse(dim, &d)) {
+        qtyFree(mag);
+        qtyFree(unc);
+        return null;
+    }
+    const dc = dimCanon(alloc, d) catch @panic("std/quantity: out of memory");
+    defer alloc.free(dc);
+    const ec = extCanonText(alloc, ext) catch {
+        qtyFree(mag);
+        qtyFree(unc);
+        return null;
+    };
+    defer alloc.free(ec);
+    const joined = qtyJoin(alloc, mag, dc, unc, cov, ec) catch @panic("std/quantity: out of memory");
+    qtyFree(mag);
+    qtyFree(unc);
+    return joined;
+}
+
+~pub tor pack { mag: string<std/num:!exact>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated>, ext: string<std/io:!allocated> }
+| exact string<exact!>
+| bad
+
+// Same pack, symbolic lane: the mag field holds sexpr canon — identical
+// pack shape, a different mark at the boundary.
+~pub tor pack-sym { mag: string<std/sym:!sexpr>, unc: string<std/num:!exact>, dim: string<std/io:!allocated>, cov: string<std/io:!allocated>, ext: string<std/io:!allocated> }
+| exact string<exact!>
+| bad
+
+// Decompose a qty into marked fields — a lane union on the magnitude:
+// | num carries decimal canon under <std/num:exact!>, | sym carries sexpr
+// canon under <std/sym:sexpr!>. unc is decimal on both lanes; dim/cov are
+// owned text. "-" uncertainty unpacks as canonical "0e0"; absent cov as "-".
+~pub tor unpack { n: string<!exact> }
+| num { mag: string<std/num:exact!>, unc: string<std/num:exact!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!>, ext: string<std/io:allocated!> }
+| sym { mag: string<std/sym:sexpr!>, unc: string<std/num:exact!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!>, ext: string<std/io:allocated!> }
+
+// Magnitude lane split: a named constant (π, φ, e, optionally negated)
+// stays symbolic and discharges through std/sym:parse; everything else is
+// decimal text for std/num:parse.
+~tor mag-lane { s: string<std/num:!external> }
+| dec string<std/num:external!>
+| sym string<std/sym:sexpr-external!>
+
+~pub tor parse { s: string<!external> }
+| exact string<exact!>
+| bad string<std/io:allocated!>
+
+~parse = split(s)
+| fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov, f.ext)
+    | exact q => exact q
+    | bad e => bad e
+| bad m => bad m
+
+// Symbolic literal: a canonical sexpr magnitude plus unit text — `lit` for
+// the MetricSymbolic lane. The unit's scale multiplies through the
+// magnitude symbolically (lit-sym(π,"g") -> (1e-3*π) kg). unit/unc are
+// authored expressions captured verbatim (lit-sym(mag: x, unit: m/s,
+// unc: 0.1, cov: "bias")); cov stays a string tag.

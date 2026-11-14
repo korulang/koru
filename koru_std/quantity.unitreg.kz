@@ -12,7 +12,7 @@
 //   unit-reg-put    reg, name, kind -> exact reg' | dup | bad      add one axis
 //   unit-reg-decls  reg, src        -> exact reg' | dup | bad      a block
 //   unit-reg-get    reg, name       -> exact kind | undeclared-axis | bad
-//
+// (~part ext holds the !ext= segment algebra, lit-x, retaint, convert-x.)
 // src is the unitreg:v1 tail grammar — entries `;`-separated, optional
 // prefix — so registry text and declaration text are one language and
 // unit-reg-decls(r, otherRegistryText) merges. Single phase: unlike rel

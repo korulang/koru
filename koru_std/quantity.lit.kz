@@ -7,43 +7,11 @@
 // Runtime text goes ingest/parse, never lit — same rule as std/sym.
 // ============================================================================
 
-fn numPrefix(t: []const u8) usize {
-    var i: usize = 0;
-    while (i < t.len and (std.ascii.isDigit(t[i]) or t[i] == '.')) i += 1;
-    if (i == 0) return 0;
-    if (i < t.len and (t[i] == 'e' or t[i] == 'E')) {
-        var k = i + 1;
-        if (k < t.len and (t[k] == '+' or t[k] == '-')) k += 1;
-        const d0 = k;
-        while (k < t.len and std.ascii.isDigit(t[k])) k += 1;
-        if (k > d0) i = k; // exponent only counts with digits
-    }
-    return i;
-}
-
-// Juxtaposition is multiplication: parse a run of unit names by
-// longest match (mol over m+ol, kg over k+g since k is no unit).
-fn accumUnits(t: []const u8, dim: *Dim, scale: *i32) error{BadQuantity}!void {
-    var i: usize = 0;
-    while (i < t.len) {
-        var best: ?UnitDef = null;
-        var blen: usize = 0;
-        inline for (.{ "Ohm", "mol", "kg", "cd", "Hz", "Pa", "N", "J", "W", "V", "C", "F", "A", "K", "g", "m", "s" }) |u| {
-            if (t.len - i >= u.len and u.len > blen and std.mem.eql(u8, t[i .. i + u.len], u)) {
-                best = unitLookup(u).?;
-                blen = u.len;
-            }
-        }
-        const ud = best orelse return error.BadQuantity;
-        for (0..7) |k| dim[k] += ud.dim[k];
-        scale.* += ud.scale;
-        i += blen;
-    }
-}
-
-fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u8, cov_in: []const u8, out: *SplitFields) !void {
+fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u8, cov_in: []const u8, ureg: ?*const UReg, out: *SplitFields) !void {
     const s = std.mem.trim(u8, expr_in, " \t\r\n");
     if (s.len == 0) return error.BadQuantity;
+    var ext_map = ExtMap.init(alloc);
+    defer ext_map.deinit();
     var buf = std.ArrayList(u8).initCapacity(alloc, s.len) catch return error.OutOfMemory;
     defer buf.deinit(alloc);
     for (s) |ch| {
@@ -75,7 +43,7 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
             const np = numPrefix(tok);
             if (np == 0) return error.BadQuantity;
             mag_str = tok[0..np];
-            if (np < tok.len) try accumUnits(tok[np..], &dim, &scale);
+            if (np < tok.len) try accumUnitsX(tok[np..], &dim, &scale, 1, ureg, &ext_map);
         } else if (constSym(tok)) |atom| {
             if (denom or mag_seen) return error.BadQuantity;
             mag_seen = true;
@@ -86,7 +54,7 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
             if (ud) |u| {
                 for (0..7) |k| dim[k] += sgn * u.dim[k];
                 scale += sgn * u.scale;
-            } else try accumUnits(tok, &dim, &scale);
+            } else try accumUnitsX(tok, &dim, &scale, sgn, ureg, &ext_map);
         }
         if (j >= t.len) break;
         if (t[j] == '/') denom = true;
@@ -104,16 +72,17 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
         .scale = try alloc.dupe(u8, scale_str),
         .dim = try dimCanon(alloc, dim),
         .cov = try alloc.dupe(u8, cov_str),
+        .ext = try extEmit(alloc, &ext_map),
     };
 }
 
 ~tor split-expr { expr: string, unc: ?string, cov: ?string }
-| fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!> }
+| fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!>, ext: string<std/io:allocated!> }
 | bad string<std/io:allocated!>
 
 ~proc split-expr|zig {
     var f: SplitFields = undefined;
-    qtySplitExpr(koru_allocator(), expr, unc orelse "0e0", cov orelse "-", &f) catch |err| switch (err) {
+    qtySplitExpr(koru_allocator(), expr, unc orelse "0e0", cov orelse "-", null, &f) catch |err| switch (err) {
         error.OutOfMemory => @panic("std/quantity: out of memory"),
         else => return .{ .bad = ownedCopy(expr) },
     };
@@ -123,6 +92,7 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
         .scale = f.scale,
         .dim = f.dim,
         .cov = f.cov,
+        .ext = f.ext,
     } };
 }
 
@@ -137,7 +107,7 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
 | bad string
 
 ~lit = split-expr(expr, unc, cov)
-| fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov)
+| fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov, f.ext)
     | exact q => exact q
     | bad e |> std/io:free(content: e) => bad "malformed quantity"
 | bad m |> std/io:free(content: m) => bad "malformed quantity"

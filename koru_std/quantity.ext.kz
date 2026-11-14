@@ -1,0 +1,292 @@
+// ============================================================================
+// ~part ext — the !ext= segment of std/quantity. An axis-exponent product
+// over registry-declared names carries the same free-abelian laws as Dim
+// in a disjoint namespace: mul/div add and subtract exponents, add/sub
+// require equality, pow scales them, equiv stays text. Canonical text:
+// "EUR^1·USD^-1" — name^i32 sorted by name, ·-joined, zeros dropped;
+// "-" is the empty product.
+//
+// Conversion is an oracle, never a group law: convert-x(q, rate, axis)
+// reuses the whole mul algebra then asserts the target axis, and retaint
+// hands the result back external! — a rate is authored/tainted data.
+//
+// Tors:
+//   ext-canon / ext-compose / ext-scale   canonical ext text algebra
+//   split-expr-x                          expr split over a registry
+//   lit-x     expr, unc, cov, ureg        authored ext-axis quantity
+//   axis-check / retaint / convert-x      the conversion oracle
+// ============================================================================
+
+// Unit token resolution shared by the whole-token and mag-prefix paths:
+// SI table, then SI juxtaposition, then — with a registry — a declared
+// axis name (whole token; axes never juxtapose into names).
+fn accumUnitsX(t: []const u8, dim: *Dim, scale: *i32, sgn: i32, ureg: ?*const UReg, ext_map: *ExtMap) !void {
+    if (accumUnits(t, dim, scale, sgn)) return;
+    if (ureg) |ur| {
+        if (!axisNameOk(t)) return error.BadQuantity;
+        if (uregFind(ur, t) == null) return error.UndeclaredAxis;
+        const cur = ext_map.get(t) orelse 0;
+        try ext_map.put(t, cur + sgn);
+        return;
+    }
+    return error.BadQuantity;
+}
+
+// ============================================================================
+// The !ext= segment — an axis-exponent product over declared names, the
+// same free-abelian laws as Dim in a disjoint namespace. Canonical text:
+// "EUR^1·USD^-1" — name^i32 sorted by name, ·-joined, zeros dropped;
+// "-" is the empty product. Every op composes it like Dim: mul/div add
+// and subtract exponents, add/sub require equality, equiv stays text.
+// ============================================================================
+
+// Token scanners shared by the lit and lit-x expression grammars:
+// a leading decimal prefix is the magnitude; the residual is a unit
+// run where juxtaposition is multiplication (longest match wins).
+
+fn numPrefix(t: []const u8) usize {
+    var i: usize = 0;
+    while (i < t.len and (std.ascii.isDigit(t[i]) or t[i] == '.')) i += 1;
+    if (i == 0) return 0;
+    if (i < t.len and (t[i] == 'e' or t[i] == 'E')) {
+        var k = i + 1;
+        if (k < t.len and (t[k] == '+' or t[k] == '-')) k += 1;
+        const d0 = k;
+        while (k < t.len and std.ascii.isDigit(t[k])) k += 1;
+        if (k > d0) i = k; // exponent only counts with digits
+    }
+    return i;
+}
+
+// Juxtaposition is multiplication: parse a run of unit names by
+// longest match (mol over m+ol, kg over k+g since k is no unit).
+
+fn accumUnits(t: []const u8, dim: *Dim, scale: *i32, sgn: i32) bool {
+    var i: usize = 0;
+    while (i < t.len) {
+        var best: ?UnitDef = null;
+        var blen: usize = 0;
+        inline for (.{ "Ohm", "mol", "kg", "cd", "Hz", "Pa", "N", "J", "W", "V", "C", "F", "A", "K", "g", "m", "s" }) |u| {
+            if (t.len - i >= u.len and u.len > blen and std.mem.eql(u8, t[i .. i + u.len], u)) {
+                best = unitLookup(u).?;
+                blen = u.len;
+            }
+        }
+        const ud = best orelse return false;
+        for (0..7) |k| dim[k] += sgn * ud.dim[k];
+        scale.* += sgn * ud.scale;
+        i += blen;
+    }
+    return true;
+}
+
+const ExtMap = std.StringArrayHashMap(i32);
+
+// Parse ext text into the map: "-" or "N^e·N^e...". Axis names only.
+fn extParse(s: []const u8, m: *ExtMap) !void {
+    if (std.mem.eql(u8, s, "-")) return;
+    var it = std.mem.splitSequence(u8, s, "\xc2\xb7"); // · U+00B7
+    while (it.next()) |t| {
+        if (t.len == 0) continue;
+        const p = std.mem.indexOfScalar(u8, t, 0x5e) orelse return error.Malformed;
+        const nm = t[0..p];
+        if (!axisNameOk(nm)) return error.Malformed;
+        const e = std.fmt.parseInt(i32, t[p + 1 ..], 10) catch return error.Malformed;
+        if (e == 0) return error.Malformed;
+        if (m.get(nm) != null) return error.Malformed;
+        try m.put(nm, e);
+    }
+}
+
+fn extEmit(alloc: std.mem.Allocator, m: *const ExtMap) ![]u8 {
+    var nms = std.ArrayList([]const u8){};
+    defer nms.deinit(alloc);
+    for (m.keys(), m.values()) |k, v| {
+        if (v != 0) try nms.append(alloc, k);
+    }
+    if (nms.items.len == 0) return ownedCopy("-");
+    std.mem.sort([]const u8, nms.items, {}, struct {
+        fn lt(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.lt);
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    for (nms.items, 0..) |nm, i| {
+        if (i > 0) try out.appendSlice(alloc, "\xc2\xb7");
+        try out.appendSlice(alloc, nm);
+        try out.append(alloc, 0x5e);
+        var buf: [16]u8 = undefined;
+        try out.appendSlice(alloc, try std.fmt.bufPrint(&buf, "{d}", .{m.get(nm).?}));
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+// Canonicalize ext text — parse, drop zeros, sort.
+fn extCanonText(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
+    var m = ExtMap.init(alloc);
+    defer m.deinit();
+    try extParse(s, &m);
+    return extEmit(alloc, &m);
+}
+
+// a + sgn*b over the axis map.
+fn extComposeText(alloc: std.mem.Allocator, a: []const u8, b: []const u8, sgn: i32) ![]u8 {
+    var m = ExtMap.init(alloc);
+    defer m.deinit();
+    try extParse(a, &m);
+    var mb = ExtMap.init(alloc);
+    defer mb.deinit();
+    try extParse(b, &mb);
+    for (mb.keys(), mb.values()) |k, v| {
+        const cur = m.get(k) orelse 0;
+        try m.put(k, cur + sgn * v);
+    }
+    return extEmit(alloc, &m);
+}
+
+
+// Canonicalize borrowed ext text — the pack boundary discharge.
+~pub tor ext-canon { s: string }
+| ok string<std/io:allocated!>
+| bad
+
+~proc ext-canon|zig {
+    return .{ .ok = extCanonText(koru_allocator(), s) catch return .{ .bad = .{} } };
+}
+
+// Compose two owned ext fields: exponents add (mul) or subtract (div —
+// the caller negates b first). Consumes both.
+~pub tor ext-compose { a: string<std/io:!allocated>, b: string<std/io:!allocated>, neg: i64 }
+| ok string<std/io:allocated!>
+| bad
+
+~proc ext-compose|zig {
+    defer qtyFree(a);
+    defer qtyFree(b);
+    const sgn: i32 = if (neg == 0) 1 else -1;
+    return .{ .ok = extComposeText(koru_allocator(), a, b, sgn) catch return .{ .bad = .{} } };
+}
+
+// Scale every ext exponent by n — the pow lane's law. n = 0 -> "-".
+~pub tor ext-scale { a: string<std/io:allocated>, n: i64 }
+| ok string<std/io:allocated!>
+| bad
+
+~proc ext-scale|zig {
+    const alloc = koru_allocator();
+    var m = ExtMap.init(alloc);
+    defer m.deinit();
+    extParse(a, &m) catch return .{ .bad = .{} };
+    if (n == 0) return .{ .ok = ownedCopy("-") };
+    if (n > std.math.maxInt(i32) or n < std.math.minInt(i32)) return .{ .bad = .{} };
+    const ni: i32 = @intCast(n);
+    for (m.values()) |*v| {
+        const r = @mulWithOverflow(v.*, ni);
+        if (r[1] != 0) return .{ .bad = .{} };
+        v.* = r[0];
+    }
+    const e = extEmit(alloc, &m) catch return .{ .bad = .{} };
+    return .{ .ok = e };
+}
+
+// Extended literal split: the lit grammar plus the registry — a token
+// that is not an SI unit must name a declared axis (whole token; axes do
+// not juxtapose into names).
+~tor split-expr-x { expr: string, unc: ?string, cov: ?string, ureg: string<*> }
+| fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!>, ext: string<std/io:allocated!> }
+| undeclared-axis string<std/io:allocated!>
+| bad string<std/io:allocated!>
+
+~proc split-expr-x|zig {
+    const alloc = koru_allocator();
+    var g = uregParse(alloc, ureg) catch return .{ .bad = ownedCopy(expr) };
+    defer g.names.deinit(alloc);
+    defer g.kinds.deinit(alloc);
+    var f: SplitFields = undefined;
+    qtySplitExpr(alloc, expr, unc orelse "0e0", cov orelse "-", &g, &f) catch |err| switch (err) {
+        error.UndeclaredAxis => return .{ .undeclared_axis = ownedCopy(expr) },
+        error.OutOfMemory => @panic("std/quantity: out of memory"),
+        else => return .{ .bad = ownedCopy(expr) },
+    };
+    return .{ .fields = .{
+        .mag = f.mag,
+        .unc = f.unc,
+        .scale = f.scale,
+        .dim = f.dim,
+        .cov = f.cov,
+        .ext = f.ext,
+    } };
+}
+
+// Authored literal over a declared axis set: lit-x(5 USD, ureg),
+// lit-x(1.1 EUR/USD, ureg). SI units compose as always; axis names land
+// in the !ext= segment. SI names win over axis names — a declared "m"
+// stays a metre. | undeclared-axis names a token the registry lacks.
+~pub tor lit-x { expr: Expression, unc: ?Expression, cov: ?Expression, ureg: string<*> }
+| exact string<exact!>
+| undeclared-axis string<std/io:allocated!>
+| bad string<std/io:allocated!>
+
+~lit-x = split-expr-x(expr, unc, cov, ureg)
+| fields f |> canon(f.mag, f.unc, f.scale, f.dim, f.cov, f.ext)
+    | exact q => exact q
+    | bad e => bad e
+| undeclared-axis e => undeclared-axis e
+| bad m => bad m
+
+// The pure-conversion shape: SI dims all zero and the ext product is the
+// single target axis at exponent 1.
+~tor axis-check { q: string<!exact>, axis: string }
+| ok string<exact!>
+| axis-mismatch
+
+~proc axis-check|zig {
+    const good = blk: {
+        const p1 = std.mem.indexOfScalar(u8, q, '|') orelse break :blk false;
+        const p2 = std.mem.indexOfScalarPos(u8, q, p1 + 1, '|') orelse break :blk false;
+        var d: Dim = undefined;
+        if (!dimParse(q[p1 + 1 .. p2], &d)) break :blk false;
+        for (0..7) |k| {
+            if (d[k] != 0) break :blk false;
+        }
+        var exts: []const u8 = "-";
+        if (std.mem.indexOfPos(u8, q, p2 + 1, "|!ext=")) |p3| {
+            exts = q[p3 + 6 ..];
+        }
+        var wbuf: [128]u8 = undefined;
+        const want = std.fmt.bufPrint(&wbuf, "{s}^1", .{axis}) catch break :blk false;
+        break :blk std.mem.eql(u8, exts, want);
+    };
+    if (good) return .{ .ok = q };
+    qtyFree(q);
+    return .{ .axis_mismatch = .{} };
+}
+
+// An oracle claim is external knowledge — conversion re-taints its
+// result; the caller discharges it back through parse deliberately.
+~tor retaint { q: string<!exact> } -> string<external!>
+
+~proc retaint|zig {
+    return q;
+}
+
+// Conversion is an oracle, not a group law: mul composes the quantity
+// with the rate, then the result must land on the target axis alone
+// (dims zero, ext == axis^1) — 5 USD * 1.1 EUR/USD -> 5.5 EUR external.
+// Sigma and cov ride the mul law; | axis-mismatch names a rate that did
+// not convert.
+~pub tor convert-x { q: string<!exact>, rate: string<!exact>, axis: string }
+| exact string<external!>
+| axis-mismatch
+| mixed-cov
+| sym-unc
+| bad string<std/io:allocated!>
+
+~convert-x = mul(a: q, b: rate)
+| mixed-cov => mixed-cov
+| sym-unc => sym-unc
+| bad m => bad m
+| exact qr |> axis-check(q: qr, axis)
+    | axis-mismatch => axis-mismatch
+    | ok r |> retaint(q: r): x => exact x
