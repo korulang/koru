@@ -1,17 +1,18 @@
 // ============================================================================
-// ~part conj — conjugate canon folds.  Two exact field-arithmetic
-// rewrites that remove the spellings Euler's t = x + sqrt(u) leaves
-// behind; neither is distribution — each is a closed 2x2 identity.
+// ~part conj — the conjugate rationalization fold.  An exact
+// field-arithmetic rewrite that removes the inv spellings Euler's
+// t = c + x + sqrt(u) leaves behind:
 //
 //   normConjInv:      inv(a + sqrt u)  -> (sqrt u - a) * inv(u - a^2)
-//                     when u - a^2 norms to a nonzero dec — the classic
+//                     when u - a^2 is a nonzero dec — the classic
 //                     rationalization; conjugate denominators leave no
-//                     add under an inv.
+//                     add under an inv.  a may itself be a sum (the
+//                     shifted quadratic's c+x); norm keeps that square
+//                     factored, so the dec test expands a^2 pairwise,
+//                     locally, only for the check.
 //
-//   normConjSquares:  c*(a+b)^2 - c*(a-b)^2 -> 4*c*a*b inside a sum's
-//                     (coeff, base) grouping — the difference-of-
-//                     conjugate-squares merge that spells Euler's
-//                     t^2 - t^-2 as x*sqrt(u).
+// The twin fold — c*(a+b)^2 - c*(a-b)^2 -> 4*c*a*b inside a sum's
+// (coeff, base) grouping — lives in ~part conjm.
 // ============================================================================
 
 // Canon of (-1)*n — the negation test used by both folds.
@@ -54,11 +55,47 @@ fn normConjInv(alloc: std.mem.Allocator, inner: *const SNode) !?*SNode {
     };
     defer nodeFree(alloc, a);
     // u - a^2 must be a nonzero dec for the rationalization to close.
-    const aa = try nodePair(alloc, .mul, try nodeClone(alloc, a), try nodeClone(alloc, a));
+    // norm keeps an add's square factored (squares are the merge target),
+    // so a^2 is expanded here — pairwise products — or the dec never
+    // surfaces when a itself is a sum (shifted Euler, t = c+x+sqrt u).
+    const aa = blk: {
+        if (a.kind != .add) {
+            const pr = try nodePair(alloc, .mul, try nodeClone(alloc, a), try nodeClone(alloc, a));
+            defer nodeFree(alloc, pr);
+            break :blk try norm(alloc, pr);
+        }
+        const n = a.kids.len;
+        const ks = try alloc.alloc(*SNode, n * n);
+        var made: usize = 0;
+        errdefer {
+            for (ks[0..made]) |kk| nodeFree(alloc, kk);
+            alloc.free(ks);
+        }
+        for (a.kids) |k1| {
+            for (a.kids) |k2| {
+                ks[made] = try nodePair(alloc, .mul, try nodeClone(alloc, k1), try nodeClone(alloc, k2));
+                made += 1;
+            }
+        }
+        const raw = try nodeList(alloc, .add, ks);
+        defer nodeFree(alloc, raw);
+        break :blk try norm(alloc, raw);
+    };
     defer nodeFree(alloc, aa);
-    const neg_aa = try nodePair(alloc, .mul, try nodeDec(alloc, try decOneN(alloc, true)), try nodeClone(alloc, aa));
-    defer nodeFree(alloc, neg_aa);
-    const diff = try nodePair(alloc, .add, try nodeClone(alloc, sqn.kid), try nodeClone(alloc, neg_aa));
+    // diff = u - a^2, negated per-term: norm keeps -1*add factored, so a
+    // summed square would never collect against u.  Each aa kid takes its
+    // own -1 factor and the like terms can cancel to the dec.
+    var dk = std.ArrayList(*SNode){};
+    defer dk.deinit(alloc);
+    try dk.append(alloc, try nodeClone(alloc, sqn.kid));
+    if (aa.kind == .add) {
+        for (aa.kids) |k| {
+            try dk.append(alloc, try nodePair(alloc, .mul, try nodeDec(alloc, try decOneN(alloc, true)), try nodeClone(alloc, k)));
+        }
+    } else {
+        try dk.append(alloc, try nodePair(alloc, .mul, try nodeDec(alloc, try decOneN(alloc, true)), try nodeClone(alloc, aa)));
+    }
+    const diff = try nodeList(alloc, .add, try dk.toOwnedSlice(alloc));
     defer nodeFree(alloc, diff);
     const dn = try norm(alloc, diff);
     defer nodeFree(alloc, dn);
@@ -73,100 +110,4 @@ fn normConjInv(alloc: std.mem.Allocator, inner: *const SNode) !?*SNode {
     const res = try nodePair(alloc, .mul, try nodeClone(alloc, conj), try nodeClone(alloc, iv));
     defer nodeFree(alloc, res);
     return try norm(alloc, res);
-}
-
-// Is `base` the square of a two-kid add — mul[m, m] with m an add of 2?
-fn sqOfTwoAdd(alloc: std.mem.Allocator, base: *const SNode) !?*const SNode {
-    if (base.kind != .mul or base.kids.len != 2) return null;
-    const m = base.kids[0];
-    if (m.kind != .add or m.kids.len != 2) return null;
-    if (base.kids[1].kind != .add) return null;
-    const c0 = try canonOf(alloc, m);
-    defer alloc.free(c0);
-    const c1 = try canonOf(alloc, base.kids[1]);
-    defer alloc.free(c1);
-    if (!std.mem.eql(u8, c0, c1)) return null;
-    return m;
-}
-
-// Conjugate-square merge over a sum's grouped (coeff, base) pairs:
-// bases[i] = m_i^2 and bases[j] = m_j^2 with m_i = shared+vary,
-// m_j = shared-vary and coeffs summing to zero merge into
-// 4*coeff*shared*vary.  Zero-coeff slots are dropped by the rebuild
-// pass; the freed base is replaced by a dec-0 placeholder.
-fn normConjSquares(alloc: std.mem.Allocator, bases: *std.ArrayList(*SNode), coeffs: *std.ArrayList(Dec)) !void {
-    var fdec = Dec{ .neg = false, .m = try BI.initSet(alloc, 4), .e = 0 };
-    defer fdec.m.deinit();
-    var i: usize = 0;
-    while (i < bases.items.len) : (i += 1) {
-        const mi = (try sqOfTwoAdd(alloc, bases.items[i])) orelse continue;
-        var j: usize = i + 1;
-        while (j < bases.items.len) : (j += 1) {
-            if (coeffs.items[j].m.eqlZero()) continue;
-            const mj = (try sqOfTwoAdd(alloc, bases.items[j])) orelse continue;
-            var sum = try decAdd(alloc, &coeffs.items[i], &coeffs.items[j]);
-            if (!sum.m.eqlZero()) {
-                sum.m.deinit();
-                continue;
-            }
-            sum.m.deinit();
-            // find the shared/vary split: mi.kids[0] must match one of
-            // mj's kids (shared), and mi.kids[1] must be its negation.
-            const ck0 = try canonOf(alloc, mi.kids[0]);
-            defer alloc.free(ck0);
-            const ck1 = try canonOf(alloc, mi.kids[1]);
-            defer alloc.free(ck1);
-            var shared: ?*const SNode = null;
-            var vary: ?*const SNode = null;
-            for (mj.kids, 0..) |mk, k| {
-                const jc = try canonOf(alloc, mk);
-                defer alloc.free(jc);
-                const jn = try negCanonOf(alloc, mk);
-                defer alloc.free(jn);
-                const other = mj.kids[1 - k];
-                const oc = try canonOf(alloc, other);
-                defer alloc.free(oc);
-                const on = try negCanonOf(alloc, other);
-                defer alloc.free(on);
-                if (std.mem.eql(u8, jc, ck0) and std.mem.eql(u8, on, ck1)) {
-                    shared = mi.kids[0];
-                    vary = mi.kids[1];
-                } else if (std.mem.eql(u8, jc, ck1) and std.mem.eql(u8, on, ck0)) {
-                    shared = mi.kids[1];
-                    vary = mi.kids[0];
-                } else if (std.mem.eql(u8, jn, ck0) and std.mem.eql(u8, oc, ck1)) {
-                    shared = mi.kids[1];
-                    vary = mi.kids[0];
-                } else if (std.mem.eql(u8, jn, ck1) and std.mem.eql(u8, oc, ck0)) {
-                    shared = mi.kids[0];
-                    vary = mi.kids[1];
-                }
-            }
-            const sh = shared orelse continue;
-            const vr = vary orelse continue;
-            // merge into slot i: base <- norm(shared*vary), coeff <- 4*c_i.
-            // The varying kid may carry its own -1 (conjugates spell as
-            // add[-x, sq u]); splitCoeff lifts stray decs into the coeff.
-            const prod = try nodePair(alloc, .mul, try nodeClone(alloc, sh), try nodeClone(alloc, vr));
-            defer nodeFree(alloc, prod);
-            const nb = try norm(alloc, prod);
-            var dc: Dec = undefined;
-            const stripped = try splitCoeff(alloc, nb, &dc);
-            nodeFree(alloc, nb);
-            nodeFree(alloc, bases.items[i]);
-            bases.items[i] = stripped;
-            var nc4 = try decMul(alloc, &coeffs.items[i], &fdec);
-            defer nc4.m.deinit();
-            const nc = try decMul(alloc, &nc4, &dc);
-            dc.m.deinit();
-            coeffs.items[i].m.deinit();
-            coeffs.items[i] = nc;
-            // slot j retires: coeff 0 (rebuild skips) + dec-0 base.
-            coeffs.items[j].m.deinit();
-            coeffs.items[j] = try decZero(alloc);
-            nodeFree(alloc, bases.items[j]);
-            bases.items[j] = try nodeDec(alloc, try decZero(alloc));
-            break;
-        }
-    }
 }

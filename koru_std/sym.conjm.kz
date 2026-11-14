@@ -1,0 +1,162 @@
+// ============================================================================
+// ~part conjm — the conjugate-square merge over a sum's grouped
+// (coeff, base) pairs.  bases[i] = m_i^2 and bases[j] = m_j^2 with
+// m_i = shared+vary, m_j = shared-vary and coeffs summing to zero merge
+// into 4*coeff*shared*vary — the difference-of-conjugate-squares fold
+// that spells Euler t^2 - t^-2 as shared*sqrt(u).  shared is any add
+// (a bare atom, a 2-kid sum, a shifted quadratic centre): the conjugate
+// test is one flipped summand with identical remainder, not a kid count.
+// ============================================================================
+
+// Is `base` the square of an add — mul[m, m] with m an add of >=2 kids?
+fn sqOfAdd(alloc: std.mem.Allocator, base: *const SNode) !?*const SNode {
+    if (base.kind != .mul or base.kids.len != 2) return null;
+    const m = base.kids[0];
+    if (m.kind != .add or m.kids.len < 2) return null;
+    if (base.kids[1].kind != .add) return null;
+    const c0 = try canonOf(alloc, m);
+    defer alloc.free(c0);
+    const c1 = try canonOf(alloc, base.kids[1]);
+    defer alloc.free(c1);
+    if (!std.mem.eql(u8, c0, c1)) return null;
+    return m;
+}
+
+// The add of `m`'s kids where mask[i] == pick — one kid unwraps to the
+// kid itself. Owned.
+fn addMasked(alloc: std.mem.Allocator, m: *const SNode, mask: []const bool, pick: bool) !*SNode {
+    var n: usize = 0;
+    for (mask) |b| {
+        if (b == pick) n += 1;
+    }
+    if (n == 1) {
+        for (mask, 0..) |b, i| {
+            if (b == pick) return try nodeClone(alloc, m.kids[i]);
+        }
+        unreachable;
+    }
+    const ks = try alloc.alloc(*SNode, n);
+    var made: usize = 0;
+    errdefer {
+        for (ks[0..made]) |kk| nodeFree(alloc, kk);
+        alloc.free(ks);
+    }
+    for (mask, 0..) |b, i| {
+        if (b != pick) continue;
+        ks[made] = try nodeClone(alloc, m.kids[i]);
+        made += 1;
+    }
+    const raw = try nodeList(alloc, .add, ks);
+    defer nodeFree(alloc, raw);
+    return try norm(alloc, raw);
+}
+
+// Conjugate split on two adds: mi = shared+vary, mj = shared-vary.
+// Canon-identical summands pair off into shared; the leftover sums
+// must then be exact negations.  The sign may sit inside one kid
+// (-1*(a+b) where the twin spells a and b as two summands), so the
+// negation test runs on the whole leftover sums, never on a single
+// summand.  shared and vary are both fresh normed nodes.
+fn conjSplit(alloc: std.mem.Allocator, mi: *const SNode, mj: *const SNode) !?struct { shared: *SNode, vary: *SNode } {
+    var ic = try alloc.alloc([]u8, mi.kids.len);
+    defer alloc.free(ic);
+    var ifilled: usize = 0;
+    defer for (ic[0..ifilled]) |c| alloc.free(c);
+    for (mi.kids, 0..) |k, i| {
+        ic[i] = try canonOf(alloc, k);
+        ifilled = i + 1;
+    }
+    var jc = try alloc.alloc([]u8, mj.kids.len);
+    defer alloc.free(jc);
+    var jfilled: usize = 0;
+    defer for (jc[0..jfilled]) |c| alloc.free(c);
+    for (mj.kids, 0..) |k, j| {
+        jc[j] = try canonOf(alloc, k);
+        jfilled = j + 1;
+    }
+    // multiset intersection: canon-equal kids pair off into shared.
+    const im = try alloc.alloc(bool, mi.kids.len);
+    defer alloc.free(im);
+    const jm = try alloc.alloc(bool, mj.kids.len);
+    defer alloc.free(jm);
+    @memset(im, false);
+    @memset(jm, false);
+    var shared_n: usize = 0;
+    for (ic, 0..) |c, i| {
+        for (jc, 0..) |d, j| {
+            if (jm[j] or !std.mem.eql(u8, c, d)) continue;
+            im[i] = true;
+            jm[j] = true;
+            shared_n += 1;
+            break;
+        }
+    }
+    // conjugates share a nonempty block and each keep a nonempty vary.
+    if (shared_n == 0 or shared_n == mi.kids.len or shared_n == mj.kids.len) return null;
+    const li = try addMasked(alloc, mi, im, false);
+    errdefer nodeFree(alloc, li);
+    const lj = try addMasked(alloc, mj, jm, false);
+    defer nodeFree(alloc, lj);
+    const lc = try negCanonOf(alloc, li);
+    defer alloc.free(lc);
+    const rc = try canonOf(alloc, lj);
+    defer alloc.free(rc);
+    if (!std.mem.eql(u8, lc, rc)) return null;
+    const sh = try addMasked(alloc, mi, im, true);
+    return .{ .shared = sh, .vary = li };
+}
+
+// Conjugate-square merge over a sum's grouped (coeff, base) pairs:
+// bases[i] = m_i^2 and bases[j] = m_j^2 with m_i = shared+vary,
+// m_j = shared-vary and coeffs summing to zero merge into
+// 4*coeff*shared*vary.  Zero-coeff slots are dropped by the rebuild
+// pass; the freed base is replaced by a dec-0 placeholder.
+fn normConjSquares(alloc: std.mem.Allocator, bases: *std.ArrayList(*SNode), coeffs: *std.ArrayList(Dec)) !void {
+    var fdec = Dec{ .neg = false, .m = try BI.initSet(alloc, 4), .e = 0 };
+    defer fdec.m.deinit();
+    var i: usize = 0;
+    while (i < bases.items.len) : (i += 1) {
+        const mi = (try sqOfAdd(alloc, bases.items[i])) orelse continue;
+        var j: usize = i + 1;
+        while (j < bases.items.len) : (j += 1) {
+            if (coeffs.items[j].m.eqlZero()) continue;
+            const mj = (try sqOfAdd(alloc, bases.items[j])) orelse continue;
+            var sum = try decAdd(alloc, &coeffs.items[i], &coeffs.items[j]);
+            if (!sum.m.eqlZero()) {
+                sum.m.deinit();
+                continue;
+            }
+            sum.m.deinit();
+            // the conjugate split: mi = shared+vary, mj = shared-vary —
+            // one summand flips sign, the rest is identical.
+            const cs = (try conjSplit(alloc, mi, mj)) orelse continue;
+            const sh = cs.shared;
+            defer nodeFree(alloc, sh);
+            const vr = cs.vary;
+            defer nodeFree(alloc, vr);
+            // merge into slot i: base <- norm(shared*vary), coeff <- 4*c_i.
+            // The varying kid may carry its own -1 (conjugates spell as
+            // add[-x, sq u]); splitCoeff lifts stray decs into the coeff.
+            const prod = try nodePair(alloc, .mul, try nodeClone(alloc, sh), try nodeClone(alloc, vr));
+            defer nodeFree(alloc, prod);
+            const nb = try norm(alloc, prod);
+            var dc: Dec = undefined;
+            const stripped = try splitCoeff(alloc, nb, &dc);
+            nodeFree(alloc, nb);
+            nodeFree(alloc, bases.items[i]);
+            bases.items[i] = stripped;
+            var nc4 = try decMul(alloc, &coeffs.items[i], &fdec);
+            defer nc4.m.deinit();
+            const nc = try decMul(alloc, &nc4, &dc);
+            dc.m.deinit();
+            coeffs.items[i].m.deinit();
+            coeffs.items[i] = nc;
+            // slot j retires: coeff 0 (rebuild skips) + dec-0 base.
+            coeffs.items[j].m.deinit();
+            coeffs.items[j] = try decZero(alloc);
+            nodeFree(alloc, bases.items[j]);
+            bases.items[j] = try nodeDec(alloc, try decZero(alloc));
+            break;
+        }
+    }
+}
