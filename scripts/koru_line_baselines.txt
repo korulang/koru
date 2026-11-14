@@ -300,8 +300,8 @@ koru_std/runtime.affordances.kz	24
 koru_std/runtime.branchex.kz	81
 koru_std/runtime.contract.kz	65
 koru_std/runtime.eval.kz	73
-koru_std/runtime.example.kz	151
-koru_std/runtime.grammartext.kz	48
+koru_std/runtime.example.kz	44
+koru_std/runtime.grammartext.kz	32
 koru_std/runtime.jsonemit.kz	32
 koru_std/runtime.kz	1151
 koru_std/runtime.lookups.kz	14
@@ -319,6 +319,7 @@ koru_std/runtime.runcimpl.kz	69
 koru_std/runtime.scopelines.kz	91
 koru_std/runtime.scopeverbs.kz	179
 koru_std/runtime.specs.kz	49
+koru_std/runtime.wiregrammar.kz	495
 koru_std/runtime.wirelex.kz	37
 koru_std/runtime.wirescan.kz	161
 koru_std/runtime.wiretail.kz	118

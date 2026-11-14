@@ -1,0 +1,495 @@
+// Koru Standard Library: the `wiregrammar` part of runtime — the wire
+// grammar's per-scope render. Joined via `~part wiregrammar` in runtime.kz;
+// merged into the runtime module at load.
+//
+// `wireGrammarText` assembles the rules block `wireGrammarRules` emits:
+// the fixed prose (the `grammartext` part's consts) around arm-teaching
+// drawn from the scope's own manifest, so every arm word an example shows
+// is one the wall will accept. A scope whose outcomes are all `ok` —
+// every `-> T` tor — gets the generic render byte-for-byte; a scope that
+// declares named outcomes (`found`, `chosen`, …) gets examples spelled
+// from its real verbs. `scopeChainPick` is the chain selection
+// `scopeChainExample` renders, shared so the threading example and the
+// "On this wall" line name the same real chain.
+
+// The generic EXAMPLES block — the render every ok-only scope (and every
+// manifest-less caller) still gets: invented verbs teaching shape, `ok`
+// arms teaching the word those scopes actually declare.
+const WIRE_GRAMMAR_EXAMPLES =
+    \\EXAMPLES
+    \\
+    \\Arms on the call's own line:
+    \\
+    \\fetch-account(id: "ada_7") | ok a |> say(text: "Welcome back, {{ a.name }}.")
+    \\
+    \\Or each arm on its own indented line — never both; a `|` on the call's line commits to the single-line shape:
+    \\
+    \\cancel-booking(booking_id: "BK402")
+    \\    | ok c |> say(text: "Cancelled {{ c.booking_id }}.")
+    \\
+    \\A verb with more than one outcome arms each by name:
+    \\
+    \\read-doc(path: "n.txt")
+    \\    | ok d |> say(text: "got {{ d }}")
+    \\    | missing m |> say(text: "no such file: {{ m }}")
+    \\
+    \\Steps thread bound names through the whole reply:
+    \\
+    \\load-profile(user_id: "u_1") | ok p |>
+    \\check-tier(member: p.membership) | ok t |>
+    \\say(text: "{{ p.user_id }} is {{ t }}")
+;
+
+const WireChainPick = struct {
+    head: *const ManifestEvent,
+    arm: []const u8,
+    target: *const ManifestEvent,
+    bound_arg: []const u8,
+};
+
+const WireArmPick = struct {
+    ev: *const ManifestEvent,
+    arm: *const ManifestBranch,
+};
+
+const WireCallArgs = struct {
+    text: []const u8,
+    wrote_bound: bool,
+};
+
+// The chain pick `scopeChainExample` renders — selection only. The head
+// is the first verb that provably hands a value to an arm: a branch
+// carrying a payload field (required beats optional), or a bare return
+// minting an obligation on `__type_ref` — which the wire meets
+// branchless, as `ok`. The chain target is the possession edge when one
+// exists (the verb that discharges what the head mints); on a handle-free
+// scope it is the lightest sink that can carry the binding. Returns null
+// when nothing is provably chainable — the caller renders the rule with
+// no fabricated example.
+fn scopeChainPick(m: *const ScopeManifest) ?WireChainPick {
+    var head: ?*const ManifestEvent = null;
+    var arm: []const u8 = "";
+    for ([2]bool{ false, true }) |allow_optional| {
+        for (m.events) |*ev| {
+            for (ev.branches) |*br| {
+                if (br.fields.len > 0 and (allow_optional or !br.is_optional)) {
+                    head = ev;
+                    arm = br.name;
+                    break;
+                }
+            }
+            if (head != null) break;
+        }
+        if (head != null) break;
+    }
+    if (head == null) {
+        for (m.events) |*ev| {
+            for (ev.creates) |c| {
+                if (c.branch == null and std.mem.eql(u8, c.field, "__type_ref")) {
+                    head = ev;
+                    arm = "ok";
+                    break;
+                }
+            }
+            if (head != null) break;
+        }
+    }
+    const h = head orelse return null;
+
+    var target: ?*const ManifestEvent = null;
+    var bound_arg: []const u8 = "";
+    // Borrow edge first — a `T<state>` arg names the minted obligation
+    // without spending it, so `search | ok v |> select(flights: v)` teaches
+    // the produce→use path, not just produce→release.
+    for (h.creates) |c| {
+        if (c.branch != null and !std.mem.eql(u8, c.branch.?, arm)) continue;
+        for (m.events) |*ev| {
+            if (ev == h) continue;
+            for (ev.args) |a| {
+                const p = a.phantom orelse continue;
+                if (p.len == 0 or p[0] == '!' or p[p.len - 1] == '!') continue;
+                const pname = if (std.mem.lastIndexOfScalar(u8, p, ':')) |ci| p[ci + 1 ..] else p;
+                if (std.mem.eql(u8, pname, c.obligation)) {
+                    target = ev;
+                    bound_arg = a.name;
+                    break;
+                }
+            }
+            if (target != null) break;
+        }
+        if (target != null) break;
+    }
+    for (h.creates) |c| {
+        if (target != null) break;
+        if (c.branch != null and !std.mem.eql(u8, c.branch.?, arm)) continue;
+        for (m.events) |*ev| {
+            if (ev == h) continue;
+            for (ev.discharges) |d| {
+                if (std.mem.eql(u8, d.obligation, c.obligation) and std.mem.eql(u8, d.module, c.module)) {
+                    target = ev;
+                    bound_arg = d.arg;
+                    break;
+                }
+            }
+            if (target != null) break;
+        }
+    }
+    if (target == null) {
+        for ([2]bool{ true, false }) |want_sink| {
+            for (m.events) |*ev| {
+                if (ev == h or ev.args.len == 0) continue;
+                if (want_sink and ev.branches.len != 0) continue;
+                if (target == null or ev.args.len < target.?.args.len) {
+                    target = ev;
+                    bound_arg = ev.args[0].name;
+                }
+            }
+            if (target != null) break;
+        }
+    }
+    const t = target orelse return null;
+    return .{ .head = h, .arm = arm, .target = t, .bound_arg = bound_arg };
+}
+
+// `name: "N"` for every required arg — optional args stay off the page,
+// matching the worked examples' minimal calls. `lit` is shared across a
+// chain so literals never repeat within one example.
+fn wireCallArgs(allocator: std.mem.Allocator, ev: *const ManifestEvent, lit: *usize) []const u8 {
+    var out = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+    var first = true;
+    for (ev.args) |a| {
+        if (a.is_optional) continue;
+        if (!first) out.appendSlice(allocator, ", ") catch unreachable;
+        first = false;
+        out.appendSlice(allocator, a.name) catch unreachable;
+        out.appendSlice(allocator, ": \"") catch unreachable;
+        lit.* += 1;
+        const num = std.fmt.allocPrint(allocator, "{d}", .{lit.*}) catch unreachable;
+        out.appendSlice(allocator, num) catch unreachable;
+        out.append(allocator, '"') catch unreachable;
+    }
+    return out.toOwnedSlice(allocator) catch unreachable;
+}
+
+// The chain target's args: the bound arg spells `name: v`, every other
+// required arg a literal — the same render `scopeChainExample` emits.
+// `wrote_bound` reports whether the bound arg was actually emitted; a
+// discharge record naming an arg the verb no longer takes would emit a
+// chain that doesn't bind — the caller refuses the example rather than lie.
+fn wireChainArgs(allocator: std.mem.Allocator, ev: *const ManifestEvent, bound_name: []const u8, bound_val: []const u8, lit: *usize) WireCallArgs {
+    var out = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+    var wrote_bound = false;
+    var first = true;
+    for (ev.args) |a| {
+        const is_bound = std.mem.eql(u8, a.name, bound_name);
+        if (a.is_optional and !is_bound) continue;
+        if (!first) out.appendSlice(allocator, ", ") catch unreachable;
+        first = false;
+        out.appendSlice(allocator, a.name) catch unreachable;
+        out.appendSlice(allocator, ": ") catch unreachable;
+        if (is_bound) {
+            wrote_bound = true;
+            out.appendSlice(allocator, bound_val) catch unreachable;
+        } else {
+            out.append(allocator, '"') catch unreachable;
+            lit.* += 1;
+            const num = std.fmt.allocPrint(allocator, "{d}", .{lit.*}) catch unreachable;
+            out.appendSlice(allocator, num) catch unreachable;
+            out.append(allocator, '"') catch unreachable;
+        }
+    }
+    return .{ .text = out.toOwnedSlice(allocator) catch unreachable, .wrote_bound = wrote_bound };
+}
+
+// A verb the examples can call with literal args only: every required arg
+// is a plain value slot (no handle phantom to mint first), and few enough
+// to stay readable on one line.
+fn wireCallSimple(ev: *const ManifestEvent) bool {
+    var n: usize = 0;
+    for (ev.args) |a| {
+        if (a.is_optional) continue;
+        if (a.phantom != null) return false;
+        n += 1;
+        if (n > 4) return false;
+    }
+    return true;
+}
+
+// Does the scope declare any outcome word besides `ok`? `-> T` tors mint
+// `ok`; named `|` outcomes are what make a hardcoded `| ok` example a dead
+// spelling — those scopes get the per-scope render.
+fn wireHasNamedOutcomes(m: *const ScopeManifest) bool {
+    for (m.events) |*ev| {
+        for (ev.branches) |*b| {
+            if (!std.mem.eql(u8, b.name, "ok")) return true;
+        }
+    }
+    return false;
+}
+
+// The arm an example binds through: the first branch carrying a payload,
+// falling back to the first declared arm when every outcome is bare.
+fn wirePayloadArm(ev: *const ManifestEvent) ?*const ManifestBranch {
+    var first: ?*const ManifestBranch = null;
+    for (ev.branches) |*b| {
+        if (first == null) first = b;
+        if (b.fields.len > 0) return b;
+    }
+    return first;
+}
+
+// Slot A's verb: a callable tor with at least one arm — payload-carrying
+// preferred — non-`ok` arms first so a scope that HAS `ok` still shows its
+// named vocabulary where one exists.
+fn wirePickSingle(m: *const ScopeManifest) ?WireArmPick {
+    for ([2]bool{ false, true }) |allow_ok| {
+        for (m.events) |*ev| {
+            if (ev.branches.len == 0 or !wireCallSimple(ev)) continue;
+            const arm = wirePayloadArm(ev) orelse continue;
+            if (!allow_ok and std.mem.eql(u8, arm.name, "ok")) continue;
+            return .{ .ev = ev, .arm = arm };
+        }
+    }
+    return null;
+}
+
+// Slot B's verb: a single-outcome callable tor when the scope has one
+// (the indented-arm shape is cleanest with the whole outcome list shown);
+// otherwise the slot-A verb's first declared arm.
+fn wirePickIndented(m: *const ScopeManifest, single: WireArmPick) WireArmPick {
+    for ([2]bool{ false, true }) |allow_ok| {
+        for (m.events) |*ev| {
+            if (ev.branches.len != 1 or !wireCallSimple(ev)) continue;
+            const arm = wirePayloadArm(ev) orelse continue;
+            if (!allow_ok and std.mem.eql(u8, arm.name, "ok")) continue;
+            return .{ .ev = ev, .arm = arm };
+        }
+    }
+    for (single.ev.branches) |*b| return .{ .ev = single.ev, .arm = b };
+    return single;
+}
+
+// Slot C's verb: a callable tor declaring at least two outcomes — the
+// `|` list illustration and the multi-arm example both render its real arm
+// list.
+fn wirePickMulti(m: *const ScopeManifest) ?*const ManifestEvent {
+    for (m.events) |*ev| {
+        if (ev.branches.len >= 2 and wireCallSimple(ev)) return ev;
+    }
+    return null;
+}
+
+// A verb's outcome list spelled as its declaration spells it —
+// `| name T | name { f: t }` — so the `|` list illustration quotes a real
+// decl from this scope instead of an invented one. Mirrors
+// `wireDeclOutcome`'s clause shape for the manifest's branch records.
+fn wireOutcomeClause(allocator: std.mem.Allocator, ev: *const ManifestEvent) []const u8 {
+    var out = std.ArrayList(u8).initCapacity(allocator, 96) catch unreachable;
+    var first = true;
+    for (ev.branches) |*b| {
+        if (!first) out.append(allocator, ' ') catch unreachable;
+        first = false;
+        out.appendSlice(allocator, "| ") catch unreachable;
+        if (b.is_optional) out.append(allocator, '?') catch unreachable;
+        out.appendSlice(allocator, b.name) catch unreachable;
+        if (b.fields.len == 1 and std.mem.eql(u8, b.fields[0].name, "__type_ref")) {
+            out.append(allocator, ' ') catch unreachable;
+            out.appendSlice(allocator, b.fields[0].type_name) catch unreachable;
+        } else if (b.fields.len > 0) {
+            out.appendSlice(allocator, " { ") catch unreachable;
+            for (b.fields, 0..) |f, i| {
+                if (i > 0) out.appendSlice(allocator, ", ") catch unreachable;
+                out.appendSlice(allocator, f.name) catch unreachable;
+                out.appendSlice(allocator, ": ") catch unreachable;
+                out.appendSlice(allocator, f.type_name) catch unreachable;
+            }
+            out.appendSlice(allocator, " }") catch unreachable;
+        }
+    }
+    return out.toOwnedSlice(allocator) catch unreachable;
+}
+
+// What `{{ ... }}` may name off an armed payload: the bare binding for a
+// positional (`__type_ref`) outcome, one field lift for a record payload,
+// nothing for a bare arm — the same lift the VALUES rule describes.
+fn wireArmSplice(allocator: std.mem.Allocator, bind: []const u8, arm: *const ManifestBranch) ?[]const u8 {
+    if (arm.fields.len == 0) return null;
+    if (arm.fields.len == 1 and std.mem.eql(u8, arm.fields[0].name, "__type_ref")) {
+        return std.fmt.allocPrint(allocator, "{{{{ {s} }}}}", .{bind}) catch null;
+    }
+    return std.fmt.allocPrint(allocator, "{{{{ {s}.{s} }}}}", .{ bind, arm.fields[0].name }) catch null;
+}
+
+// `| name v |>` when the arm carries a payload, `| name |>` when it
+// doesn't — the two spellings the wire accepts.
+fn wireArmSuffix(allocator: std.mem.Allocator, arm: *const ManifestBranch, bind: []const u8) []const u8 {
+    if (arm.fields.len == 0) {
+        return std.fmt.allocPrint(allocator, "| {s} |>", .{arm.name}) catch unreachable;
+    }
+    return std.fmt.allocPrint(allocator, "| {s} {s} |>", .{ arm.name, bind }) catch unreachable;
+}
+
+// The `say` continuation every example ends on — splices the armed
+// payload when the arm carries one, plain text when it doesn't.
+fn wireSayFor(allocator: std.mem.Allocator, arm: *const ManifestBranch, bind: []const u8) []const u8 {
+    if (wireArmSplice(allocator, bind, arm)) |sp| {
+        return std.fmt.allocPrint(allocator, "say(text: \"got {s}\")", .{sp}) catch unreachable;
+    }
+    return "say(text: \"done\")";
+}
+
+fn wireBindLetter(i: usize) []const u8 {
+    const letters = "abcdefghijklmnopqrstuvwxyz";
+    if (i < letters.len) return letters[i..i + 1];
+    return "v";
+}
+
+fn wireBranchNamed(ev: *const ManifestEvent, name: []const u8) ?*const ManifestBranch {
+    for (ev.branches) |*b| {
+        if (std.mem.eql(u8, b.name, name)) return b;
+    }
+    return null;
+}
+
+// The EXAMPLES block rendered from the scope's own verbs: every call is a
+// real decl, every arm word one the vocabulary below will name. Returns
+// null when the chain pick names a bound arg the target no longer takes —
+// the same refusal `scopeChainExample` makes.
+fn wireScopeExamples(allocator: std.mem.Allocator, m: *const ScopeManifest, single: WireArmPick, multi: *const ManifestEvent) ?[]const u8 {
+    var out = std.ArrayList(u8).initCapacity(allocator, 768) catch return null;
+    out.appendSlice(allocator, "EXAMPLES") catch return null;
+    var lit: usize = 0;
+
+    const ind = wirePickIndented(m, single);
+
+    // Arms on the call's own line.
+    out.appendSlice(allocator, "\n\nArms on the call's own line:\n\n") catch return null;
+    lit = 0;
+    out.appendSlice(allocator, single.ev.name) catch return null;
+    out.append(allocator, '(') catch return null;
+    out.appendSlice(allocator, wireCallArgs(allocator, single.ev, &lit)) catch return null;
+    out.append(allocator, ')') catch return null;
+    out.append(allocator, ' ') catch return null;
+    out.appendSlice(allocator, wireArmSuffix(allocator, single.arm, "v")) catch return null;
+    out.append(allocator, ' ') catch return null;
+    out.appendSlice(allocator, wireSayFor(allocator, single.arm, "v")) catch return null;
+
+    // Or each arm on its own indented line — never both.
+    out.appendSlice(allocator, "\n\nOr each arm on its own indented line — never both; a `|` on the call's line commits to the single-line shape:\n\n") catch return null;
+    lit = 0;
+    out.appendSlice(allocator, ind.ev.name) catch return null;
+    out.append(allocator, '(') catch return null;
+    out.appendSlice(allocator, wireCallArgs(allocator, ind.ev, &lit)) catch return null;
+    out.append(allocator, ')') catch return null;
+    out.append(allocator, '\n') catch return null;
+    out.appendSlice(allocator, "    ") catch return null;
+    out.appendSlice(allocator, wireArmSuffix(allocator, ind.arm, "v")) catch return null;
+    out.append(allocator, ' ') catch return null;
+    out.appendSlice(allocator, wireSayFor(allocator, ind.arm, "v")) catch return null;
+
+    // A verb with more than one outcome arms each by name.
+    out.appendSlice(allocator, "\n\nA verb with more than one outcome arms each by name:\n\n") catch return null;
+    lit = 0;
+    out.appendSlice(allocator, multi.name) catch return null;
+    out.append(allocator, '(') catch return null;
+    out.appendSlice(allocator, wireCallArgs(allocator, multi, &lit)) catch return null;
+    out.append(allocator, ')') catch return null;
+    var bi: usize = 0;
+    for (multi.branches) |*b| {
+        const bind = wireBindLetter(bi);
+        bi += 1;
+        out.append(allocator, '\n') catch return null;
+        out.appendSlice(allocator, "    ") catch return null;
+        out.appendSlice(allocator, wireArmSuffix(allocator, b, bind)) catch return null;
+        out.append(allocator, ' ') catch return null;
+        out.appendSlice(allocator, wireSayFor(allocator, b, bind)) catch return null;
+    }
+
+    // Steps thread bound names through the whole reply.
+    out.appendSlice(allocator, "\n\nSteps thread bound names through the whole reply:\n\n") catch return null;
+    if (scopeChainPick(m)) |cp| {
+        lit = 0;
+        out.appendSlice(allocator, cp.head.name) catch return null;
+        out.append(allocator, '(') catch return null;
+        out.appendSlice(allocator, wireCallArgs(allocator, cp.head, &lit)) catch return null;
+        out.appendSlice(allocator, ") | ") catch return null;
+        out.appendSlice(allocator, cp.arm) catch return null;
+        out.appendSlice(allocator, " v |>\n") catch return null;
+        const targs = wireChainArgs(allocator, cp.target, cp.bound_arg, "v", &lit);
+        if (!targs.wrote_bound) return null;
+        out.appendSlice(allocator, cp.target.name) catch return null;
+        out.append(allocator, '(') catch return null;
+        out.appendSlice(allocator, targs.text) catch return null;
+        out.append(allocator, ')') catch return null;
+        if (cp.target.branches.len > 0) {
+            const tarm = wirePayloadArm(cp.target) orelse return null;
+            out.append(allocator, ' ') catch return null;
+            out.appendSlice(allocator, wireArmSuffix(allocator, tarm, "w")) catch return null;
+            out.append(allocator, '\n') catch return null;
+            out.appendSlice(allocator, wireSayFor(allocator, tarm, "w")) catch return null;
+        } else {
+            out.append(allocator, '\n') catch return null;
+            if (wireBranchNamed(cp.head, cp.arm)) |harm| {
+                out.appendSlice(allocator, wireSayFor(allocator, harm, "v")) catch return null;
+            } else {
+                out.appendSlice(allocator, "say(text: \"done\")") catch return null;
+            }
+        }
+    } else {
+        // No provable chain — thread the slot-A binding straight into say.
+        lit = 0;
+        out.appendSlice(allocator, single.ev.name) catch return null;
+        out.append(allocator, '(') catch return null;
+        out.appendSlice(allocator, wireCallArgs(allocator, single.ev, &lit)) catch return null;
+        out.append(allocator, ')') catch return null;
+        out.append(allocator, ' ') catch return null;
+        out.appendSlice(allocator, wireArmSuffix(allocator, single.arm, "v")) catch return null;
+        out.append(allocator, '\n') catch return null;
+        out.appendSlice(allocator, wireSayFor(allocator, single.arm, "v")) catch return null;
+    }
+    return out.toOwnedSlice(allocator) catch return null;
+}
+
+// The middle of the rules block — OUTCOMES, BINDINGS, EXAMPLES — rendered
+// for this scope, or null when the scope's outcomes are all `ok` (or it
+// can't supply real calls), leaving the generic render to the caller.
+fn wireGrammarMiddleScope(allocator: std.mem.Allocator, m: *const ScopeManifest) ?[]const u8 {
+    if (!wireHasNamedOutcomes(m)) return null;
+    const single = wirePickSingle(m) orelse return null;
+    const multi = wirePickMulti(m) orelse return null;
+    const examples = wireScopeExamples(allocator, m, single, multi) orelse return null;
+    var out = std.ArrayList(u8).initCapacity(allocator, 2048) catch return null;
+    const clause = wireOutcomeClause(allocator, multi);
+    const oc = std.fmt.allocPrint(allocator, WIRE_OUTCOMES_RULE, .{ clause, single.arm.name }) catch return null;
+    out.appendSlice(allocator, oc) catch return null;
+    out.appendSlice(allocator, "\n\n") catch return null;
+    const bc = std.fmt.allocPrint(allocator, WIRE_BINDINGS_RULE, .{ single.arm.name, single.arm.name }) catch return null;
+    out.appendSlice(allocator, bc) catch return null;
+    out.appendSlice(allocator, "\n\n") catch return null;
+    out.appendSlice(allocator, examples) catch return null;
+    return out.toOwnedSlice(allocator) catch return null;
+}
+
+// The whole rules block `scope-grammar` emits above the vocabulary: the
+// fixed prose, the arm-teaching rendered for THIS scope when the manifest
+// declares named outcomes, the generic `ok` render otherwise.
+fn wireGrammarText(allocator: std.mem.Allocator, m: ?*const ScopeManifest) []const u8 {
+    var out = std.ArrayList(u8).initCapacity(allocator, 3072) catch unreachable;
+    out.appendSlice(allocator, WIRE_GRAMMAR_HEAD) catch unreachable;
+    out.appendSlice(allocator, "\n\n") catch unreachable;
+    const scoped = if (m) |manifest| wireGrammarMiddleScope(allocator, manifest) else null;
+    if (scoped) |mid| {
+        out.appendSlice(allocator, mid) catch unreachable;
+    } else {
+        const oc = std.fmt.allocPrint(allocator, WIRE_OUTCOMES_RULE, .{ "| ok string | missing string", "ok" }) catch unreachable;
+        out.appendSlice(allocator, oc) catch unreachable;
+        out.appendSlice(allocator, "\n\n") catch unreachable;
+        const bc = std.fmt.allocPrint(allocator, WIRE_BINDINGS_RULE, .{ "ok", "ok" }) catch unreachable;
+        out.appendSlice(allocator, bc) catch unreachable;
+        out.appendSlice(allocator, "\n\n") catch unreachable;
+        out.appendSlice(allocator, WIRE_GRAMMAR_EXAMPLES) catch unreachable;
+    }
+    out.appendSlice(allocator, "\n\n") catch unreachable;
+    out.appendSlice(allocator, WIRE_GRAMMAR_TAIL) catch unreachable;
+    return out.toOwnedSlice(allocator) catch unreachable;
+}

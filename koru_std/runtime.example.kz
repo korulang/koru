@@ -5,147 +5,40 @@
 // PARSE.WIRE.EXAMPLE - the chain rule's worked example, derived per scope
 // ============================================================================
 //
-// The shape rules in WIRE_GRAMMAR_TEXT are fixed prose — they describe the
-// grammar itself, which is one law for every scope. The chain rule's worked
-// EXAMPLE is different: it names verbs, and verbs belong to a scope. A fixed
-// cast teaches notes on every register (kopium hole 9: on calc, `open` and
-// `append` are event-denied and nothing mints a handle). So the cast is
-// synthesized from the scope's own manifest — the same record the dispatcher
-// and the vocabulary render are minted from — and a scope with nothing
-// provably chainable gets the rule with no fabricated example.
-
+// The shape rules in the wire grammar text are fixed prose — they describe
+// the grammar itself, which is one law for every scope. The chain rule's
+// worked EXAMPLE is different: it names verbs, and verbs belong to a scope.
+// A fixed cast teaches notes on every register (kopium hole 9: on calc,
+// `open` and `append` are event-denied and nothing mints a handle). So the
+// cast is synthesized from the scope's own manifest — the same record the
+// dispatcher and the vocabulary render are minted from — and a scope with
+// nothing provably chainable gets the rule with no fabricated example.
+// The selection (`scopeChainPick`) and the arg spelling (`wireCallArgs` /
+// `wireChainArgs`) live in the `wiregrammar` part, shared with the
+// grammar's own threading example.
 
 // The chain rule's worked example, synthesized from the scope's own
 // manifest — the only cast that cannot drift from what the wall enforces.
-// The head is the first verb that provably hands a value to an arm: a
-// branch carrying a payload field (required beats optional), or a bare
-// return minting an obligation on `__type_ref` — which the wire meets
-// branchless, as `ok`. The chain target is the possession edge when one
-// exists (the verb that discharges what the head mints); on a handle-free
-// scope it is the lightest sink that can carry the binding. Returns null
-// when nothing is provably chainable — the caller renders the rule with
-// no fabricated example.
+// Returns null when nothing is provably chainable — the caller renders the
+// rule with no fabricated example.
 fn scopeChainExample(allocator: std.mem.Allocator, m: *const ScopeManifest) ?[]const u8 {
-    var head: ?*const ManifestEvent = null;
-    var arm: []const u8 = "";
-    for ([2]bool{ false, true }) |allow_optional| {
-        for (m.events) |*ev| {
-            for (ev.branches) |*br| {
-                if (br.fields.len > 0 and (allow_optional or !br.is_optional)) {
-                    head = ev;
-                    arm = br.name;
-                    break;
-                }
-            }
-            if (head != null) break;
-        }
-        if (head != null) break;
-    }
-    if (head == null) {
-        for (m.events) |*ev| {
-            for (ev.creates) |c| {
-                if (c.branch == null and std.mem.eql(u8, c.field, "__type_ref")) {
-                    head = ev;
-                    arm = "ok";
-                    break;
-                }
-            }
-            if (head != null) break;
-        }
-    }
-    const h = head orelse return null;
+    const p = scopeChainPick(m) orelse return null;
 
-    var target: ?*const ManifestEvent = null;
-    var bound_arg: []const u8 = "";
-    // Borrow edge first — a `T<state>` arg names the minted obligation
-    // without spending it, so `search | ok v |> select(flights: v)` teaches
-    // the produce→use path, not just produce→release.
-    for (h.creates) |c| {
-        if (c.branch != null and !std.mem.eql(u8, c.branch.?, arm)) continue;
-        for (m.events) |*ev| {
-            if (ev == h) continue;
-            for (ev.args) |a| {
-                const p = a.phantom orelse continue;
-                if (p.len == 0 or p[0] == '!' or p[p.len - 1] == '!') continue;
-                const pname = if (std.mem.lastIndexOfScalar(u8, p, ':')) |ci| p[ci + 1 ..] else p;
-                if (std.mem.eql(u8, pname, c.obligation)) {
-                    target = ev;
-                    bound_arg = a.name;
-                    break;
-                }
-            }
-            if (target != null) break;
-        }
-        if (target != null) break;
-    }
-    for (h.creates) |c| {
-        if (target != null) break;
-        if (c.branch != null and !std.mem.eql(u8, c.branch.?, arm)) continue;
-        for (m.events) |*ev| {
-            if (ev == h) continue;
-            for (ev.discharges) |d| {
-                if (std.mem.eql(u8, d.obligation, c.obligation) and std.mem.eql(u8, d.module, c.module)) {
-                    target = ev;
-                    bound_arg = d.arg;
-                    break;
-                }
-            }
-            if (target != null) break;
-        }
-    }
-    if (target == null) {
-        for ([2]bool{ true, false }) |want_sink| {
-            for (m.events) |*ev| {
-                if (ev == h or ev.args.len == 0) continue;
-                if (want_sink and ev.branches.len != 0) continue;
-                if (target == null or ev.args.len < target.?.args.len) {
-                    target = ev;
-                    bound_arg = ev.args[0].name;
-                }
-            }
-            if (target != null) break;
-        }
-    }
-    const t = target orelse return null;
-
-    var ex = std.ArrayList(u8).initCapacity(allocator, 96) catch return null;
     var lit: usize = 0;
-    var first = true;
-    ex.appendSlice(allocator, h.name) catch return null;
+    var ex = std.ArrayList(u8).initCapacity(allocator, 96) catch return null;
+    ex.appendSlice(allocator, p.head.name) catch return null;
     ex.append(allocator, '(') catch return null;
-    for (h.args) |a| {
-        if (a.is_optional) continue;
-        if (!first) ex.appendSlice(allocator, ", ") catch return null;
-        first = false;
-        lit += 1;
-        const piece = std.fmt.allocPrint(allocator, "{s}: \"{d}\"", .{ a.name, lit }) catch return null;
-        ex.appendSlice(allocator, piece) catch return null;
-    }
+    ex.appendSlice(allocator, wireCallArgs(allocator, p.head, &lit)) catch return null;
     ex.appendSlice(allocator, ") | ") catch return null;
-    ex.appendSlice(allocator, arm) catch return null;
+    ex.appendSlice(allocator, p.arm) catch return null;
     ex.appendSlice(allocator, " v |> ") catch return null;
-    ex.appendSlice(allocator, t.name) catch return null;
+    ex.appendSlice(allocator, p.target.name) catch return null;
     ex.append(allocator, '(') catch return null;
-    first = true;
-    var bound_written = false;
-    for (t.args) |a| {
-        const is_bound = std.mem.eql(u8, a.name, bound_arg);
-        if (a.is_optional and !is_bound) continue;
-        if (!first) ex.appendSlice(allocator, ", ") catch return null;
-        first = false;
-        if (is_bound) {
-            bound_written = true;
-            ex.appendSlice(allocator, a.name) catch return null;
-            ex.appendSlice(allocator, ": v") catch return null;
-        } else {
-            lit += 1;
-            const piece = std.fmt.allocPrint(allocator, "{s}: \"{d}\"", .{ a.name, lit }) catch return null;
-            ex.appendSlice(allocator, piece) catch return null;
-        }
-    }
-    ex.append(allocator, ')') catch return null;
+    const targs = wireChainArgs(allocator, p.target, p.bound_arg, "v", &lit);
     // A discharge record naming an arg the verb no longer takes would emit
     // a chain that doesn't bind — refuse the example rather than lie.
-    if (!bound_written) return null;
+    if (!targs.wrote_bound) return null;
+    ex.appendSlice(allocator, targs.text) catch return null;
+    ex.append(allocator, ')') catch return null;
     return ex.toOwnedSlice(allocator) catch return null;
 }

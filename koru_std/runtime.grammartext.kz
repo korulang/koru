@@ -1,11 +1,13 @@
 // Koru Standard Library: the `grammartext` part of runtime —
-// the wire grammar's teaching prose, kept apart so the rejection
+// the wire grammar's fixed teaching prose, kept apart so the rejection
 // vocabulary file stays under its pin. Joined via `~part grammartext` in runtime.kz.
 //
-// WIRE_GRAMMAR_TEXT and the `wirescan` scanner move as one: the text
-// describes exactly what the scanner enforces.
+// The text describes exactly what the `wirescan` scanner enforces. The
+// arm-teaching sections carry `{s}` slots the `wiregrammar` part fills —
+// per scope with the outcome names the manifest actually declares, or with
+// the generic `ok` render when no manifest says otherwise.
 
-const WIRE_GRAMMAR_TEXT =
+const WIRE_GRAMMAR_HEAD =
     \\This surface is a little alien — a reply is a program, not a message. Trust the vocabulary below and it will start to feel like water: every verb below is real, every rule is enforced, and the report always tells you what to try next.
     \\
     \\Your reply IS wire — invocations, never narration. One invocation per line, run in order. `say(text: "...")` is what reaches the user; prose binds as residue and reaches nobody.
@@ -13,36 +15,18 @@ const WIRE_GRAMMAR_TEXT =
     \\VOCABULARY — each line below is the verb's declaration. `pub tor name { arg: type }` declares it; you INVOKE it with parens: `name(arg: "v")`. The `type<!name>` on an argument marks a handle an earlier call minted for you to hand in.
     \\
     \\VALUES — a field takes a "quoted string" or a bare expression (`42`, `r3.total * 2`, `u.user_id`). `{{ name }}` inside a quoted string splices a bound value into prose; `{{ u.field }}` lifts one level of fields — a deeper path refuses, so read nested shapes out of the report instead.
-    \\
-    \\OUTCOMES — `-> type` at the tail of a declaration names the verb's one outcome; arm it `| ok name |>`. A `|` list — `| ok string | missing string` — names the outcomes; arm words are exactly those names, nothing else. An invented arm is refused before the call runs, and the refusal names the legal words. When an outcome fires unarmed the report says `unhandled-branch` and names it: arm it and resend. Verbs that declare `| error string` issue failures on that branch — `call(...) | ok r |>` arms success only, so an unarmed error stops the reply at that step; to act on a failure arm it `| error e |>` and read `e` for the reason. Never assume a call succeeded — check the declaration's outcome list.
-    \\
-    \\BINDINGS — `| ok n |>` binds the outcome to `n` for the rest of this reply; a call five items later still sees it, and the name dies with the reply. Every dispatched result also binds a durable `r1, r2, …` name that outlives the reply — `| ok n |>` for threading within a reply, `rN` across replies.
-    \\
-    \\EXAMPLES
-    \\
-    \\Arms on the call's own line:
-    \\
-    \\fetch-account(id: "ada_7") | ok a |> say(text: "Welcome back, {{ a.name }}.")
-    \\
-    \\Or each arm on its own indented line — never both; a `|` on the call's line commits to the single-line shape:
-    \\
-    \\cancel-booking(booking_id: "BK402")
-    \\    | ok c |> say(text: "Cancelled {{ c.booking_id }}.")
-    \\
-    \\A verb with more than one outcome arms each by name:
-    \\
-    \\read-doc(path: "n.txt")
-    \\    | ok d |> say(text: "got {{ d }}")
-    \\    | missing m |> say(text: "no such file: {{ m }}")
-    \\
-    \\Steps thread bound names through the whole reply:
-    \\
-    \\load-profile(user_id: "u_1") | ok p |>
-    \\check-tier(member: p.membership) | ok t |>
-    \\say(text: "{{ p.user_id }} is {{ t }}")
-    \\
+;
+
+const WIRE_OUTCOMES_RULE =
+    \\OUTCOMES — `-> type` at the tail of a declaration names the verb's one outcome; arm it `| ok name |>`. A `|` list — `{s}` — names the outcomes; arm words are exactly those names, nothing else. An invented arm is refused before the call runs, and the refusal names the legal words. When an outcome fires unarmed the report says `unhandled-branch` and names it: arm it and resend. Verbs that declare `| error string` issue failures on that branch — `call(...) | {s} r |>` arms success only, so an unarmed error stops the reply at that step; to act on a failure arm it `| error e |>` and read `e` for the reason. Never assume a call succeeded — check the declaration's outcome list.
+;
+
+const WIRE_BINDINGS_RULE =
+    \\BINDINGS — `| {s} n |>` binds the outcome to `n` for the rest of this reply; a call five items later still sees it, and the name dies with the reply. Every dispatched result also binds a durable `r1, r2, …` name that outlives the reply — `| {s} n |>` for threading within a reply, `rN` across replies.
+;
+
+const WIRE_GRAMMAR_TAIL =
     \\HOST VERBS — `bind(name: "k", value: "...")` persists a value under `k` across replies. `abandon(reason: "...")` ends the session with your reason — what you tried, what blocked you. `vocabulary()` and `grammar()` re-emit this surface.
     \\
     \\The tool contract — every verb's full documentation and argument shapes — follows the vocabulary below; read it before composing a call whose payload shape is unclear.
 ;
-

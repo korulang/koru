@@ -29,3 +29,4 @@ tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/140_021_part_tilde_spelling/i
 tests/regression/200_COMPILER_FEATURES/210_PARSER/210_312_empty_source_block_eats_next_decl_kz/input.kz | the test names the .kz spelling — the bug it pins only reproduces on the host-embedded facet
 tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/140_029_dup_tor_across_facets_refused/input.kz | the pin is facet-companion duplication itself — a .k twin changes what the test measures
 koru_std/grid.kz | module root of a ~part family — `~part` is a host-switch directive and PARSE003 refuses it in a .k file; the join lines are the host content that earns the facet
+koru_std/runtime.wiregrammar.kz | part file of the runtime module — same contract-split trigger as bridge.run

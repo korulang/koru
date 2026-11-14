@@ -13,12 +13,12 @@ const WIRE_CHAIN_RULE_EXAMPLE =
 // `wireObligationLines` — the obtain-via render — lives in
 // runtime.obtainvia.kz (the `obtainvia` part).
 
-// The grammar's rules block as one scope-true render: the fixed shape
-// rules plus the chain rule carrying THIS scope's worked example.
-// `scope-grammar` emits it above the vocabulary lines.
+// The grammar's rules block as one scope-true render: the arm-teaching
+// `wireGrammarText` draws from the manifest (the `wiregrammar` part), the
+// obtain-via lines, and the chain rule's worked example.
 fn wireGrammarRules(allocator: std.mem.Allocator, m: ?*const ScopeManifest) []const u8 {
     var out = std.ArrayList(u8).initCapacity(allocator, 768) catch unreachable;
-    out.appendSlice(allocator, WIRE_GRAMMAR_TEXT) catch unreachable;
+    out.appendSlice(allocator, wireGrammarText(allocator, m)) catch unreachable;
     out.append(allocator, '\n') catch unreachable;
     if (m) |manifest| {
         out.appendSlice(allocator, wireObligationLines(allocator, manifest)) catch unreachable;

@@ -1096,7 +1096,6 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // host/pure mode from the filename extension — so a synthetic `"x.kz"`
 // silently put interpreted source in host mode and made `` mandatory, the
 // exact inverse of the rule `run` enforces.
-
 ~pub tor parse.source {
     source: string,
     allocator: std.mem.Allocator
@@ -1140,6 +1139,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 ~part manifest-record
 ~part manifest-text
 ~part wiretext
+~part wiregrammar
 ~part contract
 ~part registry
 ~part registry-collect
