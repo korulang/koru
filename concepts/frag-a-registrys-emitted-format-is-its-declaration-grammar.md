@@ -10,9 +10,11 @@ tags: [koru, sym, rel, registry, canonical-text, dsl]
 
 `rel:v1;sin=g(cos);cos=(-1e0*g(sin))` is what `rel-seed`/`rel-law` emit
 after threading. It is also a complete *declaration*: every entry is
-`name` or `name=law`, `;`-separated — exactly the two-phase order the
-threaded path imposes (all names exist before any law is parsed, so
-cyclic pairs and forward references both resolve). `rel-decls(reg, source)`
+`name` or `name=law`, `;`- or newline-separated — exactly the two-phase
+order the threaded path imposes (all names exist before any law is
+parsed, so cyclic pairs and forward references both resolve). One entry
+per line is the `std/kernel` block convention; the `;` survives inline
+because the emitted wire text is a single line. `rel-decls(reg, source)`
 takes that grammar as input — optionally `rel:v1`-prefixed — and the
 consequence is free composition: registry text concatenates into
 registry text, and `rel-decls(r, otherRegistryText)` is a merge.

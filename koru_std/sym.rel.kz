@@ -81,11 +81,11 @@ fn relNameOk(nm: []const u8) bool {
 fn relParse(alloc: std.mem.Allocator, s: []const u8) !GReg {
     if (!std.mem.startsWith(u8, s, "rel:v1")) return error.Malformed;
     const tail = s["rel:v1".len..];
-    if (tail.len > 0 and tail[0] != ';') return error.Malformed;
+    if (tail.len > 0 and tail[0] != ';' and tail[0] != '\n') return error.Malformed;
     var g = GReg{ .names = .{}, .laws = .{} };
     var raws = std.ArrayList(?[]const u8){};
     defer raws.deinit(alloc);
-    var it = std.mem.splitScalar(u8, tail, ';');
+    var it = std.mem.splitAny(u8, tail, ";\n");
     while (it.next()) |ent0| {
         const ent = std.mem.trim(u8, ent0, " \t\n\r");
         if (ent.len == 0) continue;
@@ -213,11 +213,11 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     var tail = source;
     if (std.mem.startsWith(u8, tail, "rel:v1")) {
         tail = tail["rel:v1".len..];
-        if (tail.len > 0 and tail[0] != ';') return .{ .bad = .{} };
+        if (tail.len > 0 and tail[0] != ';' and tail[0] != '\n') return .{ .bad = .{} };
     }
     const Entry = struct { nm: []const u8, law: ?[]const u8 };
     var entries = std.ArrayList(Entry){};
-    var it = std.mem.splitScalar(u8, tail, ';');
+    var it = std.mem.splitAny(u8, tail, ";\n");
     while (it.next()) |ent0| {
         const ent = std.mem.trim(u8, ent0, " \t\n\r");
         if (ent.len == 0) continue;

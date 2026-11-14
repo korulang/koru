@@ -41,9 +41,9 @@ fn uregFind(g: *const UReg, nm: []const u8) ?usize {
 fn uregParse(alloc: std.mem.Allocator, s: []const u8) !UReg {
     if (!std.mem.startsWith(u8, s, "unitreg:v1")) return error.Malformed;
     const tail = s["unitreg:v1".len..];
-    if (tail.len > 0 and tail[0] != ';') return error.Malformed;
+    if (tail.len > 0 and tail[0] != ';' and tail[0] != '\n') return error.Malformed;
     var g = UReg{ .names = .{}, .kinds = .{} };
-    var it = std.mem.splitScalar(u8, tail, ';');
+    var it = std.mem.splitAny(u8, tail, ";\n");
     while (it.next()) |ent| {
         if (ent.len == 0) continue;
         try uregEntry(alloc, &g, ent);
@@ -132,9 +132,9 @@ fn uregEmit(alloc: std.mem.Allocator, g: *const UReg) ![]u8 {
     var tail = source;
     if (std.mem.startsWith(u8, tail, "unitreg:v1")) {
         tail = tail["unitreg:v1".len..];
-        if (tail.len > 0 and tail[0] != ';') return .{ .bad = .{} };
+        if (tail.len > 0 and tail[0] != ';' and tail[0] != '\n') return .{ .bad = .{} };
     }
-    var it = std.mem.splitScalar(u8, tail, ';');
+    var it = std.mem.splitAny(u8, tail, ";\n");
     while (it.next()) |ent| {
         if (ent.len == 0) continue;
         var nm = ent;

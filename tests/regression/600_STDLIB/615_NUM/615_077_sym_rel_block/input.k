@@ -5,8 +5,13 @@ import std/sym
 // the captured text to the runtime callee, the same transport Expression
 // params use. rel-decls takes the whole registry in one block; rel-law
 // takes one law per block. D(sin^2+cos^2) folds to 0e0 either way.
+// Entries split on ';' or newline — one entry per line is the std/kernel
+// convention; a law cannot wrap lines.
 std/sym:rel-new()
-|> std/sym:rel-decls { sin=g(cos); cos=(-1e0*g(sin)) }
+|> std/sym:rel-decls {
+      sin=g(cos)
+      cos=(-1e0*g(sin))
+    }
     | exact |> std/sym:rel-derive { g(sin)*g(sin)+g(cos)*g(cos) }
         | exact d |> std/io:print.ln("{{ d:s }}") |> std/io:free(content: d)
         | unknown-generator |> std/io:print.ln("ug")
