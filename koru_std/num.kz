@@ -32,6 +32,7 @@
 
 ~import std/io
 ~part nt
+~part bases
 
 const std = @import("std");
 const Limb = u64;
@@ -388,6 +389,72 @@ fn decToString(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
     const es = std.fmt.bufPrint(&buf, "{d}", .{adj}) catch unreachable;
     try out.appendSlice(alloc, es);
     return out.toOwnedSlice(alloc);
+}
+
+// Prefix-sniffed base spellings for the lit/parse gate: after an optional
+// sign, 0x/0X is hex, 0b/0B binary, 0o/0O octal — the digit slice follows.
+// No prefix: the decimal grammar handles it. Prefixed spellings are
+// integers; a point or exponent is malformed, never guessed at.
+fn basePrefix(t: []const u8) ?struct { base: i64, rest: []const u8 } {
+    if (t.len > 2 and t[0] == '0') {
+        const b: i64 = switch (t[1]) {
+            'x', 'X' => 16,
+            'b', 'B' => 2,
+            'o', 'O' => 8,
+            else => return null,
+        };
+        return .{ .base = b, .rest = t[2..] };
+    }
+    return null;
+}
+
+// Accumulate base-b digit text into a fresh Int. error.BadDigit on a
+// foreign or out-of-range character; an empty slice refuses too.
+fn biFromBaseDigits(alloc: std.mem.Allocator, ds: []const u8, base: i64) !BI {
+    if (ds.len == 0) return error.BadDigit;
+    var v = BI.initSet(alloc, 0) catch return error.OutOfMemory;
+    errdefer v.deinit();
+    var bb = BI.initSet(alloc, base) catch return error.OutOfMemory;
+    defer bb.deinit();
+    for (ds) |c| {
+        const dig: i64 = if (c >= '0' and c <= '9')
+            c - '0'
+        else if (c >= 'a' and c <= 'z')
+            c - 'a' + 10
+        else if (c >= 'A' and c <= 'Z')
+            c - 'A' + 10
+        else
+            return error.BadDigit;
+        if (dig >= base) return error.BadDigit;
+        var dd = BI.initSet(alloc, dig) catch return error.OutOfMemory;
+        defer dd.deinit();
+        mulFast(&v, &v, &bb) catch return error.OutOfMemory;
+        v.add(&v, &dd) catch return error.OutOfMemory;
+    }
+    return v;
+}
+
+// The shared admission gate for lit and parse — one grammar on both lanes.
+// Prefixed base spellings (sign, then 0x/0b/0o) or the canonical decimal
+// text of decParse; anything else is BadNumber.
+fn numParseGate(alloc: std.mem.Allocator, s: []const u8) !Dec {
+    var t = std.mem.trim(u8, s, " \t\r\n");
+    var neg = false;
+    if (t.len > 0 and (t[0] == '+' or t[0] == '-')) {
+        neg = t[0] == '-';
+        t = t[1..];
+    }
+    if (basePrefix(t)) |bp| {
+        var v = biFromBaseDigits(alloc, bp.rest, bp.base) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.BadNumber,
+        };
+        defer v.deinit();
+        const ds = v.toString(alloc, 10, .lower) catch return error.OutOfMemory;
+        defer alloc.free(ds);
+        return decFromDigits(alloc, ds, 0, neg and !v.eqlZero());
+    }
+    return decParse(alloc, s);
 }
 
 // r = a * 10^k (k >= 0), into a fresh Int.
@@ -2542,7 +2609,7 @@ fn numFree(s: []const u8) void {
 | bad string<std/io:allocated!>
 
 ~proc parse|zig {
-    var d = decParse(koru_allocator(), s) catch |err| switch (err) {
+    var d = numParseGate(koru_allocator(), s) catch |err| switch (err) {
         error.OutOfMemory => @panic("std/num: out of memory"),
         else => return .{ .bad = s },
     };
@@ -2559,7 +2626,7 @@ fn numFree(s: []const u8) void {
 | bad string
 
 ~proc lit|zig {
-    var d = decParse(koru_allocator(), s) catch |err| switch (err) {
+    var d = numParseGate(koru_allocator(), s) catch |err| switch (err) {
         error.OutOfMemory => @panic("std/num: out of memory"),
         else => return .{ .bad = s },
     };
@@ -3008,78 +3075,3 @@ fn numFree(s: []const u8) void {
     defer decDeinit(&d);
     return if (d.e < 0) -d.e else 0;
 }
-
-// Render an integral value in base 2..36 (bc's obase, honest about scope:
-// non-integers refuse rather than emitting bc's digit-vector notation).
-~pub tor to-base { a: string<!exact>, base: i64 }
-| exact string<exact!>
-| non-int
-| bad-base
-
-~proc to-base|zig {
-    defer numFree(a);
-    if (base < 2 or base > 36) return .{ .bad_base = .{} };
-    var d = decParse(koru_allocator(), a) catch @panic("std/num:to-base: malformed operand");
-    defer decDeinit(&d);
-    if (d.e < 0) return .{ .non_int = .{} };
-    var v = d.m.clone() catch @panic("std/num: out of memory");
-    defer v.deinit();
-    var p = pow10(koru_allocator(), d.e) catch @panic("std/num: out of memory");
-    defer p.deinit();
-    mulFast(&v, &v, &p) catch @panic("std/num: out of memory");
-    const b8: u8 = @intCast(base);
-    const s = v.toString(koru_allocator(), b8, .lower) catch @panic("std/num: out of memory");
-    if (d.neg and !v.eqlZero()) {
-        var out = koru_allocator().alloc(u8, s.len + 1) catch @panic("std/num: out of memory");
-        out[0] = '-';
-        @memcpy(out[1..], s);
-        koru_allocator().free(s);
-        return .{ .exact = out };
-    }
-    return .{ .exact = s };
-}
-
-// Parse digits in base 2..36 into an integer value (bc's ibase; lit-lane —
-// the text is trusted, same contract as lit). Upper and lower case both
-// accepted; '_' separators refused, a leading '-' negates.
-~pub tor from-base { s: string, base: i64 }
-| exact string<exact!>
-| bad-digit
-| bad-base
-
-~proc from-base|zig {
-    if (base < 2 or base > 36) return .{ .bad_base = .{} };
-    var i: usize = 0;
-    var neg = false;
-    if (s.len > 0 and s[0] == '-') {
-        neg = true;
-        i = 1;
-    }
-    if (i >= s.len) return .{ .bad_digit = .{} };
-    var v = BI.initSet(koru_allocator(), 0) catch @panic("std/num: out of memory");
-    defer v.deinit();
-    var bb = BI.initSet(koru_allocator(), base) catch @panic("std/num: out of memory");
-    defer bb.deinit();
-    while (i < s.len) : (i += 1) {
-        const c = s[i];
-        const dig: i64 = if (c >= '0' and c <= '9')
-            c - '0'
-        else if (c >= 'a' and c <= 'z')
-            c - 'a' + 10
-        else if (c >= 'A' and c <= 'Z')
-            c - 'A' + 10
-        else
-            return .{ .bad_digit = .{} };
-        if (dig >= base) return .{ .bad_digit = .{} };
-        var dd = BI.initSet(koru_allocator(), dig) catch @panic("std/num: out of memory");
-        defer dd.deinit();
-        mulFast(&v, &v, &bb) catch @panic("std/num: out of memory");
-        v.add(&v, &dd) catch @panic("std/num: out of memory");
-    }
-    const ds = v.toString(koru_allocator(), 10, .lower) catch @panic("std/num: out of memory");
-    defer koru_allocator().free(ds);
-    var out = decFromDigits(koru_allocator(), ds, 0, neg and !v.eqlZero()) catch @panic("std/num: out of memory");
-    defer decDeinit(&out);
-    return .{ .exact = decToString(koru_allocator(), &out) catch @panic("std/num: out of memory") };
-}
-
