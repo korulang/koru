@@ -18,6 +18,8 @@
 //   rel-new    -> rel:v1                                        (allocated!)
 //   rel-seed   reg, name      -> exact reg' | dup | full | bad   declare a name
 //   rel-law    reg, name, law -> exact reg' | unknown-generator | bad
+//   rel-decls  reg, src       -> exact reg' | dup | full |
+//                                unknown-generator | bad        declare a block
 //   rel-derive reg, expr      -> exact text | unknown-generator | lawless | bad
 //   rel-norm   reg, expr      -> exact text | unknown-generator | bad
 //
@@ -148,6 +150,60 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     const nt = norm(a, t) catch return .{ .bad = .{} };
     g.laws.items[i] = nt;
     const out = relEmit(alloc, &g) catch @panic("std/sym:rel-law: emit");
+    return .{ .exact = out };
+}
+
+// Declare a whole block at once: src is a `;`-separated list of `name`
+// and `name=law` entries — the rel:v1 tail grammar, optionally prefixed
+// (so `rel-decls(r, otherRegistryText)` merges two registries). Two
+// phases like the threaded path: every LHS name is seeded first, then
+// each law parses under the complete name set — cyclic blocks and
+// forward references both resolve. Atomic: a `dup`, `full`,
+// `unknown-generator`, or `bad` anywhere refuses the whole block.
+~pub tor rel-decls { reg: string<std/io:!allocated>, src: string }
+| exact string<std/io:allocated!>
+| dup
+| full
+| unknown-generator
+| bad
+
+~proc rel-decls|zig {
+    defer symFree(reg);
+    const alloc = koru_allocator();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var g = relParse(a, reg) catch return .{ .bad = .{} };
+    var tail = src;
+    if (std.mem.startsWith(u8, tail, "rel:v1")) {
+        tail = tail["rel:v1".len..];
+        if (tail.len > 0 and tail[0] != ';') return .{ .bad = .{} };
+    }
+    const Entry = struct { nm: []const u8, law: ?[]const u8 };
+    var entries = std.ArrayList(Entry){};
+    var it = std.mem.splitScalar(u8, tail, ';');
+    while (it.next()) |ent| {
+        if (ent.len == 0) continue;
+        const eq = std.mem.indexOfScalar(u8, ent, '=');
+        const nm = if (eq) |e| ent[0..e] else ent;
+        if (!relNameOk(nm)) return .{ .bad = .{} };
+        if (relFind(&g, nm) != null) return .{ .dup = .{} };
+        if (g.names.items.len >= 252) return .{ .full = .{} };
+        g.names.append(a, nm) catch @panic("std/sym:rel-decls: oom");
+        g.laws.append(a, null) catch @panic("std/sym:rel-decls: oom");
+        entries.append(a, .{ .nm = nm, .law = if (eq) |e| (if (e + 1 < ent.len) ent[e + 1 ..] else null) else null }) catch @panic("std/sym:rel-decls: oom");
+    }
+    for (entries.items) |en| {
+        if (en.law) |lt| {
+            const t = parseTreeG(a, lt, &g) catch |e| switch (e) {
+                error.UnknownGenerator => return .{ .unknown_generator = .{} },
+                else => return .{ .bad = .{} },
+            };
+            const nt = norm(a, t) catch return .{ .bad = .{} };
+            g.laws.items[relFind(&g, en.nm).?] = nt;
+        }
+    }
+    const out = relEmit(alloc, &g) catch @panic("std/sym:rel-decls: emit");
     return .{ .exact = out };
 }
 

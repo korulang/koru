@@ -1,0 +1,8 @@
+rel:v1;sin=g(cos);cos=(-1e0*g(sin))
+0e0
+rel:v1;exp=g(exp);f=
+dup
+ug
+lawless
+bad
+rel:v1;exp=g(exp)
