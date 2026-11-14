@@ -3192,6 +3192,12 @@ fn emitMissingOptionalArgs(emitter: *CodeEmitter, fields: []const ast.Field, arg
     var needs_sep = args.len > 0;
     for (fields) |field| {
         if (!(field.type.len > 0 and field.type[0] == '?')) continue;
+        // Machine-convention param — `reporter` is injected into the
+        // transform ABI by the harness, never filled by a call site; the
+        // runtime Input struct carries it as an `?*anyopaque` placeholder
+        // (visitor_emitter) whose default already covers it.
+        if (std.mem.eql(u8, field.name, "reporter") and
+            std.mem.indexOf(u8, field.type, "ErrorReporter") != null) continue;
         if (argProvided(args, field.name)) continue;
         if (needs_sep) try emitter.write(", ");
         try emitter.write(".");
@@ -4816,7 +4822,7 @@ fn scopedTypeText(allocator: std.mem.Allocator, base: []const u8, phantom: ?[]co
     return std.fmt.allocPrint(allocator, "{s}<{s}>", .{ base, ph });
 }
 
-fn findFlowHoldingCont(items: []const ast.Item, site: *const ast.Continuation) ?*const ast.Flow {
+pub fn findFlowHoldingCont(items: []const ast.Item, site: *const ast.Continuation) ?*const ast.Flow {
     for (items) |*item| {
         switch (item.*) {
             .flow => |*f| {

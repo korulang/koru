@@ -49,7 +49,7 @@
 ~part unitreg
 ~part pack
 ~part ext
-
+~part dims
 const std = @import("std");
 
 fn ownedCopy(s: []const u8) []u8 {
@@ -731,7 +731,7 @@ fn mantissaDigits(canon: []const u8) i64 {
 | exact q |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: be) -> q
 | bad |> std/io:free(content: ac) |> std/io:free(content: bd) |> std/io:free(content: bc) |> std/io:free(content: be) |> unreachable(): q -> q
 
-~pub tor add { a: string<!exact>, b: string<!exact> }
+~pub tor add { a: string<!exact>, b: string<!exact>, reporter: ?*std/compiler:ErrorReporter }
 | exact string<exact!>
 | dim-mismatch
 | mixed-cov
@@ -774,7 +774,7 @@ fn mantissaDigits(canon: []const u8) i64 {
     | exact q |> std/io:free(content: f.cov) -> q
     | bad |> std/io:free(content: f.cov) |> unreachable(): q -> q
 
-~pub tor sub { a: string<!exact>, b: string<!exact> }
+~pub tor sub { a: string<!exact>, b: string<!exact>, reporter: ?*std/compiler:ErrorReporter }
 | exact string<exact!>
 | dim-mismatch
 | mixed-cov
