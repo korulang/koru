@@ -67,6 +67,25 @@ the name belongs to the stage, not the chain. A claim that still lands is
 collected and replicated as before; the carve-out only stops the wall from
 refusing what it was never asked to read. Pin: 690_369.
 
+**The choke is not point-free's alone — dedent is the claim signal in both
+chain spellings.** An explicitly-bound pyramid (`| exact r1 |>` arms carrying
+their own bindings and the next call) has no unnamed steps for the point-free
+pass to grab, so heterogeneous refusal sets — `dup`/`full`/`bad` on seeds,
+`unknown-generator`/`lawless` on laws — forced the refusal pyramid to be
+handwritten per level even though `dup` is `dup` at every stage that declares
+it. The canonical pyramid accepts the same claims directly: an arm written
+SHALLOWER than the chain-spine rungs is a claim — lifted out of its local set
+and cloned into every continuation set in the subtree whose producer declares
+that branch and does not already arm it, under the same two walls (dead claim
+refused at the chain, KORU021; payload disagreement refused, KORU031). Spine
+arms are the rungs whose bodies invoke a branch-declaring tor and carry
+nested continuations; a set with no spine has no dedent axis and is left
+exactly as parsed — the pass never guesses. Downstream still sees the
+canonical pyramid; this is surface, not semantics. The homogeneous
+`analysis`-style ladder keeps working through the point-free spelling; the
+dedent spelling covers the heterogeneous one the survivor rule cannot.
+Pins: 615_050 (choked `sym.rel` chain), 210_334/210_335 (the two walls).
+
 Corollary worth keeping: **uniform-branch ladders are the degenerate case, not
 the representative one.** `analysis` in `compiler.kz` is `| failed` six times,
 so the ladder that proved the feature was the one shape that could not expose

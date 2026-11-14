@@ -9140,6 +9140,15 @@ pub fn main() !void {
     const ast_transform = @import("ast_transform");
     try ast_transform.desugarPointfreeChains(parse_allocator, &source_file, &parser.reporter);
 
+    // Dedented-claim choke for explicit pyramids: an arm written shallower
+    // than the chain-spine rungs claims its branch name across every
+    // continuation set in the subtree whose producer declares it — the .k
+    // twin of the point-free choke above, for `| exact rN |>` chains that
+    // carry their own bindings. Runs after the point-free rewrite so both
+    // chain spellings arrive here as canonical pyramids, and before every
+    // checker so coverage sees the replicated arms.
+    try ast_transform.desugarDedentClaims(parse_allocator, &source_file, &parser.reporter);
+
     // Inline scalar-bind pun: fill an invocation's unfilled input field from a
     // same-named in-scope `: bind` (subtree-scoped, unique by no-shadowing),
     // synthesizing the explicit arg BEFORE any checker sees the tree — so the

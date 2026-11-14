@@ -316,3 +316,14 @@ members=2559
 # census reads.
 clusters=1992
 members=2582
+# Re-pinned 1992/2582 -> 1995/2589 (2026-11-14): the roll fired on the
+# dedent-claim desugar commit — decomposed against a detached HEAD
+# worktree: HEAD alone measures 1993/2584 (+1/+2 foreign committed
+# drift under rolls that missed), this diff adds +2/+5 — the dedent
+# pass's micro-idioms (a for-find-by-name joining the standing idiom
+# cluster, list-append shapes) — idiomatic Zig matching the file's
+# existing conventions, not a foldable clone; the pass is a deliberate
+# parallel surface over the shared choke helpers (the semantically
+# distinct twin class). Census re-measured on this tree: 1995/2589.
+clusters=1995
+members=2589

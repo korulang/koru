@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-11-08T08:54:39.278Z",
+  "timestamp": "2026-11-14T18:56:53.948Z",
   "summary": {
-    "passed": 436,
+    "passed": 439,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 448,
+    "total": 451,
     "suiteCount": 45,
     "status": "success"
   },
@@ -29,18 +29,18 @@
     },
     {
       "name": "ast_json_tests",
-      "passed": 3,
+      "passed": 4,
       "failed": 0,
       "skipped": 0,
-      "total": 3,
+      "total": 4,
       "status": "success"
     },
     {
       "name": "ast_printer_tests",
-      "passed": 3,
+      "passed": 5,
       "failed": 0,
       "skipped": 0,
-      "total": 3,
+      "total": 5,
       "status": "success"
     },
     {

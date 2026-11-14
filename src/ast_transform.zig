@@ -1287,6 +1287,292 @@ fn tryDesugarChain(
 }
 
 // ============================================================================
+// Dedented-claim (choke) desugar for explicit pyramids
+// ============================================================================
+//
+// .kz point-free chains get their choke from `|>` steps plus dedented `=>`
+// arms, rewritten by desugarPointfreeChains above. Explicit .k pyramids —
+// `| exact r1 |>` arms that carry the next call — have no unnamed steps for
+// that pass to grab, so a refusal arm had to be re-typed at every level even
+// when every level declared the same branch (`dup` is `dup`). This pass gives
+// the canonical pyramid the same choke: an arm written at a SHALLOWER indent
+// than the chain-spine arms is a CLAIM — it is lifted out of its local set
+// and cloned into every continuation set in the subtree whose producer
+// declares that branch and does not already arm it. Name-first, then
+// payload-shape (KORU031 on disagreement, KORU021 when no producer in the
+// subtree declares the name — the same walls the point-free choke holds).
+// Everything downstream still sees the canonical pyramid; this is surface,
+// not semantics.
+//
+// Spine detection: the chain-spine arms are the ones whose own `node`
+// resolves to a tor declaring terminal branches AND which carry nested
+// continuations — the `| exact rN |>` rungs. Claim arms are terminal named
+// arms indented strictly below the shallowest spine arm. A set with no spine
+// arms (leaf handlers, flat arm lists at one indent) yields no claims and is
+// left exactly as parsed — the pass never guesses.
+
+/// Entry point: rewrite dedented claim arms in every chain in the program.
+pub fn desugarDedentClaims(
+    allocator: std.mem.Allocator,
+    program: *ast.Program,
+    reporter: *errors_mod.ErrorReporter,
+) !void {
+    try runDesugar(allocator, program, reporter, desugarItemsDedentClaims);
+}
+
+fn desugarItemsDedentClaims(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    items: []const ast.Item,
+    counter: *usize,
+    reporter: *errors_mod.ErrorReporter,
+) std.mem.Allocator.Error!void {
+    for (@constCast(items)) |*item| {
+        switch (item.*) {
+            .flow => |*flow| try dedentSiteClaims(allocator, table, &flow.body, reporter),
+            .proc_decl => |*proc| {
+                for (@constCast(proc.inline_flows)) |*flow| {
+                    try dedentSiteClaims(allocator, table, &flow.body, reporter);
+                }
+            },
+            .module_decl => |*module| try desugarItemsDedentClaims(allocator, table, module.items, counter, reporter),
+            else => {},
+        }
+    }
+}
+
+/// The resolved declaration info for the invocation inside `cont`'s body — the producer of
+/// `cont.continuations`. Null when the body is not a resolvable invocation.
+fn dedentProducerInfo(table: *SymbolTable, cont: *const ast.Continuation) ?EventInfo {
+    const node = if (cont.node) |*n| n else return null;
+    if (node.* != .invocation) return null;
+    return table.getEventInfo(node.invocation.path);
+}
+
+/// Shallowest indent among this set's chain-spine arms — the rungs whose
+/// bodies invoke a branch-declaring tor and carry nested continuations.
+/// Arms without nested continuations are leaf handlers and never set the
+/// level; a set with no spine arms has no dedent axis and no claims.
+fn dedentBlockIndent(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    cont: *const ast.Continuation,
+) std.mem.Allocator.Error!?usize {
+    _ = allocator;
+    var best: ?usize = null;
+    for (cont.continuations) |*arm| {
+        if (arm.continuations.len == 0) continue;
+        const info = dedentProducerInfo(table, arm) orelse continue;
+        if (countTerminalBranches(info) == 0) continue;
+        if (best == null or arm.indent < best.?) best = arm.indent;
+    }
+    return best;
+}
+
+fn isDedentClaimArm(arm: *const ast.Continuation, block_indent: usize) bool {
+    if (arm.branch.len == 0) return false;
+    if (arm.kind != .terminal) return false;
+    if (arm.is_catchall) return false;
+    return arm.indent < block_indent;
+}
+
+const DedentSetOwner = struct {
+    cont: *ast.Continuation,
+    info: ?EventInfo,
+};
+
+/// Every continuation in `cont`'s subtree owns one continuation set — its
+/// `continuations` field — whose producer is `cont.node`'s invocation. Claim
+/// arms are removed before this runs, so handler bodies never become claim
+/// targets: a claim's reach is the chain, not the arms it feeds.
+fn collectDedentSetOwners(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    cont: *ast.Continuation,
+    out: *std.ArrayList(DedentSetOwner),
+) std.mem.Allocator.Error!void {
+    try out.append(allocator, .{ .cont = cont, .info = dedentProducerInfo(table, cont) });
+    for (@constCast(cont.continuations)) |*arm| {
+        try collectDedentSetOwners(allocator, table, arm, out);
+    }
+}
+
+fn dedentSetHasArm(cont: *const ast.Continuation, branch: []const u8) bool {
+    for (cont.continuations) |*arm| {
+        if (arm.kind == .terminal and !arm.is_catchall and std.mem.eql(u8, arm.branch, branch)) return true;
+    }
+    return false;
+}
+
+/// Process one continuation site bottom-up: inner sets resolve their own
+/// claims first, then this set's dedented arms are lifted and cloned into
+/// every descendant set whose producer declares them.
+fn dedentSiteClaims(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    site: *ast.Continuation,
+    reporter: *errors_mod.ErrorReporter,
+) std.mem.Allocator.Error!void {
+    for (@constCast(site.continuations)) |*arm| {
+        try dedentSiteClaims(allocator, table, arm, reporter);
+    }
+
+    const block_indent = (try dedentBlockIndent(allocator, table, site)) orelse return;
+
+    var claims = try std.ArrayList(ast.Continuation).initCapacity(allocator, 4);
+    defer claims.deinit(allocator);
+    var kept = try std.ArrayList(ast.Continuation).initCapacity(allocator, site.continuations.len);
+    defer kept.deinit(allocator);
+    for (site.continuations) |arm| {
+        if (isDedentClaimArm(&arm, block_indent)) {
+            // One claim per branch name — a repeated dedented arm would
+            // clone twice and trip the duplicate-handler wall downstream.
+            var dup = false;
+            for (claims.items) |c| {
+                if (std.mem.eql(u8, c.branch, arm.branch)) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup) try claims.append(allocator, arm);
+        } else {
+            try kept.append(allocator, arm);
+        }
+    }
+    if (claims.items.len == 0) return;
+
+    // VALIDATE FIRST — the tree stays untouched until every claim is judged.
+    // Owners are collected over the kept arms only: claim bodies are handler
+    // scope, not chain stages, so their subtrees never declare a claim target.
+    // (These are value copies for now; only their resolved EventInfo is read.)
+    var owners = try std.ArrayList(DedentSetOwner).initCapacity(allocator, 8);
+    defer owners.deinit(allocator);
+    for (kept.items) |*arm| {
+        try collectDedentSetOwners(allocator, table, arm, &owners);
+    }
+    // The claim site's own set is a target too — claims naming branches its
+    // producer declares are re-cloned onto it below.
+    try owners.append(allocator, .{ .cont = site, .info = dedentProducerInfo(table, site) });
+
+    // TYPE-AWARE CLAIM (KORU031): every producer declaring a claimed branch
+    // must agree on its payload shape — the same wall the point-free choke
+    // holds, reference taken from the first declaring stage.
+    var type_mismatch = false;
+    for (claims.items) |*claim| {
+        if (claim.branch.len == 0) continue;
+        var ref_payload: ?ast.Shape = null;
+        var ref_label: []const u8 = "claim";
+        for (owners.items) |owner| {
+            const info = owner.info orelse continue;
+            const b = branchNamed(info, claim.branch) orelse continue;
+            if (b.payload.is_wildcard) continue;
+            if (ref_payload == null) {
+                ref_payload = b.payload;
+                ref_label = eventLeafName(info);
+                continue;
+            }
+            if (payloadShapesEqual(ref_payload.?, b.payload)) continue;
+            const expected = try formatPayload(allocator, ref_payload.?);
+            defer allocator.free(expected);
+            const actual = try formatPayload(allocator, b.payload);
+            defer allocator.free(actual);
+            try reporter.addErrorAtLocationWithHint(
+                .KORU031,
+                claim.location,
+                "`| {s}` claimed here, but has wrong type: '{s}' carries {s}, claim expects {s} (from '{s}')",
+                .{ claim.branch, eventLeafName(info), actual, expected, ref_label },
+                "a dedented claim replicates by name across the chain — payload shapes must agree",
+                .{},
+            );
+            type_mismatch = true;
+        }
+    }
+    if (type_mismatch) return;
+
+    // DEAD CLAIM (KORU021): a claim replicates only onto producers that
+    // declare it, so a name no producer declares would vanish — check the
+    // spelling against the alphabet the subtree actually offers.
+    var dead_claim = false;
+    var declared_alphabet: ?[]const u8 = null;
+    for (claims.items) |*claim| {
+        var lands = false;
+        for (owners.items) |owner| {
+            const info = owner.info orelse continue;
+            if (branchNamed(info, claim.branch) != null) {
+                lands = true;
+                break;
+            }
+        }
+        if (lands) continue;
+        if (declared_alphabet == null) {
+            var infos = try std.ArrayList(EventInfo).initCapacity(allocator, owners.items.len);
+            defer infos.deinit(allocator);
+            for (owners.items) |owner| {
+                if (owner.info) |info| try infos.append(allocator, info);
+            }
+            declared_alphabet = try formatDeclaredBranches(allocator, infos.items);
+        }
+        try reporter.addErrorAtLocationWithHint(
+            .KORU021,
+            claim.location,
+            "no producer in this chain declares branch '{s}'",
+            .{claim.branch},
+            "a dedented claim replicates by name over the whole chain — the chain declares {s}. Check the spelling against those",
+            .{declared_alphabet.?},
+        );
+        dead_claim = true;
+    }
+    if (dead_claim) return;
+
+    // Claims are clean: lift them out of the local set, then replicate
+    // top-down. Recursion — not a pre-collected owner list — because each
+    // merge copies a set's arm elements by value into a fresh slice: a
+    // pointer gathered beforehand goes stale the moment its parent set is
+    // rewritten, which is exactly the alternating-level miss this shape
+    // produced. Merging a set and THEN descending keeps every pointer live.
+    site.continuations = try kept.toOwnedSlice(allocator);
+    try dedentReplicateInto(allocator, table, site, claims.items);
+}
+
+/// Clone `claims` into `cont`'s continuation set wherever `cont.node`'s
+/// producer declares the branch and the set does not already arm it, then
+/// recurse into the pre-existing arms only — replicated clones are handler
+/// bodies now, not chain stages, so their subtrees are never claim targets.
+fn dedentReplicateInto(
+    allocator: std.mem.Allocator,
+    table: *SymbolTable,
+    cont: *ast.Continuation,
+    claims: []const ast.Continuation,
+) std.mem.Allocator.Error!void {
+    const pre_existing = cont.continuations.len;
+    if (dedentProducerInfo(table, cont)) |info| {
+        var landing = try std.ArrayList(ast.Continuation).initCapacity(allocator, claims.len);
+        defer landing.deinit(allocator);
+        for (claims) |*claim| {
+            if (!chokeBelongsOn(info, claim.*)) continue;
+            if (dedentSetHasArm(cont, claim.branch)) continue;
+            try landing.append(allocator, claim.*);
+        }
+        if (landing.items.len > 0) {
+            const clones = try cloneContinuations(allocator, landing.items);
+            const target_indent = if (cont.continuations.len > 0)
+                cont.continuations[0].indent
+            else
+                claims[0].indent;
+            const clones_mut = @constCast(clones);
+            for (clones_mut) |*c| c.indent = target_indent;
+            const merged = try allocator.alloc(ast.Continuation, cont.continuations.len + clones.len);
+            @memcpy(merged[0..cont.continuations.len], cont.continuations);
+            @memcpy(merged[cont.continuations.len..], clones);
+            cont.continuations = merged;
+        }
+    }
+    for (@constCast(cont.continuations[0..pre_existing])) |*arm| {
+        try dedentReplicateInto(allocator, table, arm, claims);
+    }
+}
+
+// ============================================================================
 // Inline scalar-bind pun
 // ============================================================================
 //
