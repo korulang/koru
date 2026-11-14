@@ -2483,17 +2483,28 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             for (cmd_result.commands[0..cmd_result.count]) |cmd| {
                 _ = cmd.module_path;
                 _ = cmd.handler_name;
-                var buf: [1024]u8 = undefined;
-                const line = try std.fmt.bufPrint(&buf,
+                const line = try std.fmt.allocPrint(allocator,
                     \\        if (__koru_std.mem.eql(u8, args[1], "{s}")) {{
                     \\            __koru_std.debug.print("🔧 Running command: {s}\n", .{{}});
                     \\            const cmd_name: []const u8 = "{s}";
                     \\            const argv_slice: []const []const u8 = args[2..];
                     \\            koru_command_dispatch(@ptrCast(&cmd_name), seed_ast, &allocator, @ptrCast(&argv_slice));
+                    \\            // Command marks channel: handlers commit verdicts through
+                    \\            // emitter_helpers.commitCommandMark; the flush names the
+                    \\            // artifact <entry-stem>.marks. Per-invocation identity
+                    \\            // rides CompilerEnv (loaded from compiler_env.json), so
+                    \\            // backend.zig stays byte-identical across programs.
+                    \\            const __marks_stem = __koru_std.fs.path.stem(CompilerEnv.entry_file);
+                    \\            emitter_helpers.flushCommandMarks(allocator, __marks_stem) catch |fmerr| {{
+                    \\                __koru_std.debug.print("❌ command marks flush failed: {{s}}\n", .{{@errorName(fmerr)}});
+                    \\                return fmerr;
+                    \\            }};
+                    \\            if (emitter_helpers.command_exit_code) |cx| __koru_std.process.exit(cx);
                     \\            return;
                     \\        }}
                     \\
                 , .{ cmd.name, cmd.name, cmd.name });
+                defer allocator.free(line);
                 try writer.writeAll(line);
             }
 

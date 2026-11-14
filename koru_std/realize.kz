@@ -1,0 +1,766 @@
+// Koru Standard Library: realize — the generic correspondence solver.
+//
+// The solver over the std/spec harvest (DESIGN-0001 §3.4/§11.1): a program
+// walks its used interfaces, matches each against a catalog of declared
+// `row` sites, and admits or refuses each one against the selected
+// execution arm's bindings. A refusal writes no artifact — loud refusal of
+// unsupported capabilities is the contract, at every altitude:
+//
+//   interface -> row -> arm binding -> mechanism
+//
+// Declaration shape (the invariants idiom — data in the AST, [norun],
+// harvested after the parse by a [comptime|command] consumer):
+//
+//   ~std/realize:row {
+//       "iface": "dom/lift[:torprefix]",
+//       "stack": 4096,
+//       "resources": "mechanism: cost",
+//       "evidence": "V: ...",
+//       "binds": [ { "arm": "arm/name", "mechanism": "mech",
+//                    "deltas": ["..."] } ] }
+//
+//   ~std/realize:arm { "arm": "arm/name" }   // a matrix column; an arm with
+//                                            // no bindings IS the provider gap
+//
+// This module is policy-free: it owns the row/arm declaration vocabulary,
+// the catalog merge (duplicate-arm and contradiction refusals), the used-
+// interface walk, admission verdicts + marks, the arm matrix, rows.json and
+// the arm manifest writer. What it does NOT own: any concrete arm name, the
+// meaning of a `mechanism` string, artifact shapes (Kraftfile, Makefile.uk,
+// link-phase chains), and the waiver policy for system modules — those are
+// the consumer's (koruos/realize passes its arm table, its builtin rows as
+// ordinary declared sites, and its mechanism-specific artifact writers).
+//
+// `row`'s `iface` names the §3.6 demand-side identity — the interface
+// descriptor the program obliges — not the artifact that serves it. Today
+// the field carries the identifier (`qual/path[:torprefix]`); the typed
+// descriptor columns (inputs, branches, effects, authority, revision,
+// evidence) are the std/spec vocabulary this catalog is meant to grow into.
+
+~[comptime]
+
+~import std/spec
+
+// A lift declares its own row by invoking
+//   `~std/realize:row(iface: koruos/ext2) { ...json... }`
+// at module top level — norun data in the AST, harvested by the command
+// consumer. The `iface` arg is a *name* the resolver can know (bare path or
+// member chain; a quoted string stays verbatim — an explicitly conceptual
+// iface that opts out of resolution). Everything in the Source block is
+// foreign data — stacks, prose, arm names, mechanism deltas — strings by
+// nature, JSON by honesty. `arm` declares a coverage-matrix column: a
+// prospective arm needs no bindings to appear — its empty column IS the
+// provider gap.
+~[comptime|norun]pub tor row { iface: Expression, source: Source }
+~[comptime|norun]pub tor arm { source: Source }
+
+const std = @import("std");
+const ast = @import("ast");
+const eh = @import("emitter_helpers");
+// Bare file-scope spelling — works in both the program backend (root =
+// output_emitted.zig) and the command backend (root = backend.zig, where
+// @import("root") would NOT reach this emitted namespace).
+const spec_mod = koru_std.koru_spec;
+
+// ============================================================================
+// CATALOG TYPES — the declared correspondence vocabulary
+// ============================================================================
+
+pub const Binding = struct {
+    arm: []const u8, // platform arm this binding serves
+    mechanism: []const u8, // how the binding materializes ("kconfig", "host-libc", "native-runtime", ...)
+    deltas: []const []const u8, // mechanism payload: "CONFIG_X=v" lines for kconfig
+    declared_by: []const u8 = "builtin", // provenance: which declaration supplied this bind
+};
+
+pub const Row = struct {
+    module: []const u8, // module qualifier as the parser spells it
+    tor_prefix: []const u8, // "" = any tor of the module
+    iface: []const u8, // the interface name reported in the tables
+    stack: u64, // declared stack demand, bytes
+    resources: []const u8, // outside the mechanism: "mechanism: cost"
+    evidence: []const u8,
+    binds: []const Binding, // which arms can satisfy this row, and how
+    declared_by: []const u8 = "builtin", // provenance: which module/program declared it
+};
+
+pub const BindDecl = struct {
+    arm: []const u8 = "",
+    mechanism: []const u8 = "",
+    deltas: []const []const u8 = &.{},
+};
+
+pub const RowDecl = struct {
+    iface: []const u8 = "", // legacy — refused when present; iface lives in the site arg now
+    stack: u64 = 0,
+    resources: []const u8 = "",
+    evidence: []const u8 = "",
+    binds: []const BindDecl = &.{},
+};
+
+pub const ArmDecl = struct {
+    arm: []const u8 = "",
+};
+
+pub const Used = struct { module: []const u8, tor: []const u8 };
+
+// ============================================================================
+// MARKS + GRADES — verdicts ride the command marks channel
+// ============================================================================
+//
+// commitCommandMark validates the wire invariants and the backend flushes
+// `<stem>.marks` after dispatch. kind names a decidable relation (admission,
+// declaration, catalog, projection), never a domain noun; the domain rides
+// site/payload as data. The line format never lives here.
+
+pub fn commitMark(al: std.mem.Allocator, kind: []const u8, site: []const u8, arrow: []const u8, verdict: []const u8, payload: []const u8) bool {
+    return eh.commitCommandMark(al, kind, site, arrow, verdict, payload);
+}
+
+pub fn commitMarkf(
+    al: std.mem.Allocator,
+    kind: []const u8,
+    comptime site_fmt: []const u8, site_args: anytype,
+    comptime arrow_fmt: []const u8, arrow_args: anytype,
+    verdict: []const u8,
+    comptime payload_fmt: []const u8, payload_args: anytype,
+) void {
+    // the channel stores its own formatted line — our temporaries are freeable
+    const site = std.fmt.allocPrint(al, site_fmt, site_args) catch return;
+    defer al.free(site);
+    const arrow = std.fmt.allocPrint(al, arrow_fmt, arrow_args) catch return;
+    defer al.free(arrow);
+    const payload = std.fmt.allocPrint(al, payload_fmt, payload_args) catch return;
+    defer al.free(payload);
+    if (!commitMark(al, kind, site, arrow, verdict, payload)) {
+        std.debug.print("realize: mark commit refused (kind={s} site={s})\n", .{ kind, site });
+    }
+}
+
+pub fn gradeOf(e: []const u8) u8 {
+    if (e.len > 1 and e[1] == ':') return e[0];
+    return '-';
+}
+
+// ============================================================================
+// DECL FIELD — `.key = "value"` extraction from a declared const line
+// ============================================================================
+
+pub fn declField(line: []const u8, comptime key: []const u8) ?[]const u8 {
+    const k = "." ++ key ++ " = \"";
+    const i = std.mem.indexOf(u8, line, k) orelse return null;
+    const rest = line[i + k.len ..];
+    const j = std.mem.indexOfScalar(u8, rest, '"') orelse return null;
+    return rest[0..j];
+}
+
+// ============================================================================
+// IFACE RESOLUTION — the arg is a name, not a string
+// ============================================================================
+//
+// `iface: koruos/ext2` or `iface: std.io.print` — a bare path/member chain the
+// resolver can know. `'/'` normalizes to '.'; longest-prefix match against the
+// program's module table splits `mod` from `tor` — `std.io.print` →
+// `std.io`+`print`, `koruos.ext2` → module whole. A quoted name stays
+// verbatim — an explicitly conceptual iface (`"koru.runtime"` — the emitted
+// seam, not a module) that opts out of resolution. Unresolvable bare names
+// stay whole: conceptual or not-yet-loaded interfaces are legal to declare.
+
+fn resolveIface(modules: []const []const u8, raw: []const u8, ra: std.mem.Allocator) []const u8 {
+    const t = std.mem.trim(u8, raw, " \t\r\n");
+    if (t.len == 0) return "";
+    if (t.len >= 2 and (t[0] == '"' or t[0] == '\'') and t[t.len - 1] == t[0]) {
+        return ra.dupe(u8, t[1 .. t.len - 1]) catch return "";
+    }
+    const norm = ra.dupe(u8, t) catch return "";
+    std.mem.replaceScalar(u8, norm, '/', '.');
+    var i: usize = norm.len;
+    while (true) {
+        for (modules) |m| if (std.mem.eql(u8, m, norm[0..i])) {
+            if (i == norm.len) return norm;
+            return std.fmt.allocPrint(ra, "{s}:{s}", .{ norm[0..i], norm[i + 1 ..] }) catch return "";
+        };
+        const dot = std.mem.lastIndexOfScalar(u8, norm[0..i], '.') orelse return norm;
+        i = dot;
+    }
+}
+
+// ============================================================================
+// MERGE — one declared row into the catalog
+// ============================================================================
+//
+// The declared `iface` names what the row serves ("qual/path[:torprefix]" —
+// '/' normalizes to '.'); `prov` is the declaring site (provenance, not
+// ownership — a program may supply a binding for a lift it does not own).
+// Duplicate (iface, arm) bindings and contradictory row fields are loud
+// refusals, never silent first-wins.
+
+pub fn mergeDecl(
+    rows_l: *std.ArrayListUnmanaged(Row),
+    malformed_l: *std.ArrayListUnmanaged(u8),
+    al: std.mem.Allocator,
+    ra: std.mem.Allocator,
+    prov: []const u8,
+    iface: []const u8,
+    stack_n: u64,
+    resources: []const u8,
+    evidence: []const u8,
+    binds_in: []const Binding,
+) void {
+    var mod = iface;
+    var tor: []const u8 = "";
+    if (std.mem.indexOfScalar(u8, iface, ':')) |ci| {
+        mod = iface[0..ci];
+        tor = iface[ci + 1 ..];
+    }
+    if (std.mem.indexOfScalar(u8, mod, '/') != null) {
+        const mb = ra.dupe(u8, mod) catch return;
+        std.mem.replaceScalar(u8, mb, '/', '.');
+        mod = mb;
+    }
+    for (binds_in, 0..) |b1, i| {
+        for (binds_in[i + 1 ..]) |b2| {
+            if (std.mem.eql(u8, b1.arm, b2.arm)) {
+                malformed_l.writer(al).print("refused: row for {s} in {s} binds arm {s} twice\n", .{ iface, prov, b1.arm }) catch {};
+                commitMarkf(al, "declaration", "{s}", .{prov}, "decl<-parsed", .{}, "refused", "duplicate-arm {s} {s}", .{ iface, b1.arm });
+                return;
+            }
+        }
+    }
+    for (rows_l.items) |*r| {
+        if (!std.mem.eql(u8, r.iface, iface)) continue;
+        for (binds_in) |nb| {
+            for (r.binds) |eb| {
+                if (std.mem.eql(u8, eb.arm, nb.arm)) {
+                    malformed_l.writer(al).print("refused: row for {s} declares arm {s} twice ({s} vs earlier {s})\n", .{ iface, nb.arm, prov, r.declared_by }) catch {};
+                    commitMarkf(al, "declaration", "{s}", .{prov}, "decl<-parsed", .{}, "refused", "duplicate-arm {s} {s} vs {s}", .{ iface, nb.arm, r.declared_by });
+                    return;
+                }
+            }
+        }
+        // row-level fields: unset (0/"") defers to the existing row;
+        // set-and-different is a real contradiction — refuse it.
+        const contra = (stack_n != 0 and r.stack != 0 and r.stack != stack_n) or
+            (resources.len != 0 and r.resources.len != 0 and !std.mem.eql(u8, r.resources, resources)) or
+            (evidence.len != 0 and r.evidence.len != 0 and !std.mem.eql(u8, r.evidence, evidence));
+        if (contra) {
+            malformed_l.writer(al).print("refused: row for {s} in {s} contradicts the earlier declaration by {s}\n", .{ iface, prov, r.declared_by }) catch {};
+            commitMarkf(al, "declaration", "{s}", .{prov}, "decl<-parsed", .{}, "refused", "contradiction {s} vs {s}", .{ iface, r.declared_by });
+            return;
+        }
+        if (r.stack == 0) r.stack = stack_n;
+        if (r.resources.len == 0) r.resources = resources;
+        if (r.evidence.len == 0) r.evidence = evidence;
+        const nb2 = ra.alloc(Binding, r.binds.len + binds_in.len) catch return;
+        @memcpy(nb2[0..r.binds.len], r.binds);
+        @memcpy(nb2[r.binds.len..], binds_in);
+        r.binds = nb2;
+        return;
+    }
+    rows_l.append(al, .{
+        .module = mod,
+        .tor_prefix = tor,
+        .iface = iface,
+        .stack = stack_n,
+        .resources = resources,
+        .evidence = evidence,
+        .binds = binds_in,
+        .declared_by = prov,
+    }) catch return;
+}
+
+// ============================================================================
+// HARVEST — the std/spec sites, plus the host-line fallback
+// ============================================================================
+//
+// Two declaration shapes, both module-owned:
+//   a) `~std/realize:row { "iface": ..., "stack": n, "binds": [...] }` — typed
+//      JSON in the AST; needs `~import std/realize`.
+//   b) `const realize_row = .{ .iface = "dom/x", .stack = "4096", .arm = "<arm>",
+//      .mechanism = "<mech>", .deltas = "A=v,B=v", .resources = "...",
+//      .evidence = "..." };` in host lines — the fallback for a lift that
+//      cannot import this module.
+// A malformed declaration is a loud refusal, never a silent skip.
+
+pub fn collectRows(
+    program: *const ast.Program,
+    rows: *std.ArrayListUnmanaged(Row),
+    malformed: *std.ArrayListUnmanaged(u8),
+    al: std.mem.Allocator,
+    ra: std.mem.Allocator,
+) void {
+    // a) host-line declarations — fallback for a lift that cannot import
+    //    std/realize (`const realize_row = .{ ... }`, one binding per line)
+    for (program.items) |item| {
+        if (item != .module_decl) continue;
+        const prov = item.module_decl.logical_name;
+        for (item.module_decl.items) |mi| {
+            if (mi != .host_line) continue;
+            const line = std.mem.trim(u8, mi.host_line.content, " \t\r");
+            if (!std.mem.startsWith(u8, line, "const realize_row")) continue;
+            const bad = struct {
+                fn go(ml: *std.ArrayListUnmanaged(u8), al2: std.mem.Allocator, m: []const u8, field: []const u8) void {
+                    ml.writer(al2).print("refused: realize_row in module {s} lacks required field .{s}\n", .{ m, field }) catch {};
+                    commitMarkf(al2, "declaration", "{s}", .{m}, "decl<-parsed", .{}, "refused", "lacks-field {s}", .{field});
+                }
+            }.go;
+            const iface = declField(line, "iface") orelse {
+                bad(malformed, al, prov, "iface");
+                continue;
+            };
+            const stack_s = declField(line, "stack") orelse {
+                bad(malformed, al, prov, "stack");
+                continue;
+            };
+            const arm_s = declField(line, "arm") orelse {
+                bad(malformed, al, prov, "arm");
+                continue;
+            };
+            const mech = declField(line, "mechanism") orelse {
+                bad(malformed, al, prov, "mechanism");
+                continue;
+            };
+            const stack_n = std.fmt.parseInt(u64, stack_s, 10) catch {
+                bad(malformed, al, prov, "stack");
+                continue;
+            };
+            const dstr = declField(line, "deltas") orelse "";
+            var dl = std.ArrayListUnmanaged([]const u8){};
+            var dit = std.mem.splitScalar(u8, dstr, ',');
+            while (dit.next()) |d| {
+                const t = std.mem.trim(u8, d, " ");
+                if (t.len > 0) dl.append(ra, t) catch return;
+            }
+            const bs = ra.alloc(Binding, 1) catch return;
+            bs[0] = .{ .arm = arm_s, .mechanism = mech, .deltas = dl.items, .declared_by = prov };
+            mergeDecl(rows, malformed, al, ra, prov, iface, stack_n, declField(line, "resources") orelse "", declField(line, "evidence") orelse "", bs);
+        }
+    }
+
+    // b+c) declared sites — `~std/realize:row(iface: <name>) { ...json... }` in
+    //      a lift module or at program level, harvested through std/spec's site
+    //      walker. `iface` is the resolvable-name arg; the Source block is the
+    //      foreign half (stack, resources, evidence, binds).
+    // the module table the iface resolver works against
+    var modules = std.ArrayListUnmanaged([]const u8){};
+    for (program.items) |item| {
+        if (item == .module_decl) modules.append(ra, item.module_decl.logical_name) catch {};
+    }
+    // site list lives in the row arena — arena teardown owns it; freeing a
+    // bare `out.items` slice with `al` would mis-bucket (len != capacity).
+    const site_list = spec_mod.sites(program, ra, "std.realize", "row");
+    for (site_list) |site| {
+        const prov = site.prov;
+        const wrapped = std.fmt.allocPrint(ra, "{{{s}}}", .{site.source}) catch return;
+        const parsed = std.json.parseFromSlice(RowDecl, ra, wrapped, .{ .ignore_unknown_fields = true }) catch {
+            malformed.writer(al).print("refused: std/realize:row in {s}: malformed JSON block ({s}:{d})\n", .{ prov, site.file, site.line }) catch {};
+            commitMarkf(al, "declaration", "{s}", .{prov}, "decl<-parsed", .{}, "refused", "malformed-json {s}:{d}", .{ site.file, site.line });
+            continue;
+        };
+        const decl = parsed.value;
+        const iface_raw = spec_mod.siteArg(site.flow, "iface") orelse {
+            malformed.writer(al).print("refused: std/realize:row in {s} lacks the `iface:` arg — spell ~std/realize:row(iface: <name>)\n", .{prov}) catch {};
+            commitMarkf(al, "declaration", "{s}", .{prov}, "decl<-parsed", .{}, "refused", "lacks-iface-arg", .{});
+            continue;
+        };
+        if (decl.iface.len != 0) {
+            malformed.writer(al).print("refused: std/realize:row in {s} carries \"iface\" in the JSON body — it is the arg now\n", .{prov}) catch {};
+            commitMarkf(al, "declaration", "{s}", .{prov}, "decl<-parsed", .{}, "refused", "iface-in-json", .{});
+            continue;
+        }
+        const iface = resolveIface(modules.items, iface_raw, ra);
+        if (iface.len == 0 or decl.binds.len == 0) {
+            malformed.writer(al).print("refused: std/realize:row in {s} lacks required field \"iface\" or \"binds\"\n", .{prov}) catch {};
+            commitMarkf(al, "declaration", "{s}", .{prov}, "decl<-parsed", .{}, "refused", "lacks-iface-or-binds", .{});
+            continue;
+        }
+        const bs = ra.alloc(Binding, decl.binds.len) catch return;
+        var ok = true;
+        for (decl.binds, 0..) |bd, i| {
+            if (bd.arm.len == 0 or bd.mechanism.len == 0) {
+                malformed.writer(al).print("refused: std/realize:row in {s} binds[{d}] lacks \"arm\" or \"mechanism\"\n", .{ prov, i }) catch {};
+                commitMarkf(al, "declaration", "{s}", .{prov}, "decl<-parsed", .{}, "refused", "binds-{d}-lacks-arm-or-mechanism", .{i});
+                ok = false;
+                break;
+            }
+            bs[i] = .{ .arm = bd.arm, .mechanism = bd.mechanism, .deltas = bd.deltas, .declared_by = prov };
+        }
+        if (!ok) continue;
+        mergeDecl(rows, malformed, al, ra, prov, iface, decl.stack, decl.resources, decl.evidence, bs);
+    }
+
+    // stack is a post-merge invariant, not a per-declaration rule: a stackless
+    // declaration merging onto a declared row inherits that stack, so merge
+    // order (import order) cannot decide legality. A row still stackless after
+    // every merge is refused by name and dropped from the catalog.
+    var w: usize = 0;
+    for (rows.items) |r| {
+        if (r.stack == 0) {
+            malformed.writer(al).print("refused: row for {s} in {s} lacks required field \"stack\" (no declaration supplies it)\n", .{ r.iface, r.declared_by }) catch {};
+            commitMarkf(al, "declaration", "{s}", .{r.declared_by}, "decl<-parsed", .{}, "refused", "row-lacks-stack {s}", .{r.iface});
+            continue;
+        }
+        rows.items[w] = r;
+        w += 1;
+    }
+    rows.items.len = w;
+}
+
+// The declared arms — the columns of the coverage matrix. A prospective arm
+// needs no bindings to appear; its empty column IS the provider gap. Sites
+// are `~std/realize:arm { "arm": "<name>" }`; order is declaration order,
+// duplicates collapse.
+pub fn collectArms(
+    program: *const ast.Program,
+    malformed: *std.ArrayListUnmanaged(u8),
+    al: std.mem.Allocator,
+    ra: std.mem.Allocator,
+) []const []const u8 {
+    var arms = std.ArrayListUnmanaged([]const u8){};
+    const site_list = spec_mod.sites(program, ra, "std.realize", "arm");
+    for (site_list) |site| {
+        const wrapped = std.fmt.allocPrint(ra, "{{{s}}}", .{site.source}) catch return arms.items;
+        const parsed = std.json.parseFromSlice(ArmDecl, ra, wrapped, .{ .ignore_unknown_fields = true }) catch {
+            malformed.writer(al).print("refused: std/realize:arm in {s}: malformed JSON block ({s}:{d})\n", .{ site.prov, site.file, site.line }) catch {};
+            commitMarkf(al, "declaration", "{s}", .{site.prov}, "decl<-parsed", .{}, "refused", "malformed-arm-json {s}:{d}", .{ site.file, site.line });
+            continue;
+        };
+        const name = parsed.value.arm;
+        if (name.len == 0) {
+            malformed.writer(al).print("refused: std/realize:arm in {s} lacks required field \"arm\"\n", .{site.prov}) catch {};
+            commitMarkf(al, "declaration", "{s}", .{site.prov}, "decl<-parsed", .{}, "refused", "lacks-arm-field", .{});
+            continue;
+        }
+        var dup = false;
+        for (arms.items) |a| {
+            if (std.mem.eql(u8, a, name)) dup = true;
+        }
+        if (!dup) arms.append(ra, name) catch return arms.items;
+    }
+    return arms.items;
+}
+
+// ============================================================================
+// USED INTERFACES — every interface the program's flows actually invoke
+// ============================================================================
+
+fn usedAdd(list: *std.ArrayListUnmanaged(Used), al: std.mem.Allocator, mq: []const u8, tor: []const u8) void {
+    for (list.items) |u| if (std.mem.eql(u8, u.module, mq) and std.mem.eql(u8, u.tor, tor)) return;
+    list.append(al, .{ .module = mq, .tor = tor }) catch {};
+}
+
+fn usedInv(list: *std.ArrayListUnmanaged(Used), al: std.mem.Allocator, i: anytype) void {
+    const mq = i.path.module_qualifier orelse return;
+    if (i.path.segments.len == 0) return;
+    usedAdd(list, al, mq, i.path.segments[0]);
+}
+
+fn usedCont(list: *std.ArrayListUnmanaged(Used), al: std.mem.Allocator, c: anytype) void {
+    if (c.node) |n| switch (n) {
+        .invocation => |i| usedInv(list, al, i),
+        .label_with_invocation => |l| usedInv(list, al, l.invocation),
+        else => {},
+    };
+    for (c.continuations) |cc| usedCont(list, al, cc);
+}
+
+pub fn collectUsed(program: *const ast.Program, used: *std.ArrayListUnmanaged(Used), al: std.mem.Allocator) void {
+    for (program.items) |item| {
+        if (item != .flow) continue;
+        const flow = item.flow;
+        usedCont(used, al, flow.body);
+    }
+}
+
+// ============================================================================
+// ADMISSION — used interfaces against the catalog, on the selected arm
+// ============================================================================
+//
+// Toolchain-owned modules the solver never demands providers for: the
+// compiler's own pipeline surface, this module's declaration tors (a `row`
+// site is data, not a demanded interface), and the language runtime module.
+// A domain's own system prefixes (e.g. koruos's `koru.unikraft`) arrive via
+// `extra_skip`. A `std.*` module with no row is pure codegen — waived with a
+// mark, not silently skipped, and not refused.
+
+pub const engine_skip_prefixes = [_][]const u8{
+    "std.realize", "std.spec", "std.compiler", "std.build", "std.deps",
+    "std.control", "std.testing", "std.invariants", "koru",
+};
+
+pub fn admit(
+    rows: []const Row,
+    used: []const Used,
+    arm: []const u8,
+    runtime_iface: []const u8,
+    extra_skip: []const []const u8,
+    al: std.mem.Allocator,
+    rw: anytype,
+    hit: []bool,
+    bound: []usize,
+) u32 {
+    var refusals: u32 = 0;
+    // The runtime row is always demanded — find it by interface identity,
+    // never by catalog position (declaration order is provenance, not index).
+    var rt_idx: ?usize = null;
+    for (rows, 0..) |r, ri| {
+        if (std.mem.eql(u8, r.iface, runtime_iface)) {
+            rt_idx = ri;
+            break;
+        }
+    }
+    if (rt_idx) |ri| {
+        hit[ri] = true;
+        var rt_bound = false;
+        for (rows[ri].binds, 0..) |b, bi| if (std.mem.eql(u8, b.arm, arm)) {
+            bound[ri] = bi;
+            rt_bound = true;
+        };
+        if (!rt_bound) {
+            hit[ri] = false;
+            refusals += 1;
+            rw.print("refused: interface={s} arm={s} phase=configure missing=runtime binding for arm\n", .{ runtime_iface, arm }) catch return refusals;
+            commitMarkf(al, "admission", "{s}", .{runtime_iface}, "{s}<-none", .{arm}, "refused", "row={s} declared_by={s} reason=missing-binding", .{ runtime_iface, rows[ri].declared_by });
+        } else {
+            const rb = rows[ri].binds[bound[ri]];
+            commitMarkf(al, "admission", "{s}", .{runtime_iface}, "{s}<-{s}", .{ arm, rb.mechanism }, "bound", "row={s} declared_by={s} bind_by={s} grade={c}", .{ runtime_iface, rows[ri].declared_by, rb.declared_by, gradeOf(rows[ri].evidence) });
+        }
+    } else {
+        refusals += 1;
+        rw.print("refused: interface={s} arm={s} phase=configure missing=runtime row\n", .{ runtime_iface, arm }) catch return refusals;
+        commitMarkf(al, "admission", "{s}", .{runtime_iface}, "{s}<-none", .{arm}, "refused", "reason=missing-runtime-row", .{});
+    }
+    rw.print("used: {s} (always)\n", .{runtime_iface}) catch return refusals;
+    for (used) |u| {
+        var sys = false;
+        for (engine_skip_prefixes) |p| if (std.mem.eql(u8, u.module, p)) {
+            sys = true;
+        };
+        for (extra_skip) |p| if (std.mem.eql(u8, u.module, p)) {
+            sys = true;
+        };
+        if (sys) continue;
+        var rowed = false;
+        var bound_here = false;
+        var m_iface: []const u8 = "";
+        var m_prov: []const u8 = "";
+        var m_mech: []const u8 = "";
+        var m_bindprov: []const u8 = "";
+        var m_grade: u8 = '-';
+        var served = std.ArrayListUnmanaged(u8){};
+        defer served.deinit(al);
+        for (rows, 0..) |r, ri| {
+            if (r.module.len == 0) continue;
+            if (!std.mem.eql(u8, r.module, u.module)) continue;
+            if (r.tor_prefix.len != 0 and !std.mem.startsWith(u8, u.tor, r.tor_prefix)) continue;
+            if (!rowed) {
+                m_iface = r.iface;
+                m_prov = r.declared_by;
+                m_grade = gradeOf(r.evidence);
+            }
+            rowed = true;
+            for (r.binds, 0..) |b, bi| {
+                served.writer(al).print("{s}{s}", .{ if (served.items.len == 0) "" else ",", b.arm }) catch {};
+                if (std.mem.eql(u8, b.arm, arm)) {
+                    hit[ri] = true;
+                    bound[ri] = bi;
+                    bound_here = true;
+                    m_mech = b.mechanism;
+                    m_bindprov = b.declared_by;
+                }
+            }
+        }
+        if (!bound_here) {
+            if (rowed) {
+                // the interface is known but cannot be served on this arm
+                refusals += 1;
+                rw.print("refused: interface={s}:{s} arm={s} phase=configure missing=binding for arm (row serves: {s})\n", .{ u.module, u.tor, arm, served.items }) catch return refusals;
+                commitMarkf(al, "admission", "{s}:{s}", .{ u.module, u.tor }, "{s}<-none", .{arm}, "refused", "row={s} declared_by={s} reason=missing-binding serves={s}", .{ m_iface, m_prov, served.items });
+            } else if (std.mem.startsWith(u8, u.module, "std.")) {
+                // std modules with no row are pure codegen — no arm mechanism required
+                rw.print("used: {s}:{s} -> no row needed (std, pure)\n", .{ u.module, u.tor }) catch return refusals;
+                commitMarkf(al, "admission", "{s}:{s}", .{ u.module, u.tor }, "{s}<-std-codegen", .{arm}, "waived", "reason=std-pure", .{});
+            } else {
+                refusals += 1;
+                rw.print("refused: interface={s}:{s} arm={s} phase=configure missing=realize row offered=none\n", .{ u.module, u.tor, arm }) catch return refusals;
+                commitMarkf(al, "admission", "{s}:{s}", .{ u.module, u.tor }, "{s}<-none", .{arm}, "refused", "reason=missing-row", .{});
+            }
+            continue;
+        }
+        rw.print("used: {s}:{s}\n", .{ u.module, u.tor }) catch return refusals;
+        commitMarkf(al, "admission", "{s}:{s}", .{ u.module, u.tor }, "{s}<-{s}", .{ arm, m_mech }, "bound", "row={s} declared_by={s} bind_by={s} grade={c}", .{ m_iface, m_prov, m_bindprov, m_grade });
+    }
+    return refusals;
+}
+
+// ============================================================================
+// MATRIX — row catalog x declared-arm coverage (+ rows.json + marks)
+// ============================================================================
+
+pub fn jsonWriteStr(jw: anytype, s: []const u8) void {
+    jw.writeByte('"') catch {};
+    for (s) |c| switch (c) {
+        '"', '\\' => {
+            jw.writeByte('\\') catch {};
+            jw.writeByte(c) catch {};
+        },
+        else => jw.writeByte(c) catch {},
+    };
+    jw.writeByte('"') catch {};
+}
+
+pub fn writeMatrix(
+    rows: []const Row,
+    arms: []const []const u8,
+    al: std.mem.Allocator,
+) void {
+    var buf = std.ArrayListUnmanaged(u8){};
+    defer buf.deinit(al);
+    const w = buf.writer(al);
+    w.writeAll("# arm-matrix.txt: row catalog x arm coverage (std/realize, DESIGN-0001 #11.1)\n") catch return;
+    w.writeAll("# cell = mechanism serving the row on that arm; - = refused at configure\n\n") catch return;
+    w.writeAll("row                ") catch return;
+    for (arms) |a| w.print("{s:<24}", .{a}) catch return;
+    w.writeAll("\n") catch return;
+    for (rows) |r| {
+        w.print("{s:<19}", .{r.iface}) catch return;
+        for (arms) |a| {
+            var cell: []const u8 = "-";
+            for (r.binds) |b| if (std.mem.eql(u8, b.arm, a)) {
+                cell = b.mechanism;
+            };
+            w.print("{s:<24}", .{cell}) catch return;
+        }
+        w.writeAll("\n") catch return;
+    }
+    w.writeAll("\nproviders bound per arm:\n") catch return;
+    for (arms) |a| {
+        var n: u32 = 0;
+        for (rows) |r| for (r.binds) |b| {
+            if (std.mem.eql(u8, b.arm, a)) n += 1;
+        };
+        w.print("  {s}: {d}/{d}\n", .{ a, n, rows.len }) catch return;
+    }
+    const f = std.fs.cwd().createFile("arm-matrix.txt", .{}) catch return;
+    defer f.close();
+    f.writeAll(buf.items) catch return;
+    // rows.json: the resolved catalog as data — an independent consumer
+    // (check-realize.sh recount) can re-decide the matrix instead of
+    // trusting the printed projection.
+    var jbuf = std.ArrayListUnmanaged(u8){};
+    defer jbuf.deinit(al);
+    const jw = jbuf.writer(al);
+    jw.writeAll("{\n  \"arms\": [") catch {};
+    for (arms, 0..) |a, i| {
+        if (i != 0) jw.writeAll(", ") catch {};
+        jsonWriteStr(jw, a);
+    }
+    jw.writeAll("],\n  \"rows\": [\n") catch {};
+    for (rows, 0..) |r, ri| {
+        jw.writeAll("    { \"iface\": ") catch {};
+        jsonWriteStr(jw, r.iface);
+        jw.writeAll(", \"module\": ") catch {};
+        jsonWriteStr(jw, r.module);
+        jw.writeAll(", \"tor_prefix\": ") catch {};
+        jsonWriteStr(jw, r.tor_prefix);
+        jw.writeAll(", \"declared_by\": ") catch {};
+        jsonWriteStr(jw, r.declared_by);
+        jw.print(", \"stack\": {d}, \"resources\": ", .{r.stack}) catch {};
+        jsonWriteStr(jw, r.resources);
+        jw.writeAll(", \"evidence\": ") catch {};
+        jsonWriteStr(jw, r.evidence);
+        jw.writeAll(", \"binds\": [") catch {};
+        for (r.binds, 0..) |b, bi| {
+            if (bi != 0) jw.writeAll(", ") catch {};
+            jw.writeAll("{ \"arm\": ") catch {};
+            jsonWriteStr(jw, b.arm);
+            jw.writeAll(", \"mechanism\": ") catch {};
+            jsonWriteStr(jw, b.mechanism);
+            jw.writeAll(", \"deltas\": [") catch {};
+            for (b.deltas, 0..) |d, di| {
+                if (di != 0) jw.writeAll(", ") catch {};
+                jsonWriteStr(jw, d);
+            }
+            jw.writeAll("] }") catch {};
+        }
+        jw.writeAll("] }") catch {};
+        jw.writeAll(if (ri + 1 < rows.len) ",\n" else "\n") catch {};
+    }
+    jw.writeAll("  ]\n}\n") catch {};
+    const jf = std.fs.cwd().createFile("rows.json", .{}) catch return;
+    defer jf.close();
+    jf.writeAll(jbuf.items) catch return;
+    // The same catalog committed as marks: `catalog` marks are the
+    // data, `projection` marks the derived claim — a checker
+    // recounts binds per arm over the committed rows instead of
+    // trusting the printed matrix ("koru-native: 2/8" becomes a
+    // re-decidable cell, not prose).
+    for (rows) |r| {
+        var csv = std.ArrayListUnmanaged(u8){};
+        defer csv.deinit(al);
+        for (r.binds, 0..) |b, bi| {
+            if (bi != 0) csv.append(al, ',') catch {};
+            csv.appendSlice(al, b.arm) catch {};
+        }
+        commitMarkf(al, "catalog", "{s}", .{r.iface}, "row<-declared", .{}, "listed", "declared_by={s} binds={s}", .{ r.declared_by, if (csv.items.len == 0) "none" else csv.items });
+    }
+    for (arms) |a| {
+        var n: usize = 0;
+        for (rows) |r| {
+            for (r.binds) |b| {
+                if (std.mem.eql(u8, b.arm, a)) {
+                    n += 1;
+                    break;
+                }
+            }
+        }
+        commitMarkf(al, "projection", "{s}", .{a}, "matrix<-catalog", .{}, "holds", "bound={d} total={d}", .{ n, rows.len });
+    }
+    std.debug.print("realize: arm-matrix.txt + rows.json written ({d} rows x {d} arms)\n", .{ rows.len, arms.len });
+}
+
+// ============================================================================
+// MANIFEST — the generic arm artifact: bound rows, mechanism, deltas
+// ============================================================================
+
+pub fn armSlug(arm: []const u8, al: std.mem.Allocator) []const u8 {
+    var slug = std.ArrayListUnmanaged(u8){};
+    for (arm) |ch| slug.append(al, if (ch == '/' or ch == '\\' or ch == ':') '-' else ch) catch return arm;
+    return slug.items;
+}
+
+pub fn writeManifest(
+    slug: []const u8,
+    arm: []const u8,
+    app_name: []const u8,
+    rows: []const Row,
+    hit: []const bool,
+    bound: []const usize,
+    al: std.mem.Allocator,
+) void {
+    const mfname = std.fmt.allocPrint(al, "manifest-{s}.txt", .{slug}) catch return;
+    defer al.free(mfname);
+    // stale Unikraft projections from an earlier run must not survive an arm switch
+    std.fs.cwd().deleteFile("Kraftfile") catch {};
+    std.fs.cwd().deleteFile("Makefile.uk") catch {};
+    var buf = std.ArrayListUnmanaged(u8){};
+    defer buf.deinit(al);
+    const w = buf.writer(al);
+    w.print("# manifest-{s}: generated by `koruc <file> realize gen --arm {s}` (std/realize)\n", .{ slug, arm }) catch return;
+    w.print("arm: {s}\nname: {s}\n\n", .{ arm, app_name }) catch return;
+    for (rows, 0..) |r, ri| {
+        if (!hit[ri]) continue;
+        const b = r.binds[bound[ri]];
+        w.print("bind: {s} -> {s}", .{ r.iface, b.mechanism }) catch return;
+        for (b.deltas, 0..) |d, i| w.print("{s}{s}", .{ if (i == 0) " deltas=" else ",", d }) catch return;
+        w.writeAll("\n") catch return;
+    }
+    const f = std.fs.cwd().createFile(mfname, .{}) catch return;
+    defer f.close();
+    f.writeAll(buf.items) catch return;
+    var nbound: u32 = 0;
+    for (hit) |h| {
+        if (h) nbound += 1;
+    }
+    std.debug.print("realize: {s} and realize.txt written for arm {s} ({d} bound)\n", .{ mfname, arm, nbound });
+}

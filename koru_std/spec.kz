@@ -1,0 +1,221 @@
+// Koru Standard Library: spec — the contract vocabulary a declared
+// interface speaks, plus the generic `[comptime|norun] spec` declaration
+// carrier and the `sites()` harvester shared by spec consumers.
+//
+// These types were uplifted from runtime.specs / interpreter.contracts /
+// the interpreter's value-transport block: an interface descriptor
+// (ScopeEvent) names inputs, branches, obligation create/discharge and the
+// dispatcher contract — none of that is runtime-specific, it is the *spec
+// of a surface*. std/runtime, std/interpreter and every consumer re-alias
+// these names so emitted code (`koru_std.koru_runtime.ScopeEvent` in
+// generated dispatchers, `koru_std.koru_interpreter.CreateSpec` in shape
+// checking) keeps resolving to this single definition.
+//
+// `spec` is the generic declaration carrier: data attached to the AST as a
+// [norun] site, harvested by a [comptime|command] consumer through
+// `spec.sites(program, qualifier, tor)`. A domain that wants its own
+// spelling declares its own [norun] tor and harvests it under its own
+// qualifier — std/realize's `row`/`arm` are that, one level down.
+
+~[comptime|runtime]
+
+~[comptime|norun]pub tor spec { source: Source }
+
+// The module's runtime presence: the vocabulary's revision, served as data —
+// the §3.6 contract-revision column made real, and the retained event that
+// keeps this host-type library in the emitted namespace (runtime_only emits
+// a module only when an event/proc/flow survives; spec's surface is types +
+// a norun tor, so without this there is no koru_std.koru_spec to resolve).
+~[retain]pub tor spec.revision {} -> string
+
+~proc spec.revision|zig {
+    return "std/spec:0";
+}
+
+const std = @import("std");
+const ast = @import("ast");
+
+// ============================================================================
+// TYPED FIELD PAYLOAD — what one named field of a call/result can carry
+// ============================================================================
+
+pub const FieldValue = union(enum) {
+    string_val: []const u8,
+    int_val: i64,
+    float_val: f64,
+    bool_val: bool,
+    string_array: []const []const u8,
+};
+
+pub const NamedField = struct {
+    name: []const u8,
+    value: FieldValue,
+};
+
+// ============================================================================
+// CALL CONTRACT — the dispatcher signature a descriptor names
+// ============================================================================
+
+pub const DispatchResult = struct {
+    branch: []const u8,
+    fields: []const NamedField, // Direct typed field values
+};
+
+pub const DispatchFn = *const fn (*const ast.Invocation, *DispatchResult) anyerror!void;
+pub const CostFn = *const fn ([]const u8) u64;
+
+// Obligation functions - tors can create/discharge multiple obligations
+pub const ObligationsArrayFn = *const fn ([]const u8) []const []const u8; // tor -> []obligations
+pub const DischargeEventFn = *const fn ([]const u8) ?[]const u8; // obligation -> tor name
+
+// ============================================================================
+// OBLIGATION SPECS — which output field creates / input arg discharges
+// ============================================================================
+
+// CreateSpec describes an obligation created by an tor's output field
+pub const CreateSpec = struct {
+    obligation_module: []const u8, // e.g., "sqlite3"
+    obligation_name: []const u8, // e.g., "opened"
+    field_name: []const u8, // which output field holds the handle ID
+    resource_type: []const u8, // e.g., "Connection"
+    // Outcome branch carrying this create, in source spelling — null = bare
+    // return. A branched tor books only the spec whose branch FIRED.
+    branch: ?[]const u8 = null,
+};
+
+// DischargeSpec describes an obligation discharged by an tor's input arg
+pub const DischargeSpec = struct {
+    obligation_module: []const u8, // e.g., "sqlite3"
+    obligation_name: []const u8, // e.g., "opened"
+    arg_name: []const u8, // which input arg carries the handle ID
+};
+
+// Spec lookup functions - return full specs with field/arg names
+pub const CreatesSpecFn = *const fn ([]const u8) []const CreateSpec; // tor -> []CreateSpec
+pub const DischargesSpecFn = *const fn ([]const u8) []const DischargeSpec; // tor -> []DischargeSpec
+
+// ============================================================================
+// SURFACE DESCRIPTOR — the typed tor-surface a scope/interface declares
+// ============================================================================
+
+// Branch field metadata for shape validation
+pub const BranchField = struct {
+    name: []const u8,
+    type_name: []const u8,
+    is_optional: bool = false,
+};
+
+// Branch metadata for shape validation
+pub const BranchSpec = struct {
+    name: []const u8,
+    fields: []const BranchField,
+    is_optional: bool = false,
+};
+
+// Input-field metadata — the argument vocabulary of an tor, what a caller
+// must NAME when invoking it. Carries the raw possession phantom (`!open`
+// discharges, `open!` creates) so the vocabulary is renderable as
+// `handle: string<!open>` — the exact spelling the scope enforces.
+pub const InputFieldSpec = struct {
+    name: []const u8,
+    type_name: []const u8,
+    is_optional: bool = false,
+    phantom: ?[]const u8 = null,
+};
+
+pub const ScopeEvent = struct {
+    name: []const u8,
+    cost: u64, // Budget cost for this tor
+    creates_obligations: []const []const u8, // Legacy: just obligation names
+    discharges_obligations: []const []const u8, // Legacy: just obligation names
+    creates_specs: []const CreateSpec, // Full specs with field names
+    discharges_specs: []const DischargeSpec, // Full specs with arg names
+    branches: []const BranchSpec = &.{}, // Branch specs for shape validation
+    input_fields: []const InputFieldSpec = &.{}, // Input/argument vocabulary
+    doc: []const u8 = "", // Declaration prose — what the verb IS, rendered beside its signature
+    dispatcher: DispatchFn,
+};
+
+pub const ScopeDescriptor = struct {
+    name: []const u8,
+    events: []const ScopeEvent,
+};
+
+// ============================================================================
+// DESCRIPTOR SERVING — the fn-ptr vocabulary a descriptor answers through
+// ============================================================================
+
+// Branches lookup function type for shape validation
+pub const BranchesLookupFn = *const fn ([]const u8) []const BranchSpec;
+// Event-name enumeration type — the scope's whole vocabulary, order-preserving
+pub const EventsLookupFn = *const fn () []const []const u8;
+// Input-field lookup type — an tor's argument vocabulary; null = the name
+// is not this scope's verb (vocabulary membership answers first).
+pub const InputLookupFn = *const fn ([]const u8) ?[]const InputFieldSpec;
+// Doc lookup type — an tor's declaration prose; empty when the decl
+// carried none.
+pub const DocLookupFn = *const fn ([]const u8) []const u8;
+
+// ============================================================================
+// SITES — the generic spec-site harvest
+// ============================================================================
+//
+// A spec site is a [norun] flow whose invocation carries a `source` block —
+// `~std/spec:spec { ...json... }` or any domain tor (std/realize:row). The
+// consumer names the qualifier + tor it owns; sites() returns every match
+// in the program's module declarations and top level, in declaration order.
+
+pub const Site = struct {
+    prov: []const u8, // declaring site: module logical name, or the file for program-level sites
+    source: []const u8, // the raw `source` block text — the consumer owns the payload's grammar
+    flow: *const ast.Flow, // the site itself — consumers read named args (e.g. `iface: <expr>`) off it
+    file: []const u8,
+    line: usize,
+};
+
+/// A named arg on a site — e.g. `iface: koruos/ext2` — carried as its raw
+/// text; the consumer owns the name's grammar (module path, tor, foreign id).
+pub fn siteArg(fl: *const ast.Flow, comptime name: []const u8) ?[]const u8 {
+    for (fl.inv().args) |arg| {
+        if (std.mem.eql(u8, arg.name, name)) return arg.value;
+    }
+    return null;
+}
+
+fn siteMatch(fl: *const ast.Flow, qualifier: []const u8, tor_name: []const u8) ?[]const u8 {
+    const mq = fl.inv().path.module_qualifier orelse return null;
+    if (!std.mem.eql(u8, mq, qualifier)) return null;
+    if (fl.inv().path.segments.len != 1) return null;
+    if (!std.mem.eql(u8, fl.inv().path.segments[0], tor_name)) return null;
+    for (fl.inv().args) |arg| {
+        if (std.mem.eql(u8, arg.name, "source")) return arg.value;
+    }
+    return null;
+}
+
+pub fn sites(
+    program: *const ast.Program,
+    al: std.mem.Allocator,
+    qualifier: []const u8,
+    tor_name: []const u8,
+) []Site {
+    var out = std.ArrayListUnmanaged(Site){};
+    // a) module-declared sites — a lift declares its own spec inside its module
+    for (program.items) |item| {
+        if (item != .module_decl) continue;
+        const prov = item.module_decl.logical_name;
+        for (item.module_decl.items) |*mi| {
+            if (mi.* != .flow) continue;
+            const src = siteMatch(&mi.flow, qualifier, tor_name) orelse continue;
+            out.append(al, .{ .prov = prov, .source = src, .flow = &mi.flow, .file = mi.flow.location.file, .line = mi.flow.location.line }) catch return out.items;
+        }
+    }
+    // b) program-level sites — the program supplies a declaration for an
+    //    interface it does not own (its own provider for a lift)
+    for (program.items) |*item| {
+        if (item.* != .flow) continue;
+        const src = siteMatch(&item.flow, qualifier, tor_name) orelse continue;
+        out.append(al, .{ .prov = item.flow.location.file, .source = src, .flow = &item.flow, .file = item.flow.location.file, .line = item.flow.location.line }) catch return out.items;
+    }
+    return out.items;
+}

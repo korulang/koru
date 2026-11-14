@@ -163,6 +163,63 @@ pub fn getBuildConfig(key: []const u8) ?[]const u8 {
     return null;
 }
 
+// ============================================================================
+// COMMAND MARKS CHANNEL — solver-produced verdict lines for command handlers
+// ============================================================================
+// Commands are solvers producing verdicts. Invocation.marks is pass-produced
+// only — commands mint their own artifact instead: a handler commits each
+// verdict through commitCommandMark, which validates the wire invariants and
+// formats the `@witness("k","s","a","v","e")` line, and the backend flushes
+// the batch to `<stem>.marks` after command dispatch. What the channel writes
+// is what a checker re-decides; the line format never lives in command code.
+
+pub var command_marks: [256][]const u8 = undefined;
+pub var command_marks_count: usize = 0;
+
+/// The command's requested process exit code — set by the handler, honored by
+/// the backend AFTER the marks flush so a refused run still lands its verdict
+/// corpus (a `std.process.exit` inside the handler would skip the channel).
+pub var command_exit_code: ?u8 = null;
+
+/// Commit one verdict line to the command marks channel. All five fields must
+/// be non-empty and carry no `"`, CR, or LF — the `","` separators are the only
+/// quotes in a well-formed mark line. Returns false on a malformed field or a
+/// full channel; a mark that never committed never claims.
+pub fn commitCommandMark(allocator: std.mem.Allocator, kind: []const u8, site: []const u8, arrow: []const u8, verdict: []const u8, payload: []const u8) bool {
+    if (command_marks_count >= command_marks.len) return false;
+    const fields = [_][]const u8{ kind, site, arrow, verdict, payload };
+    for (fields) |f| {
+        if (f.len == 0) return false;
+        if (std.mem.indexOfAny(u8, f, "\"\r\n") != null) return false;
+    }
+    const line = std.fmt.allocPrint(allocator, "@witness(\"{s}\",\"{s}\",\"{s}\",\"{s}\",\"{s}\")\n", .{ kind, site, arrow, verdict, payload }) catch return false;
+    command_marks[command_marks_count] = line;
+    command_marks_count += 1;
+    return true;
+}
+
+/// Flush the committed marks to `<stem>.marks` in cwd. No-op when the channel
+/// is empty — a command that minted nothing leaves no artifact.
+pub fn flushCommandMarks(allocator: std.mem.Allocator, stem: []const u8) !void {
+    if (command_marks_count == 0) return;
+    const path = try std.fmt.allocPrint(allocator, "{s}.marks", .{stem});
+    defer allocator.free(path);
+    const f = try std.fs.cwd().createFile(path, .{});
+    defer f.close();
+    var header = std.ArrayListUnmanaged(u8){};
+    defer header.deinit(allocator);
+    const hw = header.writer(allocator);
+    try hw.print("# {s}.marks: command-committed witness marks\n", .{stem});
+    try hw.print("# kind = a decidable relation, never a domain noun;\n", .{});
+    try hw.print("# the domain rides site/payload as data.\n", .{});
+    try f.writeAll(header.items);
+    for (command_marks[0..command_marks_count]) |line| try f.writeAll(line);
+    // the batch is consumed: the channel owns the committed lines and
+    // frees them on flush (a command run never marks twice)
+    for (command_marks[0..command_marks_count]) |line| allocator.free(line);
+    command_marks_count = 0;
+}
+
 /// Controls which modules/taps to emit based on annotations
 /// Duplicated from visitor_emitter.zig to avoid circular dependency
 pub const EmitMode = enum {
