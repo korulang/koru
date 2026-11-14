@@ -118,6 +118,7 @@ pub const SymbolTable = struct {
                         .return_type = event.return_type,
                         .return_phantom = event.return_phantom,
                         .input_is_compiler_supplied = event.isComptimeOnly() or event.hasAnnotation("transform"),
+                        .input_is_transform = event.hasAnnotation("transform"),
                         .has_proc = false,
                         .has_subflow = false,
                         .is_recursive = false,
@@ -205,6 +206,12 @@ pub const EventInfo = struct {
     /// `[comptime]` alone does NOT qualify — `frontend { ctx: CompilerContext }`
     /// runs at comptime and its `ctx` is an ordinary author-written parameter.
     input_is_compiler_supplied: bool = false,
+    /// `[transform]` tors receive the site itself — EVERY input field is
+    /// compiler-assembled, so none is a thread slot. Kept separate from
+    /// `input_is_compiler_supplied` (which also fires on any comptime field):
+    /// a MIXED tor — comptime `name: Expression` beside runtime
+    /// `reg: string<!allocated>` — still has runtime slots the thread elects.
+    input_is_transform: bool = false,
     has_proc: bool,
     has_subflow: bool,
     is_recursive: bool,
@@ -1932,7 +1939,10 @@ fn bindThreadIntoStep(
 ) std.mem.Allocator.Error!void {
     // A comptime transform's input is assembled by the compiler at the call
     // site, not written by the author. Its open parameters are not slots.
-    if (info.input_is_compiler_supplied) return;
+    // Comptime FIELDS are filtered per-field below — a mixed tor's runtime
+    // parameters remain electable (615_051: rel-seed's `reg:` takes the
+    // thread while `name: Expression` stays author-written).
+    if (info.input_is_transform) return;
 
     var open_names = try std.ArrayList([]const u8).initCapacity(allocator, 4);
     defer open_names.deinit(allocator);
@@ -1942,6 +1952,8 @@ fn bindThreadIntoStep(
     defer matches.deinit(allocator);
 
     for (info.input.fields) |f| {
+        if (f.is_source or f.is_expression or
+            std.mem.eql(u8, f.type, "Program")) continue;
         if (!isOpenThreadSlot(f, node.invocation.args)) continue;
         // Field.type carries the phantom stripped — `<!open>` lives in
         // Field.phantom. Splice it back for the comparison, or a consume
@@ -1964,6 +1976,8 @@ fn bindThreadIntoStep(
     // field path off the minted record binding.
     if (thread.fields) |flds| {
         for (info.input.fields) |f| {
+            if (f.is_source or f.is_expression or
+                std.mem.eql(u8, f.type, "Program")) continue;
             if (!isOpenThreadSlot(f, node.invocation.args)) continue;
             const f_type = if (f.phantom) |ph|
                 try std.fmt.allocPrint(allocator, "{s}<{s}>", .{ f.type, ph })
