@@ -10462,9 +10462,11 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
         var is_source_arg = false;
         var is_expression_arg = false;
         var is_invocation_meta_arg = false;
+        var field_matched = false;
         if (event_decl) |event| {
             for (event.input.fields) |field| {
                 if (std.mem.eql(u8, field.name, param_name)) {
+                    field_matched = true;
                     if (field.is_source) {
                         is_source_arg = true;
                         break;
@@ -10487,9 +10489,19 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
         // rides on ordinary args too), so trust it here — the emission is the
         // typed literal, never the raw text spliced into the struct field.
         if (!is_source_arg and !is_expression_arg and !is_invocation_meta_arg and
-            arg.source_value != null)
+            arg.source_value != null and !field_matched)
         {
             is_source_arg = true;
+        }
+        // A source-block arg (`tor { ... }`) bound to a NON-Source parameter
+        // transports its captured text the way an Expression arg does — a
+        // quoted string the callee reads as `[]const u8`, not the Source
+        // struct. This is what lets `rel-law { g(cos) }` feed a `source:
+        // string` param; without it the block could only ever bind `Source`.
+        if (arg.source_value != null and field_matched and !is_source_arg and
+            !is_invocation_meta_arg)
+        {
+            is_expression_arg = true;
         }
 
         if (is_expression_arg) {
@@ -10498,22 +10510,9 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
             // comptime handlers consume it during evaluate_comptime, and a
             // runtime-position call transports the text to the callee
             // (parser.zig: "an Expression is just another way to pass a
-            // string").
-            try emitter.write("\"");
-            for (arg.value) |c| {
-                switch (c) {
-                    '"' => try emitter.write("\\\""),
-                    '\\' => try emitter.write("\\\\"),
-                    '\n' => try emitter.write("\\n"),
-                    '\r' => try emitter.write("\\r"),
-                    '\t' => try emitter.write("\\t"),
-                    else => {
-                        const buf = [_]u8{c};
-                        try emitter.write(&buf);
-                    },
-                }
-            }
-            try emitter.write("\"");
+            // string"). A source-block arg on a non-Source field rides this
+            // path too — the callee sees the captured text, not the struct.
+            try emitter.writeZigStringLiteral(arg.value);
         } else if (is_source_arg) {
             // A Source param carries captured text — the callee receives the
             // Source struct with `.text` set to what the call site wrote.

@@ -10,10 +10,10 @@
 // Tors:
 //   unit-reg-new    -> unitreg:v1                                  (allocated!)
 //   unit-reg-put    reg, name, kind -> exact reg' | dup | bad      add one axis
-//   unit-reg-decls  reg, src        -> exact reg' | dup | bad      a block
+//   unit-reg-decls  reg, source        -> exact reg' | dup | bad      a block
 //   unit-reg-get    reg, name       -> exact kind | undeclared-axis | bad
 // (~part ext holds the !ext= segment algebra, lit-x, retaint, convert-x.)
-// src is the unitreg:v1 tail grammar — entries `;`-separated, optional
+// source is the unitreg:v1 tail grammar — entries `;`-separated, optional
 // prefix — so registry text and declaration text are one language and
 // unit-reg-decls(r, otherRegistryText) merges. Single phase: unlike rel
 // laws, `axis(kind)` references no other axis, so no cycles exist to
@@ -114,10 +114,10 @@ fn uregEmit(alloc: std.mem.Allocator, g: *const UReg) ![]u8 {
     return .{ .exact = out };
 }
 
-// Declare a whole block: src is the unitreg:v1 tail grammar —
+// Declare a whole block: source is the unitreg:v1 tail grammar —
 // `USD=axis(currency);EUR=axis(currency);point` — optionally prefixed,
 // so registry text composes. dup/bad anywhere voids the block.
-~pub tor unit-reg-decls { reg: string<std/io:!allocated>, src: string }
+~pub tor unit-reg-decls { reg: string<std/io:!allocated>, source: string }
 | exact string<std/io:allocated!>
 | dup
 | bad
@@ -129,7 +129,7 @@ fn uregEmit(alloc: std.mem.Allocator, g: *const UReg) ![]u8 {
     defer arena.deinit();
     const a = arena.allocator();
     var g = uregParse(a, reg) catch return .{ .bad = .{} };
-    var tail = src;
+    var tail = source;
     if (std.mem.startsWith(u8, tail, "unitreg:v1")) {
         tail = tail["unitreg:v1".len..];
         if (tail.len > 0 and tail[0] != ';') return .{ .bad = .{} };

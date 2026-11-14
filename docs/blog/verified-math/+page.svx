@@ -154,7 +154,7 @@ import std/sym
 // rel-laws attach D(g) afterwards; the registry text is
 // rel:v1;sin=g(cos);cos=(-1e0*g(sin)). Names close before laws
 // parse, which is what lets the cyclic pair resolve.
-std/sym:rel-derive(reg: r, a: "g(sin)*g(sin)+g(cos)*g(cos)")
+std/sym:rel-derive(reg: r, source: "g(sin)*g(sin)+g(cos)*g(cos)")
 | exact d |> std/io:print.ln("{{ d:s }}")
 | unknown-generator |> std/io:print.ln("unknown-generator")
 | lawless |> std/io:print.ln("lawless")

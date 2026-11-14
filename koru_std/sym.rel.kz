@@ -15,13 +15,12 @@
 // surfaces take and return plain strings.
 //
 // Tors:
-//   rel-new    -> rel:v1                                        (allocated!)
-//   rel-seed   reg, name      -> exact reg' | dup | full | bad   declare a name
-//   rel-law    reg, name, law -> exact reg' | unknown-generator | bad
-//   rel-decls  reg, src       -> exact reg' | dup | full |
-//                                unknown-generator | bad        declare a block
-//   rel-derive reg, expr      -> exact text | unknown-generator | lawless | bad
-//   rel-norm   reg, expr      -> exact text | unknown-generator | bad
+//   rel-new    -> rel:v1                                         (allocated!)
+//   rel-seed   reg, name         -> exact reg' | dup | full | bad
+//   rel-law    source, name, reg -> exact reg' | unknown-generator | bad
+//   rel-decls  source, reg       -> exact reg' | dup | full | unknown-generator | bad
+//   rel-derive source, reg       -> exact text | unknown-generator | lawless | bad
+//   rel-norm   source, reg       -> exact text | unknown-generator | bad
 //
 // rel-derive applies the declared laws mechanically (chain rule) and returns
 // the normalized canonical text — each step is the derivative rule or a
@@ -72,9 +71,7 @@ fn substX(alloc: std.mem.Allocator, n: *const SNode, u: *const SNode) anyerror!*
 fn relNameOk(nm: []const u8) bool {
     if (nm.len == 0) return false;
     if (!(std.ascii.isAlphabetic(nm[0]) or nm[0] == '_')) return false;
-    for (nm[1..]) |ch| {
-        if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return false;
-    }
+    for (nm[1..]) |ch| if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return false;
     return true;
 }
 
@@ -89,10 +86,11 @@ fn relParse(alloc: std.mem.Allocator, s: []const u8) !GReg {
     var raws = std.ArrayList(?[]const u8){};
     defer raws.deinit(alloc);
     var it = std.mem.splitScalar(u8, tail, ';');
-    while (it.next()) |ent| {
+    while (it.next()) |ent0| {
+        const ent = std.mem.trim(u8, ent0, " \t\n\r");
         if (ent.len == 0) continue;
         const eq = std.mem.indexOfScalar(u8, ent, '=') orelse return error.Malformed;
-        const nm = ent[0..eq];
+        const nm = std.mem.trim(u8, ent[0..eq], " \t\n\r");
         if (!relNameOk(nm)) return error.Malformed;
         for (g.names.items) |n2| {
             if (std.mem.eql(u8, n2, nm)) return error.Malformed;
@@ -168,7 +166,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 // Attach (or replace) the derivative law for a declared generator. The law
 // is a sexpr over x and generator names — self- and mutual references
 // resolve since the name set is complete at attach time.
-~pub tor rel-law { reg: string<std/io:!allocated>, name: string, law: string }
+~pub tor rel-law { source: string, name: string, reg: string<std/io:!allocated> }
 | exact string<std/io:allocated!>
 | unknown-generator
 | bad
@@ -181,7 +179,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     const a = arena.allocator();
     var g = relParse(a, reg) catch return .{ .bad = .{} };
     const i = relFind(&g, name) orelse return .{ .unknown_generator = .{} };
-    const t = parseTreeG(a, law, &g) catch |e| switch (e) {
+    const t = parseTreeG(a, source, &g) catch |e| switch (e) {
         error.UnknownGenerator => return .{ .unknown_generator = .{} },
         else => return .{ .bad = .{} },
     };
@@ -191,14 +189,14 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     return .{ .exact = out };
 }
 
-// Declare a whole block at once: src is a `;`-separated list of `name`
+// Declare a whole block at once: source is a `;`-separated list of `name`
 // and `name=law` entries — the rel:v1 tail grammar, optionally prefixed
 // (so `rel-decls(r, otherRegistryText)` merges two registries). Two
 // phases like the threaded path: every LHS name is seeded first, then
 // each law parses under the complete name set — cyclic blocks and
 // forward references both resolve. Atomic: a `dup`, `full`,
 // `unknown-generator`, or `bad` anywhere refuses the whole block.
-~pub tor rel-decls { reg: string<std/io:!allocated>, src: string }
+~pub tor rel-decls { source: string, reg: string<std/io:!allocated> }
 | exact string<std/io:allocated!>
 | dup
 | full
@@ -212,7 +210,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     defer arena.deinit();
     const a = arena.allocator();
     var g = relParse(a, reg) catch return .{ .bad = .{} };
-    var tail = src;
+    var tail = source;
     if (std.mem.startsWith(u8, tail, "rel:v1")) {
         tail = tail["rel:v1".len..];
         if (tail.len > 0 and tail[0] != ';') return .{ .bad = .{} };
@@ -220,10 +218,11 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     const Entry = struct { nm: []const u8, law: ?[]const u8 };
     var entries = std.ArrayList(Entry){};
     var it = std.mem.splitScalar(u8, tail, ';');
-    while (it.next()) |ent| {
+    while (it.next()) |ent0| {
+        const ent = std.mem.trim(u8, ent0, " \t\n\r");
         if (ent.len == 0) continue;
         const eq = std.mem.indexOfScalar(u8, ent, '=');
-        const nm = if (eq) |e| ent[0..e] else ent;
+        const nm = std.mem.trim(u8, if (eq) |e| ent[0..e] else ent, " \t\n\r");
         if (!relNameOk(nm)) return .{ .bad = .{} };
         if (relFind(&g, nm) != null) return .{ .dup = .{} };
         if (g.names.items.len >= 252) return .{ .full = .{} };
@@ -247,7 +246,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 
 // d/dx of expr under the declared laws — theorem-grade: every rewrite step
 // is a derivative rule or a declared-law substitution.
-~pub tor rel-derive { reg: string<*>, a: string }
+~pub tor rel-derive { source: string, reg: string<*> }
 | exact string<std/io:allocated!>
 | unknown-generator
 | lawless
@@ -259,7 +258,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     defer arena.deinit();
     const ar = arena.allocator();
     var g = relParse(ar, reg) catch return .{ .bad = .{} };
-    const t = parseTreeG(ar, a, &g) catch |e| switch (e) {
+    const t = parseTreeG(ar, source, &g) catch |e| switch (e) {
         error.UnknownGenerator => return .{ .unknown_generator = .{} },
         else => return .{ .bad = .{} },
     };
@@ -274,7 +273,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 
 // Canonical normal form of expr under the registry's name set — the
 // caller-side equality primitive: canon-equal texts are provably equal.
-~pub tor rel-norm { reg: string<*>, a: string }
+~pub tor rel-norm { source: string, reg: string<*> }
 | exact string<std/io:allocated!>
 | unknown-generator
 | bad
@@ -285,7 +284,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     defer arena.deinit();
     const ar = arena.allocator();
     var g = relParse(ar, reg) catch return .{ .bad = .{} };
-    const t = parseTreeG(ar, a, &g) catch |e| switch (e) {
+    const t = parseTreeG(ar, source, &g) catch |e| switch (e) {
         error.UnknownGenerator => return .{ .unknown_generator = .{} },
         else => return .{ .bad = .{} },
     };

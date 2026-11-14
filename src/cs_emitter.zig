@@ -3014,6 +3014,10 @@ const Emitter = struct {
                     }
                 }
             }
+            // A source-block arg bound to a NON-Source field transports its
+            // captured text like an Expression arg — the zig emitter's twin
+            // `source_value → quoted text` rule.
+            if (arg.source_value != null and !is_source) is_expression = true;
             if (is_expression or is_source) {
                 // A `Source` param transports captured BLOCK text — the
                 // callee reads `source.text`, so the value is an anonymous

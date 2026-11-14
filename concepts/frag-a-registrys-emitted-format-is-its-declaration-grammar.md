@@ -12,7 +12,7 @@ tags: [koru, sym, rel, registry, canonical-text, dsl]
 after threading. It is also a complete *declaration*: every entry is
 `name` or `name=law`, `;`-separated — exactly the two-phase order the
 threaded path imposes (all names exist before any law is parsed, so
-cyclic pairs and forward references both resolve). `rel-decls(reg, src)`
+cyclic pairs and forward references both resolve). `rel-decls(reg, source)`
 takes that grammar as input — optionally `rel:v1`-prefixed — and the
 consequence is free composition: registry text concatenates into
 registry text, and `rel-decls(r, otherRegistryText)` is a merge.
@@ -34,7 +34,7 @@ anywhere voids the whole block — one arm set, not one per entry.
 Pairs with [[frag-a-phantom-can-only-promise-what-a-producer-can-prove]]
 (registry text stays plain `string` — validity is still parse-under-ctx)
 and the trusted-literal frag (the *authored* lane keeps `lit`-style
-capture; a registry block is data, not provenance — `src` is a plain
+capture; a registry block is data, not provenance — `source` is a plain
 composable string by design).
 
 Second instance, same day: `unitreg:v1;USD=axis(currency)` declares

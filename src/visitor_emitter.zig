@@ -4046,19 +4046,28 @@ pub const VisitorEmitter = struct {
                                             // twin checks as emitArgs: the decl
                                             // field, then arg.source_value for
                                             // callees the decl lookup misses.
+                                            // A source-block arg bound to a
+                                            // NON-Source field transports its
+                                            // captured text as a quoted string —
+                                            // `tor { ... }` feeding `source:
+                                            // string` — never the Source struct.
                                             var sf_is_source = arg.source_value != null;
-                                            if (!sf_is_source) {
-                                                if (invoked_event) |inv_event| {
-                                                    for (inv_event.input.fields) |*field| {
-                                                        if (std.mem.eql(u8, field.name, param_name) and field.is_source) {
-                                                            sf_is_source = true;
-                                                            break;
-                                                        }
+                                            var sf_text_only = false;
+                                            if (invoked_event) |inv_event| {
+                                                var sf_field_seen = false;
+                                                for (inv_event.input.fields) |*field| {
+                                                    if (std.mem.eql(u8, field.name, param_name)) {
+                                                        sf_field_seen = true;
+                                                        sf_is_source = field.is_source;
+                                                        break;
                                                     }
                                                 }
+                                                sf_text_only = arg.source_value != null and sf_field_seen and !sf_is_source;
                                             }
 
-                                            if (sf_is_source) {
+                                            if (sf_text_only) {
+                                                try self.code_emitter.writeZigStringLiteral(arg.value);
+                                            } else if (sf_is_source) {
                                                 try emitter.emitSourceValue(self.code_emitter, &arg);
                                             } else if (arg.value.len >= 2 and arg.value[0] == '[' and arg.value[arg.value.len - 1] == ']') {
                                                 const field = blk: {

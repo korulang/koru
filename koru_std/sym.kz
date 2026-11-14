@@ -446,10 +446,17 @@ fn negNode(alloc: std.mem.Allocator, inner: *SNode) !*SNode {
     return nodeList(alloc, .mul, kids);
 }
 
+fn skipWs(c: *ParseCtx) void {
+    while (c.i < c.s.len and
+        (c.s[c.i] == ' ' or c.s[c.i] == '\t' or c.s[c.i] == '\n' or c.s[c.i] == '\r')) c.i += 1;
+}
+
 fn parseExpr(c: *ParseCtx) anyerror!*SNode {
     var lhs = try parseProd(c);
     errdefer nodeFree(c.alloc, lhs);
-    while (c.i < c.s.len and (c.s[c.i] == '+' or c.s[c.i] == '-')) {
+    while (true) {
+        skipWs(c);
+        if (c.i >= c.s.len or (c.s[c.i] != '+' and c.s[c.i] != '-')) break;
         const minus = c.s[c.i] == '-';
         c.i += 1;
         var rhs = try parseProd(c);
@@ -465,7 +472,9 @@ fn parseExpr(c: *ParseCtx) anyerror!*SNode {
 fn parseProd(c: *ParseCtx) anyerror!*SNode {
     var lhs = try parseUnary(c);
     errdefer nodeFree(c.alloc, lhs);
-    while (c.i < c.s.len and (c.s[c.i] == '*' or c.s[c.i] == '/')) {
+    while (true) {
+        skipWs(c);
+        if (c.i >= c.s.len or (c.s[c.i] != '*' and c.s[c.i] != '/')) break;
         const div = c.s[c.i] == '/';
         c.i += 1;
         var rhs = try parseUnary(c);
@@ -479,6 +488,7 @@ fn parseProd(c: *ParseCtx) anyerror!*SNode {
 }
 
 fn parseUnary(c: *ParseCtx) anyerror!*SNode {
+    skipWs(c);
     if (c.i < c.s.len and c.s[c.i] == '-') {
         c.i += 1;
         const inner = try parseUnary(c);
@@ -553,10 +563,12 @@ fn parseFactor(c: *ParseCtx) anyerror!*SNode {
     if (cp == 'g') {
         if (c.i + 1 >= c.s.len or c.s[c.i + 1] != '(') return error.Bad;
         c.i += 2;
+        skipWs(c);
         const start = c.i;
         while (c.i < c.s.len and (std.ascii.isAlphanumeric(c.s[c.i]) or c.s[c.i] == '_')) c.i += 1;
         const nm = c.s[start..c.i];
         if (nm.len == 0) return error.Bad;
+        skipWs(c);
         var arg: ?*SNode = null;
         errdefer if (arg) |a| nodeFree(c.alloc, a);
         if (c.i < c.s.len and c.s[c.i] == ',') {
@@ -1875,6 +1887,7 @@ fn parseTree(alloc: std.mem.Allocator, s: []const u8) !*SNode {
 fn parseTreeG(alloc: std.mem.Allocator, s: []const u8, greg: ?*GReg) !*SNode {
     var ctx = ParseCtx{ .alloc = alloc, .s = s, .greg = greg };
     const t = try parseExpr(&ctx);
+    skipWs(&ctx);
     if (ctx.i != s.len) {
         nodeFree(alloc, t);
         return error.Bad;
