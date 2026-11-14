@@ -29,7 +29,45 @@
 // canonical texts IMPLY provable equality under the laws (soundness); the
 // converse fails — sin^2+cos^2 and 1 are law-equal but normalize
 // differently (the equality-check primitive is caller-side text compare).
+//
+// Band 2: `g(name, arg)` — explicit application; `g(name)` is `g(name, x)`.
+// An atom's `garg` holds the argument; D g(f,u) = law_f[x:=u] * u' via
+// substX below. Laws may themselves carry arguments (`f' = g(f, x+1)`
+// is a shift-law), since law and expression share one grammar.
 // ============================================================================
+
+// Substitute u for x (atom 3) through a law tree — the band-2 machinery.
+// A bare generator atom (>= 5, garg null) means "applied to x", so under
+// x:=u it lifts to the explicit application g(name, u); an applied atom
+// substitutes inside its argument instead.
+fn substX(alloc: std.mem.Allocator, n: *const SNode, u: *const SNode) anyerror!*SNode {
+    switch (n.kind) {
+        .dec => return nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
+        .atom => {
+            if (n.atom == 3) return nodeClone(alloc, u);
+            if (n.atom < 5) return nodeAtom(alloc, n.atom);
+            const an = try nodeAtom(alloc, n.atom);
+            errdefer nodeFree(alloc, an);
+            an.garg = if (n.garg) |a| try substX(alloc, a, u) else try nodeClone(alloc, u);
+            return an;
+        },
+        .sq, .inv, .log, .atan, .exp => return nodeUnary(alloc, n.kind, try substX(alloc, n.kid, u)),
+        .rsum => return error.Bad, // aux embeds x-polys as text — cannot substitute honestly
+        .add, .mul => {
+            const kids = try alloc.alloc(*SNode, n.kids.len);
+            var built: usize = 0;
+            errdefer {
+                for (kids[0..built]) |k| nodeFree(alloc, k);
+                alloc.free(kids);
+            }
+            for (n.kids, 0..) |k, i| {
+                kids[i] = try substX(alloc, k, u);
+                built += 1;
+            }
+            return nodeList(alloc, n.kind, kids);
+        },
+    }
+}
 
 fn relNameOk(nm: []const u8) bool {
     if (nm.len == 0) return false;

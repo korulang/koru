@@ -326,6 +326,7 @@ const SNode = struct {
     kind: NodeKind,
     dec: Dec = undefined,            // kind == .dec
     atom: u8 = 0,                    // kind == .atom: 0=pi, 1=e, 2=phi, 3=x, 4=i; >=5 named generators
+    garg: ?*SNode = null,            // kind == .atom && atom >= 5: explicit argument; null means implicit x — g(name) IS g(name, x)
     kids: []*SNode = &.{},           // kind == .add/.mul
     kid: *SNode = undefined,         // kind == .sq/.inv/.log/.atan/.exp
     aux: []u8 = &.{},                // kind == .rsum: "f0,f1,...;s00,s01,...|s10,..." —
@@ -371,8 +372,8 @@ fn nodeFree(alloc: std.mem.Allocator, n: *SNode) void {
             alloc.free(n.kids);
         },
         .sq, .inv, .log, .atan, .exp => nodeFree(alloc, n.kid),
+        .atom => if (n.garg) |a| nodeFree(alloc, a),
         .rsum => alloc.free(n.aux),
-        else => {},
     }
     alloc.destroy(n);
 }
@@ -380,7 +381,12 @@ fn nodeFree(alloc: std.mem.Allocator, n: *SNode) void {
 fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
     switch (n.kind) {
         .dec => return nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
-        .atom => return nodeAtom(alloc, n.atom),
+        .atom => {
+            const cn = try nodeAtom(alloc, n.atom);
+            errdefer nodeFree(alloc, cn);
+            if (n.garg) |a| cn.garg = try nodeClone(alloc, a);
+            return cn;
+        },
         .sq, .inv, .log, .atan, .exp => return nodeUnary(alloc, n.kind, try nodeClone(alloc, n.kid)),
         .rsum => return nodeRsum(alloc, n.aux),
         .add, .mul => {
@@ -551,11 +557,22 @@ fn parseFactor(c: *ParseCtx) anyerror!*SNode {
         while (c.i < c.s.len and (std.ascii.isAlphanumeric(c.s[c.i]) or c.s[c.i] == '_')) c.i += 1;
         const nm = c.s[start..c.i];
         if (nm.len == 0) return error.Bad;
+        var arg: ?*SNode = null;
+        errdefer if (arg) |a| nodeFree(c.alloc, a);
+        if (c.i < c.s.len and c.s[c.i] == ',') {
+            c.i += 1;
+            arg = try parseExpr(c);
+        }
         if (c.i >= c.s.len or c.s[c.i] != ')') return error.Bad;
         c.i += 1;
         if (c.greg) |g| {
             for (g.names.items, 0..) |n2, i| {
-                if (std.mem.eql(u8, n2, nm)) return nodeAtom(c.alloc, @as(u8, @intCast(5 + i)));
+                if (std.mem.eql(u8, n2, nm)) {
+                    const an = try nodeAtom(c.alloc, @as(u8, @intCast(5 + i)));
+                    an.garg = arg;
+                    arg = null;
+                    return an;
+                }
             }
         }
         return error.UnknownGenerator;
@@ -879,7 +896,20 @@ fn logQiNode(alloc: std.mem.Allocator, z: *const Qi) !*SNode {
 fn norm(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
     switch (n.kind) {
         .dec => return nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
-        .atom => return nodeAtom(alloc, n.atom),
+        .atom => {
+            const an = try nodeAtom(alloc, n.atom);
+            errdefer nodeFree(alloc, an);
+            if (n.garg) |a| {
+                const na = try norm(alloc, a);
+                if (na.kind == .atom and na.atom == 3) {
+                    // g(f, x) is g(f) — the implicit-x spelling canonicalizes to the bare atom.
+                    nodeFree(alloc, na);
+                    return an;
+                }
+                an.garg = na;
+            }
+            return an;
+        },
         .sq => {
             const inner = try norm(alloc, n.kid);
             var inner_live = true;
@@ -1580,8 +1610,20 @@ fn deriveNodeG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg) an
             const gi = n.atom - 5;
             if (greg) |g| {
                 if (gi < g.laws.items.len) {
-                    if (g.laws.items[gi]) |law| return nodeClone(alloc, law);
-                    return error.Lawless;
+                    const law = g.laws.items[gi] orelse return error.Lawless;
+                    if (n.garg) |u| {
+                        // Chain rule: D g(f,u) = law_f[x:=u] * u'.
+                        const sub = try substX(alloc, law, u);
+                        errdefer nodeFree(alloc, sub);
+                        const du = try deriveNodeG(alloc, u, greg);
+                        if (du.kind == .dec and du.dec.m.eqlZero()) {
+                            nodeFree(alloc, du);
+                            nodeFree(alloc, sub);
+                            return nodeDec(alloc, try decZero(alloc));
+                        }
+                        return nodePair(alloc, .mul, sub, du);
+                    }
+                    return nodeClone(alloc, law);
                 }
             }
             return error.Opaque;

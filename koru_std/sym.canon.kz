@@ -26,11 +26,22 @@ fn canonWriteG(alloc: std.mem.Allocator, n: *const SNode, greg: ?*const GReg, ou
             } else if (greg) |g| {
                 try out.appendSlice(alloc, "g(");
                 try out.appendSlice(alloc, g.names.items[n.atom - 5]);
+                if (n.garg) |a| {
+                    try out.append(alloc, ',');
+                    try canonWriteG(alloc, a, greg, out);
+                }
                 try out.append(alloc, ')');
             } else {
                 var buf: [16]u8 = undefined;
                 const ds = std.fmt.bufPrint(&buf, "g#{d}", .{n.atom - 5}) catch unreachable;
                 try out.appendSlice(alloc, ds);
+                if (n.garg) |a| {
+                    // sortKids compares these strings without a registry —
+                    // the arg must join the key or distinct applications collide.
+                    try out.append(alloc, '(');
+                    try canonWriteG(alloc, a, greg, out);
+                    try out.append(alloc, ')');
+                }
             }
         },
         .sq => {
