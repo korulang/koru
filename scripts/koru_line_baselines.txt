@@ -161,12 +161,12 @@ koru_std/interpreter.argref.kz	31
 koru_std/interpreter.args.kz	7
 koru_std/interpreter.arith.kz	41
 koru_std/interpreter.arms.kz	52
-koru_std/interpreter.armscope.kz	75
+koru_std/interpreter.armscope.kz	55
 koru_std/interpreter.callrec.kz	156
 koru_std/interpreter.checks.kz	28
 koru_std/interpreter.contracts-specs.kz	31
 koru_std/interpreter.contracts.kz	74
-koru_std/interpreter.custody-witness.kz	40
+koru_std/interpreter.custody-witness.kz	38
 koru_std/interpreter.custody.kz	56
 koru_std/interpreter.defflow.kz	74
 koru_std/interpreter.define.kz	127

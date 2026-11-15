@@ -1,0 +1,48 @@
+// Koru Standard Library: the `armrefuse` part of interpreter — the two
+// outcome-judge refusals for arm continuations on a verb: a named arm
+// word on a void tor, and an anonymous `|>` after an outcome-bearing
+// tor. Joined via `~part armrefuse` in interpreter.kz; merged into the
+// interpreter module at load.
+
+// A tor declaring no outcomes and no bare return is void — an empty
+// outcome list means exactly that: a `-> T` bare return earns a
+// synthetic "ok" outcome at registration, so only the truly void tor
+// reaches the arm-word check with nothing declared. ANY arm word on it
+// is a shape bug — it can never fire; refuse it like an undeclared arm
+// word, bound or not. A bare `|>` is not an arm word — it sequences on
+// the step completing and is the legal way to chain a void call.
+fn refuseVoidArm(outcomes: []const BranchSpec, event_name: []const u8, arm: *const ast.Continuation, allocator: std.mem.Allocator) ?ValidationError {
+    if (outcomes.len != 0) return null;
+    if (arm.branch.len == 0) return null;
+    const arm_text = if (arm.binding) |b| if (std.mem.eql(u8, b, "_")) arm.branch else
+        std.fmt.allocPrint(allocator, "{s} {s}", .{ arm.branch, b }) catch arm.branch
+    else
+        arm.branch;
+    return .{
+        .message = std.fmt.allocPrint(allocator, "'{s}' is void — it issues no outcome, so '| {s} |>' has nothing to arm; chain the next call with a bare |>", .{ event_name, arm_text }) catch "void tor armed",
+        .binding_name = arm.binding orelse arm.branch,
+    };
+}
+
+// An anonymous `|>` after an outcome-bearing tor is a meaning error in
+// compiled Koru, not an unhandled outcome. With two or more non-panic
+// outcomes the continuation is ambiguous — koruc refuses the spelling
+// itself (KORU022); wire verbs declare no `?!` panic branches and the
+// transport `error` is a declared outcome, so every listed outcome
+// counts. With exactly one outcome — the synthetic `ok` a `-> T`
+// bare return earns, or a single declared outcome — the produced
+// value drops (KORU092): koruc binds it `verb(): name |>`; the wire
+// has no `:` spelling, so the arm must name the outcome.
+fn refuseBarePipeOutcome(outcomes: []const BranchSpec, event_name: []const u8, allocator: std.mem.Allocator) ?ValidationError {
+    if (outcomes.len == 0) return null;
+    if (outcomes.len >= 2) {
+        return .{
+            .message = std.fmt.allocPrint(allocator, "anonymous '|>' after '{s}' is ambiguous — the event has {d} non-panic branches; name the one to continue on ('| <branch> |>')", .{ event_name, outcomes.len }) catch "ambiguous bare pipe",
+            .binding_name = "",
+        };
+    }
+    return .{
+        .message = std.fmt.allocPrint(allocator, "the value produced by '{s}' has nowhere to land — arm it '| {s} name |>'", .{ event_name, outcomes[0].name }) catch "bare pipe drops the value",
+        .binding_name = "",
+    };
+}

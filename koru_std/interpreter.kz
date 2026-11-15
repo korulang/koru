@@ -19,7 +19,6 @@
 //   | parse-error e |> respond(status: 400, body: e.message)
 //   | validation-error e |> respond(status: 400, body: e.message)
 //   | dispatch-error e |> respond(status: 500, body: e.tor)
-
 ~[runtime]
 ~import std/build
 
@@ -475,6 +474,7 @@ pub const InterpreterThreadState = struct {
 ~part arith
 ~part arms
 ~part armscope
+~part armrefuse
 ~part checks
 ~part contracts
 ~part contracts-specs

@@ -351,7 +351,8 @@ fn checkArmWords(
         mountedBranches(mounted, event_name);
     const o = outcomes orelse return null;
     for (cont.continuations) |*arm| {
-        if (arm.is_catchall or arm.kind != .terminal or arm.branch.len == 0) continue;
+        if (arm.is_catchall or arm.kind != .terminal) continue;
+        if (arm.branch.len == 0) { if (refuseBarePipeOutcome(o, event_name, allocator)) |e| return e; continue; }
         if (refuseVoidArm(o, event_name, arm, allocator)) |e| return e;
         var legal = false;
         for (o) |outcome| {
@@ -468,7 +469,6 @@ fn recordDispatchObligations(
                 custodySubject(&subject_buf, evaluated_inv.args), false) catch {};
         }
     }
-
     // Check if this tor discharges obligations - prefer new spec API
     if (own.discharges_spec_fn) |spec_fn| {
         const specs = spec_fn(event_name);

@@ -53,23 +53,3 @@ fn checkArmSubtrees(
     }
     return null;
 }
-
-// A tor declaring no outcomes and no bare return is void — an empty
-// outcome list means exactly that: a `-> T` bare return earns a
-// synthetic "ok" outcome at registration, so only the truly void tor
-// reaches the arm-word check with nothing declared. ANY arm word on it
-// is a shape bug — it can never fire; refuse it like an undeclared arm
-// word, bound or not. A bare `|>` is not an arm word — it sequences on
-// the step completing and is the legal way to chain a void call.
-fn refuseVoidArm(outcomes: []const BranchSpec, event_name: []const u8, arm: *const ast.Continuation, allocator: std.mem.Allocator) ?ValidationError {
-    if (outcomes.len != 0) return null;
-    if (arm.branch.len == 0) return null;
-    const arm_text = if (arm.binding) |b| if (std.mem.eql(u8, b, "_")) arm.branch else
-        std.fmt.allocPrint(allocator, "{s} {s}", .{ arm.branch, b }) catch arm.branch
-    else
-        arm.branch;
-    return .{
-        .message = std.fmt.allocPrint(allocator, "'{s}' is void — it issues no outcome, so '| {s} |>' has nothing to arm; chain the next call with a bare |>", .{ event_name, arm_text }) catch "void tor armed",
-        .binding_name = arm.binding orelse arm.branch,
-    };
-}

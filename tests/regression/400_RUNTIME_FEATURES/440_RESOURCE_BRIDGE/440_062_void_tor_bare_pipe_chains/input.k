@@ -19,9 +19,17 @@ proc fetch|zig {
     return .{ .found = "payload-9" };
 }
 
+tor probe {} -> string
+proc probe|zig {
+    const std = @import("std");
+    var buf: [64]u8 = undefined;
+    return std.fmt.bufPrint(&buf, "payload-9", .{}) catch unreachable;
+}
+
 std/runtime:register(scope: "binds") {
     echo(1)
     fetch(1)
+    probe(1)
 }
 
 // Turn 1: two-step void chain runs in order.
@@ -75,13 +83,13 @@ turn3 = std/bridge:run(br, source: "echo(text: \"Hello\") |>")
 | defined d |> std/io:print.ln("FAIL t3 defined {{ d:s }}")
 | partial p |> std/io:print.ln("FAIL t3 partial {{ p.report:s }}")
 
-// Turn 4: bare `|>` after an outcome-bearing tor — the empty-branch arm
-// never matches 'found', the outcome reports unhandled-branch.
+// Turn 4: bare `|>` after an outcome-bearing tor — koruc refuses the
+// spelling itself (anonymous `|>` is ambiguous across two outcomes).
 tor turn4 { br: *std/bridge:Bridge<session> }
 turn4 = std/bridge:run(br, source: "fetch(path: \"x\") |> echo(text: \"y\")")
 | result r |> std/io:print.ln("t4 result")
 | error runerr |> std/bridge:error-decode(e: runerr)
-    | validation-error v |> std/io:print.ln("FAIL t4 invalid {{ v:s }}")
+    | validation-error v |> std/io:print.ln("t4 invalid {{ v:s }}")
     | event-denied ev |> std/io:print.ln("FAIL t4 denied {{ ev:s }}")
     | parse-error p |> std/io:print.ln("FAIL t4 parse {{ p.message:s }}")
     | shape-error sh |> std/io:print.ln("FAIL t4 shape {{ sh.message:s }}")
@@ -89,9 +97,28 @@ turn4 = std/bridge:run(br, source: "fetch(path: \"x\") |> echo(text: \"y\")")
     | exhausted _ |> std/io:print.ln("FAIL t4 exhausted")
     | scope-not-found s2 |> std/io:print.ln("FAIL t4 noscope {{ s2:s }}")
 | residue _ |> std/io:print.ln("FAIL: residue outcome")
-| unhandled-branch ub |> std/io:print.ln("t4 unhandled {{ ub.branch:s }}")
+| unhandled-branch ub |> std/io:print.ln("FAIL t4 unhandled {{ ub.branch:s }}")
 | defined d |> std/io:print.ln("FAIL t4 defined {{ d:s }}")
 | partial p |> std/io:print.ln("FAIL t4 partial {{ p.report:s }}")
+
+// Turn 5 (was): indented continuation after a void step — kept below.
+// Turn 6: bare `|>` after a `-> T` tor — the produced value has nowhere
+// to land (koruc KORU092); the wire arm must name the outcome.
+tor turn6 { br: *std/bridge:Bridge<session> }
+turn6 = std/bridge:run(br, source: "probe() |> echo(text: \"y\")")
+| result r |> std/io:print.ln("FAIL t6 result")
+| error runerr |> std/bridge:error-decode(e: runerr)
+    | validation-error v |> std/io:print.ln("t6 invalid {{ v:s }}")
+    | event-denied ev |> std/io:print.ln("FAIL t6 denied {{ ev:s }}")
+    | parse-error p |> std/io:print.ln("FAIL t6 parse {{ p.message:s }}")
+    | shape-error sh |> std/io:print.ln("FAIL t6 shape {{ sh.message:s }}")
+    | dispatch-error e |> std/io:print.ln("FAIL t6 dispatch {{ e.message:s }}")
+    | exhausted _ |> std/io:print.ln("FAIL t6 exhausted")
+    | scope-not-found s2 |> std/io:print.ln("FAIL t6 noscope {{ s2:s }}")
+| residue _ |> std/io:print.ln("FAIL: residue outcome")
+| unhandled-branch ub |> std/io:print.ln("FAIL t6 unhandled {{ ub.branch:s }}")
+| defined d |> std/io:print.ln("FAIL t6 defined {{ d:s }}")
+| partial p |> std/io:print.ln("FAIL t6 partial {{ p.report:s }}")
 
 // Turn 5: an indented continuation after a void step.
 tor turn5 { br: *std/bridge:Bridge<session> }
@@ -116,3 +143,4 @@ turn5 = std/bridge:run(br, source: "echo(text: \"a\")\n    |> echo(text: \"b\")"
 |> turn3(br)
 |> turn4(br)
 |> turn5(br)
+|> turn6(br)
