@@ -93,7 +93,7 @@ turn3 = std/bridge:run(br, source: "probe(path: \"hit\")\n| found t when t == \"
 // Turn 4 (control): the spelling the model meant — the second arm
 // indented under the step it follows attaches to `echo`, not `probe`.
 tor turn4 { br: *std/bridge:Bridge<session> }
-turn4 = std/bridge:run(br, source: "probe(path: \"hit\")\n| found h |> echo(text: \"first\")\n    | ok |> echo(text: \"second\")")
+turn4 = std/bridge:run(br, source: "probe(path: \"hit\")\n| found h |> echo(text: \"first\")\n    |> echo(text: \"second\")")
 | result r |> std/io:print.ln("t4 result")
 | error runerr |> std/bridge:error-decode(e: runerr)
     | validation-error v |> std/io:print.ln("FAIL t4 invalid {{ v:s }}")

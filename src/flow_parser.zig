@@ -116,7 +116,7 @@ fn parseFlowInternal(allocator: std.mem.Allocator, source: []const u8) ParseErro
     // (`pick(text) | ok v |> ...`), a shape the full parser accepts and the
     // wire define path stores. Split trailing top-level `|` arms off before
     // parsing the invocation; anything inside parens/strings is not an arm.
-    const split_idx = findBranchPipe(invocation_text.text);
+    const split_idx = findContinuationBoundaryFrom(invocation_text.text, 0, false);
     const invocation_part = if (split_idx) |idx| lexer.trim(invocation_text.text[0..idx]) else invocation_text.text;
     const inline_part = if (split_idx) |idx| invocation_text.text[idx..] else null;
 
@@ -137,7 +137,8 @@ fn parseFlowInternal(allocator: std.mem.Allocator, source: []const u8) ParseErro
         while (rest.len > 0) {
             // rest opens with its branch pipe by construction; the next
             // top-level branch pipe starts the following sibling segment.
-            const next = findBranchPipeFrom(rest, 1);
+            const is_arm_head = rest.len > 1 and rest[0] == '|' and rest[1] != '>';
+            const next = findContinuationBoundaryFrom(rest, 1, is_arm_head);
             const seg = if (next) |n| rest[0..n] else rest;
             const cont = try parseSingleContinuation(allocator, seg, 0, lines[invocation_line_idx].line_num);
             try inline_conts.append(allocator, cont);
@@ -156,7 +157,7 @@ fn parseFlowInternal(allocator: std.mem.Allocator, source: []const u8) ParseErro
     var all_conts = try std.ArrayList(ast.Continuation).initCapacity(allocator, inline_conts.items.len + tail_conts.len);
     try all_conts.appendSlice(allocator, inline_conts.items);
     try all_conts.appendSlice(allocator, tail_conts);
-    const continuations = try all_conts.toOwnedSlice(allocator);
+    const continuations = try stitchPipelineChains(allocator, all_conts.items);
 
     return .{ .flow = .{
         .body = ast.rootSite(invocation, continuations, .{ .file = "generated", .line = 0, .column = 0 }),
@@ -477,6 +478,36 @@ fn parseContinuations(
     return continuations.toOwnedSlice(allocator);
 }
 
+/// A bare `|>` step — unnamed branch, no binding, no guard.
+fn isBarePipeStep(cont: *const ast.Continuation) bool {
+    return cont.branch.len == 0 and cont.condition == null and cont.binding == null and cont.kind == .terminal;
+}
+
+/// The compiled parser stitches consecutive `|>` steps into one chain —
+/// each bare pipe continues the step it follows rather than sitting as a
+/// second unnamed sibling (which the reachability judge would refuse as
+/// dead text: first-match means only the first can ever fire). Same rule
+/// here, at every level of the tree: an unnamed `|>` immediately after an
+/// unnamed `|>` sibling nests under it. Anything between them — an arm, a
+/// dedent — breaks the chain and leaves each step a sibling on its own.
+fn stitchPipelineChains(allocator: std.mem.Allocator, conts: []const ast.Continuation) ParseError![]ast.Continuation {
+    var out = try std.ArrayList(ast.Continuation).initCapacity(allocator, conts.len);
+    for (conts) |*src_cont| {
+        var cont = src_cont.*;
+        cont.continuations = try stitchPipelineChains(allocator, cont.continuations);
+        if (out.items.len > 0 and isBarePipeStep(&cont) and isBarePipeStep(&out.items[out.items.len - 1])) {
+            const prev = &out.items[out.items.len - 1];
+            var grown = try std.ArrayList(ast.Continuation).initCapacity(allocator, prev.continuations.len + 1);
+            try grown.appendSlice(allocator, prev.continuations);
+            try grown.append(allocator, cont);
+            prev.continuations = try grown.toOwnedSlice(allocator);
+        } else {
+            try out.append(allocator, cont);
+        }
+    }
+    return out.toOwnedSlice(allocator);
+}
+
 fn collectMultiLineBraces(
     allocator: std.mem.Allocator,
     lines: []const LineInfo,
@@ -548,7 +579,7 @@ fn parseSingleContinuation(
     if (std.mem.startsWith(u8, content, "|>")) {
         // Pipeline continuation: |> event()
         content = lexer.trim(content[2..]);
-        const node = try parseNode(allocator, content);
+        const node = if (content.len > 0) try parseNode(allocator, content) else null;
         return .{
             .branch = try allocator.dupe(u8, ""),
             .binding = null,
@@ -670,6 +701,74 @@ fn findPipeGt(text: []const u8) ?usize {
             '|' => {
                 if (brace_depth == 0 and paren_depth == 0 and bracket_depth == 0 and i + 1 < text.len and text[i + 1] == '>') {
                     return i;
+                }
+            },
+            else => {},
+        }
+        i += 1;
+    }
+    return null;
+}
+
+/// Find the next continuation boundary: a top-level `|` outside strings,
+/// backticks, and nesting. A `|` starts an arm-head segment, a `|>` a bare
+/// pipeline segment — both are siblings in order. When `skip_arm_sep`, the
+/// segment being scanned is an arm head (`| word … |>`): its first `|>` is
+/// that arm's own branch/node separator, not a boundary, so it is passed
+/// over before the scan reports. Same tracking discipline as findPipeGt.
+fn findContinuationBoundaryFrom(text: []const u8, start: usize, skip_arm_sep: bool) ?usize {
+    var brace_depth: usize = 0;
+    var paren_depth: usize = 0;
+    var bracket_depth: usize = 0;
+    var in_string = false;
+    var in_backtick = false;
+    var string_char: ?u8 = null;
+    var skipping = skip_arm_sep;
+
+    var i: usize = start;
+    while (i < text.len) {
+        const c = text[i];
+
+        if (!in_string and c == '`') {
+            in_backtick = !in_backtick;
+            i += 1;
+            continue;
+        }
+        if (in_backtick) {
+            i += 1;
+            continue;
+        }
+
+        if (!in_string and (c == '"' or c == '\'')) {
+            in_string = true;
+            string_char = c;
+        } else if (in_string) {
+            if (c == '\\' and i + 1 < text.len) {
+                i += 2;
+                continue;
+            }
+            if (c == string_char) {
+                in_string = false;
+                string_char = null;
+            }
+            i += 1;
+            continue;
+        }
+
+        switch (c) {
+            '{' => brace_depth += 1,
+            '}' => brace_depth -|= 1,
+            '(' => paren_depth += 1,
+            ')' => paren_depth -|= 1,
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth -|= 1,
+            '|' => {
+                if (brace_depth == 0 and paren_depth == 0 and bracket_depth == 0) {
+                    if (skipping and i + 1 < text.len and text[i + 1] == '>') {
+                        skipping = false;
+                    } else {
+                        return i;
+                    }
                 }
             },
             else => {},

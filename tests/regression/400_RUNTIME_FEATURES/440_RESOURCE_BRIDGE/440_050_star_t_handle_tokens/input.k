@@ -57,8 +57,8 @@ step-quiet = std/bridge:run(br, source)
 
 [with]std/bridge:create(id: "tok", scope: "res"): br
 |> step(br, source: "mint() | ok h |>", tag: "mint")
-|> step(br, source: "grab(r: r1) | ok _ |>", tag: "bound-grab")
-|> step(br, source: "grab(r: \"h:Res:1\") | ok _ |>", tag: "seq-guess")
-|> step(br, source: "grab(r: \"h:Res:ffffff\") | ok _ |>", tag: "hex-guess")
-|> step(br, source: "release(r: r1) | ok _ |>", tag: "release")
-|> step-quiet(br, source: "grab(r: r1) | ok _ |>", tag: "spent-grab")
+|> step(br, source: "grab(r: r1)", tag: "bound-grab")
+|> step(br, source: "grab(r: \"h:Res:1\")", tag: "seq-guess")
+|> step(br, source: "grab(r: \"h:Res:ffffff\")", tag: "hex-guess")
+|> step(br, source: "release(r: r1)", tag: "release")
+|> step-quiet(br, source: "grab(r: r1)", tag: "spent-grab")

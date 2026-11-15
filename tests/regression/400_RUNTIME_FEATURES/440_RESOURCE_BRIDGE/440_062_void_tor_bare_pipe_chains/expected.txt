@@ -1,0 +1,13 @@
+echo: a
+echo: b
+t1 result
+echo: a
+echo: b
+echo: c
+t2 result
+echo: Hello
+t3 result
+t4 unhandled found
+echo: a
+echo: b
+t5 result

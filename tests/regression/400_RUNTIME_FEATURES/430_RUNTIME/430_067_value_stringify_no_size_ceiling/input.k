@@ -16,7 +16,7 @@ std/runtime:register(scope: "test") {
 }
 
 std/runtime:get-scope(name: "test")
-| scope s |> std/interpreter:run(source: "big() |> result", s.dispatcher)
+| scope s |> std/interpreter:run(source: "big()", s.dispatcher)
     | result r |> std/interpreter:value.stringify(r.value): j
         |> std/io:print.ln("{{ j:s }}")
     | unhandled-branch _ |> std/io:print.ln("FAIL: unhandled_branch")

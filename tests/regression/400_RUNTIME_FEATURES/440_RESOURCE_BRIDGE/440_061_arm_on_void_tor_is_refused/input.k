@@ -75,7 +75,27 @@ turn3 = std/bridge:run(br, source: "probe() | ok h |> echo(text: \"{{ h }}\")")
 | defined d |> std/io:print.ln("FAIL t3 defined {{ d:s }}")
 | partial p |> std/io:print.ln("FAIL t3 partial {{ p.report:s }}")
 
+
+// Turn 4: an unbound `| ok |>` on a void tor refuses the same way —
+// an arm word has nothing to arm on a tor that issues no outcome.
+tor turn4 { br: *std/bridge:Bridge<session> }
+turn4 = std/bridge:run(br, source: "echo(text: \"a\") | ok |> echo(text: \"b\")")
+| result r |> std/io:print.ln("FAIL t4 result")
+| error runerr |> std/bridge:error-decode(e: runerr)
+    | validation-error v |> std/io:print.ln("t4 refused {{ v:s }}")
+    | event-denied ev |> std/io:print.ln("FAIL t4 denied {{ ev:s }}")
+    | parse-error p |> std/io:print.ln("FAIL t4 parse {{ p.message:s }}")
+    | shape-error sh |> std/io:print.ln("FAIL t4 shape {{ sh.message:s }}")
+    | dispatch-error e |> std/io:print.ln("FAIL t4 dispatch {{ e.message:s }}")
+    | exhausted _ |> std/io:print.ln("FAIL t4 exhausted")
+    | scope-not-found s2 |> std/io:print.ln("FAIL t4 noscope {{ s2:s }}")
+| residue _ |> std/io:print.ln("FAIL: residue outcome")
+| unhandled-branch ub |> std/io:print.ln("FAIL t4 unhandled {{ ub.branch:s }}")
+| defined d |> std/io:print.ln("FAIL t4 defined {{ d:s }}")
+| partial p |> std/io:print.ln("FAIL t4 partial {{ p.report:s }}")
+
 [with]std/bridge:create(id: "b1", scope: "binds"): br
 |> turn1(br)
 |> turn2(br)
 |> turn3(br)
+|> turn4(br)

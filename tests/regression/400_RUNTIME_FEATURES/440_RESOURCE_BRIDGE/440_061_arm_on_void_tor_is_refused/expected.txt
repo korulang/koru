@@ -1,4 +1,5 @@
-t1 refused 'echo' is void — it issues no outcome, so '| ok x |>' has nothing to arm; drop the arm
-t2 refused 'echo' is void — it issues no outcome, so '| done x |>' has nothing to arm; drop the arm
+t1 refused 'echo' is void — it issues no outcome, so '| ok x |>' has nothing to arm; chain the next call with a bare |>
+t2 refused 'echo' is void — it issues no outcome, so '| done x |>' has nothing to arm; chain the next call with a bare |>
 echo: payload-9
 t3 result
+t4 refused 'echo' is void — it issues no outcome, so '| ok |>' has nothing to arm; chain the next call with a bare |>
