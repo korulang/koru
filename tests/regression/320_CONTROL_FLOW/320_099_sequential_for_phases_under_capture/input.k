@@ -1,14 +1,12 @@
-// PIN (failing): two sequential for-loops chained by `| done |>` under a single
-// capture `! as` mis-group — BOTH loops' `done` branches get attributed to the
-// capture flow root, tripping KORU051 ("branch 'done' has 2 continuations").
-// Surfaced by AoC day18 (Conway), whose phases (parse / step-compute / step-copy
-// / count) are sequential loops over a shared capture-array.
+// Sequential for-phases under one capture: both loops fold into the same
+// shared mutable array, and the capture's `| captured` arm runs after both.
 //
-// The green multi-phase days (14/17/24) all chain phases via capture-fold
-// `| captured` terminals, never via bare `for … | done |> for …` under a
-// capture — so this is either a parser done-grouping bug or an unsupported
-// idiom. Either way it blocks the natural shared-mutable-array-across-phases
-// shape. Expected output: 20 (two passes summing 1+2+3+4).
+// The second loop is the node of the first loop's `| done` arm, so its
+// handlers must be MORE indented than that arm (4). A `| done` at column 2
+// is a SIBLING of the first loop's done — it attaches to the capture root,
+// which is why the old pin tripped KORU028. The second loop's own done is
+// optional and discarded; omit it rather than writing `| done |> _` (KORU054
+// refuses a no-op on an optional branch).
 import std/io
 
 capture { sum: 0[i64], g: [4]i64{ 1, 2, 3, 4 } }
@@ -16,5 +14,4 @@ capture { sum: 0[i64], g: [4]i64{ 1, 2, 3, 4 } }
     ! each i |> captured { sum: acc.sum + acc.g[i] }
   | done |> for(0..4)
     ! each j |> captured { sum: acc.sum + acc.g[j] }
-  | done |> _
 | captured result |> std/io:print.ln("{{ result.sum:d }}")
