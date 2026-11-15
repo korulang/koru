@@ -1,0 +1,10 @@
+name: grammar-invariant
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: register-on-miss artifact — minted by the 100_089 file-source
+      commit's Signal: line. The invariant it names lives in
+      frag-a-file-source-closure-is-step-level and the commit message.
+      Tombstoned 2026-11-15 — refine into a real signal only if the
+      class recurs.
