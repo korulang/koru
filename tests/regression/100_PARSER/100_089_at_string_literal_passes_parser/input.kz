@@ -1,6 +1,9 @@
-// PIN (RED — aspirational): `@"path"` is not Koru syntax. It passes the
-// frontend parser today and only dies downstream in backend Zig — the hole
-// that let `std/guide:add(key) @"guides/x.md"}` ride into bench/airline_guides.k
-// as residual include-ref prose. Desired: a frontend refusal naming the `@`.
-// Verified 2026-11-15: this exact line frontend-compiles on main.
-std/io:print.ln(@"guides/hold.payment-failed.md")
+// PIN: `@"path"` inside an argument list is not Koru syntax. The
+// file-source closure only lives at step level (`name @"path"`).
+// Before the fix the file-source marker scan mistook the `@"` inside the
+// parens for a closure, ripped `print.ln(` away from its `)`, and died as
+// "unbalanced parentheses"; the bare (host-line) form rode into backend
+// Zig as an escaped-identifier token — the hole that let
+// `std/guide:add(key) @"guides/x.md"}` ride into bench/airline_guides.k as
+// residual include-ref prose. Desired: a frontend refusal naming the `@`.
+~std/io:print.ln(@"guides/hold.payment-failed.md")

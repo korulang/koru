@@ -1223,24 +1223,42 @@ pub const Parser = struct {
     /// `print.ln("…<none>")` ends with the `>` of `<none>` right before the
     /// string's own closing quote, and `@"` can appear inside template text.
     /// Escaped quotes (`\"`) inside a string do not toggle the string state.
+    ///
+    /// Depth-aware: a marker inside `(...)` or `{...}` is not a closure —
+    /// `f(@"x")` used to be ripped apart here (`f(` parsed as the invocation,
+    /// `x` as the file path) and die as "unbalanced parentheses" instead of
+    /// reaching the argument parser's refusal that names the `@` (100_089).
+    /// `name(args) @"path"` still fires — the parens close before the marker.
     fn findFileSourceMarker(trimmed: []const u8) ?FileSourceMarker {
         var result: ?FileSourceMarker = null;
         var in_string = false;
+        var paren_depth: usize = 0;
+        var brace_depth: usize = 0;
         var i: usize = 0;
         while (i + 1 < trimmed.len) : (i += 1) {
-            if (trimmed[i] == '\\') {
+            const c = trimmed[i];
+            if (c == '\\') {
                 i += 1;
                 continue;
             }
-            if (trimmed[i] == '"') {
+            if (c == '"') {
                 in_string = !in_string;
                 continue;
             }
             if (in_string) continue;
-            if (trimmed[i] == '>' and trimmed[i + 1] == '"') {
-                result = .{ .marker_idx = i, .typed = true };
-            } else if (trimmed[i] == '@' and trimmed[i + 1] == '"') {
-                result = .{ .marker_idx = i, .typed = false };
+            switch (c) {
+                '(' => paren_depth += 1,
+                ')' => paren_depth -|= 1,
+                '{' => brace_depth += 1,
+                '}' => brace_depth -|= 1,
+                else => {},
+            }
+            if (paren_depth == 0 and brace_depth == 0) {
+                if (c == '>' and trimmed[i + 1] == '"') {
+                    result = .{ .marker_idx = i, .typed = true };
+                } else if (c == '@' and trimmed[i + 1] == '"') {
+                    result = .{ .marker_idx = i, .typed = false };
+                }
             }
         }
         return result;
@@ -11676,6 +11694,15 @@ pub const Parser = struct {
                     self.current,
                     1,
                     "call parens hug their arguments — write 'f(x)', not 'f( x' or 'f(x )'",
+                    .{},
+                );
+            },
+            error.FileSourceInArgs => {
+                return self.fail(
+                    .PARSE003,
+                    self.current,
+                    1,
+                    "'@\"path\"' is a file-source closure — it rides at step level (`name @\"path\"`), never inside an argument list",
                     .{},
                 );
             },

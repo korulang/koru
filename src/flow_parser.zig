@@ -37,6 +37,7 @@ pub fn parseFlow(allocator: std.mem.Allocator, source: []const u8) FlowParseResu
                 ParseError.DestructureNotImplemented => "destructure `| <branch> { … }` is not implemented in an interpreted flow — bind the payload by name (`| <branch> name |>`)",
                 ParseError.ResidualArmNotSpellable => "`|*` residual arm is not spellable on the interpreted surface — name each branch explicitly; unhandled optionals surface as `unhandled-branch`",
                 ParseError.CatchAllArmRemoved => "`|?` catch-all is not a Koru spelling — an arm names a declared branch; an unhandled `?`-marked outcome surfaces as `unhandled-branch`",
+                ParseError.FileSourceInArgs => "'@\"path\"' is a file-source closure — it rides at step level (`name @\"path\"`), never inside an argument list",
                 else => @errorName(err),
             },
             .line = 0,
@@ -53,6 +54,7 @@ const ParseError = error{
     EmptyInput,
     InvalidInvocation,
     LooseCallParens,
+    FileSourceInArgs,
     MalformedArgs,
     MalformedContinuation,
     MalformedBranchConstructor,
@@ -304,6 +306,7 @@ fn parseInvocationLine(allocator: std.mem.Allocator, line: []const u8, line_num:
         const path = lexer.parseQualifiedPath(allocator, path_str, ast) catch return ParseError.InvalidInvocation;
         const arg_pairs = lexer.parseArgs(allocator, args_str) catch |err| switch (err) {
             error.LooseCallParens => return ParseError.LooseCallParens,
+            error.FileSourceInArgs => return ParseError.FileSourceInArgs,
             else => return ParseError.MalformedArgs,
         };
 
@@ -956,7 +959,10 @@ fn parseBranchConstructor(allocator: std.mem.Allocator, text: []const u8) ParseE
 
 fn parseFieldPairs(allocator: std.mem.Allocator, inner: []const u8) ParseError![]const ast.Field {
     // Use lexer.parseArgs which handles comma-separated name: value pairs
-    const pairs = lexer.parseArgs(allocator, inner) catch return ParseError.MalformedBranchConstructor;
+    const pairs = lexer.parseArgs(allocator, inner) catch |err| switch (err) {
+        error.FileSourceInArgs => return ParseError.FileSourceInArgs,
+        else => return ParseError.MalformedBranchConstructor,
+    };
 
     var fields = try std.ArrayList(ast.Field).initCapacity(allocator, pairs.len);
     for (pairs) |pair| {

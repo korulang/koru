@@ -631,6 +631,47 @@ fn hasMatchingAngleClose(content: []const u8, open_idx: usize) bool {
     return false;
 }
 
+/// True when `text` carries a bare `@"` file-source marker outside string
+/// literals, `{…}` blocks, and `//` comments. The closure is only legal at
+/// step level (`name @"path"`), where the parser reads the file and fills
+/// the parameter's Source implicitly — inside an argument list the raw text
+/// used to ride through as a value and surface in backend Zig as an
+/// escaped-identifier token (100_089). `"a@"`, `{ …@"…" … }` host blocks,
+/// and comments stay legal.
+fn hasBareAtString(text: []const u8) bool {
+    var i: usize = 0;
+    var in_string = false;
+    var string_char: u8 = 0;
+    while (i < text.len) : (i += 1) {
+        const c = text[i];
+        if (in_string) {
+            if (c == '\\') {
+                i += 1;
+            } else if (c == string_char) {
+                in_string = false;
+            }
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            in_string = true;
+            string_char = c;
+            continue;
+        }
+        if (c == '/' and i + 1 < text.len and text[i + 1] == '/') {
+            while (i < text.len and text[i] != '\n') : (i += 1) {}
+            continue;
+        }
+        if (c == '{') {
+            if (findMatchingBrace(text, i)) |close| {
+                i = close;
+                continue;
+            }
+        }
+        if (c == '@' and i + 1 < text.len and text[i + 1] == '"') return true;
+    }
+    return false;
+}
+
 pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair {
     var args = try std.ArrayList(ArgPair).initCapacity(allocator, 4);
     errdefer {
@@ -657,6 +698,8 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
     {
         return error.LooseCallParens;
     }
+
+    if (hasBareAtString(content)) return error.FileSourceInArgs;
 
     // Parse arguments with proper string handling
     var i: usize = 0;
