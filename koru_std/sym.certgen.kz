@@ -501,8 +501,8 @@ fn cserWrite(alloc: std.mem.Allocator, total: usize, coeffs: []const Rat, ode_te
 // UNRESOLVED (named bound/evidence). Rational integrands run the real
 // Hermite + Rothstein–Trager lane below: logs and arctans ARE constructed
 // over Q and degree-2 residue fields (no i — quadratic disc<0 emits a
-// real atan); cofactors of degree 3/4 emit root-sum rsum nodes via the
-// sym.rsum lane; degree >=5 names its bound.
+// real atan); cofactors of degree >= 3 emit root-sum rsum nodes via the
+// sym.rsum lane (bounded PRS+Bareiss inversion — no degree bound).
 // Non-rational integrands still fall to the holonomic lane.
 // ============================================================================
 
@@ -753,10 +753,10 @@ fn fracText(alloc: std.mem.Allocator, out: *std.ArrayList(u8), f: *const Frac) !
 //   * rational root c        -> c*log(gcd(C - cD', D))
 //   * irreducible t^2+ut+v, disc>0 -> conjugate real pair (rho±w)*log(A±wB)
 //   * irreducible t^2+ut+v, disc<0 -> rho*log(A^2+w^2 B^2) + 2w*atan(A/(wB))
-//   * residue cofactor deg 3/4 -> rsum node via the K[x] gcd over
-//     Q[t]/(f) (zero divisors split the modulus; see sym.rsum.kz)
-//   * residue cofactor deg>=5   -> refused by name (budget bound: the
-//     extended gcd's rational arithmetic explodes before it returns)
+//   * residue cofactor deg >= 3 -> rsum node via the K[x] gcd over
+//     Q[t]/(f) (zero divisors split the modulus; see sym.rsum.kz) —
+//     algInvPoly runs primitive-PRS gcd + Bareiss fraction-free
+//     inversion, so no degree bound applies
 // Every constructed term is derivative-checked: the Frac-sum of the term
 // derivatives must equal C/D exactly, before anything is emitted.
 // ============================================================================

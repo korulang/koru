@@ -63,8 +63,22 @@ std/sym:lit((inv((x*x-2)*(x*x-3))))
     | bad |> std/io:print.ln("bad")
 | bad |> std/io:print.ln("bad-lit")
 
-// 1/(x^2-2) + 1/(x^4+1): quadratic log lane and rsum in one integrand
+// 1/(x^2-2) + 1/(x^4+1): quadratic log lane and rsum in one integrand —
+// a deg-6 residue cofactor; bounded PRS+Bareiss inversion constructs
 std/sym:lit((inv((x*x-2))+inv((x*x*x*x+1))))
+| exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 6)
+    | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
+    | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)
+    | unresolved m |> std/io:print.ln("un:{{ m:s }}") |> std/io:free(content: m)
+    | not-holonomic m |> std/io:print.ln("nh:{{ m:s }}") |> std/io:free(content: m)
+    | non-rational |> std/io:print.ln("nr")
+    | non-analytic |> std/io:print.ln("na")
+    | bad |> std/io:print.ln("bad")
+| bad |> std/io:print.ln("bad-lit")
+
+// 1/(x^5+x+1): irreducible quintic residue factor — past the old deg-4
+// wall, one rsum over the deg-5 modulus constructs checked-exact
+std/sym:lit((inv((x*x*x*x*x+x+1))))
 | exact a |> std/sym:decide-integral(a, max-order: 3, max-deg: 6)
     | elementary m |> std/io:print.ln("{{ m:s }}") |> std/io:free(content: m)
     | holonomic-special m |> std/io:print.ln("hs:{{ m:s }}") |> std/io:free(content: m)

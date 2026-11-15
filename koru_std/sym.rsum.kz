@@ -2,7 +2,7 @@
 // std/sym part: rsum — the algebraic-coefficient Rothstein-Trager
 // residue lane: the rsum node payload spec, its parser/validator, and
 // the K[x]-over-Q[t]/(f) gcd/norm/trace machinery that constructs
-// root-sum antiderivatives for residue cofactors of degree 3 and 4.
+// root-sum antiderivatives for residue cofactors of degree >= 3.
 // Joined via `~part rsum` in sym.kz; merged into the module at load.
 // ============================================================================
 
@@ -619,13 +619,13 @@ fn rsumEmit(alloc: std.mem.Allocator, mod: []const Rat, s: KP, text: *std.ArrayL
     try text.appendSlice(alloc, "))");
 }
 
-// Cofactor dispatch: deg-2 -> quadLane; deg in {3,4} -> S over K, then
-// one rsum emission; deg >= 5 -> named refusal. A zero divisor in the
-// K[x] gcd splits the modulus (Davenport-Trager) and recurses per
-// factor. The deg-5 wall is a budget bound, not a math gap: the K[x]
-// Euclid inverts through algInvPoly's naive rational extended gcd,
-// whose intermediate fractions explode at deg >= 5 — a subresultant
-// PRS lifts the wall.
+// Cofactor dispatch: deg-2 -> quadLane; deg >= 3 -> S over K, then
+// one rsum emission. A zero divisor in the K[x] gcd splits the modulus
+// (Davenport-Trager) and recurses per factor. The old deg-5 wall was a
+// budget bound, not a math gap: algInvPoly's naive rational extended
+// gcd exploded in fraction size — replaced by primitive-PRS gcd over
+// Z[x] plus Bareiss fraction-free inversion, whose intermediates are
+// polynomially bounded, so the wall is gone rather than raised.
 fn cofactorLane(alloc: std.mem.Allocator, mod_in: []const Rat, C: []const Rat, D: []const Rat, dD: []const Rat, text: *std.ArrayList(u8), check: *Frac, depth: usize) !?[]u8 {
     if (depth > 32) @panic("std/sym: cofactor split did not terminate");
     const mod = try polyMonic(alloc, mod_in);
@@ -639,9 +639,6 @@ fn cofactorLane(alloc: std.mem.Allocator, mod_in: []const Rat, C: []const Rat, D
         defer ratDeinit(&u);
         try quadLane(alloc, &u, &v, C, D, dD, text, check);
         return null;
-    }
-    if (fd >= 5) {
-        return try std.fmt.allocPrint(alloc, "residue-cofactor-deg{d}-beyond-extgcd-bound(not-constructed)", .{fd});
     }
     const built = try rsumBuild(alloc, mod, C, D, dD);
     switch (built) {

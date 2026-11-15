@@ -97,84 +97,326 @@ fn algEmit(alloc: std.mem.Allocator, m_txt: []const u8, v: []const Rat) ![]u8 {
     return std.fmt.allocPrint(alloc, "alg:v1;{s};{s}", .{ m_txt, v_txt });
 }
 
-// Extended Euclid on Q[x]: returns {g, u, v} with a*u + b*v = g and
-// g monic (or zero when both inputs are zero).
-const ExtG = struct { g: []Rat, u: []Rat, v: []Rat };
+// ---------- integer poly helpers (bounded inversion machinery) ----------
+//
+// The naive rational extended gcd over Q[x] explodes in fraction size at
+// degree >= 5 — each Euclid step compounds numerators faster than the
+// problem grows. The same answers factor through two bounded tools:
+// the gcd runs as a primitive PRS over Z[x] (pseudo-remainder, content
+// removed each step — coefficient growth is polynomial, not
+// exponential), and the inverse solves v*u = 1 mod m as an n-by-n
+// linear system in u's coefficients by fraction-free Bareiss
+// elimination — every intermediate stays integral, bounded by the
+// determinant.
 
-fn polyExtGcd(alloc: std.mem.Allocator, a_in: []const Rat, b_in: []const Rat) !ExtG {
-    var r0 = try polyClone(alloc, a_in);
-    errdefer polyFree(alloc, r0);
-    var r1 = try polyClone(alloc, b_in);
-    errdefer polyFree(alloc, r1);
-    var s0 = try polyOne(alloc);
-    errdefer polyFree(alloc, s0);
-    var s1 = try polyEmpty(alloc);
-    errdefer polyFree(alloc, s1);
-    var t0 = try polyEmpty(alloc);
-    errdefer polyFree(alloc, t0);
-    var t1 = try polyOne(alloc);
-    errdefer polyFree(alloc, t1);
-    while (!polyIsZero(r1)) {
-        const dm = try polyDivMod(alloc, r0, r1);
-        // s2 = s0 - q*s1, t2 = t0 - q*t1
-        const qs = try polyMul(alloc, dm.q, s1);
-        defer polyFree(alloc, qs);
-        const s2 = try polySub(alloc, s0, qs);
-        const qt = try polyMul(alloc, dm.q, t1);
-        defer polyFree(alloc, qt);
-        const t2 = try polySub(alloc, t0, qt);
-        polyFree(alloc, dm.q);
-        polyFree(alloc, r0);
-        r0 = r1;
-        r1 = dm.r;
-        polyFree(alloc, s0);
-        s0 = s1;
-        s1 = s2;
-        polyFree(alloc, t0);
-        t0 = t1;
-        t1 = t2;
+fn biPolyIsZero(p: []const BI) bool {
+    for (p) |*c| {
+        if (!c.eqlZero()) return false;
     }
-    polyFree(alloc, r1);
-    polyFree(alloc, s1);
-    polyFree(alloc, t1);
-    if (!polyIsZero(r0)) {
-        const d = polyDegIdx(r0);
-        var li = try ratInv(alloc, &r0[d]);
-        defer ratDeinit(&li);
-        const g = try polyScal(alloc, r0, &li);
-        const u = try polyScal(alloc, s0, &li);
-        const v = try polyScal(alloc, t0, &li);
-        polyFree(alloc, r0);
-        polyFree(alloc, s0);
-        polyFree(alloc, t0);
-        return .{ .g = g, .u = u, .v = v };
-    }
-    return .{ .g = r0, .u = s0, .v = t0 };
+    return true;
 }
 
-// v^{-1} mod m via the Bezout coefficient: v*u + m*w = g; a unit iff
-// g is a nonzero constant.  Returns null for a zero divisor (caller
-// emits the named arm); `g_out` receives the common factor either way.
-fn algInvPoly(alloc: std.mem.Allocator, v: []const Rat, m: []const Rat, g_out: *[]Rat) !?[]Rat {
-    const eg = try polyExtGcd(alloc, v, m);
+fn biPolyDegIdx(p: []const BI) usize {
+    var i = p.len;
+    while (i > 0) {
+        i -= 1;
+        if (!p[i].eqlZero()) return i;
+    }
+    return 0;
+}
+
+fn biPolyFreeB(alloc: std.mem.Allocator, p: []BI) void {
+    for (p) |*c| c.deinit();
+    alloc.free(p);
+}
+
+fn biPolyCloneB(alloc: std.mem.Allocator, p: []const BI) ![]BI {
+    const out = try alloc.alloc(BI, p.len);
+    var i: usize = 0;
     errdefer {
-        polyFree(alloc, eg.g);
-        polyFree(alloc, eg.u);
-        polyFree(alloc, eg.v);
+        for (out[0..i]) |*c| c.deinit();
+        alloc.free(out);
     }
-    if (!polyIsZero(eg.g) and polyDegIdx(eg.g) == 0) {
-        // g == 1 after monic normalization; u is already the inverse.
-        const dm = try polyDivMod(alloc, eg.u, m);
+    while (i < p.len) : (i += 1) out[i] = try p[i].clone();
+    return out;
+}
+
+// Primitive part: coeffs divided by their content gcd, lead positive.
+fn biPolyPrimitive(alloc: std.mem.Allocator, p_in: []const BI) ![]BI {
+    if (biPolyIsZero(p_in)) return biPolyCloneB(alloc, p_in);
+    var g = try p_in[biPolyDegIdx(p_in)].clone();
+    defer g.deinit();
+    var i: usize = 0;
+    while (i < p_in.len) : (i += 1) {
+        if (p_in[i].eqlZero()) continue;
+        const ng = try biGcd(alloc, &g, &p_in[i]);
+        g.deinit();
+        g = ng;
+    }
+    if (p_in[biPolyDegIdx(p_in)].toConst().orderAgainstScalar(@as(i64, 0)) == .lt) g.negate();
+    const out = try alloc.alloc(BI, p_in.len);
+    var j: usize = 0;
+    errdefer {
+        for (out[0..j]) |*c| c.deinit();
+        alloc.free(out);
+    }
+    while (j < p_in.len) : (j += 1) {
+        out[j] = try BI.init(alloc);
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try out[j].divTrunc(&rem, &p_in[j], &g);
+    }
+    return out;
+}
+
+// Pseudo-remainder: lc(b)^(da-db+1) * a rem b — integer throughout.
+fn biPolyPrem(alloc: std.mem.Allocator, a_in: []const BI, b: []const BI) ![]BI {
+    var a = try biPolyCloneB(alloc, a_in);
+    errdefer biPolyFreeB(alloc, a);
+    const db = biPolyDegIdx(b);
+    while (!biPolyIsZero(a)) {
+        const da = biPolyDegIdx(a);
+        if (da < db) break;
+        const s = da - db;
+        // a <- lcb*a - lca * x^s * b; the lead cancels exactly.
+        var lca = try a[da].clone();
+        defer lca.deinit();
+        const out = try alloc.alloc(BI, a.len);
+        var i: usize = 0;
+        errdefer {
+            for (out[0..i]) |*c| c.deinit();
+            alloc.free(out);
+        }
+        while (i < a.len) : (i += 1) {
+            var t1 = try BI.init(alloc);
+            errdefer t1.deinit();
+            try t1.mul(&b[db], &a[i]);
+            if (i >= s and i - s <= db) {
+                var t2 = try BI.init(alloc);
+                errdefer t2.deinit();
+                try t2.mul(&lca, &b[i - s]);
+                try t1.sub(&t1, &t2);
+                t2.deinit();
+            }
+            out[i] = t1;
+        }
+        biPolyFreeB(alloc, a);
+        a = out;
+    }
+    return a;
+}
+
+// Primitive-PRS gcd over Z[x]: pseudo-remainder then content removal —
+// coefficient growth bounded by the subresultants themselves. Returns a
+// primitive poly with positive lead; [1] when coprime over Q.
+fn biPolyGcdZZ(alloc: std.mem.Allocator, a_in: []const BI, b_in: []const BI) ![]BI {
+    var a = try biPolyPrimitive(alloc, a_in);
+    errdefer biPolyFreeB(alloc, a);
+    var b = try biPolyPrimitive(alloc, b_in);
+    errdefer biPolyFreeB(alloc, b);
+    while (!biPolyIsZero(b)) {
+        if (biPolyDegIdx(b) == 0) {
+            biPolyFreeB(alloc, a);
+            biPolyFreeB(alloc, b);
+            const one = try alloc.alloc(BI, 1);
+            one[0] = try BI.initSet(alloc, 1);
+            return one;
+        }
+        const pr = try biPolyPrem(alloc, a, b);
+        defer biPolyFreeB(alloc, pr);
+        const r = try biPolyPrimitive(alloc, pr);
+        biPolyFreeB(alloc, a);
+        a = b;
+        b = r;
+    }
+    biPolyFreeB(alloc, b);
+    return a;
+}
+
+// v^{-1} mod m. gcd runs over Z[x] by primitive PRS; a unit then solves
+// v*u = 1 mod m by Bareiss fraction-free elimination on the
+// multiplication matrix — n-by-n, every intermediate integral and
+// determinant-bounded where the rational extended gcd exploded.
+// Returns null for a zero divisor; `g_out` gets the factor either way.
+fn algInvPoly(alloc: std.mem.Allocator, v: []const Rat, m: []const Rat, g_out: *[]Rat) !?[]Rat {
+    const n = polyDegIdx(m);
+    if (polyIsZero(v)) {
+        g_out.* = try polyClone(alloc, m);
+        return null;
+    }
+    const vm = try intPolysFromRats(alloc, &.{ v, m });
+    defer {
+        for (vm) |p| biPolyFreeB(alloc, p);
+        alloc.free(vm);
+    }
+    const vz = vm[0];
+    const mz = vm[1];
+    const gz = try biPolyGcdZZ(alloc, vz, mz);
+    defer biPolyFreeB(alloc, gz);
+    if (!biPolyIsZero(gz) and biPolyDegIdx(gz) > 0) {
+        const gq = try polyFromInts(alloc, gz);
+        defer polyFree(alloc, gq);
+        g_out.* = try polyMonic(alloc, gq);
+        return null;
+    }
+    // Columns: col_j = v*x^j mod m, coeffs i = 0..n-1. The system
+    // A.u = e0 is nonsingular exactly when v is a unit.
+    const cols = try alloc.alloc([]Rat, n);
+    var cj: usize = 0;
+    var cols_built = false;
+    errdefer if (!cols_built) {
+        for (cols[0..cj]) |c| polyFree(alloc, c);
+        alloc.free(cols);
+    };
+    while (cj < n) : (cj += 1) {
+        const mono = try alloc.alloc(Rat, cj + 1);
+        var mi: usize = 0;
+        errdefer {
+            for (mono[0..mi]) |*r| ratDeinit(r);
+            alloc.free(mono);
+        }
+        while (mi <= cj) : (mi += 1) mono[mi] = try ratFromInt(alloc, 0);
+        ratDeinit(&mono[cj]);
+        mono[cj] = try ratFromInt(alloc, 1);
+        defer polyFree(alloc, mono);
+        const vxj = try polyMul(alloc, v, mono);
+        defer polyFree(alloc, vxj);
+        const dm = try polyDivMod(alloc, vxj, m);
         polyFree(alloc, dm.q);
-        g_out.* = eg.g;
-        polyFree(alloc, eg.u);
-        polyFree(alloc, eg.v);
-        return dm.r;
+        defer polyFree(alloc, dm.r);
+        // pad remainder to n coeffs
+        const col = try alloc.alloc(Rat, n);
+        var i: usize = 0;
+        errdefer {
+            for (col[0..i]) |*r| ratDeinit(r);
+            alloc.free(col);
+        }
+        while (i < n) : (i += 1) {
+            col[i] = if (i < dm.r.len) try ratClone(&dm.r[i]) else try ratFromInt(alloc, 0);
+        }
+        cols[cj] = col;
     }
-    g_out.* = eg.g;
-    polyFree(alloc, eg.u);
-    polyFree(alloc, eg.v);
-    return null;
+    cols_built = true;
+    defer {
+        for (cols) |c| polyFree(alloc, c);
+        alloc.free(cols);
+    }
+    // Integer matrix: rows[i][j] = D * cols[j][i], rows[i][n] = D*e0.
+    var big_d = try BI.initSet(alloc, 1);
+    defer big_d.deinit();
+    for (cols) |c| {
+        for (c) |*r| {
+            const nl = try biLcm(alloc, &big_d, &r.d);
+            big_d.deinit();
+            big_d = nl;
+        }
+    }
+    const width = n + 1;
+    const rows = try alloc.alloc([]BI, n);
+    var ri: usize = 0;
+    var rows_built = false;
+    errdefer if (!rows_built) {
+        for (rows[0..ri]) |r| biPolyFreeB(alloc, r);
+        alloc.free(rows);
+    };
+    while (ri < n) : (ri += 1) {
+        rows[ri] = try alloc.alloc(BI, width);
+        var i: usize = 0;
+        errdefer {
+            for (rows[ri][0..i]) |*c| c.deinit();
+            alloc.free(rows[ri]);
+        }
+        while (i < width) : (i += 1) rows[ri][i] = try BI.initSet(alloc, 0);
+    }
+    rows_built = true;
+    defer {
+        for (rows) |r| biPolyFreeB(alloc, r);
+        alloc.free(rows);
+    }
+    for (cols, 0..) |c, jj| {
+        for (c, 0..) |*r, i| {
+            var q = try BI.init(alloc);
+            defer q.deinit();
+            var rem = try BI.init(alloc);
+            defer rem.deinit();
+            try q.divTrunc(&rem, &big_d, &r.d);
+            rows[i][jj].deinit();
+            rows[i][jj] = try BI.init(alloc);
+            try rows[i][jj].mul(&r.n, &q);
+        }
+    }
+    rows[0][n].deinit();
+    rows[0][n] = try big_d.clone();
+    // Bareiss fraction-free elimination: pivot k, divide by d_prev —
+    // exact integer division, intermediates bounded by minors.
+    var d_prev = try BI.initSet(alloc, 1);
+    defer d_prev.deinit();
+    var k: usize = 0;
+    while (k < n) : (k += 1) {
+        if (rows[k][k].eqlZero()) {
+            var l = k + 1;
+            while (l < n and rows[l][k].eqlZero()) : (l += 1) {}
+            if (l == n) @panic("std/sym: unit multiplication matrix singular");
+            const t = rows[k];
+            rows[k] = rows[l];
+            rows[l] = t;
+        }
+        var i = k + 1;
+        while (i < n) : (i += 1) {
+            var jj = k + 1;
+            while (jj < width) : (jj += 1) {
+                var t1 = try BI.init(alloc);
+                defer t1.deinit();
+                try t1.mul(&rows[i][jj], &rows[k][k]);
+                var t2 = try BI.init(alloc);
+                defer t2.deinit();
+                try t2.mul(&rows[i][k], &rows[k][jj]);
+                try t1.sub(&t1, &t2);
+                var nv = try BI.init(alloc);
+                var rem = try BI.init(alloc);
+                defer rem.deinit();
+                try nv.divTrunc(&rem, &t1, &d_prev);
+                rows[i][jj].deinit();
+                rows[i][jj] = nv;
+            }
+            rows[i][k].deinit();
+            rows[i][k] = try BI.initSet(alloc, 0);
+        }
+        const nd = try rows[k][k].clone();
+        d_prev.deinit();
+        d_prev = nd;
+    }
+    // Back-substitute over Q: u_i = (b_i - sum_{j>i} U_ij u_j) / U_ii.
+    const u = try alloc.alloc(Rat, n);
+    var filled: usize = 0;
+    errdefer {
+        for (u[n - filled ..]) |*r| ratDeinit(r);
+        alloc.free(u);
+    }
+    var ii = n;
+    while (ii > 0) {
+        ii -= 1;
+        var s = try ratNorm(alloc, try rows[ii][n].clone(), try BI.initSet(alloc, 1));
+        var jj = ii + 1;
+        while (jj < n) : (jj += 1) {
+            var c_rat = try ratNorm(alloc, try rows[ii][jj].clone(), try BI.initSet(alloc, 1));
+            defer ratDeinit(&c_rat);
+            var t = try ratMul(alloc, &c_rat, &u[jj]);
+            defer ratDeinit(&t);
+            const ns = try ratSub(alloc, &s, &t);
+            ratDeinit(&s);
+            s = ns;
+        }
+        var d_rat = try ratNorm(alloc, try rows[ii][ii].clone(), try BI.initSet(alloc, 1));
+        defer ratDeinit(&d_rat);
+        u[ii] = try ratDiv(alloc, &s, &d_rat);
+        ratDeinit(&s);
+        filled += 1;
+    }
+    const one = try alloc.alloc(Rat, 1);
+    one[0] = try ratFromInt(alloc, 1);
+    g_out.* = one;
+    return u;
 }
 
 // a*b mod m then reduce — the ring law.
