@@ -117,7 +117,7 @@ fn uregEmit(alloc: std.mem.Allocator, g: *const UReg) ![]u8 {
 // Declare a whole block: source is the unitreg:v1 tail grammar —
 // `USD=axis(currency);EUR=axis(currency);point` — optionally prefixed,
 // so registry text composes. dup/bad anywhere voids the block.
-~pub tor unit-reg-decls { reg: string<std/io:!allocated>, source: string }
+~pub tor unit-reg-decls { reg: string<std/io:!allocated>, source: string<*> }
 | exact string<std/io:allocated!>
 | dup
 | bad

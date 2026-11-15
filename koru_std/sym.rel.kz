@@ -166,7 +166,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 // Attach (or replace) the derivative law for a declared generator. The law
 // is a sexpr over x and generator names — self- and mutual references
 // resolve since the name set is complete at attach time.
-~pub tor rel-law { source: string, name: string, reg: string<std/io:!allocated> }
+~pub tor rel-law { source: string<*>, name: string, reg: string<std/io:!allocated> }
 | exact string<std/io:allocated!>
 | unknown-generator
 | bad
@@ -196,7 +196,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 // each law parses under the complete name set — cyclic blocks and
 // forward references both resolve. Atomic: a `dup`, `full`,
 // `unknown-generator`, or `bad` anywhere refuses the whole block.
-~pub tor rel-decls { source: string, reg: string<std/io:!allocated> }
+~pub tor rel-decls { source: string<*>, reg: string<std/io:!allocated> }
 | exact string<std/io:allocated!>
 | dup
 | full
@@ -246,7 +246,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 
 // d/dx of expr under the declared laws — theorem-grade: every rewrite step
 // is a derivative rule or a declared-law substitution.
-~pub tor rel-derive { source: string, reg: string<*> }
+~pub tor rel-derive { source: string<*>, reg: string<*> }
 | exact string<std/io:allocated!>
 | unknown-generator
 | lawless
@@ -273,7 +273,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 
 // Canonical normal form of expr under the registry's name set — the
 // caller-side equality primitive: canon-equal texts are provably equal.
-~pub tor rel-norm { source: string, reg: string<*> }
+~pub tor rel-norm { source: string<*>, reg: string<*> }
 | exact string<std/io:allocated!>
 | unknown-generator
 | bad
