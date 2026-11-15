@@ -2268,6 +2268,22 @@ fn poleOrderMask(alloc: std.mem.Allocator, d: []const Rat) !u64 {
             const blob = decideIntegNote("holonomic-special", "kovacic-necessary-conditions-fail-all-cases:proven-no-liouvillian-solution", null, null) catch @panic("std/sym:decide-ode");
             return .{ .holonomic_special = blob };
         }
+        if (case1) {
+            const k = kovacicCase1(alloc, r, f.n, f.d) catch @panic("std/sym:decide-ode kovacic");
+            switch (k) {
+                .sol => |b| return .{ .liouvillian = b },
+                .open => |ob| {
+                    defer alloc.free(ob);
+                    const open2 = std.fmt.allocPrint(alloc, "kovacic-necessary-conditions-met:open-cases={s}{s}{s}:{s}", .{
+                        if (case1) "1" else "",
+                        if (case2) (if (case1) ",2" else "2") else "",
+                        if (case3) (if (case1 or case2) ",3" else "3") else "",
+                        ob,
+                    }) catch @panic("std/sym:decide-ode");
+                    return .{ .unclassifiable = open2 };
+                },
+            }
+        }
         const open = std.fmt.allocPrint(alloc, "kovacic-necessary-conditions-met:open-cases={s}{s}{s}:case-algorithms-not-run", .{
             if (case1) "1" else "",
             if (case2) (if (case1) ",2" else "2") else "",

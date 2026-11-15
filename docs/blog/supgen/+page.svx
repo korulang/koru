@@ -92,7 +92,7 @@ The SymPy oracle (`tests/benchmarks/016_num_precision_race/sympy_oracle.py`) che
 
 ## Open rungs
 
-The rational log part is built through the residue-sum lane up to cofactor degree 4; a quintic stays a named `rsum` refusal. The substitution family covers a bounded slice of the elementary class — dlog-free denominators in θ (`1/(x+log x)`) are non-elementary and refuse honestly, negative-leading quadratics (`√(4−x²)`) are the arcsin class the Euler lane names but doesn't take. The Kovacic case algorithms, which would turn `open-cases` into constructed solutions, are not run. `derive-ode` is witness-grade by construction: `verified=N` is a count of checked coefficients, not a proof. The theorem-grade route is `cert-of`, which derives the ODE structurally.
+The rational log part is built through the residue-sum lane at any residue-cofactor degree — PRS+Bareiss bounded inversion lifted the old degree-4 wall — but the emitted tower is a root sum, not readable radicals. The substitution family covers a bounded slice of the elementary class — dlog-free denominators in θ (`1/(x+log x)`) are non-elementary and refuse honestly — while negative-leading quadratics (`√(4−x²)`) go through Euler's third lane into `atan` forms. `decide-ode` runs Kovacic's case-1 construction over rational poles of order ≤ 2 — `y'' = (2/x²)y` constructs `y = x²` — with algebraic poles and cases 2–3 still naming their boundary. `derive-ode` is witness-grade by construction: `verified=N` is a count of checked coefficients, not a proof. The theorem-grade route is `cert-of`, which derives the ODE structurally.
 
 ## Where the math comes from
 

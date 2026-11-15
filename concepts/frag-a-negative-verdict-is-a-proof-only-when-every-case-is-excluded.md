@@ -48,7 +48,10 @@ negative valuation survives. The real-valued lane draws one more line here:
 `√(x²) = |x|` refuses even though `x` squares to `x²`. Choosing that branch
 would be a sign guess presented as a series.
 
-Open: the Kovacic case algorithms themselves (which need the poles'
-algebraic roots, or a factorization over Q̄) are what turn `open-cases` into
-decided-yes with a constructed solution. Until then, an open verdict is the
-correct output for those inputs, not a gap that should be papered over.
+Open: the Kovacic case algorithms themselves are what turn `open-cases`
+into decided-yes with a constructed solution. Case 1's rational-pole slice
+now runs — poles of order ≤ 2, rational indicial exponents, o(∞) ≥ 2 — and
+`y'' = (2/x²)y` constructs `y = x²` outright; poles that split only over
+Q̄, Laurent-tail orders, and cases 2–3 still name their bound instead of
+guessing. Outside that slice an open verdict remains the correct output,
+not a gap that should be papered over.

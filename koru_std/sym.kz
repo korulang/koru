@@ -66,6 +66,7 @@
 ~part canon
 ~part rel
 ~part alg
+~part kovacic
 
 const std = @import("std");
 const BI = std.math.big.int.Managed;

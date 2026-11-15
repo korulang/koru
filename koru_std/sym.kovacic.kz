@@ -1,0 +1,461 @@
+// ============================================================================
+// std/sym part: kovacic — the Case-1 constructor for y'' = r(x) y over a
+// restricted-but-real slice of Kovacic (JSC 1986):
+//   * every finite pole is rational, of order 1 or 2
+//   * the order at infinity is >= 2
+//   * every order-2 exponent is rational (1+4b a perfect square)
+// Inside the slice the full case-1 enumeration runs: e_1 = 1 on simple
+// poles, e_c in {1/2 +- 1/2*sqrt(1+4b_c)} on double poles, e_inf by the
+// indicial equation, and d = e_inf - sum e_c must be a nonnegative
+// integer. Each surviving combination solves
+//   P'' + 2wP' + (w' + w^2 - r)P = 0,   w = sum e_c/(x-c),
+// cleared to a polynomial linear system and null-spaced — a P that
+// answers is a proof: y = P * prod (x-c)^e_c then solves the ODE by
+// reversible algebra, so the note can honestly say exact.
+// Outside the slice the lane names what it did not do rather than
+// guessing — algebraic poles, Laurent-tail orders, infinity < 2,
+// irrational exponents, or an exhausted enumeration.
+// ============================================================================
+
+// sqrt of a rational when it is one (both parts perfect squares).
+fn ratSqRoot(alloc: std.mem.Allocator, r: *const Rat) !?Rat {
+    const ns = (try biIsSquare(alloc, &r.n)) orelse return null;
+    var ns2 = ns;
+    const ds = (try biIsSquare(alloc, &r.d)) orelse {
+        ns2.deinit();
+        return null;
+    };
+    const ds2 = ds;
+    return try ratNorm(alloc, ns2, ds2); // ratNorm owns/cleans on its errors
+}
+
+// Divisors of a nonzero u64 — bounded enumeration; huge coefficients
+// refuse upward rather than spend a day factoring.
+fn u64Divisors(alloc: std.mem.Allocator, v: u64) ![]u64 {
+    var out = try std.ArrayList(u64).initCapacity(alloc, 32);
+    errdefer out.deinit(alloc);
+    var i: u64 = 1;
+    const lim = std.math.sqrt(v);
+    while (i <= lim) : (i += 1) {
+        if (@mod(v, i) == 0) {
+            try out.append(alloc, i);
+            const j = @divTrunc(v, i);
+            if (j != i) try out.append(alloc, j);
+        }
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+// Rational roots of a polynomial over Q, by the rational root theorem:
+// clear denominators, root = p/q with p | a0 and q | an. Coefficients
+// beyond u64 refuse error.Bound — a named bound, not a hang.
+fn polyRatRoots(alloc: std.mem.Allocator, p: []const Rat) ![]Rat {
+    const ips = try intPolysFromRats(alloc, &.{p});
+    defer {
+        for (ips) |ip| biPolyFreeB(alloc, ip);
+        alloc.free(ips);
+    }
+    const iz = ips[0];
+    if (biPolyIsZero(iz)) return alloc.alloc(Rat, 0);
+    var lo: usize = 0;
+    while (iz[lo].eqlZero()) : (lo += 1) {}
+    const hi = biPolyDegIdx(iz);
+    var out = try std.ArrayList(Rat).initCapacity(alloc, 8);
+    errdefer {
+        for (out.items) |*r| ratDeinit(r);
+        out.deinit(alloc);
+    }
+    if (lo > 0) try out.append(alloc, try ratFromInt(alloc, 0)); // x^lo factor
+    var a0 = try iz[lo].clone();
+    defer a0.deinit();
+    var an = try iz[hi].clone();
+    defer an.deinit();
+    a0.abs();
+    an.abs();
+    const a0u = a0.toInt(u64) catch return error.Bound;
+    const anu = an.toInt(u64) catch return error.Bound;
+    const pdivs = try u64Divisors(alloc, a0u);
+    defer alloc.free(pdivs);
+    const qdivs = try u64Divisors(alloc, anu);
+    defer alloc.free(qdivs);
+    for (pdivs) |pd| {
+        for (qdivs) |qd| {
+            // reduced candidate +/- pd/qd
+            var g64: u64 = pd;
+            var t64: u64 = qd;
+            while (t64 != 0) {
+                const r64 = @mod(g64, t64);
+                g64 = t64;
+                t64 = r64;
+            }
+            if (g64 != 1) continue;
+            for ([2]i64{ 1, -1 }) |s| {
+                const nbi = try BI.initSet(alloc, @as(i64, @intCast(pd)) * s);
+                const dbi = try BI.initSet(alloc, qd);
+                var cand = try ratNorm(alloc, nbi, dbi);
+                defer ratDeinit(&cand);
+                var ev = try polyEvalAtRat(alloc, p, &cand);
+                defer ratDeinit(&ev);
+                if (ratIsZero(&ev)) {
+                    const c2 = try ratClone(&cand);
+                    try out.append(alloc, c2);
+                }
+            }
+        }
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+const KovOut = union(enum) { sol: []u8, open: []u8 };
+
+// x - c as a polynomial.
+fn polyMinusC(alloc: std.mem.Allocator, c: *const Rat) ![]Rat {
+    const out = try alloc.alloc(Rat, 2);
+    out[0] = try ratNeg(c);
+    out[1] = try ratFromInt(alloc, 1);
+    return out;
+}
+
+// product of (x - c) over a pole list.
+fn polyProdFactors(alloc: std.mem.Allocator, poles: []const Rat) ![]Rat {
+    var acc = try polyOne(alloc);
+    errdefer polyFree(alloc, acc);
+    for (poles) |*c| {
+        const f = try polyMinusC(alloc, c);
+        defer polyFree(alloc, f);
+        const na = try polyMul(alloc, acc, f);
+        polyFree(alloc, acc);
+        acc = na;
+    }
+    return acc;
+}
+
+// The case-1 lane on a reduced r = n/d. Returns a constructed
+// liouvillian blob, or null with a named boundary in `open`.
+fn kovacicCase1(alloc: std.mem.Allocator, r_txt: []const u8, n_r: []const Rat, d_r: []const Rat) !KovOut {
+    const deg_d: i64 = if (polyIsZero(d_r)) 0 else @intCast(polyDegIdx(d_r));
+    const deg_n: i64 = if (polyIsZero(n_r)) 0 else @intCast(polyDegIdx(n_r));
+    const o_inf = deg_d - deg_n;
+    if (o_inf < 2) return .{ .open = try alloc.dupe(u8, "kovacic-case1-bound:infinity-order<2") };
+    // pole orders must live in {1,2} — higher orders need Laurent tails
+    const mask = try poleOrderMask(alloc, d_r);
+    if ((mask & ~@as(u64, 0b110)) != 0)
+        return .{ .open = try alloc.dupe(u8, "kovacic-case1-bound:pole-order>2") };
+    // f2 = product of the order-2 pole factors; f1 = the simple ones
+    const dd = try polyDer(alloc, d_r);
+    defer polyFree(alloc, dd);
+    const f2 = if (deg_d > 0) try polyGcd(alloc, d_r, dd) else try polyOne(alloc);
+    defer polyFree(alloc, f2);
+    const dm1 = try polyDivMod(alloc, d_r, f2);
+    defer polyFree(alloc, dm1.r);
+    defer polyFree(alloc, dm1.q);
+    const dm2 = try polyDivMod(alloc, dm1.q, f2);
+    defer polyFree(alloc, dm2.r);
+    const f1 = dm2.q;
+    defer polyFree(alloc, f1);
+    // poles must split rationally — algebraic poles need K-arithmetic
+    const s_roots = polyRatRoots(alloc, f1) catch |e| switch (e) {
+        error.Bound => return .{ .open = try alloc.dupe(u8, "kovacic-case1-bound:root-enumeration-bound") },
+        else => return e,
+    };
+    defer {
+        for (s_roots) |*r| ratDeinit(r);
+        alloc.free(s_roots);
+    }
+    const d_roots = polyRatRoots(alloc, f2) catch |e| switch (e) {
+        error.Bound => return .{ .open = try alloc.dupe(u8, "kovacic-case1-bound:root-enumeration-bound") },
+        else => return e,
+    };
+    defer {
+        for (d_roots) |*r| ratDeinit(r);
+        alloc.free(d_roots);
+    }
+    if (s_roots.len != polyDegIdx(f1))
+        return .{ .open = try alloc.dupe(u8, "kovacic-case1-bound:poles-nonrational") };
+    if (d_roots.len != polyDegIdx(f2))
+        return .{ .open = try alloc.dupe(u8, "kovacic-case1-bound:poles-nonrational") };
+    // exponent pairs on the double poles: e in {1/2 +- 1/2 sqrt(1+4b)}
+    const e2 = try alloc.alloc([2]Rat, d_roots.len);
+    var e2i: usize = 0;
+    var e2_built = false;
+    defer if (!e2_built) {
+        for (e2[0..e2i]) |*pr| {
+            ratDeinit(&pr[0]);
+            ratDeinit(&pr[1]);
+        }
+        alloc.free(e2);
+    };
+    for (d_roots, 0..) |*c, ci| {
+        // b_c = n(c) / (d/(x-c)^2)(c)
+        const xc = try polyMinusC(alloc, c);
+        defer polyFree(alloc, xc);
+        const xc2 = try polyMul(alloc, xc, xc);
+        defer polyFree(alloc, xc2);
+        const dmh = try polyDivMod(alloc, d_r, xc2);
+        defer polyFree(alloc, dmh.r);
+        defer polyFree(alloc, dmh.q);
+        var num = try polyEvalAtRat(alloc, n_r, c);
+        defer ratDeinit(&num);
+        var hval = try polyEvalAtRat(alloc, dmh.q, c);
+        defer ratDeinit(&hval);
+        var b = try ratDiv(alloc, &num, &hval);
+        defer ratDeinit(&b);
+        var four = try ratFromInt(alloc, 4);
+        defer ratDeinit(&four);
+        var b4 = try ratMul(alloc, &b, &four);
+        defer ratDeinit(&b4);
+        var one_r = try ratFromInt(alloc, 1);
+        defer ratDeinit(&one_r);
+        var delta = try ratAdd(alloc, &b4, &one_r);
+        defer ratDeinit(&delta);
+        var s = (try ratSqRoot(alloc, &delta)) orelse
+            return .{ .open = try alloc.dupe(u8, "kovacic-case1-bound:exponent-nonrational") };
+        defer ratDeinit(&s);
+        var half = try ratNorm(alloc, try BI.initSet(alloc, 1), try BI.initSet(alloc, 2));
+        defer ratDeinit(&half);
+        var hs = try ratMul(alloc, &half, &s);
+        defer ratDeinit(&hs);
+        e2[ci][0] = try ratAdd(alloc, &half, &hs);
+        e2[ci][1] = try ratSub(alloc, &half, &hs);
+        e2i = ci + 1;
+    }
+    e2_built = true;
+    defer {
+        for (e2[0..e2i]) |*pr| {
+            ratDeinit(&pr[0]);
+            ratDeinit(&pr[1]);
+        }
+        alloc.free(e2);
+    }
+    // e_inf: o_inf = 2 -> indicial pair; o_inf > 2 -> {1}
+    const e_inf = try alloc.alloc(Rat, 2);
+    var n_einf: usize = 1;
+    var einf_built = false;
+    defer if (!einf_built) {
+        for (e_inf[0..n_einf]) |*r| ratDeinit(r);
+        alloc.free(e_inf);
+    };
+    if (o_inf == 2) {
+        var binf = try ratDiv(alloc, &n_r[polyDegIdx(n_r)], &d_r[polyDegIdx(d_r)]);
+        defer ratDeinit(&binf);
+        var four2 = try ratFromInt(alloc, 4);
+        defer ratDeinit(&four2);
+        var b4i = try ratMul(alloc, &binf, &four2);
+        defer ratDeinit(&b4i);
+        var one2 = try ratFromInt(alloc, 1);
+        defer ratDeinit(&one2);
+        var di = try ratAdd(alloc, &b4i, &one2);
+        defer ratDeinit(&di);
+        var si = (try ratSqRoot(alloc, &di)) orelse
+            return .{ .open = try alloc.dupe(u8, "kovacic-case1-bound:exponent-nonrational") };
+        defer ratDeinit(&si);
+        var half2 = try ratNorm(alloc, try BI.initSet(alloc, 1), try BI.initSet(alloc, 2));
+        defer ratDeinit(&half2);
+        var hsi = try ratMul(alloc, &half2, &si);
+        defer ratDeinit(&hsi);
+        e_inf[0] = try ratAdd(alloc, &half2, &hsi);
+        e_inf[1] = try ratSub(alloc, &half2, &hsi);
+        n_einf = 2;
+    } else {
+        e_inf[0] = try ratFromInt(alloc, 1);
+    }
+    einf_built = true;
+    defer {
+        for (e_inf[0..n_einf]) |*r| ratDeinit(r);
+        alloc.free(e_inf);
+    }
+    // poles list: simples then doubles (doubles carry the e2 pairs)
+    const np2 = d_roots.len;
+    const all_poles = try alloc.alloc(Rat, s_roots.len + np2);
+    var api: usize = 0;
+    var poles_built = false;
+    errdefer if (!poles_built) {
+        for (all_poles[0..api]) |*r| ratDeinit(r);
+        alloc.free(all_poles);
+    };
+    for (s_roots) |*r| {
+        all_poles[api] = try ratClone(r);
+        api += 1;
+    }
+    for (d_roots) |*r| {
+        all_poles[api] = try ratClone(r);
+        api += 1;
+    }
+    poles_built = true;
+    defer {
+        for (all_poles) |*r| ratDeinit(r);
+        alloc.free(all_poles);
+    }
+    const d1 = try polyProdFactors(alloc, all_poles);
+    defer polyFree(alloc, d1);
+    // enumerate: bit per double pole, plus one for e_inf when it pairs
+    const nbits: usize = np2 + (n_einf - 1);
+    if (nbits > 20)
+        return .{ .open = try alloc.dupe(u8, "kovacic-case1-bound:enumeration-bound") };
+    const total: u64 = @as(u64, 1) << @intCast(nbits);
+    var combo: u64 = 0;
+    while (combo < total) : (combo += 1) {
+        // pick e_inf and the double-pole branches for this mask
+        const einf_sel: usize = if (n_einf == 2) @intCast(combo & 1) else 0;
+        // d = e_inf - sum e_c must be a nonnegative integer
+        var dacc = try ratClone(&e_inf[einf_sel]);
+        defer ratDeinit(&dacc);
+        for (s_roots) |_| {
+            var one3 = try ratFromInt(alloc, 1);
+            defer ratDeinit(&one3);
+            const nd = try ratSub(alloc, &dacc, &one3);
+            ratDeinit(&dacc);
+            dacc = nd;
+        }
+        for (d_roots, 0..) |_, ci| {
+            const pick: usize = @intCast((combo >> @intCast(ci + (n_einf - 1))) & 1);
+            const nd = try ratSub(alloc, &dacc, &e2[ci][pick]);
+            ratDeinit(&dacc);
+            dacc = nd;
+        }
+        if (!denIsOne(&dacc)) continue;
+        if (dacc.n.toConst().orderAgainstScalar(@as(i64, 0)) == .lt) continue;
+        const du64 = dacc.n.toInt(u64) catch continue;
+        if (du64 > 128)
+            return .{ .open = try alloc.dupe(u8, "kovacic-case1-bound:degree-bound") };
+        const d: usize = @intCast(du64);
+        // A = sum_c e_c * (D1/(x-c)) — the numerator of omega = sum e_c/(x-c)
+        var a_poly = try polyEmpty(alloc);
+        var a_set = false;
+        defer if (a_set) polyFree(alloc, a_poly);
+        for (all_poles, 0..) |*c, ci2| {
+            const f = try polyMinusC(alloc, c);
+            defer polyFree(alloc, f);
+            const qd = try polyDivMod(alloc, d1, f);
+            polyFree(alloc, qd.r);
+            defer polyFree(alloc, qd.q);
+            var one4 = try ratFromInt(alloc, 1);
+            defer ratDeinit(&one4);
+            const ec: *const Rat = if (ci2 < s_roots.len)
+                &one4
+            else
+                &e2[ci2 - s_roots.len][@intCast((combo >> @intCast(ci2 - s_roots.len + (n_einf - 1))) & 1)];
+            const term = try polyScal(alloc, qd.q, ec);
+            defer polyFree(alloc, term);
+            const na = try polyAdd(alloc, a_poly, term);
+            if (a_set) polyFree(alloc, a_poly);
+            a_poly = na;
+            a_set = true;
+        }
+        // Q2 = D1^2 dr; Q1 = 2 A D1 dr;
+        // Q0 = (A' D1 - A D1') dr + A^2 dr - n_r D1^2
+        const d1sq = try polyMul(alloc, d1, d1);
+        defer polyFree(alloc, d1sq);
+        const q2 = try polyMul(alloc, d1sq, d_r);
+        defer polyFree(alloc, q2);
+        const ad1 = try polyMul(alloc, a_poly, d1);
+        defer polyFree(alloc, ad1);
+        var two_r = try ratFromInt(alloc, 2);
+        defer ratDeinit(&two_r);
+        const ad1_2 = try polyScal(alloc, ad1, &two_r);
+        defer polyFree(alloc, ad1_2);
+        const q1 = try polyMul(alloc, ad1_2, d_r);
+        defer polyFree(alloc, q1);
+        const ap = try polyDer(alloc, a_poly);
+        defer polyFree(alloc, ap);
+        const d1p = try polyDer(alloc, d1);
+        defer polyFree(alloc, d1p);
+        const apd1 = try polyMul(alloc, ap, d1);
+        defer polyFree(alloc, apd1);
+        const ad1p = try polyMul(alloc, a_poly, d1p);
+        defer polyFree(alloc, ad1p);
+        const wd = try polySub(alloc, apd1, ad1p); // w' numerator
+        defer polyFree(alloc, wd);
+        const asq = try polyMul(alloc, a_poly, a_poly);
+        defer polyFree(alloc, asq);
+        const wsum = try polyAdd(alloc, wd, asq); // w'+w^2 numerator
+        defer polyFree(alloc, wsum);
+        const wsum_dr = try polyMul(alloc, wsum, d_r);
+        defer polyFree(alloc, wsum_dr);
+        const nrd1sq = try polyMul(alloc, n_r, d1sq);
+        defer polyFree(alloc, nrd1sq);
+        const q0 = try polySub(alloc, wsum_dr, nrd1sq);
+        defer polyFree(alloc, q0);
+        // LHS = P'' Q2 + P' Q1 + P Q0 = 0; linear in p_0..p_d.
+        const tmax = @max(@max(polyDegIdx(q0), polyDegIdx(q1)), polyDegIdx(q2)) + d + 3;
+        const nu = d + 1;
+        const rows = try alloc.alloc([]Rat, tmax);
+        var ri: usize = 0;
+        var rows_built = false;
+        defer if (!rows_built) {
+            for (rows[0..ri]) |r| polyFree(alloc, r);
+            alloc.free(rows);
+        };
+        while (ri < tmax) : (ri += 1) {
+            const row = try alloc.alloc(Rat, nu);
+            var jj: usize = 0;
+            errdefer {
+                for (row[0..jj]) |*r| ratDeinit(r);
+                alloc.free(row);
+            }
+            while (jj < nu) : (jj += 1) {
+                // coeff of x^ri in P''Q2 + P'Q1 + P Q0 from p_jj
+                var acc = try ratFromInt(alloc, 0);
+                const q0i = ri -% jj;
+                if (q0i < q0.len) {
+                    const na2 = try ratAdd(alloc, &acc, &q0[q0i]);
+                    ratDeinit(&acc);
+                    acc = na2;
+                }
+                if (jj > 0 and ri + 1 >= jj and ri + 1 - jj < q1.len) {
+                    var jrat = try ratFromInt(alloc, @intCast(jj));
+                    defer ratDeinit(&jrat);
+                    var t1 = try ratMul(alloc, &jrat, &q1[ri + 1 - jj]);
+                    defer ratDeinit(&t1);
+                    const na2 = try ratAdd(alloc, &acc, &t1);
+                    ratDeinit(&acc);
+                    acc = na2;
+                }
+                if (jj > 1 and ri + 2 >= jj and ri + 2 - jj < q2.len) {
+                    var jjm1 = try ratFromInt(alloc, @intCast(jj * (jj - 1)));
+                    defer ratDeinit(&jjm1);
+                    var t2 = try ratMul(alloc, &jjm1, &q2[ri + 2 - jj]);
+                    defer ratDeinit(&t2);
+                    const na2 = try ratAdd(alloc, &acc, &t2);
+                    ratDeinit(&acc);
+                    acc = na2;
+                }
+                row[jj] = acc;
+            }
+            rows[ri] = row;
+        }
+        rows_built = true;
+        defer {
+            for (rows) |r| polyFree(alloc, r);
+            alloc.free(rows);
+        }
+        const p_sol = (try rrefNullVec(alloc, rows, nu)) orelse continue;
+        defer {
+            for (p_sol) |*r| ratDeinit(r);
+            alloc.free(p_sol);
+        }
+        // P found: emit y = P * prod (x-c)^e_c — construction is the
+        // proof; the cleared system is the substitution check.
+        const p_txt = try polyCanonTxt(alloc, p_sol);
+        defer alloc.free(p_txt);
+        var facs = try std.ArrayList(u8).initCapacity(alloc, 64);
+        defer facs.deinit(alloc);
+        for (all_poles, 0..) |*c, ci2| {
+            var one5 = try ratFromInt(alloc, 1);
+            defer ratDeinit(&one5);
+            const ec: *const Rat = if (ci2 < s_roots.len)
+                &one5
+            else
+                &e2[ci2 - s_roots.len][@intCast((combo >> @intCast(ci2 - s_roots.len + (n_einf - 1))) & 1)];
+            const cs = try ratToString(alloc, c);
+            defer alloc.free(cs);
+            const es = try ratToString(alloc, ec);
+            defer alloc.free(es);
+            if (ci2 > 0) try facs.append(alloc, ',');
+            try facs.writer(alloc).print("({s}:{s})", .{ cs, es });
+        }
+        const blob = try std.fmt.allocPrint(alloc, "decide(layer=liouvillian)|r={s}|sol=P:{s}|factors={s}|note=kovacic-case1-constructed;exact", .{ r_txt, p_txt, facs.items });
+        return .{ .sol = blob };
+    }
+    return .{ .open = try alloc.dupe(u8, "kovacic-case1-exhausted") };
+}

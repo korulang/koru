@@ -53,8 +53,9 @@ std/sym:lit((x*x*x*x+1)*inv(x*x*x))
     | bad |> std/io:print.ln("bad")
 | bad |> std/io:print.ln("bad-literal")
 
-// Kovacic soundness: y'' = (x^2+1) y has y = exp(x^2/2) — case 1 open,
-// so no proof of non-Liouvillian may be issued
+// Kovacic soundness: y'' = (x^2+1) y has y = exp(x^2/2) — case 1's
+// necessary check survives but its order at infinity is under the lane's
+// bound, so no proof of non-Liouvillian may be issued
 std/sym:lit(x*x+1)
 | exact r |> std/sym:decide-ode(r)
     | liouvillian m |> std/io:print.ln("liouvillian:{{ m:s }}")
@@ -63,7 +64,7 @@ std/sym:lit(x*x+1)
     | bad m |> std/io:print.ln("bad:{{ m:s }}")
 | bad |> std/io:print.ln("bad-literal")
 
-// y'' = 2/x^2 y has y = x^2 — a double pole leaves all three cases open
+// y'' = 2/x^2 y has y = x^2 — the rational-pole case-1 lane constructs it
 std/sym:lit(2*inv(x*x))
 | exact r |> std/sym:decide-ode(r)
     | liouvillian m |> std/io:print.ln("liouvillian:{{ m:s }}")

@@ -2,6 +2,6 @@ decide(layer=elementary)|antiderivative=(-5e-1*inv((1e0+(x*x))))|note=hermite-co
 decide(layer=elementary)|antiderivative=(-2.5e-1*inv((1e0+x)))|note=hermite-constructed;checked-exact
 decide(layer=elementary)|antiderivative=((-1e0*inv(x))+log(x))|note=hermite+trager-constructed;checked-exact
 decide(layer=elementary)|antiderivative=((-5e-1*inv(x)*inv(x))+(5e-1*x*x))|note=hermite-constructed;checked-exact
-unclassifiable:kovacic-necessary-conditions-met:open-cases=1:case-algorithms-not-run
-unclassifiable:kovacic-necessary-conditions-met:open-cases=1,2,3:case-algorithms-not-run
+unclassifiable:kovacic-necessary-conditions-met:open-cases=1:kovacic-case1-bound:infinity-order<2
+liouvillian:decide(layer=liouvillian)|r=(2e0*inv(x)*inv(x))|sol=P:1e0|factors=(0:2)|note=kovacic-case1-constructed;exact
 hs:decide(layer=holonomic-special)|note=kovacic-necessary-conditions-fail-all-cases:proven-no-liouvillian-solution
