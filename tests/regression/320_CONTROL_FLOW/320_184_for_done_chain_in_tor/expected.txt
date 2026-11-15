@@ -1,0 +1,4 @@
+each 0
+each 1
+each 2
+done
