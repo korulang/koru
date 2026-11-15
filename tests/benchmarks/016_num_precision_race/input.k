@@ -19,6 +19,7 @@ std/time:now(): t_w2
           |> std/num:free(n: r)
           |> std/time:report(start: t_w2, label: "w2-pow")
       | neg-exp |> std/io:print.ln("w2-negexp")
+      | exp-too-large |> std/io:print.ln("w2-toolarge")
   | bad _ |> std/io:print.ln("w2-bad")
 
 std/time:now(): t_w3

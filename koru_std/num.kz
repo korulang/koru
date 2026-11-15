@@ -492,9 +492,7 @@ fn decAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     var m_abs = try r.clone();
     m_abs.abs();
     defer m_abs.deinit();
-    const ds = try biToDigits(alloc, &m_abs);
-    defer alloc.free(ds);
-    return decFromDigits(alloc, ds, e_min, rneg);
+    return decFromMag(alloc, &m_abs, e_min, rneg);
 }
 
 
@@ -594,8 +592,66 @@ fn mulSB(alloc: std.mem.Allocator, x: []const Limb, y: []const Limb) ![]Limb {
     return ltrim(r);
 }
 
+// Schoolbook squaring: off-diagonal products appear twice in x*x — compute
+// each once and double it. The doubled product needs a 129th bit: p<<1's
+// lost top bit is folded into the carry alongside the usual high limb.
+fn sqSB(alloc: std.mem.Allocator, x: []const Limb) ![]Limb {
+    const n = x.len;
+    if (n == 0) return alloc.alloc(Limb, 0);
+    var r = try alloc.alloc(Limb, 2 * n);
+    @memset(r, 0);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const t0 = @as(DoubleLimb, x[i]) * x[i] + r[2 * i];
+        r[2 * i] = @truncate(t0);
+        var carry: DoubleLimb = t0 >> 64;
+        var j = i + 1;
+        while (j < n) : (j += 1) {
+            const p = @as(DoubleLimb, x[i]) * x[j];
+            // 2p is 129 bits — split it: low limb into t, high bits into
+            // carry. Adding the full (p<<1)+r+carry in one u128 can wrap.
+            const t = @as(DoubleLimb, r[i + j]) + @as(DoubleLimb, @as(Limb, @truncate(p << 1))) + carry;
+            r[i + j] = @truncate(t);
+            carry = (t >> 64) + (p >> 63);
+        }
+        var k = i + n;
+        while (carry != 0) {
+            if (k >= r.len) @panic("std/num sq: carry overflow");
+            const t = @as(DoubleLimb, r[k]) + carry;
+            r[k] = @truncate(t);
+            carry = t >> 64;
+            k += 1;
+        }
+    }
+    return ltrim(r);
+}
+
+// Karatsuba squaring: z0 = x0^2, z2 = x1^2, z1 = (x0+x1)^2 - z0 - z2.
+// All three subproducts are squares again — the saving compounds down the
+// tree, which is why pow's squaring ladder pays it.
+fn sqL(alloc: std.mem.Allocator, x: []const Limb) ![]Limb {
+    if (x.len == 0) return alloc.alloc(Limb, 0);
+    if (x.len <= KARA_MIN) return sqSB(alloc, x);
+    const m = x.len / 2;
+    const x0 = x[0..m];
+    const x1 = x[m..];
+    const z0 = try sqL(alloc, x0);
+    const z2 = try sqL(alloc, x1);
+    const sx = try addL(alloc, x0, x1);
+    const zt = try sqL(alloc, sx);
+    const w = try subL(alloc, zt, z0);
+    const z1 = try subL(alloc, w, z2);
+    var r = try alloc.alloc(Limb, 2 * x.len);
+    @memset(r, 0);
+    @memcpy(r[0..z0.len], z0);
+    addInto(r[m..], z1);
+    addInto(r[2 * m ..], z2);
+    return ltrim(r);
+}
+
 // karatsuba over the arena. x.len >= y.len is not required; both orders work.
 fn mulL(alloc: std.mem.Allocator, xin: []const Limb, yin: []const Limb) ![]Limb {
+    if (xin.ptr == yin.ptr and xin.len == yin.len) return sqL(alloc, xin);
     var x = xin;
     var y = yin;
     if (x.len < y.len) {
@@ -724,6 +780,69 @@ fn div1L(alloc: std.mem.Allocator, x: []const Limb, d: Limb) error{OutOfMemory}!
         rem = cur % d;
     }
     return .{ .q = ltrim(q), .r = @intCast(rem) };
+}
+
+// Decimal trailing zeros, limb-level: x = q * 10^z. One O(n) divmod pass
+// strips 19 zeros at a time; most inputs end after a single rem != 0 —
+// that is the whole cost of canonicalizing a product.
+const StripZ = struct { q: []Limb, zeros: usize };
+
+// callers must pass an arena-style allocator: ltrim'd slices are freed
+// inside, which a size-checking allocator rejects.
+fn stripDecZeros(alloc: std.mem.Allocator, x_in: []const Limb) error{OutOfMemory}!StripZ {
+    var x = try alloc.dupe(Limb, x_in);
+    var zeros: usize = 0;
+    while (x.len > 0) {
+        const qr = try div1L(alloc, x, POW10_U64[19]);
+        if (qr.r == 0) {
+            zeros += 19;
+            alloc.free(x);
+            x = qr.q;
+            continue;
+        }
+        // 10^k | x iff 10^k | r for k <= 19, and r < 10^19 has < 19 zeros
+        var c: Limb = qr.r;
+        var k: usize = 0;
+        while (@mod(c, 10) == 0) : (c = @divTrunc(c, 10)) k += 1;
+        if (k > 0) {
+            const qr2 = try div1L(alloc, x, POW10_U64[k]);
+            alloc.free(x);
+            alloc.free(qr.q);
+            x = qr2.q;
+            zeros += k;
+        } else alloc.free(qr.q);
+        break;
+    }
+    return .{ .q = x, .zeros = zeros };
+}
+
+// Canonical Dec from a magnitude + exponent — decFromDigits' contract
+// (trailing-zero strip -> e bump, canonical zero) without the radix
+// round-trip.
+fn decFromMag(alloc: std.mem.Allocator, m_in: *const BI, e: i64, neg: bool) error{OutOfMemory}!Dec {
+    if (m_in.eqlZero()) {
+        const mz = try BI.initSet(alloc, 0);
+        return .{ .neg = false, .m = mz, .e = 0 };
+    }
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const s = try stripDecZeros(arena.allocator(), m_in.toConst().limbs);
+    const m = try biFromLimbs(alloc, s.q);
+    return .{ .neg = neg, .m = m, .e = e + @as(i64, @intCast(s.zeros)) };
+}
+
+// Decimal digit count of a limb magnitude without rendering it: the
+// bit-length estimate is an upper bound off by at most one.
+fn limbDigitLen(alloc: std.mem.Allocator, x_in: []const Limb) error{OutOfMemory}!usize {
+    const x = ltrimc(x_in);
+    if (x.len == 0) return 1;
+    const bits: usize = 64 * (x.len - 1) + (64 - @clz(x[x.len - 1]));
+    var nd: usize = @as(usize, @intFromFloat(@floor(@as(f64, @floatFromInt(bits)) * 0.3010299956639812))) + 1;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const p = try pow10L(arena.allocator(), nd - 1);
+    if (cmpL(x, p) < 0) nd -= 1;
+    return nd;
 }
 
 // Knuth Algorithm D, a >= b > 0, b.len >= 2.
@@ -1303,9 +1422,7 @@ fn decMul(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     var r = try BI.init(alloc);
     defer r.deinit();
     try mulFast(&r, &a.m, &b.m);
-    const ds = try biToDigits(alloc, &r);
-    defer alloc.free(ds);
-    return decFromDigits(alloc, ds, a.e + b.e, a.neg != b.neg);
+    return decFromMag(alloc, &r, a.e + b.e, a.neg != b.neg);
 }
 
 // First `prec` digits of a digit string (floor-magnitude) and the exponent
@@ -1334,11 +1451,9 @@ fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !De
 
     // an m-digit by n-digit integer quotient has m-n or m-n+1 digits; scale A
     // so m-n = prec, then trim to prec.
-    const la = try biToDigits(alloc, &a.m);
-    defer alloc.free(la);
-    const lb = try biToDigits(alloc, &b.m);
-    defer alloc.free(lb);
-    var k: i64 = prec - @as(i64, @intCast(la.len)) + @as(i64, @intCast(lb.len));
+    const la = try limbDigitLen(alloc, a.m.toConst().limbs);
+    const lb = try limbDigitLen(alloc, b.m.toConst().limbs);
+    var k: i64 = prec - @as(i64, @intCast(la)) + @as(i64, @intCast(lb));
     if (k < 0) k = 0;
 
     var num = try a.m.clone();
@@ -1366,9 +1481,8 @@ fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
 
     // Want r = sqrt(A * 10^E). Compute s = isqrt(A * 10^k) with k = E (mod 2)
     // and len(A) + k >= 2*prec, so s has >= prec digits; result = s * 10^((E - k)/2).
-    const la = try biToDigits(alloc, &a.m);
-    defer alloc.free(la);
-    var k: i64 = 2 * @max(prec, 1) - @as(i64, @intCast(la.len));
+    const la = try limbDigitLen(alloc, a.m.toConst().limbs);
+    var k: i64 = 2 * @max(prec, 1) - @as(i64, @intCast(la));
     if (k < 0) k = 0;
     if (@mod(k - a.e, 2) != 0) k += 1;
 
@@ -2561,10 +2675,8 @@ fn decMod(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     var r = try BI.init(alloc);
     defer r.deinit();
     try divFast(&q, &r, &am, &bm);
-    const rs = try biToDigits(alloc, &r);
-    defer alloc.free(rs);
     // r >= 0 as a magnitude; sign follows the dividend (trunc-mod).
-    return decFromDigits(alloc, rs, e, a.neg and !r.eqlZero());
+    return decFromMag(alloc, &r, e, a.neg and !r.eqlZero());
 }
 
 fn ownedCopy(s: []const u8) []u8 {
@@ -2745,9 +2857,7 @@ fn numFree(s: []const u8) void {
         r.deinit();
         r = pr;
     }
-    const ds = r.toString(koru_allocator(), 10, .lower) catch @panic("std/num:pow: out of memory");
-    defer koru_allocator().free(ds);
-    var out = decFromDigits(koru_allocator(), ds, d.e * n, d.neg and @mod(n, 2) != 0) catch @panic("std/num:pow: out of memory");
+    var out = decFromMag(koru_allocator(), &r, d.e * n, d.neg and @mod(n, 2) != 0) catch @panic("std/num:pow: out of memory");
     defer decDeinit(&out);
     return .{ .exact = decToString(koru_allocator(), &out) catch @panic("std/num:pow: out of memory") };
 }
