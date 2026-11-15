@@ -352,6 +352,7 @@ fn checkArmWords(
     const o = outcomes orelse return null;
     for (cont.continuations) |*arm| {
         if (arm.is_catchall or arm.kind != .terminal) continue;
+        if (refuseVoidArm(o, event_name, arm, allocator)) |e| return e;
         var legal = o.len == 0 and std.mem.eql(u8, arm.branch, "ok");
         for (o) |outcome| {
             if (std.mem.eql(u8, outcome.name, arm.branch)) {
@@ -376,7 +377,6 @@ fn checkArmWords(
     }
     return null;
 }
-
 /// Book a dispatch into the ledger — every obligation the verb mints
 /// lands on the pool with its discharge path and dependency edges; every
 /// obligation it spends is retired. The spec fns come from the scope

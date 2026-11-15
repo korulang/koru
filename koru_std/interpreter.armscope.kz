@@ -1,0 +1,74 @@
+// Koru Standard Library: the `armscope` part of interpreter — the
+// path-scoped shadowing check. Joined via `~part armscope` in
+// interpreter.kz; merged into the interpreter module at load.
+//
+// The shadowing check lives here, driven by the `invargs` walk: the
+// recursion there already visits each arm with its ancestor bindings in
+// scope, so it is the one judge of "this bind names a name an enclosing
+// arm bound". A flat walk over sibling continuations would read siblings
+// as one scope — they are not; each arm's bindings die with its own
+// subtree. `path` carries ONLY ancestor arm bindings — never session- or
+// turn-level names — so an arm re-using a name an earlier item or turn
+// bound is legal; only an enclosing arm on the same path is a shadow.
+
+// Refuse an arm binding an ancestor arm on its path already bound; else
+// record it on the path.
+fn refuseAncestorShadow(path: *std.StringHashMap(void), name: []const u8, allocator: std.mem.Allocator) ?ValidationError {
+    if (!path.contains(name)) {
+        path.put(name, {}) catch {};
+        return null;
+    }
+    return .{
+        .message = std.fmt.allocPrint(allocator, "'{s}' is already bound by an enclosing arm — this bind would shadow it, and Koru has no shadowing; pick a new name", .{name}) catch "shadowed binding",
+        .binding_name = name,
+    };
+}
+
+// Each arm's own bindings scope to that arm's subtree — seed before
+// descending, lift after. Sibling arms never see each other's names.
+fn checkArmSubtrees(
+    cont: *const ast.Continuation,
+    input_fn: ?InputLookupFn,
+    branches_fn: ?BranchesLookupFn,
+    defined: ?*DefinedFlows,
+    bound: *std.StringHashMap(void),
+    path: *std.StringHashMap(void),
+    allocator: std.mem.Allocator,
+) ?ValidationError {
+    for (cont.continuations) |*arm| {
+        var added = std.ArrayList([]const u8){};
+        defer added.deinit(allocator);
+        var added_path = std.ArrayList([]const u8){};
+        defer added_path.deinit(allocator);
+        if (arm.binding) |b| {
+            if (refuseAncestorShadow(path, b, allocator)) |e| return e;
+            added_path.append(allocator, b) catch {};
+        }
+        if (arm.binding) |b| seedBound(bound, &added, b, allocator);
+        seedDestructure(bound, &added, arm.destructure, allocator);
+        const r = checkInvocationArgs(arm, input_fn, branches_fn, defined, bound, path, allocator);
+        for (added.items) |name| _ = bound.remove(name);
+        for (added_path.items) |name| _ = path.remove(name);
+        if (r) |e| return e;
+    }
+    return null;
+}
+
+// A tor declaring no outcomes and no bare return is void — an empty
+// outcome list means exactly that: a `-> T` bare return earns a
+// synthetic "ok" outcome at registration, so only the truly void tor
+// reaches the arm-word check with nothing declared. A BINDING arm on it
+// is a shape bug — the bound name would carry an outcome value that
+// does not exist; refuse it like an undeclared arm word. A bare
+// `| ok |>` sequences on the step completing and binds nothing — that
+// shape stays.
+fn refuseVoidArm(outcomes: []const BranchSpec, event_name: []const u8, arm: *const ast.Continuation, allocator: std.mem.Allocator) ?ValidationError {
+    if (outcomes.len != 0) return null;
+    const b = arm.binding orelse return null;
+    if (std.mem.eql(u8, b, "_")) return null;
+    const arm_text = std.fmt.allocPrint(allocator, "{s} {s}", .{ arm.branch, b }) catch arm.branch;
+    return .{
+        .message = std.fmt.allocPrint(allocator, "'{s}' is void — it issues no outcome, so '| {s} |>' has nothing to arm; drop the arm", .{ event_name, arm_text }) catch "void tor armed",
+        .binding_name = arm.binding orelse arm.branch,
+    };
+}

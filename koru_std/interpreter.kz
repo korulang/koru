@@ -470,11 +470,11 @@ pub const InterpreterThreadState = struct {
 };
 
 // HOST-TILDE WALL - interpreter source is pure Koru
-
 ~part args
 ~part argref
 ~part arith
 ~part arms
+~part armscope
 ~part checks
 ~part contracts
 ~part contracts-specs
@@ -485,6 +485,7 @@ pub const InterpreterThreadState = struct {
 ~part interp
 ~part names
 ~part parse
+~part paths
 ~part pool
 ~part pool-organ
 ~part mint

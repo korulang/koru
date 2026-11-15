@@ -1,0 +1,228 @@
+// Koru Standard Library: the `paths` part of interpreter — dotted-path
+// resolution on bound values. Joined via `~part paths` in interpreter.kz;
+// merged into the interpreter module at load.
+//
+// A bound Value's first level is declared fields; below that, the only
+// composite a field can carry is JSON object text inside a `string_val`
+// (FieldValue has no record variant). `resolveBoundPath` walks a dotted
+// path segment by segment — level 0 against `Value.fields`, deeper levels
+// by parsing that text with `std.json.parseFromSlice` (runtime DOM, the
+// same call `koru_std/json.dom.kz` makes — a field's string that is not
+// object text stays a scalar). Shared by `{{ name.seg.seg }}`
+// interpolation (interp part) and the bare `name.seg.seg` arg path
+// (`evalFieldPathArg`, called from the expr part).
+//
+// Refusals name the real point of failure: `'<path>' — '<prefix>' carries
+// no field '<seg>'` for a missing key (with the keys that level has),
+// `'<prefix>' is a scalar, not a record — '<seg>' can't be read from it`
+// for a leaf mid-path, `… is a list, not a record …` for an array. A
+// one-segment miss keeps the established refusal text — `display` carries
+// each surface's quoting of the reference.
+
+// Parse a field's text as a JSON object → its ObjectMap, or null when the
+// text is not a JSON object (a scalar stays a scalar — no refusal). The
+// Parsed owns an arena; it lives on ctx.allocator alongside everything
+// else the interpreter allocates.
+fn jsonObjectOf(text: []const u8, allocator: std.mem.Allocator) ?std.json.ObjectMap {
+    const parsed = allocator.create(std.json.Parsed(std.json.Value)) catch return null;
+    parsed.* = std.json.parseFromSlice(std.json.Value, allocator, text, .{ .parse_numbers = false }) catch return null;
+    return switch (parsed.value) {
+        .object => |o| o,
+        else => null,
+    };
+}
+
+// Compact render of a JSON node to text — mirrors `domRenderNode` in
+// koru_std/json.dom.kz (private to the std/json module, so the interpreter
+// carries its own copy). Strings arrive already decoded by the parser;
+// composite nodes keep JSON text.
+fn jsonNodeWrite(n: std.json.Value, w: *std.Io.Writer) !void {
+    switch (n) {
+        .null => try w.writeAll("null"),
+        .bool => |b| try w.writeAll(if (b) "true" else "false"),
+        .integer => |i| try w.print("{d}", .{i}),
+        .float => |f| try w.print("{d}", .{f}),
+        .number_string => |s| try w.writeAll(s),
+        .string => |s| try std.json.Stringify.encodeJsonString(s, .{}, w),
+        .array => |a| {
+            try w.writeByte('[');
+            for (a.items, 0..) |el, i| {
+                if (i > 0) try w.writeByte(',');
+                try jsonNodeWrite(el, w);
+            }
+            try w.writeByte(']');
+        },
+        .object => |o| {
+            try w.writeByte('{');
+            var it = o.iterator();
+            var i: usize = 0;
+            while (it.next()) |e| {
+                if (i > 0) try w.writeByte(',');
+                try std.json.Stringify.encodeJsonString(e.key_ptr.*, .{}, w);
+                try w.writeByte(':');
+                try jsonNodeWrite(e.value_ptr.*, w);
+                i += 1;
+            }
+            try w.writeByte('}');
+        },
+    }
+}
+
+// A leaf JSON node renders as a one-level field does: a string is its
+// decoded text, numbers/bools/null their literal text, a composite its
+// JSON text.
+fn renderJsonLeaf(n: std.json.Value, allocator: std.mem.Allocator) ![]const u8 {
+    return switch (n) {
+        .string => |s| try allocator.dupe(u8, s),
+        .number_string => |s| try allocator.dupe(u8, s),
+        .integer => |i| try std.fmt.allocPrint(allocator, "{d}", .{i}),
+        .float => |f| try std.fmt.allocPrint(allocator, "{d}", .{f}),
+        .bool => |b| try allocator.dupe(u8, if (b) "true" else "false"),
+        .null => try allocator.dupe(u8, "null"),
+        .object, .array => blk: {
+            var al = std.Io.Writer.Allocating.init(allocator);
+            try jsonNodeWrite(n, &al.writer);
+            break :blk al.toArrayList().items;
+        },
+    };
+}
+
+// The keys a JSON object declares, in order — for refusal messages.
+fn jsonObjKeys(obj: std.json.ObjectMap, allocator: std.mem.Allocator) []const []const u8 {
+    var keys = std.ArrayList([]const u8){};
+    var it = obj.iterator();
+    while (it.next()) |e| keys.append(allocator, e.key_ptr.*) catch return keys.items;
+    return keys.items;
+}
+
+fn joinNames(names: []const []const u8, allocator: std.mem.Allocator) []const u8 {
+    var out = std.ArrayList(u8){};
+    for (names, 0..) |n, i| {
+        if (i > 0) out.appendSlice(allocator, ", ") catch return out.items;
+        out.appendSlice(allocator, n) catch return out.items;
+    }
+    return out.items;
+}
+
+fn fieldNames(fields: []const NamedField, allocator: std.mem.Allocator) []const u8 {
+    var names = std.ArrayList([]const u8){};
+    for (fields) |f| names.append(allocator, f.name) catch return "";
+    return joinNames(names.items, allocator);
+}
+
+// A `.`-joined run of identifiers — `name.first_name`, `a.b.c` — as in a
+// lone field path. Numeric segments (`3.5`) and expression text
+// (`r3.x + 1`) fail a segment's ident check and stay out of the path.
+fn isDottedIdents(t: []const u8) bool {
+    var it = std.mem.splitScalar(u8, t, '.');
+    while (it.next()) |seg| {
+        if (!isWireIdent(seg)) return false;
+    }
+    return t.len > 0;
+}
+
+// Resolve `root.seg.seg…` on a bound Value — any depth. `display` is the
+// reference as the calling surface quotes it (`{{ u.name }}`, `u.name`),
+// used verbatim in refusals.
+fn resolveBoundPath(bv: *const Value, root: []const u8, path: []const u8, display: []const u8, ctx: *InterpreterContext) ![]const u8 {
+    const allocator = ctx.allocator;
+    const fields = bv.fields;
+    var doc: ?std.json.ObjectMap = null;
+    var prefix = std.ArrayList(u8){};
+    try prefix.appendSlice(allocator, root);
+    var it = std.mem.splitScalar(u8, path, '.');
+    while (it.next()) |seg| {
+        const is_last = it.peek() == null;
+        var leaf_fv: ?FieldValue = null;
+        var leaf_node: ?std.json.Value = null;
+        var next_doc: ?std.json.ObjectMap = null;
+        var mid_kind: enum { none, scalar, list } = .none;
+        if (doc) |d| {
+            const node = d.get(seg) orelse {
+                const have = joinNames(jsonObjKeys(d, allocator), allocator);
+                ctx.error_detail = std.fmt.allocPrint(allocator,
+                    "'{s}' — '{s}' carries no field '{s}' (it has: {s})",
+                    .{ display, prefix.items, seg, have }) catch null;
+                return error.FieldNotOnBoundValue;
+            };
+            switch (node) {
+                .object => |o| next_doc = o,
+                .array => mid_kind = .list,
+                else => {
+                    leaf_node = node;
+                    mid_kind = .scalar;
+                },
+            }
+        } else {
+            var found = false;
+            for (fields) |f| {
+                if (std.mem.eql(u8, f.name, seg)) {
+                    leaf_fv = f.value;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                if (is_last) {
+                    // The established one-level refusal, `display`-quoted.
+                    ctx.error_detail = std.fmt.allocPrint(allocator,
+                        "'{s}' — the bound value '{s}' carries no field '{s}'",
+                        .{ display, root, seg }) catch null;
+                } else {
+                    const have = fieldNames(fields, allocator);
+                    ctx.error_detail = std.fmt.allocPrint(allocator,
+                        "'{s}' — '{s}' carries no field '{s}' (it has: {s})",
+                        .{ display, prefix.items, seg, have }) catch null;
+                }
+                return error.FieldNotOnBoundValue;
+            }
+            mid_kind = .scalar;
+            switch (leaf_fv.?) {
+                .string_val => |s| if (jsonObjectOf(s, allocator)) |o| {
+                    next_doc = o;
+                    mid_kind = .none;
+                },
+                .string_array => mid_kind = .list,
+                else => {},
+            }
+        }
+        if (is_last) {
+            if (leaf_node) |n| return try renderJsonLeaf(n, allocator);
+            return try fieldValueToString(leaf_fv.?, allocator);
+        }
+        if (next_doc == null) {
+            // This segment resolved to a non-record and more path follows.
+            var full_prefix = std.ArrayList(u8){};
+            try full_prefix.appendSlice(allocator, prefix.items);
+            try full_prefix.append(allocator, '.');
+            try full_prefix.appendSlice(allocator, seg);
+            ctx.error_detail = std.fmt.allocPrint(allocator,
+                "'{s}' is a {s}, not a record — '{s}' can't be read from it",
+                .{ full_prefix.items, if (mid_kind == .list) "list" else "scalar", it.peek().? }) catch null;
+            return error.NotARecord;
+        }
+        doc = next_doc;
+        try prefix.append(allocator, '.');
+        try prefix.appendSlice(allocator, seg);
+    }
+    return error.FieldNotOnBoundValue;
+}
+
+// A bare `name.seg…` arg value: resolved against the bound env, or null
+// when the text is not a lone field path — `3.5` is a float literal and
+// `r3.x + 1` is an expression; both fall through to the evaluator.
+fn evalFieldPathArg(trimmed: []const u8, ctx: *InterpreterContext) !?[]const u8 {
+    const env = ctx.env;
+    const allocator = ctx.allocator;
+    const dot = std.mem.indexOf(u8, trimmed, ".") orelse return null;
+    if (!isWireIdent(trimmed[0..dot]) or !isDottedIdents(trimmed[dot + 1 ..])) return null;
+    const binding_name = trimmed[0..dot];
+    const field_path = trimmed[dot + 1 ..];
+    if (env.get(binding_name)) |bound_value| {
+        return try resolveBoundPath(&bound_value, binding_name, field_path, trimmed, ctx);
+    }
+    ctx.error_detail = std.fmt.allocPrint(allocator,
+        "'{s}' is not bound — no earlier arm issued that name",
+        .{binding_name}) catch null;
+    return error.UnboundName;
+}

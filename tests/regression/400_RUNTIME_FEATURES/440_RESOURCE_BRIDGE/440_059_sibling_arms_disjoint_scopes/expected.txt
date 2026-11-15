@@ -1,0 +1,9 @@
+echo: f hit
+t1 result
+echo: f hit
+t2 result
+t3 refused 'u' is already bound by an enclosing arm — this bind would shadow it, and Koru has no shadowing; pick a new name
+echo: hit miss
+t4 result
+echo: again hit
+t5 result

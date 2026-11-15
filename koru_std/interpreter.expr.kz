@@ -236,32 +236,9 @@ fn evaluateExpr(expr_str: []const u8, ctx: *InterpreterContext) ![]const u8 {
         return try interpolateWireString(try unescapeStringLiteral(trimmed[1..trimmed.len - 1], allocator), ctx);
     }
 
-    // Lone field path (`r3.user_id`) only — `3.5` is a float literal and
-    // `r3.x + 1` is an expression; both fall to the evaluator below.
-    const dot_pos = std.mem.indexOf(u8, trimmed, ".");
-    const lone_field_path = dot_pos != null and isWireIdent(trimmed[0..dot_pos.?]) and isWireIdent(trimmed[dot_pos.? + 1 ..]);
-    if (lone_field_path) {
-        const binding_name = trimmed[0..dot_pos.?];
-        const field_name = trimmed[dot_pos.? + 1..];
-
-        if (env.get(binding_name)) |bound_value| {
-            for (bound_value.fields) |fv| {
-                if (std.mem.eql(u8, fv.name, field_name)) {
-                    return try fieldValueToString(fv.value, allocator);
-                }
-            }
-            // Field not found — refuse loudly; a placeholder shipped as
-            // data is the dishonest version of this error.
-            ctx.error_detail = std.fmt.allocPrint(allocator,
-                "'{s}.{s}' — the bound value '{s}' carries no field '{s}'",
-                .{ binding_name, field_name, binding_name, field_name }) catch null;
-            return error.FieldNotOnBoundValue;
-        }
-        ctx.error_detail = std.fmt.allocPrint(allocator,
-            "'{s}' is not bound — no earlier arm issued that name",
-            .{binding_name}) catch null;
-        return error.UnboundName;
-    }
+    // Lone field path (`r3.user_id`, `u.user.first_name`) — the paths
+    // part's resolver; `3.5` and `r3.x + 1` fall through to the evaluator.
+    if (try evalFieldPathArg(trimmed, ctx)) |v| return v;
 
     if (env.get(trimmed)) |bound_value| {
         if (bound_value.fields.len > 0) {

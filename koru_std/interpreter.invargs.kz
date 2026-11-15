@@ -14,6 +14,7 @@ fn checkInvocationArgs(
     branches_fn: ?BranchesLookupFn,
     defined: ?*DefinedFlows,
     bound: *std.StringHashMap(void),
+    path: *std.StringHashMap(void),
     allocator: std.mem.Allocator,
 ) ?ValidationError {
     // Destructures are not implemented in interpreted flows — eval binds only
@@ -63,18 +64,5 @@ fn checkInvocationArgs(
             else => {},
         }
     }
-    // Each arm's own bindings scope to that arm's subtree — seed before
-    // descending, lift after. An arm that re-binds an outer name is the
-    // shadowing check's refusal, already answered above; names we did not
-    // add are left alone.
-    for (cont.continuations) |*arm| {
-        var added = std.ArrayList([]const u8){};
-        defer added.deinit(allocator);
-        if (arm.binding) |b| seedBound(bound, &added, b, allocator);
-        seedDestructure(bound, &added, arm.destructure, allocator);
-        const r = checkInvocationArgs(arm, input_fn, branches_fn, defined, bound, allocator);
-        for (added.items) |name| _ = bound.remove(name);
-        if (r) |e| return e;
-    }
-    return null;
+    return checkArmSubtrees(cont, input_fn, branches_fn, defined, bound, path, allocator);
 }

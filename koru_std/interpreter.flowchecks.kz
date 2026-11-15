@@ -50,7 +50,10 @@ pub fn checkFlowArgs(
         var it = te.bindings.iterator();
         while (it.next()) |e| bound.put(e.key_ptr.*, {}) catch {};
     }
-    return checkInvocationArgs(&flow.body, input_fn, branches_fn, defined, &bound, allocator);
+    // Ancestor-arm bindings only — never session/turn env (see checks part).
+    var path = std.StringHashMap(void).init(allocator);
+    defer path.deinit();
+    return checkInvocationArgs(&flow.body, input_fn, branches_fn, defined, &bound, &path, allocator);
 }
 
 /// Validates a flow AST before execution.
@@ -68,9 +71,6 @@ pub fn validateFlow(
     session_env: ?*Environment,
     turn_env: ?*Environment,
 ) ?ValidationError {
-    var seen_bindings = std.StringHashMap(void).init(allocator);
-    defer seen_bindings.deinit();
-    if (validateFlowRecursive(flow, &seen_bindings)) |e| return e;
     if (checkShadowedArms(flow.body.continuations, allocator)) |e| return e;
     return checkFlowArgs(flow, input_fn, branches_fn, defined, allocator, session_env, turn_env);
 }

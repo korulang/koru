@@ -46,24 +46,17 @@ fn interpolateWireString(inner: []const u8, ctx: *InterpreterContext) ![]const u
     return out.items;
 }
 
-// One `{{ ref }}` — `name` or `name.field`, first-dot split like the bare
+// One `{{ ref }}` — `name` or `name.seg.seg…`, first-dot split like the bare
 // field-access path in expr.
 fn interpolateRef(ref_txt: []const u8, ctx: *InterpreterContext) ![]const u8 {
     const allocator = ctx.allocator;
     const env = ctx.env;
     if (std.mem.indexOfScalar(u8, ref_txt, '.')) |dot| {
         const binding_name = ref_txt[0..dot];
-        const field_name = ref_txt[dot + 1 ..];
+        const field_path = ref_txt[dot + 1 ..];
         if (env.get(binding_name)) |bound_value| {
-            for (bound_value.fields) |fv| {
-                if (std.mem.eql(u8, fv.name, field_name)) {
-                    return try fieldValueToString(fv.value, allocator);
-                }
-            }
-            ctx.error_detail = std.fmt.allocPrint(allocator,
-                "'{{ {s}.{s} }}' — the bound value '{s}' carries no field '{s}'",
-                .{ binding_name, field_name, binding_name, field_name }) catch null;
-            return error.FieldNotOnBoundValue;
+            const display = try std.fmt.allocPrint(allocator, "{{{{ {s} }}}}", .{ref_txt});
+            return try resolveBoundPath(&bound_value, binding_name, field_path, display, ctx);
         }
         ctx.error_detail = std.fmt.allocPrint(allocator,
             "'{{ {s} }}' names '{s}', which is not bound — no earlier arm issued it; bind the value with `| ok name |>` first",

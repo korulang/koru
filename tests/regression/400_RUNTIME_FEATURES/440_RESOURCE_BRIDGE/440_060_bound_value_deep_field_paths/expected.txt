@@ -1,0 +1,11 @@
+echo: Zoë
+t1 result
+echo: Zoë
+t2 result
+t3 refused '{{ u.user.bogus.x }}' — 'u.user' carries no field 'bogus' (it has: first_name, last_name, greeting)
+t4 refused 'u.id' is a scalar, not a record — 'x' can't be read from it
+echo: u7|{"first_name":"Zo\u00eb","last_name":"Li","greeting":"line1\nline2"}
+t5 result
+echo: Zoë|line1
+line2
+t6 result

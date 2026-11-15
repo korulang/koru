@@ -1,0 +1,4 @@
+t1 refused 'echo' is void — it issues no outcome, so '| ok x |>' has nothing to arm; drop the arm
+t2 refused 'echo' is void — it issues no outcome, so '| done x |>' has nothing to arm; drop the arm
+echo: payload-9
+t3 result

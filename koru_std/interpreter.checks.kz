@@ -25,29 +25,4 @@ fn seedDestructure(bound: *std.StringHashMap(void), added: *std.ArrayList([]cons
 
 
 
-fn validateFlowRecursive(flow: *const ast.Flow, seen: *std.StringHashMap(void)) ?ValidationError {
-    // Check each continuation for bindings
-    for (flow.body.continuations) |cont| {
-        if (cont.binding) |binding_name| {
-            // Check for shadowing
-            if (seen.contains(binding_name)) {
-                return .{
-                    .message = "Shadowing not allowed: binding already exists",
-                    .binding_name = binding_name,
-                };
-            }
-            // Record this binding
-            seen.put(binding_name, {}) catch {
-                return .{
-                    .message = "Validation internal error",
-                    .binding_name = binding_name,
-                };
-            };
-        }
 
-        // Note: AST structure changed - cont.node is now ?Node not *Flow
-        // Nested continuations are in cont.continuations, handled in the outer loop
-    }
-
-    return null; // Valid!
-}

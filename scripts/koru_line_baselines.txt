@@ -161,8 +161,9 @@ koru_std/interpreter.argref.kz	31
 koru_std/interpreter.args.kz	7
 koru_std/interpreter.arith.kz	41
 koru_std/interpreter.arms.kz	52
+koru_std/interpreter.armscope.kz	74
 koru_std/interpreter.callrec.kz	156
-koru_std/interpreter.checks.kz	53
+koru_std/interpreter.checks.kz	28
 koru_std/interpreter.contracts-specs.kz	31
 koru_std/interpreter.contracts.kz	74
 koru_std/interpreter.custody-witness.kz	40
@@ -173,15 +174,15 @@ koru_std/interpreter.defined.kz	7
 koru_std/interpreter.deftable.kz	174
 koru_std/interpreter.env.kz	77
 koru_std/interpreter.eval.kz	191
-koru_std/interpreter.expr.kz	277
+koru_std/interpreter.expr.kz	254
 koru_std/interpreter.fieldvalue.kz	48
 koru_std/interpreter.flowchecks.kz	76
 koru_std/interpreter.flowsrc.kz	85
 koru_std/interpreter.guards.kz	63
 koru_std/interpreter.handles-invoke.kz	53
 koru_std/interpreter.handles.kz	151
-koru_std/interpreter.interp.kz	83
-koru_std/interpreter.invargs.kz	80
+koru_std/interpreter.interp.kz	76
+koru_std/interpreter.invargs.kz	68
 koru_std/interpreter.kz	516
 koru_std/interpreter.literal.kz	40
 koru_std/interpreter.mint.kz	37
@@ -189,6 +190,7 @@ koru_std/interpreter.mounted-services.kz	42
 koru_std/interpreter.mounted.kz	496
 koru_std/interpreter.names.kz	18
 koru_std/interpreter.parse.kz	52
+koru_std/interpreter.paths.kz	228
 koru_std/interpreter.pool-organ.kz	237
 koru_std/interpreter.pool.kz	8
 koru_std/interpreter.refuse.kz	46
