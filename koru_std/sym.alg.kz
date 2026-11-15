@@ -447,7 +447,7 @@ fn algMulMod(alloc: std.mem.Allocator, a: []const Rat, b: []const Rat, m: []cons
 }
 
 // Value literal: v reduced mod the declared modulus.
-~pub tor alg-lit { mod: string, v: string<!sexpr> }
+~pub tor alg-lit { mod: string<*>, v: string<!sexpr> }
 | exact string<std/io:allocated!>
 | bad
 
@@ -489,7 +489,7 @@ fn algBin(alloc: std.mem.Allocator, a: []const u8, b: []const u8, op: u8) !?[]u8
     return try algEmit(alloc, va.m_txt, r);
 }
 
-~pub tor alg-add { a: string, b: string }
+~pub tor alg-add { a: string<*>, b: string<*> }
 | exact string<std/io:allocated!>
 | modulus-mismatch
 | bad
@@ -503,7 +503,7 @@ fn algBin(alloc: std.mem.Allocator, a: []const u8, b: []const u8, op: u8) !?[]u8
     return .{ .exact = blob };
 }
 
-~pub tor alg-sub { a: string, b: string }
+~pub tor alg-sub { a: string<*>, b: string<*> }
 | exact string<std/io:allocated!>
 | modulus-mismatch
 | bad
@@ -517,7 +517,7 @@ fn algBin(alloc: std.mem.Allocator, a: []const u8, b: []const u8, op: u8) !?[]u8
     return .{ .exact = blob };
 }
 
-~pub tor alg-mul { a: string, b: string }
+~pub tor alg-mul { a: string<*>, b: string<*> }
 | exact string<std/io:allocated!>
 | modulus-mismatch
 | bad
@@ -531,7 +531,7 @@ fn algBin(alloc: std.mem.Allocator, a: []const u8, b: []const u8, op: u8) !?[]u8
     return .{ .exact = blob };
 }
 
-~pub tor alg-neg { a: string }
+~pub tor alg-neg { a: string<*> }
 | exact string<std/io:allocated!>
 | bad
 
@@ -545,7 +545,7 @@ fn algBin(alloc: std.mem.Allocator, a: []const u8, b: []const u8, op: u8) !?[]u8
     return .{ .exact = blob };
 }
 
-~pub tor alg-inv { a: string }
+~pub tor alg-inv { a: string<*> }
 | exact string<std/io:allocated!>
 | zero-divisor string<std/io:allocated!>
 | bad
@@ -566,7 +566,7 @@ fn algBin(alloc: std.mem.Allocator, a: []const u8, b: []const u8, op: u8) !?[]u8
     return .{ .exact = blob };
 }
 
-~pub tor alg-div { a: string, b: string }
+~pub tor alg-div { a: string<*>, b: string<*> }
 | exact string<std/io:allocated!>
 | zero-divisor string<std/io:allocated!>
 | modulus-mismatch
@@ -593,7 +593,7 @@ fn algBin(alloc: std.mem.Allocator, a: []const u8, b: []const u8, op: u8) !?[]u8
     return .{ .exact = blob };
 }
 
-~pub tor alg-pow { a: string, n: i64 }
+~pub tor alg-pow { a: string<*>, n: i64 }
 | exact string<std/io:allocated!>
 | zero-divisor string<std/io:allocated!>
 | bad

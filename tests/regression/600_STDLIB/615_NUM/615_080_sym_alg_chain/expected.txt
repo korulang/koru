@@ -1,0 +1,5 @@
+x^4      = alg:v1;(1e0+(x*x));1e0
+add      = alg:v1;(1e0+(x*x));(2e0*x)
+mul x^2  = alg:v1;(1e0+(x*x));(-1e0+(-1e0*x))
+e+z*o    = alg:v1;(1e0+(x*x));x
+e-z*o    = alg:v1;(1e0+(x*x));(2e0+x)
