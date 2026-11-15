@@ -31,9 +31,7 @@ pub fn renderHeldHandles(pool: *HandlePool) []const u8 {
         if (h.discharged) continue;
         if (!first) w.writeByte(',') catch return "[]";
         first = false;
-        w.writeByte('"') catch return "[]";
-        w.writeAll(h.handle_id) catch return "[]";
-        w.writeByte('"') catch return "[]";
+        w.writeAll(jsonQuote(std.heap.page_allocator, h.handle_id)) catch return "[]";
     }
     w.writeByte(']') catch return "[]";
     return std.heap.page_allocator.dupe(u8, buf.items) catch "[]";
