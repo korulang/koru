@@ -1454,7 +1454,14 @@ pub const AutoDischargeInserter = struct {
                     .host_line => |*h| h,
                     else => continue,
                 };
-                const at_module_scope = depth == 0;
+                // Module decls are unindented. Depth alone is not proof:
+                // host text is opaque to the parser, so an unbalanced `}`
+                // (partial edit — the koru-rive bg-arm deletion) or a `\\`
+                // multiline string carrying braces drifts the running count
+                // and every later fn-local `var k` reads as a module decl —
+                // KORU112 then fires on unrelated effect procs (400_159).
+                const at_module_scope = depth == 0 and
+                    (hl.content.len == 0 or (hl.content[0] != ' ' and hl.content[0] != '\t'));
                 depth += braceDepthChange(hl.content);
                 if (!at_module_scope) continue;
 

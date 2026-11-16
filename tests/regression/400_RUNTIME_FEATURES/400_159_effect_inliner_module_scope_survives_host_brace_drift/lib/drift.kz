@@ -1,0 +1,47 @@
+// Module fixture for 400_159: KORU112's module-scope scan must not be
+// poisoned by brace drift in opaque host text.
+//
+// `fn note` carries a Zig multiline string (`\\`) whose text holds an
+// unbalanced `}`. That is legal Zig and legal Koru — but a scope tracker
+// that counts braces without knowing the `\\` spelling sees a close with
+// no open, and every host line after it reads one level too shallow:
+// fn-local `k` / `m` / `ring` below then look like MODULE declarations.
+// The consumer-side trigger was an orphan `}` left behind by a partial
+// edit (koru-rive bg-arm deletion) — same drift, and there the file was
+// invalid Zig anyway, so KORU112's false positives were noise on top of
+// the real brace error. Here the file is VALID: the only thing wrong is
+// the check itself.
+const std = @import("std");
+
+fn note() void {
+    const s =
+        \\ }
+    ;
+    _ = s;
+    const k: usize = 0;
+    _ = k;
+}
+
+fn more() void {
+    const m: usize = 0;
+    var ring = std.ArrayList(u8).empty;
+    ring.append(std.heap.page_allocator, 1) catch {};
+    ring.deinit(std.heap.page_allocator);
+    _ = m;
+}
+
+// Effect-branch proc: `k` below is a for-capture local, never a module
+// name. Pre-fix, the drifted scan flags it as "declared by this module"
+// and rejects the whole compile — KORU112 on an unrelated proc.
+~pub tor spin { count: usize }
+! tick usize
+| done usize
+
+~proc spin|zig {
+    var acc: usize = 0;
+    for (0..count) |k| {
+        tick(k);
+        acc += k;
+    }
+    return .{ .done = acc };
+}
