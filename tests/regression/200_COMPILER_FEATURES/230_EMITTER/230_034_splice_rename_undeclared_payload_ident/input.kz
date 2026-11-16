@@ -1,0 +1,31 @@
+// Pin: same splice-rename miss as 230_033, undeclared-identifier half.
+// The producer body carries the token `c` only inside a nested scope (the
+// `for` capture), so `producer_shadow` still forces the consumer binding
+// `c` to `__koru_bind_<line>_<col>` — but bare `c` in the `sink(c)` payload
+// resolves to NOTHING at the splice site: Zig refuses with "use of
+// undeclared identifier 'c'" (the koru-rive mesh_clip_event shape).
+//
+// Expected: prints `sink 42`.
+
+const std = @import("std");
+const Bar = struct { v: i64 };
+
+~tor ev {}
+! foo Bar
+
+~proc ev|zig {
+    const x: Bar = .{ .v = 42 };
+    for (0..1) |c| {
+        _ = c;
+    }
+    foo(x);
+}
+
+~tor sink { c: Bar }
+
+~proc sink|zig {
+    std.debug.print("sink {d}\n", .{__koru_event_input.c.v});
+}
+
+~ev()
+! foo c |> sink(c)

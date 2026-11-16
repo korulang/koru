@@ -1,0 +1,33 @@
+// Pin: an event invocation inside a spliced `!` consumer arm must emit the
+// site-unique `__koru_bind_*` name for a renamed binding, not the raw
+// binding text. The consumer binds `! foo c`; the producer's |zig| body
+// declares its own `c`, so splice hygiene renames the consumer binding to
+// `__koru_bind_<line>_<col>` and emits `const __koru_bind_… = x`. The
+// `sink(c)` payload arg must follow the rename — emitting bare `c` reads
+// the PRODUCER's decoy local instead: same type, compiles clean, wrong
+// value (the silent-corruption half of the defect; the undeclared-
+// identifier half is 230_034).
+//
+// Expected: prints `sink 42` — the payload `x` fired by `foo(x)`.
+
+const std = @import("std");
+const Bar = struct { v: i64 };
+
+~tor ev {}
+! foo Bar
+
+~proc ev|zig {
+    const c: Bar = .{ .v = 7 };
+    _ = &c;
+    const x: Bar = .{ .v = 42 };
+    foo(x);
+}
+
+~tor sink { c: Bar }
+
+~proc sink|zig {
+    std.debug.print("sink {d}\n", .{__koru_event_input.c.v});
+}
+
+~ev()
+! foo c |> sink(c)

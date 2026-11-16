@@ -9369,7 +9369,31 @@ fn lowerExprZig(emitter: *CodeEmitter, ctx: *EmissionContext, text: []const u8) 
     // Bound-name spelling AFTER the expr rewrite: `@"i1"` would not survive
     // the rewriter's operand parser, but the rewriter's output block
     // (`__koru_l = i1`) rewrites to `@"i1"` cleanly by identifier match.
-    return escapeBoundNames(ctx, lowered) catch lowered;
+    const escaped = escapeBoundNames(ctx, lowered) catch lowered;
+    // Cross-boundary splice hygiene, text half (230_033/230_034): a consumer
+    // binding renamed against a producer token (`__koru_bind_<line>_<col>`)
+    // must rewrite EVERY reference emitted inside the splice window — arg
+    // payload values included. emitExpression covers the AST path and the
+    // inline-body rewrite covers template text; this is the funnel for
+    // expression TEXT (`emitArgs` → `emitValue`), which previously carried
+    // the raw binding name into `.handler(.{ .field = c })` — undeclared
+    // when the producer scoped `c` away, silently the producer's decoy
+    // local when it didn't. `from` is spelled through appendBranchName so
+    // it matches the post-escapeBoundNames spelling (`pos-tempo` →
+    // `pos_tempo`, `u2` → `@"u2"`).
+    if (ctx.splice_binding_renames.items.len == 0) return escaped;
+    var out = escaped;
+    var out_owned = false;
+    for (ctx.splice_binding_renames.items) |br| {
+        var spelled: std.ArrayList(u8) = .empty;
+        defer spelled.deinit(ctx.allocator);
+        codegen_utils.appendBranchName(&spelled, ctx.allocator, br.from) catch continue;
+        const rw = codegen_utils.replaceIdentifier(ctx.allocator, out, spelled.items, br.to) catch break;
+        if (out_owned) ctx.allocator.free(@constCast(out));
+        out = rw;
+        out_owned = true;
+    }
+    return out;
 }
 
 /// Rewrite in-scope flow-binding names whose emitted Zig spelling differs

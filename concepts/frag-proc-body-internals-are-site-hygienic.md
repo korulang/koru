@@ -38,6 +38,20 @@ slot. An inner rename that masked an outer one used to send references to the
 outer binding back to its raw name, and that read a producer's live local of
 the same name: a silent miscompile, not a compile error.
 
+Coverage is per *emission path*, and the stack only helps where the path
+consults it. The rename reached AST expressions (`emitExpression`),
+template-rendered body text (the inline-body rewrite), and guard text — but
+not expression text lowered through `lowerExprZig`, which is where
+`emitArgs` writes event payload values (`sink(c)` → `.handler(.{ .c = c })`).
+A renamed binding's raw name then survived into the payload: undeclared
+identifier when the producer scoped the name away (the koru-rive
+`mesh_clip_event` `.c = c`), or — worse — the producer's live decoy local
+when it happened to be in scope and type-compatible (`mtri(tv)` reading the
+loop `|t|`; 230_033 prints `sink 7` for a payload of 42, 230_034 dies on
+`use of undeclared identifier 'c'`). The rule stands: inside the splice
+window EVERY reference to a renamed binding rewrites, and `lowerExprZig` —
+the funnel for all Koru-expression text — is where that guarantee now lives.
+
 What this does NOT cover, deliberately:
 
 - **Non-`__` producer locals** (`var i` in a proc body) still collide with
