@@ -345,3 +345,14 @@ need to follow at least one labeled arg, or phantom-param position
 matters. Next isolation: reorder rive-card params so a labeled param
 precedes `f`, or call `rive-card(win-less equivalent)` matching dome's
 exact arg order.
+
+Update 2 (minimal repro pinned): `/tmp/kzyield_repro` — `.kz` tor
+`t { frame2: *libs/canvas:Frame<frame>, x: i64 }` called from inside a
+`! frame f` yield arm. Supplying the phantom `f` as an arg
+(`t(frame2: f, x: 1)` or bare-pun `t(f, x: 1)`) -> KORU080 on ALL
+params. Omitting the phantom (`t(x: 1)` with `?` optional) -> call
+binds (fails later at KORU030 phantom-state in the body, expected).
+So: a `*Frame<frame>` phantom value passed as a `.kz`-tor argument
+from inside a `!`-yield arm collapses the entire arg binding.
+Suspect site: src/ arg-binding for phantom-typed values across the
+.kz boundary inside yield-arm scope.
