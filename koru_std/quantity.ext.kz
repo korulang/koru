@@ -146,7 +146,7 @@ fn extComposeText(alloc: std.mem.Allocator, a: []const u8, b: []const u8, sgn: i
 
 
 // Canonicalize borrowed ext text — the pack boundary discharge.
-~pub tor ext-canon { s: string }
+~pub tor ext-canon { s: string<*> }
 | ok string<std/io:allocated!>
 | bad
 
@@ -192,7 +192,7 @@ fn extComposeText(alloc: std.mem.Allocator, a: []const u8, b: []const u8, sgn: i
 // Extended literal split: the lit grammar plus the registry — a token
 // that is not an SI unit must name a declared axis (whole token; axes do
 // not juxtapose into names).
-~tor split-expr-x { expr: string, unc: ?string, cov: ?string, ureg: string<*> }
+~tor split-expr-x { expr: string<*>, unc: ?string, cov: ?string, ureg: string<*> }
 | fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!>, ext: string<std/io:allocated!> }
 | undeclared-axis string<std/io:allocated!>
 | bad string<std/io:allocated!>

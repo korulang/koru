@@ -76,7 +76,7 @@ fn qtySplitExpr(alloc: std.mem.Allocator, expr_in: []const u8, unc_in: []const u
     };
 }
 
-~tor split-expr { expr: string, unc: ?string, cov: ?string }
+~tor split-expr { expr: string<*>, unc: ?string, cov: ?string }
 | fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!>, ext: string<std/io:allocated!> }
 | bad string<std/io:allocated!>
 

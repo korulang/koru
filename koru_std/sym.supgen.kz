@@ -1018,7 +1018,7 @@ fn certShifted(alloc: std.mem.Allocator, c: *const OdeCert) !OdeCert {
 // data; truth is GIVEN, not discovered. This is the entry point for
 // holonomy over terms the grammar does not close over: register the
 // law, everything above it is algebra (cert-shift, later compose).
-~pub tor cert-seed { body: string }
+~pub tor cert-seed { body: string<*> }
 | exact string<std/io:allocated!>
 | bad-cert string<std/io:allocated!>
 

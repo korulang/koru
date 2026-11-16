@@ -141,7 +141,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 }
 
 // Declare a generator name (lawless until rel-law attaches a law).
-~pub tor rel-seed { reg: string<std/io:!allocated>, name: string }
+~pub tor rel-seed { reg: string<std/io:!allocated>, name: string<*> }
 | exact string<std/io:allocated!>
 | dup
 | full
@@ -166,7 +166,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 // Attach (or replace) the derivative law for a declared generator. The law
 // is a sexpr over x and generator names — self- and mutual references
 // resolve since the name set is complete at attach time.
-~pub tor rel-law { source: string<*>, name: string, reg: string<std/io:!allocated> }
+~pub tor rel-law { source: string<*>, name: string<*>, reg: string<std/io:!allocated> }
 | exact string<std/io:allocated!>
 | unknown-generator
 | bad

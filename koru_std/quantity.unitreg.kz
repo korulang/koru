@@ -93,7 +93,7 @@ fn uregEmit(alloc: std.mem.Allocator, g: *const UReg) ![]u8 {
 
 // Append one axis. `dup` refuses an existing name — re-declaring a kind
 // is a registry delete-and-redeclare, not a silent overwrite.
-~pub tor unit-reg-put { reg: string<std/io:!allocated>, name: string, kind: string }
+~pub tor unit-reg-put { reg: string<std/io:!allocated>, name: string<*>, kind: string<*> }
 | exact string<std/io:allocated!>
 | dup
 | bad
@@ -157,7 +157,7 @@ fn uregEmit(alloc: std.mem.Allocator, g: *const UReg) ![]u8 {
 }
 
 // The kind a declared axis carries — "" for a kindless one.
-~pub tor unit-reg-get { reg: string<*>, name: string }
+~pub tor unit-reg-get { reg: string<*>, name: string<*> }
 | exact string<std/io:allocated!>
 | undeclared-axis
 | bad

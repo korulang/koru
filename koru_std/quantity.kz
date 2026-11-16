@@ -402,7 +402,7 @@ fn constSym(tok: []const u8) ?[]const u8 {
     return .{ .dec = ownedCopy(s) };
 }
 
-~pub tor lit-sym { mag: string<std/sym:!sexpr>, unit: Expression, unc: Expression, cov: string }
+~pub tor lit-sym { mag: string<std/sym:!sexpr>, unit: Expression, unc: Expression, cov: string<*> }
 | exact string<exact!>
 | bad-lit string
 
@@ -479,7 +479,7 @@ fn magIsDec(m: []const u8) bool {
 // Unit text -> (scale, canonical dim) — the same table split's grammar
 // uses. Scale comes out <std/num:external!>: unparsed decimal text that
 // num:parse discharges. | bad names the unknown-unit axis.
-~pub tor unit-dim { s: string }
+~pub tor unit-dim { s: string<*> }
 | ok { scale: string<std/num:external!>, dim: string<std/io:allocated!> }
 | bad-unit
 
@@ -509,7 +509,7 @@ fn magIsDec(m: []const u8) bool {
 
 // Cov tag text -> owned canonical tag. "-" is independence; "-name" is a
 // negated instance of a shared source. | bad names the malformed axis.
-~tor cov-tag { s: string }
+~tor cov-tag { s: string<*> }
 | ok string<std/io:allocated!>
 | bad-tag
 

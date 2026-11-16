@@ -369,7 +369,7 @@ fn ntRho(alloc: std.mem.Allocator, n: *const Int) !?Int {
 
 // ---------- tors ----------
 
-~pub tor nt-gcd { a: string, b: string }
+~pub tor nt-gcd { a: string<*>, b: string<*> }
 | exact string<std/io:allocated!>
 | bad
 
@@ -385,7 +385,7 @@ fn ntRho(alloc: std.mem.Allocator, n: *const Int) !?Int {
     return .{ .exact = s };
 }
 
-~pub tor nt-extgcd { a: string, b: string }
+~pub tor nt-extgcd { a: string<*>, b: string<*> }
 | exact string<std/io:allocated!>
 | bad
 
@@ -409,7 +409,7 @@ fn ntRho(alloc: std.mem.Allocator, n: *const Int) !?Int {
     return .{ .exact = blob };
 }
 
-~pub tor nt-divmod { a: string, b: string }
+~pub tor nt-divmod { a: string<*>, b: string<*> }
 | exact string<std/io:allocated!>
 | div-by-zero
 | bad
@@ -432,7 +432,7 @@ fn ntRho(alloc: std.mem.Allocator, n: *const Int) !?Int {
     return .{ .exact = blob };
 }
 
-~pub tor nt-mod { a: string, m: string }
+~pub tor nt-mod { a: string<*>, m: string<*> }
 | exact string<std/io:allocated!>
 | bad-modulus
 | bad
@@ -476,7 +476,7 @@ fn ntModOp(alloc: std.mem.Allocator, a: []const u8, e: []const u8, m: []const u8
     return try ntDec(alloc, &r);
 }
 
-~pub tor nt-modmul { a: string, b: string, m: string }
+~pub tor nt-modmul { a: string<*>, b: string<*>, m: string<*> }
 | exact string<std/io:allocated!>
 | bad-modulus
 | bad
@@ -490,7 +490,7 @@ fn ntModOp(alloc: std.mem.Allocator, a: []const u8, e: []const u8, m: []const u8
     return .{ .exact = s };
 }
 
-~pub tor nt-modpow { a: string, e: string, m: string }
+~pub tor nt-modpow { a: string<*>, e: string<*>, m: string<*> }
 | exact string<std/io:allocated!>
 | bad-modulus
 | bad
@@ -504,7 +504,7 @@ fn ntModOp(alloc: std.mem.Allocator, a: []const u8, e: []const u8, m: []const u8
     return .{ .exact = s };
 }
 
-~pub tor nt-modinv { a: string, m: string }
+~pub tor nt-modinv { a: string<*>, m: string<*> }
 | exact string<std/io:allocated!>
 | no-inverse string<std/io:allocated!>
 | bad-modulus
@@ -541,7 +541,7 @@ fn ntModOp(alloc: std.mem.Allocator, a: []const u8, e: []const u8, m: []const u8
     return .{ .exact = s };
 }
 
-~pub tor nt-pow { a: string, n: i64 }
+~pub tor nt-pow { a: string<*>, n: i64 }
 | exact string<std/io:allocated!>
 | bad
 
@@ -556,7 +556,7 @@ fn ntModOp(alloc: std.mem.Allocator, a: []const u8, e: []const u8, m: []const u8
     return .{ .exact = s };
 }
 
-~pub tor nt-isqrt { a: string }
+~pub tor nt-isqrt { a: string<*> }
 | exact string<std/io:allocated!>
 | negative
 | bad
@@ -581,7 +581,7 @@ fn ntModOp(alloc: std.mem.Allocator, a: []const u8, e: []const u8, m: []const u8
     return .{ .exact = blob };
 }
 
-~pub tor nt-is-prime { n: string }
+~pub tor nt-is-prime { n: string<*> }
 | prime
 | probable-prime
 | composite
@@ -601,7 +601,7 @@ fn ntModOp(alloc: std.mem.Allocator, a: []const u8, e: []const u8, m: []const u8
 // primes below this bound are handled by trial division before rho.
 const NT_SMALL_PRIMES = [54]u64{ 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251 };
 
-~pub tor nt-factor { n: string }
+~pub tor nt-factor { n: string<*> }
 | exact string<std/io:allocated!>
 | prime
 | open
