@@ -356,3 +356,19 @@ So: a `*Frame<frame>` phantom value passed as a `.kz`-tor argument
 from inside a `!`-yield arm collapses the entire arg binding.
 Suspect site: src/ arg-binding for phantom-typed values across the
 .kz boundary inside yield-arm scope.
+
+RESOLVED (same session): four-layer fix landed in src/ —
+(1) `checkCallSiteArity` skips `impl_of != null` flows (impl bodies are
+    declarations; their args=[] marker head is not a call site) — KORU080.
+(2) `visitor_emitter` impl-marker-head skip (`impl_of` + args=[] +
+    path==event + void return → `const result: @This().Output =
+    undefined`, no self-call) — the `~t =` marker was emitting
+    `t_event.handler(...)` inside itself = infinite recursion.
+(3) `emitArgs` synthesizes `.field = field` for impl self-calls under
+    `impl_event_decl` (effect-impl path coverage).
+(4) `ast_transform` `implMarkerHead` + `skip_head_thread_fill` — marker
+    heads bypass thread-fill — KORU092.
+Verified: scalar `.kz` tor runs (`t got 42`); phantom repro
+(`/tmp/kzyield_repro/main.k`, `t(frame2: f, x: 1)` in `! frame f` arm)
+compiles + runs + BMP. Negative control `t(x: 42)` with frame2 unfilled
+correctly refuses KORU092. Repro dirs are /tmp — durable pin pending.

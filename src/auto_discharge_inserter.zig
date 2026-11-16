@@ -1299,6 +1299,17 @@ pub const AutoDischargeInserter = struct {
             switch (it.*) {
                 .module_decl => |*m| try self.checkCallSiteArity(m.items, m.logical_name),
                 .flow => |*f| {
+                    // An impl body (`~t = ...`, `impl_of` set) is a
+                    // DECLARATION, not a call site: its root invocation
+                    // names the tor itself with args=[] and its inputs
+                    // live in the decl's `input.fields`. Arity-checking
+                    // it reports KORU080 on every required input
+                    // (toolchain-gaps 16 — fired on any `.kz` tor whose
+                    // impl flow reached this pass).
+                    if (f.impl_of != null) {
+                        for (f.body.continuations) |*c| try self.checkArityInContinuation(c, f.location, home);
+                        continue;
+                    }
                     const mod = if (f.module.len > 0) f.module else home;
                     try self.checkArityInInvocation(f.inv(), f.location, mod);
                     for (f.body.continuations) |*c| try self.checkArityInContinuation(c, f.location, mod);

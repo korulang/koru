@@ -3286,13 +3286,29 @@ pub const VisitorEmitter = struct {
                                                         try self.code_emitter.write("_event.handler(.{");
                                                     }
 
-                                                    // Write arguments
+                                                    // Write arguments. An impl body's
+                                                    // self-call head carries args=[] by
+                                                    // design — its inputs arrive as
+                                                    // `__koru_event_input` locals named
+                                                    // after the decl fields, so the
+                                                    // handler arg-object is synthesized
+                                                    // field-by-field (toolchain-gaps 16).
+                                                    if (flow.inv().args.len == 0 and flow.impl_of != null) {
+                                                        for (event.input.fields, 0..) |field, k| {
+                                                            if (k > 0) try self.code_emitter.write(", ");
+                                                            try self.code_emitter.write(" .");
+                                                            try emitter.writeBranchName(self.code_emitter, field.name);
+                                                            try self.code_emitter.write(" = ");
+                                                            try self.code_emitter.write(field.name);
+                                                        }
+                                                    } else {
                                                     for (flow.inv().args, 0..) |arg, k| {
                                                         if (k > 0) try self.code_emitter.write(", ");
                                                         try self.code_emitter.write(" .");
                                                         try emitter.writeBranchName(self.code_emitter, arg.name);
                                                         try self.code_emitter.write(" = ");
                                                         try self.code_emitter.write(arg.value);
+                                                    }
                                                     }
                                                     if (xm_handlers_name) |hname| {
                                                         try self.code_emitter.write(" }, ");
@@ -3864,6 +3880,27 @@ pub const VisitorEmitter = struct {
                                             break :blk false;
                                         } else false;
 
+                                        // IMPL MARKER HEAD: an impl flow's root
+                                        // invocation names its own event with
+                                        // args=[] — it is the `~t =` entry marker,
+                                        // not a call. Emitting `t_event.handler(...)`
+                                        // here recurses into the impl itself
+                                        // (stack overflow at runtime; toolchain-gaps
+                                        // 16). The body continuations carry the real
+                                        // chain; `result` is only a discard target.
+                                        const impl_marker_head = flow.impl_of != null and
+                                            flow.inv().args.len == 0 and
+                                            event.return_type == null and
+                                            flow.inv().path.segments.len == event.path.segments.len and
+                                            blk: {
+                                                for (flow.inv().path.segments, event.path.segments) |a, b| {
+                                                    if (!std.mem.eql(u8, a, b)) break :blk false;
+                                                }
+                                                break :blk true;
+                                            };
+                                        if (impl_marker_head) {
+                                            try self.code_emitter.write("const result: @This().Output = undefined;\n");
+                                        } else {
                                         if (needs_mutable) {
                                             try self.code_emitter.write("var result = ");
                                         } else {
@@ -4046,6 +4083,7 @@ pub const VisitorEmitter = struct {
                                             try self.code_emitter.write(");\n");
                                         } else {
                                             try self.code_emitter.write(" });\n");
+                                        }
                                         }
 
                                         // A head with no continuations has no switch to

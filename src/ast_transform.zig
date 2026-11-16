@@ -1775,10 +1775,10 @@ fn punItemsBinding(
 ) std.mem.Allocator.Error!void {
     for (@constCast(items)) |*item| {
         switch (item.*) {
-            .flow => |*flow| try punContinuationBinding(allocator, table, items, &flow.body, scope, counter, null, null, null, reporter),
+            .flow => |*flow| try punContinuationBinding(allocator, table, items, &flow.body, scope, counter, null, null, null, implMarkerHead(flow), reporter),
             .proc_decl => |*proc| {
                 for (@constCast(proc.inline_flows)) |*flow| {
-                    try punContinuationBinding(allocator, table, items, &flow.body, scope, counter, null, null, null, reporter);
+                    try punContinuationBinding(allocator, table, items, &flow.body, scope, counter, null, null, null, implMarkerHead(flow), reporter);
                 }
             },
             .module_decl => |*module| try punItemsBinding(allocator, table, module.items, scope, counter, reporter),
@@ -2444,6 +2444,24 @@ fn isStringParamType(type_str: []const u8) bool {
 
 /// Fill this invocation's unfilled fields from in-scope bindings, then descend
 /// with this continuation's own binding added to scope for its subtree.
+/// True when `flow` is an impl body (`impl_of` set) whose head invocation
+/// is the self-marker: args=[] and path segments equal the implemented
+/// event's. Such heads are declaration entries, not call sites — arity
+/// (KORU080) and thread-fill (KORU092) must both skip them
+/// (toolchain-gaps 16).
+fn implMarkerHead(flow: *const ast.Flow) bool {
+    const impl_path = flow.impl_of orelse return false;
+    const node = flow.body.node orelse return false;
+    if (node != .invocation) return false;
+    const inv = &node.invocation;
+    if (inv.args.len != 0) return false;
+    if (inv.path.segments.len != impl_path.segments.len) return false;
+    for (inv.path.segments, impl_path.segments) |a, b| {
+        if (!std.mem.eql(u8, a, b)) return false;
+    }
+    return true;
+}
+
 fn punContinuationBinding(
     allocator: std.mem.Allocator,
     table: *SymbolTable,
@@ -2454,6 +2472,7 @@ fn punContinuationBinding(
     thread: ?Thread,
     payload_type: ?[]const u8,
     payload_fields: ?[]const PayloadField,
+    skip_head_thread_fill: bool,
     reporter: *errors_mod.ErrorReporter,
 ) std.mem.Allocator.Error!void {
     // The names this continuation introduces into scope are added in two phases
@@ -2623,8 +2642,14 @@ fn punContinuationBinding(
     if (effective_thread) |th| {
         if (cont.node) |*node| {
             if (node.* == .invocation) {
-                if (table.getEventInfo(node.invocation.path)) |info| {
-                    try bindThreadIntoStep(allocator, node, info, th, counter, cont.location, reporter);
+                // An impl flow's marker head (`~t =`, args=[]) is a
+                // declaration entry, not a call site — thread-filling it
+                // reports KORU092 on params the impl receives via
+                // __koru_event_input (toolchain-gaps 16).
+                if (!skip_head_thread_fill) {
+                    if (table.getEventInfo(node.invocation.path)) |info| {
+                        try bindThreadIntoStep(allocator, node, info, th, counter, cont.location, reporter);
+                    }
                 }
             }
         }
@@ -2707,7 +2732,7 @@ fn punContinuationBinding(
             }
             break :blk null;
         };
-        try punContinuationBinding(allocator, table, items, child, scope, counter, passed, child_payload, child_fields, reporter);
+        try punContinuationBinding(allocator, table, items, child, scope, counter, passed, child_payload, child_fields, false, reporter);
     }
 
     scope.shrinkRetainingCapacity(scope_mark);

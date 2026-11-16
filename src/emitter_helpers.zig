@@ -10374,6 +10374,41 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
     else
         null;
 
+    // An impl body's self-call head carries args=[] by design — its inputs
+    // arrive as `__koru_event_input` locals named after the decl fields.
+    // Synthesize the arg-object field-by-field so the handler call forwards
+    // them (toolchain-gaps 16: `.kz` tor impl emitted `handler(.{ })`).
+    if (args.len == 0) {
+        if (ctx.impl_event_decl) |impl_ev| {
+            // impl_ev.path is declared unqualified inside its own module;
+            // the self-call site carries the module qualifier. Match on
+            // segments when the decl is unqualified (the armed
+            // impl_event_decl already scopes this to the impl's own event).
+            const same_mod = if (impl_ev.path.module_qualifier) |imq|
+                (invocation_path.module_qualifier != null and
+                    std.mem.eql(u8, imq, invocation_path.module_qualifier.?))
+            else
+                true;
+            const same_segs = impl_ev.path.segments.len == invocation_path.segments.len and
+                blk: {
+                    for (impl_ev.path.segments, invocation_path.segments) |a, b| {
+                        if (!std.mem.eql(u8, a, b)) break :blk false;
+                    }
+                    break :blk true;
+                };
+            if (same_mod and same_segs) {
+                for (impl_ev.input.fields, 0..) |field, i| {
+                    if (i > 0) try emitter.write(", ");
+                    try emitter.write(".");
+                    try writeBranchName(emitter, field.name);
+                    try emitter.write(" = ");
+                    try emitter.write(field.name);
+                }
+                return;
+            }
+        }
+    }
+
     for (args, 0..) |arg, idx| {
         if (idx > 0) {
             try emitter.write(", ");
