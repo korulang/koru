@@ -7,8 +7,8 @@ echo: c
 t2 result
 echo: Hello
 t3 result
-t4 invalid anonymous '|>' after 'fetch' is ambiguous — the event has 2 non-panic branches; name the one to continue on ('| <branch> |>')
+t4 invalid anonymous '|>' after 'fetch' — name the outcome to continue on ('| <branch> |>')
 echo: a
 echo: b
 t5 result
-t6 invalid the value produced by 'probe' has nowhere to land — arm it '| ok name |>'
+t6 invalid the value produced by 'probe' has nowhere to land — a -> T result cannot be chained on the wire yet

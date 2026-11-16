@@ -132,6 +132,12 @@ fn parseFlowInternal(allocator: std.mem.Allocator, source: []const u8) ParseErro
     // Parse inline arms (each `| branch |> node` segment on the head line),
     // then the arms on following lines. Both are siblings in order.
     var inline_conts = try std.ArrayList(ast.Continuation).initCapacity(allocator, 2);
+    // A bare `|>` segment following an arm continues that arm's body, not
+    // the head call: `| found u |> say(a) |> say(b)` chains say(b) after
+    // say(a) inside the found arm — the same shape the indented form
+    // spells on the next line. Track the most recent arm; bare segments
+    // join its continuation chain until the next arm-head opens a sibling.
+    var arm_idx: ?usize = null;
     if (inline_part) |part| {
         var rest = part;
         while (rest.len > 0) {
@@ -141,7 +147,18 @@ fn parseFlowInternal(allocator: std.mem.Allocator, source: []const u8) ParseErro
             const next = findContinuationBoundaryFrom(rest, 1, is_arm_head);
             const seg = if (next) |n| rest[0..n] else rest;
             const cont = try parseSingleContinuation(allocator, seg, 0, lines[invocation_line_idx].line_num);
-            try inline_conts.append(allocator, cont);
+            if (is_arm_head) {
+                try inline_conts.append(allocator, cont);
+                arm_idx = inline_conts.items.len - 1;
+            } else if (arm_idx) |ai| {
+                const old = inline_conts.items[ai].continuations;
+                const grown = try allocator.alloc(ast.Continuation, old.len + 1);
+                @memcpy(grown[0..old.len], old);
+                grown[old.len] = cont;
+                inline_conts.items[ai].continuations = grown;
+            } else {
+                try inline_conts.append(allocator, cont);
+            }
             rest = if (next) |n| rest[n..] else "";
         }
     }

@@ -84,7 +84,8 @@ turn3 = std/bridge:run(br, source: "echo(text: \"Hello\") |>")
 | partial p |> std/io:print.ln("FAIL t3 partial {{ p.report:s }}")
 
 // Turn 4: bare `|>` after an outcome-bearing tor — koruc refuses the
-// spelling itself (anonymous `|>` is ambiguous across two outcomes).
+// spelling (unhandled branches / ambiguous anonymous pipe); the wire
+// refuses it too, teaching the arm spelling.
 tor turn4 { br: *std/bridge:Bridge<session> }
 turn4 = std/bridge:run(br, source: "fetch(path: \"x\") |> echo(text: \"y\")")
 | result r |> std/io:print.ln("t4 result")
@@ -103,7 +104,8 @@ turn4 = std/bridge:run(br, source: "fetch(path: \"x\") |> echo(text: \"y\")")
 
 // Turn 5 (was): indented continuation after a void step — kept below.
 // Turn 6: bare `|>` after a `-> T` tor — the produced value has nowhere
-// to land (koruc KORU092); the wire arm must name the outcome.
+// to land (koruc KORU092/KORU021); the wire has no `: name` spelling yet,
+// so the refusal says the result cannot be chained.
 tor turn6 { br: *std/bridge:Bridge<session> }
 turn6 = std/bridge:run(br, source: "probe() |> echo(text: \"y\")")
 | result r |> std/io:print.ln("FAIL t6 result")

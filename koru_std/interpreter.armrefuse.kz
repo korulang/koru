@@ -25,24 +25,28 @@ fn refuseVoidArm(outcomes: []const BranchSpec, event_name: []const u8, arm: *con
 }
 
 // An anonymous `|>` after an outcome-bearing tor is a meaning error in
-// compiled Koru, not an unhandled outcome. With two or more non-panic
-// outcomes the continuation is ambiguous — koruc refuses the spelling
-// itself (KORU022); wire verbs declare no `?!` panic branches and the
-// transport `error` is a declared outcome, so every listed outcome
-// counts. With exactly one outcome — the synthetic `ok` a `-> T`
-// bare return earns, or a single declared outcome — the produced
-// value drops (KORU092): koruc binds it `verb(): name |>`; the wire
-// has no `:` spelling, so the arm must name the outcome.
+// compiled Koru, not an unhandled outcome, so the wire refuses it too.
+// koruc's own verdict depends on shape: with no arms it reports each
+// branch unhandled (KORU022 per branch); the "ambiguous — N non-panic
+// branches" KORU022 fires only when an anonymous `|>` sits ahead of
+// named arms. The wire's lenient model hands unarmed outcomes back, so
+// naming the one branch to continue on is the workable spelling here.
+// With exactly one outcome — only reachable as the synthetic `ok` a
+// `-> T` bare return earns, since a single declared branch is illegal
+// Koru — koruc binds the value `verb(): name` and refuses `| ok` on it
+// (KORU021). The wire has no `:` spelling yet, so the honest refusal
+// says the result cannot be chained rather than teaching an arm koruc
+// rejects.
 fn refuseBarePipeOutcome(outcomes: []const BranchSpec, event_name: []const u8, allocator: std.mem.Allocator) ?ValidationError {
     if (outcomes.len == 0) return null;
     if (outcomes.len >= 2) {
         return .{
-            .message = std.fmt.allocPrint(allocator, "anonymous '|>' after '{s}' is ambiguous — the event has {d} non-panic branches; name the one to continue on ('| <branch> |>')", .{ event_name, outcomes.len }) catch "ambiguous bare pipe",
+            .message = std.fmt.allocPrint(allocator, "anonymous '|>' after '{s}' — name the outcome to continue on ('| <branch> |>')", .{event_name}) catch "ambiguous bare pipe",
             .binding_name = "",
         };
     }
     return .{
-        .message = std.fmt.allocPrint(allocator, "the value produced by '{s}' has nowhere to land — arm it '| {s} name |>'", .{ event_name, outcomes[0].name }) catch "bare pipe drops the value",
+        .message = std.fmt.allocPrint(allocator, "the value produced by '{s}' has nowhere to land — a -> T result cannot be chained on the wire yet", .{event_name}) catch "bare pipe drops the value",
         .binding_name = "",
     };
 }
