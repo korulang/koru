@@ -192,7 +192,7 @@ fn extComposeText(alloc: std.mem.Allocator, a: []const u8, b: []const u8, sgn: i
 // Extended literal split: the lit grammar plus the registry — a token
 // that is not an SI unit must name a declared axis (whole token; axes do
 // not juxtapose into names).
-~tor split-expr-x { expr: string<*>, unc: ?string, cov: ?string, ureg: string<*> }
+~tor split-expr-x { expr: string<*>, unc: ?string<*>, cov: ?string<*>, ureg: string<*> }
 | fields { mag: string<std/num:external!>, unc: string<std/num:external!>, scale: string<std/num:external!>, dim: string<std/io:allocated!>, cov: string<std/io:allocated!>, ext: string<std/io:allocated!> }
 | undeclared-axis string<std/io:allocated!>
 | bad string<std/io:allocated!>
@@ -236,7 +236,7 @@ fn extComposeText(alloc: std.mem.Allocator, a: []const u8, b: []const u8, sgn: i
 
 // The pure-conversion shape: SI dims all zero and the ext product is the
 // single target axis at exponent 1.
-~tor axis-check { q: string<!exact>, axis: string }
+~tor axis-check { q: string<!exact>, axis: string<*> }
 | ok string<exact!>
 | axis-mismatch
 
@@ -275,7 +275,7 @@ fn extComposeText(alloc: std.mem.Allocator, a: []const u8, b: []const u8, sgn: i
 // (dims zero, ext == axis^1) — 5 USD * 1.1 EUR/USD -> 5.5 EUR external.
 // Sigma and cov ride the mul law; | axis-mismatch names a rate that did
 // not convert.
-~pub tor convert-x { q: string<!exact>, rate: string<!exact>, axis: string }
+~pub tor convert-x { q: string<!exact>, rate: string<!exact>, axis: string<*> }
 | exact string<external!>
 | axis-mismatch
 | mixed-cov

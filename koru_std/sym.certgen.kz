@@ -2308,7 +2308,7 @@ fn poleOrderMask(alloc: std.mem.Allocator, d: []const Rat) !u64 {
 // Generic `|name=` segment extractor over decision/cert blobs — the
 // composition seam that lets decide-* outputs feed cert-reg-put without
 // record-payload arms.
-~pub tor decide-field { blob: string<*>, name: string }
+~pub tor decide-field { blob: string<*>, name: string<*> }
 | exact string<std/io:allocated!>
 | not-found
 
