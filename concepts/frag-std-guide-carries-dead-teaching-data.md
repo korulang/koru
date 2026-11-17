@@ -1,16 +1,16 @@
 ---
 type: belief
 id: frag-std-guide-carries-dead-teaching-data
-provenance: 2026-11-09 — std/guide landed: attach transform + module-as-tor lookup proven end-to-end in 480_001
+provenance: 2026-11-09 — std/guides landed: attach transform + module-as-tor lookup proven end-to-end in 480_001
 ts: 2026-11-09
 ---
 
 # A program can carry dead teaching data on its transitions — harvested by transform, served by key
 
-`std/guide` establishes that a Koru program may attach prose teaching
-surfaces to its own transitions as inert AST data: `guide:add(tor -> branch)
+`std/guides` establishes that a Koru program may attach prose teaching
+surfaces to its own transitions as inert AST data: `guides:add(tor -> branch)
 { lesson }` is a `[comptime|transform]` marker whose proc harvests
-`(canonical-key, template)` pairs at compile time; `std/guide(tor -> branch)`
+`(canonical-key, template)` pairs at compile time; `std/guides(tor -> branch)`
 is a `pub tor default` lookup returning `| guide template | not-found` with
 exact-match-beats-wildcard specificity.
 
