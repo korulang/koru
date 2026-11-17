@@ -10085,26 +10085,23 @@ pub fn main() !void {
             const exe_path = try std.fs.path.join(allocator, &.{ ".", exe_name });
             defer allocator.free(exe_path);
 
-            // Run from the output directory so relative paths work
-            const run_result = try std.process.Child.run(.{
-                .allocator = allocator,
-                .argv = &[_][]const u8{exe_path},
-                .cwd = output_dir_for_build,
-            });
-            defer allocator.free(run_result.stdout);
-            defer allocator.free(run_result.stderr);
-
-            if (run_result.stdout.len > 0) {
-                try printStdout(allocator, "{s}", .{run_result.stdout});
-            }
-            if (run_result.stderr.len > 0) {
-                try printStdout(allocator, "{s}", .{run_result.stderr});
-            }
+            // The user's program streams live: stdout/stderr/stdin are
+            // inherited, not collected. Child.run buffers both pipes and
+            // refuses past max_output_bytes (50 KiB) — a chatty program
+            // (per-frame debug spew) died as StderrStreamTooLong with no
+            // output shown, and collect-then-print hid live output anyway.
+            var run_child = std.process.Child.init(&.{exe_path}, allocator);
+            run_child.cwd = output_dir_for_build;
+            run_child.stdin_behavior = .Inherit;
+            run_child.stdout_behavior = .Inherit;
+            run_child.stderr_behavior = .Inherit;
+            try run_child.spawn();
+            const run_term = try run_child.wait();
 
             // This is the USER's program: a signal here is the program's own
             // termination (a SIGSEGV is its crash, not the machine's fault), so
             // report the fact plainly and forward the shell convention 128+sig.
-            switch (run_result.term) {
+            switch (run_term) {
                 .Exited => |code| if (code != 0) std.process.exit(code),
                 .Signal => |sig| {
                     try printStderr(allocator, "✗ {s} was killed by signal {d} ({s})\n", .{ exe_name, sig, signalName(sig) });
@@ -10112,7 +10109,7 @@ pub fn main() !void {
                 },
                 else => {
                     var term_buf: [64]u8 = undefined;
-                    try printStderr(allocator, "✗ {s} {s}\n", .{ exe_name, describeTerm(&term_buf, run_result.term) });
+                    try printStderr(allocator, "✗ {s} {s}\n", .{ exe_name, describeTerm(&term_buf, run_term) });
                     std.process.exit(1);
                 },
             }
