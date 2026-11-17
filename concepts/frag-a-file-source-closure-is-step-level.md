@@ -16,7 +16,7 @@ inline `{` source block: it attaches to a STEP — `render.file @"hello.txt"`,
 time and fills the parameter's `Source` implicitly. It is not an argument
 value and never was: inside `(...)` the bare text survived arg splitting
 and emitted as a Zig escaped-identifier token, dying in backend Zig with a
-nonsense error — the hole that let `std/guide:add(key) @"guides/x.md"}`
+nonsense error — the hole that let `std/guides:add(key) @"guides/x.md"}`
 ride into `bench/airline_guides.k` as include-ref prose.
 
 Two scans guard the position, and both must be structural, not textual:
