@@ -149,8 +149,8 @@ koru_std/grid.slice.kz	163
 koru_std/grid.stored.kz	235
 koru_std/grid.sweep.kz	305
 koru_std/grid.walk.kz	320
-koru_std/guide.kz	279
-koru_std/guide.match.kz	74
+koru_std/guides.kz	279
+koru_std/guides.match.kz	74
 koru_std/heap.kz	134
 koru_std/http.kz	215
 koru_std/index.kz	7

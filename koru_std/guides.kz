@@ -1,4 +1,4 @@
-// guide.kz — std/guide: attach teaching surfaces to tors/edges as dead
+// guides.kz — std/guides: attach teaching surfaces to tors/edges as dead
 // AST data, looked up by key at runtime.
 //
 // The module is deliberately dumb: it stores (key -> template) pairs
@@ -7,15 +7,15 @@
 // (Liquid engine or whatever the smart tool chooses).
 //
 // Attach (write side, comptime|norun — dead data, never executed):
-//   std/guide:add(my-thing) { ...template... }
-//   std/guide:add(book-flight | error) { ...lesson... }
+//   std/guides:add(my-thing) { ...template... }
+//   std/guides:add(book-flight | error) { ...lesson... }
 //
 // Read (evaluated expression, dynamic key):
-//   std/guide:lookup(table, key: guide:key("book-flight", branch))
+//   std/guides:lookup(table, key: guides:key("book-flight", branch))
 //   | guide template |> ...render/inject...
 //   | not-found |> ...silence is default...
 //
-// The key contract: BOTH sides build keys through guide:key so the
+// The key contract: BOTH sides build keys through guides:key so the
 // attach-time name and the query-time string can never drift.
 
 ~part match
@@ -31,13 +31,13 @@ const Root = @import("root");
 
 // Target syntax follows the std/taps transition idiom — `source -> dest`
 // parsed from the Expression text, with glob wildcards:
-//   std/guide:add(book-flight -> error) { ... }   // one edge
-//   std/guide:add(book-flight -> *)     { ... }   // every edge of a tor
-//   std/guide:add(* -> error)           { ... }   // that edge, any tor
-//   std/guide:add(book-flight)          { ... }   // tor-level (no arrow)
+//   std/guides:add(book-flight -> error) { ... }   // one edge
+//   std/guides:add(book-flight -> *)     { ... }   // every edge of a tor
+//   std/guides:add(* -> error)           { ... }   // that edge, any tor
+//   std/guides:add(book-flight)          { ... }   // tor-level (no arrow)
 
-// `add` IS the transform: each guide:add(...) invocation is intercepted by
-// the transform runner (import std/guide puts it in the AST; the runner
+// `add` IS the transform: each guides:add(...) invocation is intercepted by
+// the transform runner (import std/guides puts it in the AST; the runner
 // finds it — no pass wiring, no import magic). The proc harvests the
 // entry; table delivery is the remaining piece.
 
@@ -107,7 +107,7 @@ const Root = @import("root");
 }
 
 // ============================================================================
-// DEFAULT — the read side, invoked as `std/guide(key)`. Module-as-tor:
+// DEFAULT — the read side, invoked as `std/guides(key)`. Module-as-tor:
 // the table is module-internal compiled data (transform harvest), not a
 // caller param. `guide` binds the template; `not-found` is the silent
 // default until harvest lands — an empty table truthfully finds nothing.
@@ -149,7 +149,7 @@ fn matchKey(pattern: []const u8, query: []const u8) usize {
 }
 
 // Evaluated-key entry point: `key: string` goes through the emitter's normal
-// expression path, so callers compose keys with guide:key(...) or build them
+// expression path, so callers compose keys with guides:key(...) or build them
 // dynamically — interpolation, concatenation, whatever the language gives.
 // The `tor -> branch` transition sugar stays on `default`; both share
 // lookupTemplate, so wildcard semantics can never drift between them.
@@ -163,7 +163,7 @@ fn matchKey(pattern: []const u8, query: []const u8) usize {
 }
 
 // ============================================================================
-// COLLECT — comptime pass: walk the program AST for std.guide:add
+// COLLECT — comptime pass: walk the program AST for std.guides:add
 // invocations, harvest (key, template) pairs, emit guide_table.txt.
 // Mirrors std/build:collect's traversal; the output is DATA (a lookup
 // table), not build.zig — delivery channel TBD (generated module vs
@@ -177,7 +177,7 @@ const ProseEntry = struct {
 
 fn isGuideAdd(path: anytype) bool {
     const mq = path.module_qualifier orelse return false;
-    return std.mem.eql(u8, mq, "std.guide") and
+    return std.mem.eql(u8, mq, "std.guides") and
         path.segments.len == 1 and
         std.mem.eql(u8, path.segments[0], "add");
 }

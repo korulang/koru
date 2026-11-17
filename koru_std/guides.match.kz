@@ -1,6 +1,6 @@
-// guide.match.kz — the table read + match half of std/guide: the row
+// guides.match.kz — the table read + match half of std/guides: the row
 // lookup every entry point shares (exact key first, then best wildcard
-// specificity). Split out of guide.kz when the pub match API grew the file
+// specificity). Split out of guides.kz when the pub match API grew the file
 // past its pin; joined via `~part match`.
 
 /// A matched table row: the PATTERN key that fired (which may be the query
@@ -14,7 +14,7 @@ pub const GuideMatch = struct {
 // Shared table read + match for every entry point. `qkey` is already in
 // canonical `src->dest` (or bare-src) form — callers own normalization:
 // `default` runs the Expression text through targetKey, `lookup` takes a
-// caller-built key: string verbatim (guide:key output or a literal).
+// caller-built key: string verbatim (guides:key output or a literal).
 // Returns the matched ROW, not just its template: a dispatch that fires a
 // wildcard row must be attributable to the row that actually fired (the
 // call_step `fired_guides` field records that key, never the query).

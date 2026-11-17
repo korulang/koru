@@ -1,13 +1,13 @@
-import std/guide
+import std/guides
 import std/io
 
-std/guide:add(book-flight -> error) { When booking fails, check payment_methods first. }
-std/guide:add(* -> error) { An edge fired unarmed — check vocabulary(). }
+std/guides:add(book-flight -> error) { When booking fails, check payment_methods first. }
+std/guides:add(* -> error) { An edge fired unarmed — check vocabulary(). }
 
-std/guide(book-flight -> error)
+std/guides(book-flight -> error)
 | guide t |> std/io:print.ln("{{ t:s }}")
 | not-found |> std/io:print.ln("MISS")
 
-std/guide(nonexistent -> error)
+std/guides(nonexistent -> error)
 | guide t |> std/io:print.ln("{{ t:s }}")
 | not-found |> std/io:print.ln("MISS")

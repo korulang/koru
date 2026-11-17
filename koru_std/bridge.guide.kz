@@ -3,19 +3,19 @@
 // ride the item's own report. Joined via `~part guide` in bridge.kz;
 // merged into the bridge module at load.
 //
-// The table is `std/guide` compiled data: every `std/guide:add(...)` in the
+// The table is `std/guides` compiled data: every `std/guides:add(...)` in the
 // program harvests to `<cwd>/guide_table.txt` at build time, and the table
 // lands beside the binary. This is the runtime consumer — at dispatch the
 // trace record already names the (tor, branch) that resolved, so the lookup
 // happens where the fact is, not in a prompt assembler that could disagree
 // with the log.
 //
-// Why the reader lives here and not in a call to `std/guide:lookup`: an
+// Why the reader lives here and not in a call to `std/guides:lookup`: an
 // import whose symbols nothing references is not emitted into the program
 // (measured — a side-effect-only guide import still runs the add transform
 // and writes the table, but leaves no module to call). The bridge is the
-// runtime reader, so it owns the read. The matching rule is `std/guide`'s
-// exactly (guide.kz: matchKey) — exact key first, then best wildcard
+// runtime reader, so it owns the read. The matching rule is `std/guides`'s
+// exactly (guides.kz: matchKey) — exact key first, then best wildcard
 // specificity; keep the two in step. The KEY CONTRACT is the shared thing:
 // `tor` or `tor->branch`, both sides spelled by the same convention.
 //
@@ -46,7 +46,7 @@ fn guideSideMatches(pat: []const u8, actual: []const u8) bool {
 
 /// Specificity of one table pattern against the query key: 2 = both sides
 /// concrete, 1 = one wildcard side, 0 = no match. Same rule as
-/// `std/guide`'s matchKey (guide.kz) — a drift here would make the runtime
+/// `std/guides`'s matchKey (guides.kz) — a drift here would make the runtime
 /// fire a different row than a Koru-level lookup for the same key.
 fn guideMatchScore(pattern: []const u8, query: []const u8) usize {
     const parrow = std.mem.indexOf(u8, pattern, "->");

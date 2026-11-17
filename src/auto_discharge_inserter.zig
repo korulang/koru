@@ -221,8 +221,8 @@ pub const AutoDischargeInserter = struct {
     /// in seedRecordFieldObligations (the phantom checker's twin, 699_031).
     prog: ?*const ast.Program = null,
     prototype_mode: bool = false, // When true (~[prototype]), an unhandled required TERMINAL branch is synthesized as a @panic hole instead of a KORU022 error — same body as an unhandled | ?! panic branch (400_160)
-    /// ~[prototype] × std/guide: the teaching table, harvested from
-    /// `std/guide:add` invocation flows already in the AST — the data never
+    /// ~[prototype] × std/guides: the teaching table, harvested from
+    /// `std/guides:add` invocation flows already in the AST — the data never
     /// touches disk. Built lazily on the first hole lookup.
     guide_entries: std.ArrayList(GuideEntry) = .empty,
     guide_entries_loaded: bool = false,
@@ -236,7 +236,7 @@ pub const AutoDischargeInserter = struct {
         module_name: []const u8,
     };
 
-    /// One `guide:add` harvest: canonical `tor->branch` key and template
+    /// One `guides:add` harvest: canonical `tor->branch` key and template
     /// text — both BORROWED slices of the comment item that carries them.
     const GuideEntry = struct {
         key: []const u8,
@@ -4791,8 +4791,8 @@ pub const AutoDischargeInserter = struct {
         return segments;
     }
 
-    /// Harvest every `guide:add` entry in the program into guide_entries —
-    /// once per run, and only when a prototype hole asks. `guide:add`'s
+    /// Harvest every `guides:add` entry in the program into guide_entries —
+    /// once per run, and only when a prototype hole asks. `guides:add`'s
     /// transform replaces each invocation flow with a comment item carrying
     /// `guide-entry\t<key>\t<template>` (its args are all comptime-only, so
     /// an empty SiteResult would have the runner delete the flow outright) —
@@ -4827,7 +4827,7 @@ pub const AutoDischargeInserter = struct {
 
     /// Look up the guide lesson for a prototype hole. Exact `tor->branch`
     /// keys win across all candidate spellings; `*` sides are wildcards
-    /// ordered by specificity — the same contract as std/guide's lookup.
+    /// ordered by specificity — the same contract as the std/guides lookup.
     /// The returned template is a BORROWED AST slice — do not free it.
     fn guideLessonForHole(
         self: *AutoDischargeInserter,
@@ -5406,7 +5406,7 @@ pub const AutoDischargeInserter = struct {
             std.debug.print("📋 prototype gaps — tor '{s}' ({s}:{d}):\n", .{
                 ev_name, flow.location.file, flow.location.line,
             });
-            // Guide keys are spelled as the author wrote them in guide:add —
+            // Guide keys are spelled as the author wrote them in guides:add —
             // a bare tor name for local tors. Try the full dotted path and
             // its last segment so `mod.run` still finds a `run->branch` key.
             var hole_tor_names: [2][]const u8 = .{ ev_name, ev_name };

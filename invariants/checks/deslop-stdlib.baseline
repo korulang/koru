@@ -87,7 +87,7 @@
 # argfmt parts off interpreter.run) plus this commit's own
 # bridge.dispatchrecord part (outcomeDetail + dispatchAndRecord moved
 # out of bridge.dispatch to satisfy the line-pin wall; parts are flat,
-# no nested ~part). Uncommitted guide.kz/index.kz drift in the shared
+# no nested ~part). Uncommitted guides.kz/index.kz drift in the shared
 # checkout counts per the row's uncommitted-work clause. Clusters
 # measured 324 — under pin; only members grew.
 clusters=336
