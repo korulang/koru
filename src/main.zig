@@ -8133,7 +8133,12 @@ pub fn main() !void {
     log.debug("DEBUG: Compiler bootstrap injection: {}\n", .{inject_compiler});
     var parser = try Parser.init(parse_allocator, final_source, input, compiler_config.flags.items, &resolver);
     parser.fail_fast = fail_fast;
-    parser.report_gates = !show_help;
+    // Gate verdict reports ([part gate]/[item gate]/[import gate]) are
+    // compile-time diagnostics for compiler work, not user output — every
+    // consumer compile paid ~100 lines of `part koru-native`-style
+    // exclusions. Opt-in via --verbose; exclusions still fail loudly
+    // downstream when the gated construct was actually needed.
+    parser.report_gates = compiler_config.hasFlag("verbose");
     defer parser.deinit();
 
     // If we prepended a bootstrap import line above, the parser sees line numbers
