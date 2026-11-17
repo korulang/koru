@@ -176,6 +176,20 @@ fn printStderr(allocator: std.mem.Allocator, comptime fmt: []const u8, args: any
 
 /// Name the signals a build subprocess plausibly dies by. Numbers-only for
 /// the rest — the number is always printed alongside.
+/// Default compile memory budget (MB) baked into the emitted backend's
+/// KORU174 rail: 3/4 of physical RAM, floored at the historical 4096. The
+/// rail exists so a runaway compile is refused before the OS has to
+/// SIGKILL it — sizing it to the machine keeps that property on every
+/// host instead of forcing big consumers to discover KORU_COMPILE_MEM_MB.
+/// --compile-mem-mb / KORU_COMPILE_MEM_MB still override inside the
+/// backend; this only replaces the flat fallback.
+fn defaultCompileMemMb() usize {
+    const total = std.process.totalSystemMemory() catch return 4096;
+    const mb: usize = @intCast(total / (1024 * 1024));
+    const budget = mb * 3 / 4;
+    return if (budget < 4096) 4096 else budget;
+}
+
 fn signalName(sig: u32) []const u8 {
     const SIG = std.posix.SIG;
     return switch (sig) {
@@ -1956,6 +1970,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
         try writer.writeAll(
             \\var koru_budget_mb: usize = 4096;
             \\var koru_budget_fired: bool = false;
+        );
+        try writer.print("\nconst koru_default_mem_mb: usize = {d};\n", .{defaultCompileMemMb()});
+        try writer.writeAll(
             \\
             \\const BudgetAllocator = struct {
             \\    child: __koru_std.mem.Allocator,
@@ -2392,7 +2409,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\        return err;
             \\    };
             \\    // Budget: --compile-mem-mb=<mb> flag wins, then KORU_COMPILE_MEM_MB,
-            \\    // else 4096 MB. The flag is read per-invocation from CompilerEnv.flags,
+            \\    // else ~3/4 RAM (floor 4096). The flag is read per-invocation from CompilerEnv.flags,
             \\    // so a regression test can pin a tiny budget without touching env.
             \\    koru_budget_mb = blk: {
             \\        // koruc bakes flags WITHOUT the leading dashes (`compile-mem-mb=8`);
@@ -2415,7 +2432,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\                if (parsed >= 1) break :blk parsed;
             \\            } else |_| {}
             \\        } else |_| {}
-            \\        break :blk 4096;
+            \\        break :blk koru_default_mem_mb;
             \\    };
             \\    var gpa = __koru_std.heap.GeneralPurposeAllocator(.{
             \\        .enable_memory_limit = true,
