@@ -1,0 +1,30 @@
+// Test 220_059: MUST_ERROR — capture kinds refuse in value positions (R1/C1).
+//
+// Expression, Source, File, EmbedFile, InvocationMeta capture the call
+// site's own text — the producing side has no call site to capture from, so
+// `-> Expression` emitted an undeclared Zig identifier and `| exact
+// Expression` crashed the backend the same way. Bare `-> Program` refuses on
+// a runtime tor too; it is transform ABI only (210_054, 220_023 stay green).
+//
+// Expected: KORU118 — call-site syntax in a value position.
+~import std/io
+
+~tor ret-capture { x: string } -> Expression
+~proc ret-capture|zig {
+    _ = x;
+    return "";
+}
+
+~tor payload-capture { x: string }
+| ok string
+| exact Expression
+~proc payload-capture|zig {
+    _ = x;
+    return .{ .ok = "y" };
+}
+
+~tor program-return { x: string } -> Program
+~proc program-return|zig {
+    _ = x;
+    return "";
+}
