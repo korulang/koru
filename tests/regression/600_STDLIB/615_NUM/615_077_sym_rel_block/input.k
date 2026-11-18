@@ -22,10 +22,10 @@ std/sym:rel-new()
     | unknown-generator |> std/io:print.ln("ug")
     | bad |> std/io:print.ln("bad-s")
 
-std/sym:rel-new()
-|> std/sym:rel-seed(name: "f")
-    | exact |> std/sym:rel-law(name: "f") { g(f, x+1e0) }
-        | exact |> std/sym:rel-derive { g(f, x*x) }
+std/sym:rel-new(): q0
+|> std/sym:rel-seed(name: f, reg: q0)
+    | exact q1 |> std/sym:rel-law(name: f, reg: q1) { g(f, x+1e0) }
+        | exact q2 |> std/sym:rel-derive(reg: q2) { g(f, x*x) }
             | exact d2 |> std/io:print.ln("{{ d2:s }}") |> std/io:free(content: d2)
             | unknown-generator |> std/io:print.ln("ug")
             | lawless |> std/io:print.ln("ll")
