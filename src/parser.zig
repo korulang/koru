@@ -1133,6 +1133,56 @@ pub const Parser = struct {
         } });
     }
 
+    /// `for (expr) |capture|` followed by a Koru-construct body: the brace+
+    /// capture spelling of a loop is not Koru (`for(expr) ! each ... |
+    /// done ...` chains) and a `~`-led block under it can only be intended
+    /// Koru — Zig/JS host bodies never contain `~` lines (proc|zig bodies
+    /// are opaque and never reach this loop). The lookahead is what keeps
+    /// legitimate host `for (...) |x| {` lines inside fn bodies passing
+    /// through: their next line is host code, not a `~` construct.
+    fn forCaptureWithKoruBody(self: *Parser, line: []const u8) bool {
+        var rest = line;
+        if (!std.mem.startsWith(u8, rest, "for")) return false;
+        rest = rest[3..];
+        if (rest.len == 0 or (rest[0] != ' ' and rest[0] != '\t' and rest[0] != '(')) return false;
+        while (rest.len > 0 and (rest[0] == ' ' or rest[0] == '\t')) rest = rest[1..];
+        if (rest.len == 0 or rest[0] != '(') return false;
+        var depth: usize = 0;
+        var i: usize = 0;
+        var closed = false;
+        while (i < rest.len) : (i += 1) {
+            switch (rest[i]) {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if (depth == 0) {
+                        i += 1;
+                        closed = true;
+                        break;
+                    }
+                },
+                else => {},
+            }
+        }
+        if (!closed) return false;
+        rest = rest[i..];
+        while (rest.len > 0 and (rest[0] == ' ' or rest[0] == '\t')) rest = rest[1..];
+        if (rest.len == 0 or rest[0] != '|') return false;
+        const close = std.mem.indexOfScalar(u8, rest[1..], '|') orelse return false;
+        if (close == 0) return false;
+        // Lookahead: first non-blank, non-`//`-comment line after this one
+        // must open with `~` — the Koru-construct marker that proves the
+        // `{` body was meant as Koru, not host code.
+        var scan = self.current + 1;
+        while (scan < self.lines.len) : (scan += 1) {
+            const t = lexer.trim(self.lines[scan]);
+            if (t.len == 0) continue;
+            if (std.mem.startsWith(u8, t, "//")) continue;
+            return t.len > 0 and t[0] == '~';
+        }
+        return false;
+    }
+
     /// Append the current line as a host_line item (verbatim host bytes —
     /// code in `.kz`/`.kjs`/…, document text in `.kmd`). Does not advance
     /// the cursor; callers own `self.current`.
@@ -2154,6 +2204,22 @@ pub const Parser = struct {
                         self.current = parsed.next;
                         continue;
                     }
+                }
+                // A `for (expr) |capture|` line reaching host passthrough is
+                // the brace+capture loop spelling — not Koru (`for(expr)
+                // ! each ... | done ...` chains) and never valid host code
+                // at file top level. Refuse loudly with the legal shape
+                // instead of leaking it verbatim into emitted Zig.
+                if (self.forCaptureWithKoruBody(trimmed)) {
+                    return self.failWithHint(
+                        .PARSE001,
+                        self.current,
+                        lexer.getIndent(line),
+                        "`for (...) |capture| {{ ... }}` is not a Koru construct — Koru's for is the chain form",
+                        .{},
+                        "write `for(expr)` then `! each binding` arms and a `| done` terminal, e.g. `for(xs, 0..) ! each x, i |> ... | done`. The `|capture| {{ body }}` spelling only exists inside `~proc|zig` host bodies.",
+                        .{},
+                    );
                 }
                 // Pass through host language line
                 try self.appendHostLine(&items, line);
