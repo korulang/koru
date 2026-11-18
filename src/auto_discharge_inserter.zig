@@ -5040,25 +5040,27 @@ pub const AutoDischargeInserter = struct {
         all_items: []ast.Item,
         impl_event: ?*const ast.EventDecl,
     ) !?[]ast.Continuation {
-        var changed = false;
-        const out = try self.allocator.alloc(ast.Continuation, conts.len);
-        errdefer self.allocator.free(out);
+        var out: ?[]ast.Continuation = null;
+        errdefer {
+            if (out) |o| self.allocator.free(o);
+        }
 
         for (conts, 0..) |*cont, i| {
-            out[i] = cont.*;
+            var cur = cont.*;
+            var pos_changed = false;
 
             // Depth first: a call inside a call inside an arm is the same
             // defect one level further down.
-            if (cont.continuations.len > 0) {
-                if (try self.synthesizeNestedPanicArms(cont.continuations, module, all_items, impl_event)) |kids| {
-                    out[i].continuations = kids;
-                    changed = true;
+            if (cur.continuations.len > 0) {
+                if (try self.synthesizeNestedPanicArms(cur.continuations, module, all_items, impl_event)) |kids| {
+                    cur.continuations = kids;
+                    pos_changed = true;
                 }
             }
 
             // Then this continuation's own node. The arms it already carries
             // are whatever the recursion above left.
-            if (cont.node) |node| switch (node) {
+            if (cur.node) |node| switch (node) {
                 .invocation => |inv| {
                     // An anonymous `|>` continuation on a branch-typed callee
                     // resolves to the success branch BEFORE loudArmsFor counts
@@ -5071,15 +5073,15 @@ pub const AutoDischargeInserter = struct {
                     const inv_qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ inv_module, inv_name });
                     defer self.allocator.free(inv_qualified);
                     if (self.event_map.get(inv_qualified)) |info| {
-                        if (try self.resolveAnonymousArms(out[i].continuations, info.decl, cont.location)) |resolved| {
-                            out[i].continuations = resolved;
-                            changed = true;
+                        if (try self.resolveAnonymousArms(cur.continuations, info.decl, cont.location)) |resolved| {
+                            cur.continuations = resolved;
+                            pos_changed = true;
                             arms_changed = true;
                         }
                     }
-                    if (try self.loudArmsFor(&inv, module, out[i].continuations, cont.location)) |extended| {
-                        out[i].continuations = extended;
-                        changed = true;
+                    if (try self.loudArmsFor(&inv, module, cur.continuations, cont.location)) |extended| {
+                        cur.continuations = extended;
+                        pos_changed = true;
                         arms_changed = true;
                     }
                     // The arm list this invocation's template rendered against
@@ -5089,8 +5091,9 @@ pub const AutoDischargeInserter = struct {
                     // discharge) would never emit. Re-render against the
                     // current arms; see the head-level twin below.
                     if (arms_changed) {
-                        if (try self.refreshInlineBody(&inv, out[i].continuations, cont.location, all_items, impl_event)) |new_inv| {
-                            out[i].node = .{ .invocation = new_inv };
+                        if (try self.refreshInlineBody(&inv, cur.continuations, cont.location, all_items, impl_event)) |new_inv| {
+                            cur.node = .{ .invocation = new_inv };
+                            pos_changed = true;
                         }
                     } else {
                         // [parallel] bodies bake `__cells`/`__env` at
@@ -5111,29 +5114,36 @@ pub const AutoDischargeInserter = struct {
                             if (std.mem.eql(u8, m, "@par-rerendered")) already = true;
                         }
                         if (is_parallel and !already) {
-                            if (try self.refreshInlineBody(&inv, out[i].continuations, cont.location, all_items, impl_event)) |new_inv| {
+                            if (try self.refreshInlineBody(&inv, cur.continuations, cont.location, all_items, impl_event)) |new_inv| {
                                 var stamped = new_inv;
                                 const grown = try self.allocator.alloc([]const u8, stamped.marks.len + 1);
                                 @memcpy(grown[0..stamped.marks.len], stamped.marks);
                                 grown[stamped.marks.len] = "@par-rerendered";
                                 stamped.marks = grown;
-                                out[i].node = .{ .invocation = stamped };
-                                changed = true;
+                                cur.node = .{ .invocation = stamped };
+                                pos_changed = true;
                             }
                         }
                     }
                 },
                 else => {},
             };
+
+            // Lazy materialization: the array exists only once some position
+            // has actually changed; positions before the first change were
+            // verified unchanged and are filled with the shared originals.
+            if (pos_changed or out != null) {
+                if (out == null) {
+                    const arr = try self.allocator.alloc(ast.Continuation, conts.len);
+                    for (conts[0..i], 0..) |prev, j| arr[j] = prev;
+                    out = arr;
+                }
+                out.?[i] = cur;
+            }
         }
 
-        if (!changed) {
-            self.allocator.free(out);
-            return null;
-        }
         return out;
     }
-
     /// A template invocation's `inline_body` is rendered against its arm list
     /// at elaborate time; padding or renaming arms after that render leaves the
     /// `.continue` markers baked for arms that did not exist. Re-render against
