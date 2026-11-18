@@ -27,6 +27,38 @@ Synthesized products and dead copies share `ctx.allocator`, so a scratch
 allocator cannot separate them — the fix must reduce the *number of
 rebuilds*, not relocate them.
 
+**Already partially treated.** `mapItemsRecursive` shares unchanged items
+by value — the O(change) rebuild contract added after the 003_ecs SIGKILL
+(`ast_functional.zig`, comment above `ReplaceFlowCtx`). The residual
+12.9 GiB is what survives that fix: every rebuild still allocates a
+full-length `items` slice per module level (`allocator.alloc(ast.Item,
+items.len)` unconditionally), `cloneModuleDeclWithItems` re-dupes
+`logical_name`/`canonical_path`/`annotations` per changed module per
+transform, and each iteration mints a fresh `Program` + annotation slice.
+N transforms × O(items + modules·strings) of *fresh slice/string* allocations
+still accumulates — sharing item *values* did not stop sharing nothing.
+
+**Batching is semantics-safe by construction** (verified 2026-11-18): every
+transform decision in `checkAndTransformFlow` reads only the target flow's
+own `body.continuations`, the static `event_map`, and declaration lookups
+(`findEventDeclByLastSegment`, `renderTemplateInvocation` — decls/templates,
+never sibling flow bodies). Transforms only ever replace flows, so
+cross-flow reads see identical decl state under batching; enablement across
+transforms is preserved by fixpoint rounds (a transform enabled by another's
+output lands next round, exactly as it lands next iteration today).
+
+**Implementation seam:** `replacedFlowResult` gains a deferred mode — push
+`(target_flow_ptr, new_item)` onto a pending list instead of rebuilding;
+`transformOneFlow` becomes `transformAllFlows` collecting every flow's
+first transform per sweep (all `checkAndTransformFlow` early-returns keep
+working unchanged — they return per-flow, the sweep iterates flows);
+sweep end applies all pending replacements in ONE
+`replaceFlowsRecursive` (new `ast_functional` fn: `mapItemsRecursive` with a
+pointer-keyed target set — pointers stay valid because the program isn't
+rebuilt until sweep end). Two modes (`.full`, `.scope_exit_only`) share the
+sweep loop. Estimated diff: ~150 lines across `auto_discharge_inserter.zig`
++ `ast_functional.zig`; the 14 `replacedFlowResult` call sites are untouched.
+
 ## The refactor: batch per sweep
 
 Change the unit of transformation from "first flow per call" to "all
