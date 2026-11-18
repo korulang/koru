@@ -383,8 +383,8 @@ fn mapReplaceNodeItem(allocator: std.mem.Allocator, ctx: ReplaceNodeCtx, item: *
     if (item.* != .flow) return null;
     const flow = &item.flow;
     const cont_result = try replaceInvocationNodeInContinuations(allocator, flow.body.continuations, ctx.target, ctx.new_node);
-    if (!cont_result.found) return null;
-    return ast.Item{ .flow = try cloneFlowWithContinuations(allocator, flow, cont_result.conts) };
+    const conts = cont_result orelse return null;
+    return ast.Item{ .flow = try cloneFlowWithContinuations(allocator, flow, conts) };
 }
 
 fn replaceInvocationNodeInItems(
@@ -440,8 +440,8 @@ fn mapReplaceNodeContsItem(allocator: std.mem.Allocator, ctx: ReplaceNodeContsCt
         ctx.new_continuations,
         ctx.mark_transformed,
     );
-    if (!cont_result.found) return null;
-    return ast.Item{ .flow = try cloneFlowWithContinuations(allocator, flow, cont_result.conts) };
+    const conts = cont_result orelse return null;
+    return ast.Item{ .flow = try cloneFlowWithContinuations(allocator, flow, conts) };
 }
 
 fn replaceInvocationNodeAndContinuationsInItems(
@@ -460,41 +460,55 @@ fn replaceInvocationNodeAndContinuationsInItems(
     }, mapReplaceNodeContsItem);
 }
 
+/// Lazily materialize the rebuilt continuation array on the first changed
+/// position: prefix positions copy the struct value (sharing node + nested
+/// slices per the O(change) contract), suffix positions fill as the walk
+/// proceeds. Returns the slice; *slot stays null when nothing changed.
+fn ensureConts(
+    allocator: std.mem.Allocator,
+    conts: []const ast.Continuation,
+    slot: *?[]ast.Continuation,
+    upto: usize,
+) ![]ast.Continuation {
+    if (slot.*) |existing| return existing;
+    const arr = try allocator.alloc(ast.Continuation, conts.len);
+    for (conts[0..upto], 0..) |c, j| arr[j] = c;
+    slot.* = arr;
+    return arr;
+}
+
+/// Lazy rebuild: returns null when the target is absent — ZERO allocations
+/// on the miss path (the old eager version deep-cloned every continuation
+/// of every flow per splice; that was the transform window's ~9.3 GiB).
 fn replaceInvocationNodeInContinuations(
     allocator: std.mem.Allocator,
     conts: []const ast.Continuation,
     target_invocation: *const ast.Invocation,
     new_node: ast.Node,
-) !ReplaceContResult {
-    var new_conts = try allocator.alloc(ast.Continuation, conts.len);
-    var found = false;
+) !?[]ast.Continuation {
+    var new_conts: ?[]ast.Continuation = null;
 
     for (conts, 0..) |*cont, i| {
-        var replaced = false;
-        if (cont.node) |*step| {
-            if (step.* == .invocation) {
-                if (&step.invocation == target_invocation) {
-                    new_conts[i] = try cloneContinuationWithReplacedNode(allocator, cont, new_node);
-                    found = true;
-                    replaced = true;
-                }
+        const self_hit = if (cont.node) |*step|
+            step.* == .invocation and &step.invocation == target_invocation
+        else
+            false;
+        if (self_hit) {
+            const arr = try ensureConts(allocator, conts, &new_conts, i);
+            arr[i] = try cloneContinuationWithReplacedNode(allocator, cont, new_node);
+            continue;
+        }
+        if (cont.continuations.len > 0) {
+            if (try replaceInvocationNodeInContinuations(allocator, cont.continuations, target_invocation, new_node)) |sub| {
+                const arr = try ensureConts(allocator, conts, &new_conts, i);
+                arr[i] = try cloneContinuationWithReplacedNested(allocator, cont, sub);
+                continue;
             }
         }
-
-        if (!replaced) {
-            if (cont.continuations.len > 0) {
-                const sub = try replaceInvocationNodeInContinuations(allocator, cont.continuations, target_invocation, new_node);
-                if (sub.found) {
-                    new_conts[i] = try cloneContinuationWithReplacedNested(allocator, cont, sub.conts);
-                    found = true;
-                    continue;
-                }
-            }
-            new_conts[i] = try cloneContinuation(allocator, cont);
-        }
+        if (new_conts) |arr| arr[i] = cont.*;
     }
 
-    return ReplaceContResult{ .found = found, .conts = new_conts };
+    return new_conts;
 }
 
 fn replaceInvocationNodeAndContinuationsInContinuations(
@@ -504,50 +518,44 @@ fn replaceInvocationNodeAndContinuationsInContinuations(
     new_node: ast.Node,
     new_continuations: []const ast.Continuation,
     mark_transformed: bool,
-) !ReplaceContResult {
-    var new_conts = try allocator.alloc(ast.Continuation, conts.len);
-    var found = false;
+) !?[]ast.Continuation {
+    var new_conts: ?[]ast.Continuation = null;
 
     for (conts, 0..) |*cont, i| {
-        var replaced = false;
-        if (cont.node) |*step| {
-            if (step.* == .invocation) {
-                if (&step.invocation == target_invocation) {
-                    const cloned_conts = try cloneContinuationSlice(allocator, new_continuations);
-                    new_conts[i] = try cloneContinuationWithNodeAndContinuations(
-                        allocator,
-                        cont,
-                        new_node,
-                        cloned_conts,
-                        mark_transformed,
-                    );
-                    found = true;
-                    replaced = true;
-                }
+        const self_hit = if (cont.node) |*step|
+            step.* == .invocation and &step.invocation == target_invocation
+        else
+            false;
+        if (self_hit) {
+            const cloned_conts = try cloneContinuationSlice(allocator, new_continuations);
+            const arr = try ensureConts(allocator, conts, &new_conts, i);
+            arr[i] = try cloneContinuationWithNodeAndContinuations(
+                allocator,
+                cont,
+                new_node,
+                cloned_conts,
+                mark_transformed,
+            );
+            continue;
+        }
+        if (cont.continuations.len > 0) {
+            if (try replaceInvocationNodeAndContinuationsInContinuations(
+                allocator,
+                cont.continuations,
+                target_invocation,
+                new_node,
+                new_continuations,
+                mark_transformed,
+            )) |sub| {
+                const arr = try ensureConts(allocator, conts, &new_conts, i);
+                arr[i] = try cloneContinuationWithReplacedNested(allocator, cont, sub);
+                continue;
             }
         }
-
-        if (!replaced) {
-            if (cont.continuations.len > 0) {
-                const sub = try replaceInvocationNodeAndContinuationsInContinuations(
-                    allocator,
-                    cont.continuations,
-                    target_invocation,
-                    new_node,
-                    new_continuations,
-                    mark_transformed,
-                );
-                if (sub.found) {
-                    new_conts[i] = try cloneContinuationWithReplacedNested(allocator, cont, sub.conts);
-                    found = true;
-                    continue;
-                }
-            }
-            new_conts[i] = try cloneContinuation(allocator, cont);
-        }
+        if (new_conts) |arr| arr[i] = cont.*;
     }
 
-    return ReplaceContResult{ .found = found, .conts = new_conts };
+    return new_conts;
 }
 
 const ReplaceInvCtx = struct {
