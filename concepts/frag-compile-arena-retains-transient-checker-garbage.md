@@ -43,5 +43,16 @@ rounds) or mutable in-place transform; both are real refactors, not drive-bys.
 `evaluate_comptime` (+9.9 GiB) remains unaudited at this depth — same
 product-vs-temporary question applies.
 
+UPDATE 2026-11-18: batch-per-sweep LANDED (`replaceFlowsRecursive` +
+deferred `replacedFlowResult` + `transformAllFlows`, ~110 lines). Measured on
+gallery.k: compile arena 23.4 -> 15.2 GiB (-35%); the auto_discharge window
+12.9 -> 5.1 GiB (-60%), not the <0.5 GiB the design note predicted. The
+residual is per-sweep transform TEMPORARIES — checkAndTransformFlow's trial
+allocations (resolved_flow/nested_flow candidates, string temp) accumulate on
+the arena across sweeps, plus more fixpoint rounds than the 1-3 estimate.
+Next lever if pursued: scratch-split inside the sweep (winner flows to
+pending, losers/temps reclaimable) — same product-vs-temporary boundary, one
+level down.
+
 Until then, ~23 GiB is the design's honest cumulative cost; the 3/4-RAM
 default (`fc7527657`) sizes for it.

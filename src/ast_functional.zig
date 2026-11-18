@@ -191,6 +191,49 @@ pub fn replaceFlowRecursive(
     return null;
 }
 
+pub const FlowReplacement = struct {
+    target_flow: *const ast.Flow,
+    new_item: ast.Item,
+};
+
+const ReplaceFlowsCtx = struct {
+    targets: []const FlowReplacement,
+};
+
+fn mapReplaceFlowsItem(allocator: std.mem.Allocator, ctx: ReplaceFlowsCtx, item: *const ast.Item) !?ast.Item {
+    _ = allocator;
+    if (item.* != .flow) return null;
+    const ptr = @intFromPtr(&item.flow);
+    for (ctx.targets) |t| {
+        if (ptr == @intFromPtr(t.target_flow)) return t.new_item;
+    }
+    return null;
+}
+
+fn replaceFlowsInItems(
+    allocator: std.mem.Allocator,
+    items: []const ast.Item,
+    targets: []const FlowReplacement,
+) !ReplaceResult {
+    return mapItemsRecursive(allocator, items, ReplaceFlowsCtx{ .targets = targets }, mapReplaceFlowsItem);
+}
+
+/// Replace MANY flows in one write-back — the batch-per-sweep primitive.
+/// One mapItemsRecursive pass instead of one per transform; unchanged items
+/// still share by value under the O(change) contract. Targets are matched
+/// by pointer identity, so callers must not rebuild the program between
+/// collecting targets and calling this.
+pub fn replaceFlowsRecursive(
+    allocator: std.mem.Allocator,
+    source: *const ast.Program,
+    targets: []const FlowReplacement,
+) !?ast.Program {
+    if (targets.len == 0) return null;
+    const result = try replaceFlowsInItems(allocator, source.items, targets);
+    if (!result.found) return null;
+    return try programWithItems(allocator, source, result.items);
+}
+
 pub fn replaceInvocationNodeRecursive(
     allocator: std.mem.Allocator,
     source: *const ast.Program,

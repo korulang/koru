@@ -1,0 +1,9 @@
+name: verification
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: register-on-miss artifact — a `Signal:` line whose type word was
+      "verification" minted the bare word as a name. Signal types are
+      measurement/correction/design/belief, not corpus signals;
+      protocol noise, tombstoned 2026-11-18.

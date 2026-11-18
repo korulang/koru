@@ -226,6 +226,12 @@ pub const AutoDischargeInserter = struct {
     /// touches disk. Built lazily on the first hole lookup.
     guide_entries: std.ArrayList(GuideEntry) = .empty,
     guide_entries_loaded: bool = false,
+    /// Batch-per-sweep deferred replacements: while batch_deferred is set,
+    /// replacedFlowResult records (target_flow, new_item) here instead of
+    /// rebuilding the program; the sweep applies them all in one
+    /// ast_functional.replaceFlowsRecursive write-back.
+    pending_replaces: std.ArrayList(ast_functional.FlowReplacement) = .empty,
+    batch_deferred: bool = false,
 
     /// Error set for recursive functions that need explicit error types
     pub const RecursiveError = std.mem.Allocator.Error || error{ ValidationFailed, NoSpaceLeft };
@@ -1512,7 +1518,7 @@ pub const AutoDischargeInserter = struct {
         const max_iterations: u32 = 100000;
 
         while (iteration < max_iterations) : (iteration += 1) {
-            const result = try self.transformOneFlow(current_program, .full);
+            const result = try self.transformAllFlows(current_program, .full);
             if (result.transformed) {
                 current_program = result.program;
             } else {
@@ -1524,7 +1530,7 @@ pub const AutoDischargeInserter = struct {
         // Step 3: Scope-exit insertion pass on a stable tree
         iteration = 0;
         while (iteration < max_iterations) : (iteration += 1) {
-            const result = try self.transformOneFlow(current_program, .scope_exit_only);
+            const result = try self.transformAllFlows(current_program, .scope_exit_only);
             if (result.transformed) {
                 current_program = result.program;
             } else {
@@ -1648,6 +1654,13 @@ pub const AutoDischargeInserter = struct {
         flow: *const ast.Flow,
         rebuilt: ast.Flow,
     ) !TransformResult {
+        if (self.batch_deferred) {
+            try self.pending_replaces.append(self.allocator, .{
+                .target_flow = flow,
+                .new_item = .{ .flow = rebuilt },
+            });
+            return .{ .transformed = true, .program = program };
+        }
         const new_program = try ast_functional.replaceFlowRecursive(
             self.allocator,
             program,
@@ -1705,6 +1718,53 @@ pub const AutoDischargeInserter = struct {
         }
 
         return .{ .transformed = false, .program = program };
+    }
+
+    /// Batch-per-sweep variant of transformOneFlow: walks every flow and
+    /// collects each flow's first transform into pending_replaces (via the
+    /// deferred replacedFlowResult), then applies them all in ONE
+    /// replaceFlowsRecursive write-back. Transform decisions are flow-local
+    /// (target flow + static event_map + decl lookups only), so simultaneous
+    /// application is semantics-preserving; enablement across transforms is
+    /// preserved by the fixpoint rounds in run().
+    fn transformAllFlows(
+        self: *AutoDischargeInserter,
+        program: *const ast.Program,
+        mode: TransformMode,
+    ) !TransformResult {
+        self.pending_replaces.clearRetainingCapacity();
+        self.batch_deferred = true;
+        defer self.batch_deferred = false;
+        for (program.items, 0..) |*item, item_idx| {
+            switch (item.*) {
+                .flow => {
+                    _ = try self.checkAndTransformFlow(&item.flow, program, item_idx, mode);
+                },
+                .immediate_impl => {},
+                .module_decl => {
+                    const module = &item.module_decl;
+                    for (module.items, 0..) |*mod_item, mod_item_idx| {
+                        _ = mod_item_idx;
+                        if (mod_item.* == .flow) {
+                            _ = try self.checkAndTransformFlow(&mod_item.flow, program, item_idx, mode);
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+        if (self.pending_replaces.items.len == 0) {
+            return .{ .transformed = false, .program = program };
+        }
+        const targets = self.pending_replaces.items;
+        const new_program = try ast_functional.replaceFlowsRecursive(self.allocator, program, targets) orelse {
+            self.pending_replaces.clearRetainingCapacity();
+            return .{ .transformed = false, .program = program };
+        };
+        const result_ptr = try self.allocator.create(ast.Program);
+        result_ptr.* = new_program;
+        self.pending_replaces.clearRetainingCapacity();
+        return .{ .transformed = true, .program = result_ptr };
     }
 
     /// Check a flow for obligations at terminators and transform if needed
@@ -2171,7 +2231,7 @@ pub const AutoDischargeInserter = struct {
                         if (std.mem.eql(u8, rb, "_")) {
                             switch (try self.rebindObligationDiscard(program, flow, cont, &node.invocation, module_name)) {
                                 .none => {},
-                                .rebound => |result_ptr| return .{ .transformed = true, .program = result_ptr },
+                                .rebound => |nf| return try self.replacedFlowResult(program, flow, nf),
                                 .splice_failed => return .{ .transformed = false, .program = program },
                             }
                         }
@@ -2210,7 +2270,7 @@ pub const AutoDischargeInserter = struct {
                     if (node == .invocation and node.invocation.return_binding == null) {
                         switch (try self.rebindObligationDiscard(program, flow, cont, &node.invocation, module_name)) {
                             .none => {},
-                            .rebound => |result_ptr| return .{ .transformed = true, .program = result_ptr },
+                            .rebound => |nf| return try self.replacedFlowResult(program, flow, nf),
                             .splice_failed => return .{ .transformed = false, .program = program },
                         }
                     }
@@ -4172,7 +4232,7 @@ pub const AutoDischargeInserter = struct {
     /// return untransformed.
     const ObligationDiscardRebind = union(enum) {
         none,
-        rebound: *ast.Program,
+        rebound: ast.Flow,
         splice_failed,
     };
 
@@ -4203,15 +4263,8 @@ pub const AutoDischargeInserter = struct {
         const synthetic_name = try self.generateSyntheticBinding();
         const new_cont = try self.cloneContinuationWithReturnBinding(cont, synthetic_name);
         const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont.*);
-        const new_program = try ast_functional.replaceFlowRecursive(
-            self.allocator,
-            program,
-            flow,
-            .{ .flow = new_flow },
-        ) orelse return .splice_failed;
-        const result_ptr = try self.allocator.create(ast.Program);
-        result_ptr.* = new_program;
-        return .{ .rebound = result_ptr };
+        _ = program;
+        return .{ .rebound = new_flow };
     }
 
     /// Rebuild a continuation-less flow head as an explicit flow exit: rename a
