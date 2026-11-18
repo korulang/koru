@@ -85,3 +85,23 @@ runtime AST and failed branch coverage (KORU022), breaking every
 annotation — the same contract `flowInvokesComptimeEvent` has always
 routed by. 310_057, the pin for the exact shape, had not been run since
 the classifier landed.
+
+**2026-11-17 — R1 lands the value-position wall (KORU118).** The ruling
+"call-site text only" finally gets a declaration-time refusal: capture kinds
+(`Expression`, `Source`, `File`, `EmbedFile`, `InvocationMeta`) in a return
+type, resume type, resume arm, or outcome payload refuse in
+`host_type_scope_checker` — where `-> Expression` used to emit
+`pub const Output = Expression;` (undeclared Zig, backend crash) and
+`| exact Expression` crashed the same way. Bare `Program` refuses too, except
+where the event is a comptime transform (`isComptimeOnly()` or a
+`[comptime]`/`[transform]` annotation) — `-> *const Program` is ABI there
+(210_054, 220_023).
+
+The load-bearing nuance the wall surfaced: **capture-kind-ness is a property
+of the position, not the spelling.** On the INPUT shape, `program_ast:
+*const Program` (compiler.kz `context-create`) and `source: *const Source`
+(testing.kz `validate-mocks`) are legitimate *runtime handles* — the
+metacircular pipeline passes the seed AST around as data. Neither spelling is
+flagged by the parser (`isComptimeOnly` keys only the exact `Program` name)
+and neither may refuse. The capture gate is the bare unqualified param
+spelling; the pointered forms are data.

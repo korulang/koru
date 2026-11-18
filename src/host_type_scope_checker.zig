@@ -30,6 +30,33 @@ const TypePrefixes = [_][]const u8{ "[]const ", "?*const ", "*const ", "[]", "?*
 
 const Intrinsics = [_][]const u8{ "Source", "File", "EmbedFile", "Expression", "InvocationMeta" };
 
+/// Capture kinds that may never appear in a VALUE position (return type,
+/// resume type, resume arm, outcome payload): they exist only at the call
+/// site — a proc receives `Expression`/`Source`/`File`/`EmbedFile`/
+/// `InvocationMeta` as the invocation's own text/metadata, so the producing
+/// side has nothing to capture (R1/C1, ruled 2026-11-17). `-> Expression`
+/// previously emitted `pub const Output = Expression;` — an undeclared Zig
+/// identifier and a backend crash with no Koru diagnostic.
+/// `Program` is deliberately NOT in this list: it is both a capture kind and
+/// transform ABI (`-> *const Program`, 210_054/220_023), refused separately
+/// only on events that are not comptime transforms.
+const CaptureKinds = [_][]const u8{ "Expression", "Source", "File", "EmbedFile", "InvocationMeta" };
+
+/// Input shapes carry capture-kind params legally; outcome payloads never do.
+const ShapePosition = enum { input, outcome };
+
+/// Where a type string sits on the event's surface.
+const TypePosition = enum {
+    /// An input-shape field: capture kinds and `Program`/`Source` handles are
+    /// legal — `program_ast: *const Program` is a runtime AST handle
+    /// (compiler.kz's `context-create` is the carrier), `*const Source` the
+    /// testing lane's handle spelling.
+    input,
+    /// A return/resume/resume-arm type: capture kinds refuse (R1); bare
+    /// `Program` refuses unless the event is a comptime transform.
+    value,
+};
+
 /// Compiler-owned transform-ABI names that behave as keywords in RETURN
 /// positions: the machinery string-matches them BARE (main.zig's
 /// returns_program detects `-> Program` / `-> SiteResult` by substring;
@@ -73,15 +100,22 @@ fn checkEvent(
     sites: *const type_registry.HostTypeDeclSites,
     reporter: *errors.ErrorReporter,
 ) CheckError!void {
-    try checkShape(event.input.fields, writer_module, sites, reporter, event.location);
+    // Bare `Program` in a value position is transform ABI — legal only where
+    // the event is a comptime transform: its input carries a capture kind
+    // (isComptimeOnly) or it is annotated [comptime|transform] outright
+    // (220_023's `*const ast.Program` param is qualified and keys on the
+    // annotation alone).
+    const allow_program = event.isComptimeOnly() or
+        event.hasAnnotation("comptime") or event.hasAnnotation("transform");
+    try checkShape(event.input.fields, writer_module, sites, reporter, event.location, .input, allow_program);
     for (event.branches) |branch| {
-        try checkShape(branch.payload.fields, writer_module, sites, reporter, event.location);
-        try checkTypeString(branch.resume_type, writer_module, sites, reporter, event.location);
+        try checkShape(branch.payload.fields, writer_module, sites, reporter, event.location, .outcome, allow_program);
+        try checkTypeString(branch.resume_type, writer_module, sites, reporter, event.location, .value, allow_program);
         if (branch.resume_arms) |arms| {
-            for (arms) |arm| try checkTypeString(arm.type, writer_module, sites, reporter, event.location);
+            for (arms) |arm| try checkTypeString(arm.type, writer_module, sites, reporter, event.location, .value, allow_program);
         }
     }
-    try checkTypeString(event.return_type, writer_module, sites, reporter, event.location);
+    try checkTypeString(event.return_type, writer_module, sites, reporter, event.location, .value, allow_program);
     try refuseRedundantPhantom(event.return_type, event.return_phantom, reporter, event.location);
 }
 
@@ -91,10 +125,31 @@ fn checkShape(
     sites: *const type_registry.HostTypeDeclSites,
     reporter: *errors.ErrorReporter,
     location: errors.SourceLocation,
+    position: ShapePosition,
+    allow_program: bool,
 ) CheckError!void {
     for (fields) |field| {
-        if (field.is_source or field.is_file or field.is_embed_file or
-            field.is_expression or field.is_invocation_meta) continue;
+        const is_capture = field.is_source or field.is_file or field.is_embed_file or
+            field.is_expression or field.is_invocation_meta;
+        if (is_capture) {
+            if (position == .outcome)
+                try refuseCaptureValue(field.type, reporter, location, "an outcome payload");
+            continue;
+        }
+        // The parser only flags capture params on the input shape; in outcome
+        // position also name-match the unflagged spellings (`| exact Expression`,
+        // `| exact Program`). A qualified field type names a module's own type
+        // that happens to share the word — not the capture kind.
+        if (position == .outcome and field.module_path == null) {
+            if (qualifiedBaseName(field.type)) |base| {
+                if (isCaptureKind(base) or
+                    (std.mem.eql(u8, base, "Program") and !allow_program))
+                {
+                    try refuseCaptureValue(field.type, reporter, location, "an outcome payload");
+                    continue;
+                }
+            }
+        }
         try refuseRedundantPhantomOnField(field, reporter, location);
         // The qualified spelling carries its module in the AST — legal, but a
         // POINTERED qualified ref is a host handle and must still resolve to a
@@ -103,8 +158,36 @@ fn checkShape(
             try refuseIfQualifiedHostUnknown(mod, field.type, sites, reporter, location);
             continue;
         }
-        try checkTypeString(field.type, writer_module, sites, reporter, location);
+        try checkTypeString(field.type, writer_module, sites, reporter, location,
+            if (position == .input) .input else .value, allow_program);
     }
+}
+
+fn isCaptureKind(base: []const u8) bool {
+    for (CaptureKinds) |kind| {
+        if (std.mem.eql(u8, base, kind)) return true;
+    }
+    return false;
+}
+
+/// R1 (ruled 2026-11-17): a syntax kind is call-site text — there is no call
+/// site on the producing side to capture from, so naming one in a value
+/// position can only crash the backend (undeclared `Output = Expression`) or
+/// emit a `__koru_ast.*` type no proc can construct.
+fn refuseCaptureValue(
+    type_spelling: []const u8,
+    reporter: *errors.ErrorReporter,
+    location: errors.SourceLocation,
+    position: []const u8,
+) CheckError!void {
+    try reporter.addErrorAtLocationWithHint(
+        .KORU118,
+        location,
+        "'{s}' is call-site syntax — it produces no runtime value and cannot appear in {s}",
+        .{ type_spelling, position },
+        "capture kinds (Expression, Source, File, EmbedFile, InvocationMeta) exist only as tor parameters; produce a runtime type instead",
+        .{},
+    );
 }
 
 /// Check a type spelled as a bare string (return types, effect resume types,
@@ -117,6 +200,8 @@ fn checkTypeString(
     sites: *const type_registry.HostTypeDeclSites,
     reporter: *errors.ErrorReporter,
     location: errors.SourceLocation,
+    position: TypePosition,
+    allow_program: bool,
 ) CheckError!void {
     const rt = type_str orelse return;
     const trimmed = std.mem.trim(u8, rt, " \t");
@@ -132,13 +217,13 @@ fn checkTypeString(
                 '<', '{', '[', '(' => depth += 1,
                 '>', '}', ']', ')' => depth -= 1,
                 ',' => if (depth == 0) {
-                    try checkRecordField(inner[start..i], writer_module, sites, reporter, location);
+                    try checkRecordField(inner[start..i], writer_module, sites, reporter, location, position, allow_program);
                     start = i + 1;
                 },
                 else => {},
             }
         }
-        try checkRecordField(inner[start..], writer_module, sites, reporter, location);
+        try checkRecordField(inner[start..], writer_module, sites, reporter, location, position, allow_program);
         return;
     }
     if (std.mem.indexOfScalar(u8, rt, '<')) |lt| {
@@ -158,6 +243,14 @@ fn checkTypeString(
             break;
         }
     }
+    // R1/C1: capture kinds are call-site text — never a produced value. Bare
+    // `Program` is refused the same way except where the event is a comptime
+    // transform, for which `-> *const Program` is the ABI (210_054/220_023).
+    // Input fields skip this entirely: `*const Program`/`*const Source` there
+    // are runtime handles, not captures.
+    if (position == .value and
+        (isCaptureKind(base) or (std.mem.eql(u8, base, "Program") and !allow_program)))
+        try refuseCaptureValue(base, reporter, location, "a return or resume type");
     for (AbiReturnTypes) |abi| {
         if (std.mem.eql(u8, base, abi)) return;
     }
@@ -173,6 +266,8 @@ fn checkRecordField(
     sites: *const type_registry.HostTypeDeclSites,
     reporter: *errors.ErrorReporter,
     location: errors.SourceLocation,
+    position: TypePosition,
+    allow_program: bool,
 ) CheckError!void {
     const text = std.mem.trim(u8, field_text, " \t");
     if (text.len == 0) return;
@@ -182,7 +277,7 @@ fn checkRecordField(
             '<', '{', '[', '(' => depth += 1,
             '>', '}', ']', ')' => depth -= 1,
             ':' => if (depth == 0) {
-                try checkTypeString(text[i + 1 ..], writer_module, sites, reporter, location);
+                try checkTypeString(text[i + 1 ..], writer_module, sites, reporter, location, position, allow_program);
                 return;
             },
             else => {},
@@ -501,12 +596,14 @@ test "transform-ABI return keywords keep their bare spelling (behavior-bearing)"
 
     // `-> *const Program` / `-> SiteResult` are the transform protocol's own
     // spellings: main.zig's returns_program and the emitter's ast_return_types
-    // string-match them bare. A bare foreign `*Token` return still refuses.
-    try checkTypeString("*const Program", "", &sites, &reporter, .{ .file = "input.kz", .line = 1, .column = 1 });
-    try checkTypeString("SiteResult", "", &sites, &reporter, .{ .file = "input.kz", .line = 1, .column = 1 });
+    // string-match them bare. A bare foreign `*Token` return still refuses,
+    // and so does a capture kind in value position (R1/C1).
+    try checkTypeString("*const Program", "", &sites, &reporter, .{ .file = "input.kz", .line = 1, .column = 1 }, .value, true);
+    try checkTypeString("SiteResult", "", &sites, &reporter, .{ .file = "input.kz", .line = 1, .column = 1 }, .value, true);
+    try checkTypeString("Expression", "", &sites, &reporter, .{ .file = "input.kz", .line = 1, .column = 1 }, .value, true);
     try refuseIfForeign("Token", "", &sites, &reporter, .{ .file = "input.kz", .line = 1, .column = 1 });
     try testing.expect(reporter.hasErrors());
-    try testing.expectEqual(@as(usize, 1), reporter.errors.items.len);
+    try testing.expectEqual(@as(usize, 2), reporter.errors.items.len);
 }
 
 test "qualified spellings and undeclared names are not refusal sites" {
@@ -517,7 +614,7 @@ test "qualified spellings and undeclared names are not refusal sites" {
     defer reporter.deinit();
 
     // Qualified spelling: legal everywhere (this is the ruled fix).
-    try checkTypeString("*app/holder:Token", "", &sites, &reporter, .{ .file = "input.kz", .line = 1, .column = 1 });
+    try checkTypeString("*app/holder:Token", "", &sites, &reporter, .{ .file = "input.kz", .line = 1, .column = 1 }, .value, true);
     // A name no module declares: the backend owns it, no refusal.
     try refuseIfForeign("u32", "", &sites, &reporter, .{ .file = "input.kz", .line = 1, .column = 1 });
     // Parser-intrinsic metatypes are keywords, not host-type references.
