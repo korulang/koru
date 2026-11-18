@@ -1,42 +1,47 @@
 ---
 type: belief
 id: frag-compile-arena-retains-transient-checker-garbage
-provenance: KORU_MEM_PROBE arena marks on the gallery compile (2026-11-18): evaluate_comptime +9.9 GiB, check_flow +13.2 GiB of ~23.4 GiB total; vmmap showed ~22.5 GB writable VM_ALLOCATE
+provenance: corrected 2026-11-18 — pass-boundary marks misattributed by current_pass position; auto_discharge_inserter fixpoint rebuild is the +12.9 GiB hog, evaluate_comptime +9.9 GiB, FlowChecker exonerated
 ts: 2026-11-18
 ---
 
-# The compile arena retains transient checker garbage (belief)
+# The compile arena retains transient rebuild garbage (belief)
 
 The backend's `compile_arena` never frees until process end, so every
-allocation a pass makes — including scratch it `defer deinit`s — accumulates
-for the whole compile. `ArenaAllocator.free` is a no-op; a checker's
-"cleanup" is bookkeeping, not reclamation.
+allocation a pass makes — including scratch it `defer deinit`s and
+intermediate structures later iterations supersede — accumulates for the
+whole compile. `ArenaAllocator.free` is a no-op.
 
-Measured on `koruc canvas/tests/gallery.k` (KORU_MEM_PROBE marks at each
-`current_pass` checkpoint, 2026-11-18):
+Measured on `koruc canvas/tests/gallery.k` via pass-boundary arena marks
+(2026-11-18), with the correction that `current_pass=` sits at inconsistent
+depth in each proc — a mark names the pass *starting*, so a delta belongs to
+the pass whose body ran between the previous mark and this one:
 
+- `auto_discharge` window: +12.9 GiB — `AutoDischargeInserter.run()`
+  (`src/auto_discharge_inserter.zig:1482`)
 - `evaluate_comptime`: +9.9 GiB
-- `check_flow`: +13.2 GiB
-- all other 18 passes combined: ~0.4 GiB
+- all other passes combined: ~0.4 GiB
+- `check_flow`/FlowChecker: **exonerated** — <1 MB; a scratch-allocator patch
+  for it was built, measured, and reverted for exactly this reason.
 
-98% of the ~23.4 GiB compile-arena total sits in two passes. The allocating
-construct is not one structure — it is the aggregate of per-scope/per-node
-scratch: `FlowChecker` (`src/flow_checker.zig`, 3533 lines) builds
-`StringHashMap(BindSite)`, `ArrayList(ScopedBind)`, `ArrayList(BorrowScopeBind)`
-and string dupes per scope per node across the whole module AST; every
-`defer ...deinit(self.allocator)` frees to the arena and reclaims nothing.
-`evaluate_comptime`'s callees (`comptime_scan.run`, `callComptimeHandler`,
-`checker.checkSourceFile`) show the same shape.
+The auto-discharge mechanism is functional-persistent rebuilding, not checker
+scratch: `run()` loops `transformOneFlow` to a fixpoint, each call transforms
+exactly ONE flow, and `replacedFlowResult` routes through
+`ast_functional.replaceFlowRecursive` → `mapItemsRecursive` +
+`programWithItems` + `cloneModuleDeclWithItems` — a fresh items spine, Program,
+and per-module string dupes per single-flow transform. Iterations ≈ insertion
+sites, cost per iteration ≈ program size: O(sites × items), quadratic in
+graph size. Only the final `result.program` is used; every intermediate spine
+copy is garbage the arena retains.
 
-This refutes the "records never shared" framing: the cost is not live data
-failing to dedup — it is transient garbage that was never reclaimable by
-construction. The live set is a small fraction of the 23 GiB.
+Products vs scratch verdict: the synthesized continuations/@panic arms MUST
+persist on `ctx.allocator`, and they are interleaved with the dead spine
+copies on the same allocator — a scratch allocator cannot separate them.
+Scratch-allocator does not apply here. The fix directions are structural:
+batch all transforms per sweep (collapse iterations from sites to fixpoint
+rounds) or mutable in-place transform; both are real refactors, not drive-bys.
+`evaluate_comptime` (+9.9 GiB) remains unaudited at this depth — same
+product-vs-temporary question applies.
 
-The fix direction is a scratch allocator per pass: hand `FlowChecker` (and the
-comptime-eval callees) an allocator whose `free` works — a child arena or GPA
-deinit'd at pass end — while AST/error outputs stay on `ctx.allocator`. The
-open question is escape-safety: whether any checker-allocated value is
-retained into `ctx.ast` or error lists. Verifying that across the checker is
-a real audit, not a drive-by — until it is done, treat ~23 GiB as the design's
-honest cumulative cost and size budgets accordingly (the 3/4-RAM default in
-`fc7527657` does exactly this).
+Until then, ~23 GiB is the design's honest cumulative cost; the 3/4-RAM
+default (`fc7527657`) sizes for it.
