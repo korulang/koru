@@ -309,13 +309,30 @@ fn cloneModuleDeclWithItems(
 /// The items-walk skeleton shared by every `replace*InItems` walker:
 /// module_decls recurse, every other item goes through `map_item` (null =
 /// share unchanged), and a mapped item flips `found`.
+/// Lazily materialize the rebuilt items array on the first change — the
+/// same null-propagating shape as the continuation walkers: miss path
+/// allocates NOTHING (the old version allocated a full items slice for
+/// every module's items array on every splice, found or not).
+fn ensureItems(
+    allocator: std.mem.Allocator,
+    items: []const ast.Item,
+    slot: *?[]ast.Item,
+    upto: usize,
+) ![]ast.Item {
+    if (slot.*) |existing| return existing;
+    const arr = try allocator.alloc(ast.Item, items.len);
+    for (items[0..upto], 0..) |it, j| arr[j] = it;
+    slot.* = arr;
+    return arr;
+}
+
 fn mapItemsRecursive(
     allocator: std.mem.Allocator,
     items: []const ast.Item,
     ctx: anytype,
     map_item: anytype,
 ) !ReplaceResult {
-    var new_items = try allocator.alloc(ast.Item, items.len);
+    var new_items: ?[]ast.Item = null;
     var found = false;
 
     for (items, 0..) |*item, i| {
@@ -323,20 +340,21 @@ fn mapItemsRecursive(
             const mod = &item.module_decl;
             const sub_result = try mapItemsRecursive(allocator, mod.items, ctx, map_item);
             if (sub_result.found) {
-                new_items[i] = ast.Item{ .module_decl = try cloneModuleDeclWithItems(allocator, mod, sub_result.items) };
+                const arr = try ensureItems(allocator, items, &new_items, i);
+                arr[i] = ast.Item{ .module_decl = try cloneModuleDeclWithItems(allocator, mod, sub_result.items) };
                 found = true;
-            } else {
-                new_items[i] = item.*;
+                continue;
             }
         } else if (try map_item(allocator, ctx, item)) |mapped| {
-            new_items[i] = mapped;
+            const arr = try ensureItems(allocator, items, &new_items, i);
+            arr[i] = mapped;
             found = true;
-        } else {
-            new_items[i] = item.*;
+            continue;
         }
+        if (new_items) |arr| arr[i] = item.*;
     }
 
-    return ReplaceResult{ .found = found, .items = new_items };
+    return ReplaceResult{ .found = found, .items = new_items orelse &[_]ast.Item{} };
 }
 
 /// Write-back rebuilds share UNCHANGED items by value. The new items array is
