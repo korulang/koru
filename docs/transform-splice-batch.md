@@ -78,12 +78,29 @@ argument.
   assembly) are an unaudited allocation surface — flagged follow-up; this
   fix targets the runner's spine rebuilds only.
 
-## Verdict
+## Verdict — REFUTED by measurement (2026-11-18)
 
-Implement batched write-back with the disjoint-site guard. Safety proof is
-weaker than auto_discharge's (chaining is real) — the guard + fixpoint
-rounds + regression suite carry it. transforms/*.zig internals remain a
-separate audit.
+Implemented guarded per-site batching (disjoint-enclosing-flow guard,
+whole_program/comptime-removal barriers, round-level stagnant guard,
+`KORU_TRANSFORM_SEQUENTIAL=1` escape hatch, `SiteWrite` multi-target
+write-back in ast_functional). Result: **7/8 sampled 690_STORE tests
+fail `backend-exec` with KORU161 "watch precedes its store's create"**;
+sequential path passes the same tests clean.
+
+Root cause: the disjoint-site guard covers *structural* overlap only.
+Store-transform handlers READ program state their siblings produce —
+`stored`/`create` transforms emit decls and ordering a `watch` handler
+checks (rung-one ordering). In sequential mode each handler sees all
+prior transforms' outputs; in batch mode every handler sees the
+pre-round program, so ordering checks evaluate stale state. The
+read-dependency is undecidable per-handler — no cheap guard exists.
+
+Reverted: transform_pass_runner.zig + ast_functional.zig SiteWrite
+machinery. The ~9.8 GiB stands as the honest cost of sequential
+semantics for store transforms. Remaining lever: transforms/*.zig
+internals audit (siteView copies, SiteResult product sizes, per-splice
+flow clones) — the flagged follow-up — or a scratch split inside the
+splice path itself.
 ## World Model
 Signal: design — transform-runner memory is splice spine-rebuilds
 (handlers +0MB); fix is guarded per-site batching, chaining preserved by
