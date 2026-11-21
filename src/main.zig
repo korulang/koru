@@ -191,22 +191,26 @@ fn defaultCompileMemMb() usize {
 }
 
 fn signalName(sig: u32) []const u8 {
-    const SIG = std.posix.SIG;
-    return switch (sig) {
-        SIG.KILL => "SIGKILL",
-        SIG.TERM => "SIGTERM",
-        SIG.INT => "SIGINT",
-        SIG.HUP => "SIGHUP",
-        SIG.QUIT => "SIGQUIT",
-        SIG.SEGV => "SIGSEGV",
-        SIG.ABRT => "SIGABRT",
-        SIG.BUS => "SIGBUS",
-        SIG.FPE => "SIGFPE",
-        SIG.ILL => "SIGILL",
-        SIG.PIPE => "SIGPIPE",
-        SIG.TRAP => "SIGTRAP",
-        else => "unnamed signal",
-    };
+    if (comptime @import("builtin").os.tag == .windows) {
+        return "signal";
+    } else {
+        const SIG = std.posix.SIG;
+        return switch (sig) {
+            SIG.KILL => "SIGKILL",
+            SIG.TERM => "SIGTERM",
+            SIG.INT => "SIGINT",
+            SIG.HUP => "SIGHUP",
+            SIG.QUIT => "SIGQUIT",
+            SIG.SEGV => "SIGSEGV",
+            SIG.ABRT => "SIGABRT",
+            SIG.BUS => "SIGBUS",
+            SIG.FPE => "SIGFPE",
+            SIG.ILL => "SIGILL",
+            SIG.PIPE => "SIGPIPE",
+            SIG.TRAP => "SIGTRAP",
+            else => "unnamed signal",
+        };
+    }
 }
 
 /// Did the child exit on its own with code 0? The safe fold for sites whose

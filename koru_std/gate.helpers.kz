@@ -98,8 +98,8 @@ const gate_helpers = struct {
     // canonical credential file outside every repo. Returns an env map
     // only when provisioning changed anything — null means "inherit".
     fn provisionKey(a: std.mem.Allocator) ?std.process.EnvMap {
-        if (std.posix.getenv("OPENROUTER_API_KEY") != null) return null;
-        const home = std.posix.getenv("HOME") orelse return null;
+        if ((std.process.getEnvVarOwned(a, "OPENROUTER_API_KEY") catch null) != null) return null;
+        const home = (std.process.getEnvVarOwned(a, "HOME") catch null) orelse (std.process.getEnvVarOwned(a, "USERPROFILE") catch null) orelse return null;
         const path = std.fs.path.join(a, &.{ home, ".config", "koru", "openrouter.env" }) catch return null;
         const text = std.fs.cwd().readFileAlloc(a, path, 1 << 16) catch return null;
         var it = std.mem.splitScalar(u8, text, '\n');

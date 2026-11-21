@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const ast = @import("ast");
 
 /// ThreadedChecker — propagates "reachable from a @threaded root" forward
@@ -48,7 +49,7 @@ pub const ThreadedChecker = struct {
         try self.seedParallelScopes(source.items);
         try self.floodDirty(source);
         try self.markRecursiveDirty(source.items);
-        if (std.posix.getenv("KORU_DEBUG_THREADED") != null)
+        if ((std.process.getEnvVarOwned(std.heap.page_allocator, "KORU_DEBUG_THREADED") catch null) != null)
             try self.dumpDirty(source.items);
     }
 

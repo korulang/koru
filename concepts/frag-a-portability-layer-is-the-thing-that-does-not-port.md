@@ -59,5 +59,23 @@ answer to `koru_allocator()` is what made `free` reachable and surfaced the
 hole. A fallback measured on one freestanding host is not measured on
 freestanding.
 
+**The union also excludes the host.** Measured 2026-11-21 on Windows 10 +
+zig 0.15.1: `zig build` of koruc itself refused three times — `posix.getenv`
+is a `compileError` there (WTF-16 env), `std.posix.SIG` has no `KILL`, and
+`File.chmod` is `fchmod`, unsupported by the target OS. The emitted side was
+worse because it compiled quietly: `io.kz`'s writer template emitted
+`posix.write(fd: i32)` for every hosted target, but on Windows the fd slot
+carries a HANDLE, so the program would have written to a number, not a
+stream — fixed as this frag prescribes, a per-platform arm
+(`GetStdHandle`/`WriteFile`) above the shared splicing. And one that was not
+even a posix call: `emitInvocationMetaFields` wrote `loc.file` raw into a
+Zig string literal, so a `W:\src\...` path produced `"\s"`, `"\k"` — "paths
+are strings" is itself a POSIX-shaped assumption; the escape helper existed
+ten lines up and the call site just never met a host whose paths need it.
+koru's portability evidence had always been about *targets* — wasm,
+unikernel, pinned glibc — while the toolchain's own host list was a union of
+one. **The host is a target too; a target list that omits it leaves the
+whole compiler unmeasured.**
+
 Related: [[frag-a-diagnostics-hint-is-a-claim-not-a-tested-path]] — both are
 about trusting a stated surface over an exercised one.

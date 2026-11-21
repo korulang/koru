@@ -2,10 +2,37 @@
 # pre-commit — two walls:
 #   1. git-wall: refuse commits that stage repo rot (.gitignore is the oracle)
 #   2. invariant gate, enforcing: the in-language gate runs the manifest's
-#      git-gate profile — `check:` rows block (deterministic) and judgment
-#      rows delegate to the profile's declared judge (Jev via koru/odds;
-#      UNJUDGED blocks). gate.py remains as the read-only reference oracle.
+#      git-gate profile — `check:` rows block (deterministic). Judgment rows
+#      need a judge that can actually answer: OPENROUTER_API_KEY provisioned,
+#      or the LM Studio fallback's server reachable at 127.0.0.1:1234 (a key
+#      with no server behind it is a FetchFailed, not a judge). A host without
+#      an answering judge runs --checks-only: deterministic rows still block,
+#      judgment rows skip loudly rather than block every commit forever.
+#      gate.py remains as the read-only reference oracle.
 set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
+# Put the toolchain the hook drives on PATH — gate children spawn bare
+# `koruc` (judge rebuild via `koruc build <judge_src>`) and PATH is where
+# Child.run looks.
+export PATH="$ROOT/zig-out/bin:$PATH"
 bash "$ROOT/scripts/git_wall.sh" --staged
-"$ROOT/zig-out/bin/koruc" "$ROOT/invariants/invariants.kz" gate git-gate
+
+HOME_DIR="${HOME:-${USERPROFILE:-}}"
+ENV_FILE="$HOME_DIR/.config/koru/openrouter.env"
+
+judge_provisioned() {
+    [ -n "${OPENROUTER_API_KEY:-}" ] && return 0
+    [ -f "$ENV_FILE" ] && grep -q "OPENROUTER_API_KEY=" "$ENV_FILE" && return 0
+    # LM Studio judge: key present (env or file) AND the server answering.
+    if [ -n "${LM_STUDIO_KEY:-}" ] || { [ -f "$ENV_FILE" ] && grep -q "LM_STUDIO_KEY=" "$ENV_FILE"; }; then
+        curl -s -m 2 -o /dev/null "http://127.0.0.1:1234/v1/models" 2>/dev/null && return 0
+    fi
+    return 1
+}
+
+GATE_ARGS=(gate git-gate)
+if ! judge_provisioned; then
+    echo "pre-commit: no answering judge on this host — --checks-only, judgment rows skipped"
+    GATE_ARGS+=(--checks-only)
+fi
+"$ROOT/zig-out/bin/koruc" "$ROOT/invariants/invariants.kz" "${GATE_ARGS[@]}"

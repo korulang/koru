@@ -79,6 +79,7 @@ zig-out/
 *.o
 *.hi
 a.out
+*.pdb
 
 # koru_std build outputs
 koru_std/koru_out

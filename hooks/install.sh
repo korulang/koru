@@ -19,12 +19,20 @@ CORPUS_ROOT="$(cd "$HERE/.." && pwd)"
 TARGET="$(cd "${1:-$CORPUS_ROOT}" && pwd)"
 STORE="$(cd "${2:-$TARGET}" && pwd)"     # default: self-contained (store = repo)
 
-HOOKS="$(git -C "$TARGET" rev-parse --absolute-git-dir)/hooks"
+# --git-common-dir, not --absolute-git-dir: a linked worktree's private
+# gitdir has a hooks/ that git never reads; the shared common dir's does.
+HOOKS="$(cd "$(git -C "$TARGET" rev-parse --git-common-dir)" && pwd)/hooks"
 mkdir -p "$HOOKS" "$STORE/concepts"
 [ -e "$STORE/concepts/.gitkeep" ] || : > "$STORE/concepts/.gitkeep"
 for h in commit-msg commit-msg.cjs post-commit post-commit.cjs pre-commit; do
   cp "$HERE/$h" "$HOOKS/$h"; chmod +x "$HOOKS/$h"
 done
+if [ -d "$HERE/signals" ]; then
+  mkdir -p "$HOOKS/signals"
+  for s in "$HERE"/signals/*; do
+    cp "$s" "$HOOKS/signals/$(basename "$s")"; chmod +x "$HOOKS/signals/$(basename "$s")"
+  done
+fi
 # ONE POINTER MECHANISM, and only when it says something. This used to write a
 # bare `.membrane` file naming an absolute path, which is the third site of a
 # mechanism the skill, the gate and `snap.mjs` all read as
