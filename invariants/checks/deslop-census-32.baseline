@@ -327,3 +327,12 @@ members=2582
 # distinct twin class). Census re-measured on this tree: 1995/2589.
 clusters=1995
 members=2589
+# Re-pinned 1995/2589 -> 2002/2598 (2026-11-21): measured at clean HEAD
+# 154f32523 — +7/+9 committed drift under rolls that missed since the
+# 2026-11-14 pin. Offender classes unchanged: simple_var_decl /
+# test_decl / errdefer cross-file idiom clusters and test-fixture twins,
+# the standing small-idiom classes the pin already tolerates — no new
+# clone family grew. src/ working tree clean; the census reads only
+# committed state here.
+clusters=2002
+members=2598

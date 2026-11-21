@@ -146,3 +146,12 @@ spellings=120
 # supervisor import_decl quads — the documented part-file decl-shell
 # category. Uncommitted store.new.kz in the shared checkout counts per
 # the row's uncommitted-work clause.
+# Re-pinned 336/349 -> 328/375 (2026-11-21): measured at clean HEAD
+# 154f32523 — clusters SHRANK -8 while members grew +26, absorbed into
+# existing clusters: the interpreter.run/runcached and quantity
+# part-file event_decl/import_decl twins from the November interpreter
+# arc and the spec/realize port — the documented decl-shell category
+# (semantically distinct twins stay duplicated by design). skipped=2 /
+# spellings=120 unchanged. koru_std working tree clean.
+clusters=328
+members=375
