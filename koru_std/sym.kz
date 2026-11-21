@@ -417,9 +417,14 @@ fn nodeClone(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
 // Generator registry — atoms 4.. index a declared generator (0=pi,1=e,
 // 2=phi,3=x). GReg is per-call state from a rel:v1 registry text; SNode
 // stores only the index. laws[i] == null means declared but lawless.
+// eqs holds value-laws — `name=(lhs=rhs)` or bare `(lhs=rhs)` entries.
+// A value-law's label is advisory (diagnostics/dup-checks), NOT a
+// generator: it does not intern an atom and g(label) does not resolve.
+const EqLaw = struct { label: ?[]const u8, lhs: *SNode, rhs: *SNode };
 const GReg = struct {
     names: std.ArrayList([]const u8),
     laws: std.ArrayList(?*SNode),
+    eqs: std.ArrayList(EqLaw) = .{},
 };
 
 const ParseCtx = struct {

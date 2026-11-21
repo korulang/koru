@@ -10,14 +10,28 @@ tags: [koru, sym, rel, registry, canonical-text, dsl]
 
 `rel:v1;sin=g(cos);cos=(-1e0*g(sin))` is what `rel-seed`/`rel-law` emit
 after threading. It is also a complete *declaration*: every entry is
-`name` or `name=law`, `;`- or newline-separated — exactly the two-phase
-order the threaded path imposes (all names exist before any law is
-parsed, so cyclic pairs and forward references both resolve). One entry
-per line is the `std/kernel` block convention; the `;` survives inline
-because the emitted wire text is a single line. `rel-decls(reg, source)`
-takes that grammar as input — optionally `rel:v1`-prefixed — and the
-consequence is free composition: registry text concatenates into
-registry text, and `rel-decls(r, otherRegistryText)` is a merge.
+`name`, `name=law`, or a value-law — `name=(lhs=rhs)` or bare `(lhs=rhs)`
+— `;`- or newline-separated. The two-phase order the threaded path
+imposes still holds (all generator names exist before any law parses,
+so cyclic pairs and forward references both resolve; value-law sides
+join the same second pass for the same reason). One entry per line is
+the `std/kernel` block convention; the `;` survives inline because the
+emitted wire text is a single line. `rel-decls(reg, source)` takes that
+grammar as input — optionally `rel:v1`-prefixed — and the consequence
+is free composition: registry text concatenates into registry text, and
+`rel-decls(r, otherRegistryText)` is a merge.
+
+The value-law shape earns the generalization's hard case: `name=(lhs=rhs)`
+is the one entry whose split requires knowing `=` lives at paren depth,
+not just that `=` exists — a depth-0 scan separates `name=` from the
+`(lhs=rhs)` inside. And the design keeps `=` out of the expression
+grammar entirely: each side parses as an ordinary expression and the
+label is advisory, never an atom — `g(pythag)` refuses
+`unknown-generator` even while `pythag=(g(sin)*g(sin)+g(cos)*g(cos)=1e0)`
+round-trips byte-identically through emit and re-parse (615_079).
+Equations are *stored*, not yet *applied* — rewriting under value-laws
+is a later rung, and the format reserves the spelling without claiming
+the semantics.
 
 The ruling generalizes beyond rel: when a value's canonical string form
 enumerates its construction steps (each `;`-entry is one declaration),
