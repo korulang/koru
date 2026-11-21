@@ -1150,10 +1150,7 @@ pub const FlowChecker = struct {
                 // is spelled `_`). [transform] DATA bindings are different — their
                 // usage IS visible after the transform runs — so they keep the
                 // frontend-defer / all-check split below.
-                const is_template_proc = if (cont.node) |n|
-                    (n == .invocation and self.invocationResolvesToTemplateProc(&n.invocation.path))
-                else
-                    false;
+                const is_template_proc = self.contNodeIsTemplateProc(cont);
                 // An obligation-carrying payload (`| ok *Handle<open!>`) is
                 // settled by auto-discharge, which INSERTS the disposal call —
                 // and it runs in the BACKEND, while this check runs in the
@@ -1215,8 +1212,20 @@ pub const FlowChecker = struct {
         // Destructured fields are bindings too: each named field must be
         // used (or spelled `_` to discard the slot). Same deferred-binding
         // skip as above — transform/scope constructs consume bindings later.
+        // The `.all` arm mirrors the arm-binding check: deferral is computed
+        // on the post-transform tree, where a consumed transform/template
+        // node no longer resolves — `deferred` reads false and the check
+        // skips, exactly as it does for `cont.binding`. Checking deferred
+        // destructures here instead would scan a subtree the sweep/template
+        // transplant already emptied and lie KORU100 (sweep-boundary
+        // destructure, koru100-false-unused-sweep-boundary).
         if (cont.destructure.len > 0) {
-            const skip_check = self.mode == .frontend and (root_transform or self.isDeferredBindingInvocation(cont));
+            const is_template_proc = self.contNodeIsTemplateProc(cont);
+            const deferred = root_transform or self.isDeferredBindingInvocation(cont);
+            const skip_check = is_template_proc or switch (self.mode) {
+                .frontend => deferred,
+                .all => !deferred,
+            };
             if (!skip_check) {
                 try self.refuseIgnoredDestructureAnnotations(cont, cont.destructure);
                 try self.validateDestructureUsage(cont, cont.destructure);
@@ -1322,6 +1331,14 @@ pub const FlowChecker = struct {
             if (annotation_parser.hasPart(event_decl.annotations, "transform")) return true;
         }
         return false;
+    }
+
+    /// True when the continuation's own node is an invocation resolving to a
+    /// `[template]` proc — the loop-variable/template-binding skip both
+    /// KORU100 sites share (arm binding and destructure fields).
+    fn contNodeIsTemplateProc(self: *FlowChecker, cont: *const ast.Continuation) bool {
+        const n = cont.node orelse return false;
+        return n == .invocation and self.invocationResolvesToTemplateProc(&n.invocation.path);
     }
 
     /// Check if a continuation's node is an invocation whose binding usage isn't

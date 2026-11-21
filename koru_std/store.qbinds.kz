@@ -138,15 +138,10 @@ const Binds = struct {
                         }
                     }
                 }
-                // A DESTRUCTURE arm (`! removed { id }`) binds its fields
-                // the same way — the interceptor-payload threading
-                // (690_093). The fields are the create's store columns, so
-                // the type resolves from the parent invocation's seed
-                // block, not lookupBranch (a record payload has no single
-                // type to return). Skipped when the parent is not a
-                // std.store:new — a generic destructure's field types are
-                // a record lookup this pass does not do, and an untyped
-                // capture is worse than none.
+                // A DESTRUCTURE arm binds its fields the same way (690_093).
+                // store:new fields type off seed columns; other destructures
+                // collect "?" — a referencing sweep body refuses with teaching
+                // instead of `use of undeclared identifier` (koru100 class).
                 if (c.destructure.len > 0) {
                     if (cont.node) |*pn| {
                         if (pn.* == .invocation) {
@@ -161,6 +156,11 @@ const Binds = struct {
                                     if (Pick.storeColumnType(alloc, &pn.invocation, df.name)) |ft| {
                                         out.append(alloc, .{ .name = alloc.dupe(u8, df.name) catch unreachable, .type = ft }) catch unreachable;
                                     }
+                                }
+                            } else {
+                                for (c.destructure) |df| {
+                                    if (df.name.len == 0 or std.mem.startsWith(u8, df.name, "_")) continue;
+                                    out.append(alloc, .{ .name = alloc.dupe(u8, df.name) catch unreachable, .type = "?", .arm = alloc.dupe(u8, std.mem.trim(u8, c.branch, " ")) catch unreachable }) catch unreachable;
                                 }
                             }
                         }
