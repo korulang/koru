@@ -1209,6 +1209,26 @@ pub const FlowChecker = struct {
             }
         }
 
+        // A produce literal (`{ f }` after the binding) feeds fields INTO an
+        // effect arm's firing call — `! each i { double: i * 2 }`. On a `|`
+        // outcome arm there is no call to feed: the arm RECEIVES its payload.
+        // `| packed _ { a }` parsed it anyway — the peel skipped, `_.field`
+        // debts went unjudged, and emit bound the scalar twice
+        // (koru-arm-bind-destructure-coexist). Destructure is unaffected —
+        // `{ a }` directly after the branch name is `cont.destructure`, a
+        // different field entirely.
+        if (cont.produce.len > 0 and cont.kind != .effect) {
+            try self.reporter.addErrorWithHint(
+                .KORU030,
+                cont.location.line,
+                cont.location.column,
+                "produce literal on a '|' outcome arm — it receives its payload, it does not produce fields into a call",
+                .{},
+                "produce literals belong on '!' effect arms (`! each i {{ f: expr }}`); on an outcome arm, destructure the payload instead (`| packed {{ a }}`)",
+                .{},
+            );
+        }
+
         // Destructured fields are bindings too: each named field must be
         // used (or spelled `_` to discard the slot). Same deferred-binding
         // skip as above — transform/scope constructs consume bindings later.
