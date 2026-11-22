@@ -4,18 +4,24 @@ id: frag-source-args-carry-their-own-marking
 provenance: stack-driven emitter defect 2026-10-04 — a subflow impl calling
   `capture { v: 40[i64] }` emitted `.source = v: 40[i64]` raw into the Zig
   struct literal, on both the emitArgs decl-miss path and the subflow-head
-  call writer. Pinned by 310_136 / 310_137.
+  call writer. Pinned by 310_136 / 310_137. Evolved 2026-11-16 — the field's
+  declared type picks the payload: non-Source fields take the captured text
+  (rel-* source-block params, 615_077).
 ts: 2026-10-04
 tags: [koru, emitter, source, transforms, comptime]
 ---
 
-# A Source arg's marking is on the arg, not the callee decl (belief)
+# A Source arg's marking is on the arg; the slot's type picks the payload (belief)
 
 The parser marks a Source-typed argument at capture: `arg.source_value` is
-set, and `arg.value` holds the captured *text*. Every emission path that
-writes a call's input struct must serialize that arg as the
-`__koru_ast.Source{ .text = ..., .scope = ..., .phantom_type = null }`
-literal — one serializer (`emitSourceValue`) — never `arg.value` raw.
+set, and `arg.value` holds the captured *text*. Which *payload* it emits
+is decided by the slot it binds: a field declared `is_source` receives
+the `__koru_ast.Source{ .text = ..., .scope = ..., .phantom_type = null }`
+literal — one serializer (`emitSourceValue`) — while a field of any other
+type receives the captured text as a quoted string literal, the same
+transport an `Expression` arg uses. `tor { ... }` names its arg `source`
+literally, so a `source: string` runtime param is the block's natural
+recipient (`rel-law { g(cos) }`, `rel-decls { a=b;c=d }` — 615_077).
 
 The defect class this closes: emitters that asked "does the callee's decl
 say this field is_source?" instead of "did the parser capture source here?"
@@ -27,11 +33,11 @@ resolve through a different table). The subflow-head call writer in
 spliced into a Zig field — `.source = v: 40[i64]` — which can only ever be
 a backend rejection.
 
-The rule follows: decl lookup is a *hint* for param-name resolution; the
-type-of-the-arg is already on the arg. An emitter that routes by decl
-alone will splice raw text wherever the decl is unresolvable — and the set
-of unresolvable decls grows with every callee kind that isn't a plain
-event (transforms today, whatever comes next).
+The rule follows: the type-of-the-arg is on the arg; the type-of-the-*slot*
+is on the field. Decl lookup is a hint for param-name resolution; when it
+misses, the conservative payload stays the Source literal (transforms may
+be the callee). When it hits a non-Source field, the payload is the text —
+never the struct, never raw.
 
 ## The walker's boundary is the same wall
 

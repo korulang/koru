@@ -1,0 +1,9 @@
+5e0|m^0 s^0 kg^0 A^0 K^0 mol^0 cd^0|-|!ext=USD^1
+1.1e0|m^0 s^0 kg^0 A^0 K^0 mol^0 cd^0|-|!ext=EUR^1·USD^-1
+5.5e0|m^0 s^0 kg^0 A^0 K^0 mol^0 cd^0|-|!ext=EUR^1
+5.5e0|m^0 s^0 kg^0 A^0 K^0 mol^0 cd^0|-|!ext=EUR^1
+axis-mismatch
+undeclared-axis
+dim-mismatch
+4e0|m^0 s^0 kg^0 A^0 K^0 mol^0 cd^0|-|!ext=USD^2
+6e0|m^0 s^0 kg^1 A^0 K^0 mol^0 cd^0|-|!ext=USD^1

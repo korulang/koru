@@ -1,0 +1,9 @@
+# The flow kernel has ONE source and one re-typed mirror:
+#   source: verify/semantics/FlowKernel.lean            (this repo)
+#   mirror: isar-proofs/src/ISAR/FlowDialect.lean       (renamed port)
+#
+# Edit FlowKernel.lean -> port the delta to FlowDialect.lean, then
+# re-pin: sha256sum of the LF-normalized bytes (checkouts disagree on
+# line endings; the pin is over \r-stripped content so either side of
+# a core.autocrlf boundary compares equal).
+sha256=d958d9e07f77b2a8cbd50e24ff87735c0f0d704ca1f6c9d71b0b96b9c9f4ecd2

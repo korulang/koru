@@ -1,0 +1,9 @@
+(2e0*g(exp,(2e0*x)))
+(2e0*g(exp,(x*x))*x)
+(g(exp)*g(exp,g(exp)))
+0e0
+g(exp)
+g(f,(1e0+x))
+(2e0*g(f,(1e0+(x*x)))*x)
+ll-t
+ug-u

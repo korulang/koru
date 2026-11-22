@@ -36,3 +36,35 @@ Both are honest; only one exists for context-dependent text.
 Open: whether a first-class "registry-scoped sexpr" phantom parameter
 (`string<sexpr@rel(reg)!>`-style) is worth a language feature — today the
 boundary is spelled manually per tor.
+
+EVOLVED 2026-11-01 (A0 numeric honesty): the same rule governs *how much*
+a producer may promise, not only *whether*. `string<exact!>` on a `num`
+means "canonical decimal, every digit produced by the stated contract."
+Three producers were minting it for digits nobody had proved:
+
+- `std/quantity` folded `π`/`φ`/`e` to a 36-digit literal with no `prec`
+  anywhere in the call — a rounded value wearing the exact mark. The
+  honest producer is the one that already exists: the symbolic magnitude
+  lane. `lit(π*m)` now prints `π m`; digits appear only where a `prec` is
+  spelled.
+- The unit scale was an `f64` printed with `{d}` — a float carrying an
+  integer exponent. It is now the exponent (`10^k`, canon `1e<k>`); a
+  non-power-of-ten unit must refuse by name until rational scales exist.
+- Sigma was computed at a hidden `prec: 15` in four places, and `div`/
+  `sqrt` under it delivered `prec-1` or `prec+1` digits. The contract is
+  now exact — `prec` significant digits, truncated — and sigma's precision
+  is *derived* (widest input mantissa + 2 guard digits) and applied to
+  every division and root on the uncertainty path, then to the final
+  |mag|·σ_rel product via `num:trunc`.
+
+The sharpened rule: a `prec` parameter is the producer's proof of
+precision. A constant folded without one, a float formatted into a
+decimal, or a precision literal buried inside the library is a promise
+the producer cannot discharge — the phantom is lying by the width of the
+hidden number. Push the precision to the call site or derive it from the
+inputs; never bake it.
+
+Open: `exact!` still names truncation, not correct rounding. A2 adds a
+correctly-rounded `round` beside `trunc` and must decide whether the
+mark splits (`exact!` vs `rounded!`) or the contract stays "exactly
+`prec` digits under the stated rounding mode."

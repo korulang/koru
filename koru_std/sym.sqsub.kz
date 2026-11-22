@@ -1,0 +1,138 @@
+// ============================================================================
+// ~part sqsub — the algebraic-substitution lane.  When every radical
+// leaf is sq(x), the substitution t = sqrt(x) rationalizes the whole
+// integrand at once: x -> t*t, sq(x) -> t, and dx -> 2t dt folds a 2t
+// factor in before the norm.  The transformed integrand re-enters the
+// decider at depth + 1; an elementary answer back-substitutes t -> sq(x)
+// through nodeSubstTheta and is checked-exact by the chain rule —
+// res'(x) = F'(sqrt x) * (1/(2 sqrt x)) = H(x).  A radical of any other
+// radicand (sq(x^2), sq(1+x)) is a different problem — the lane names
+// sqrt-subst-mixed-radicand rather than partially transforming, and an
+// inner rsum answer names sqrt-subst-rsum (nodeSubstTheta's arm).
+// ============================================================================
+
+// Forward transform for t = sqrt(x): every x (atom 3) becomes t*t and —
+// under the lane's radicand precheck — every sq leaf becomes t.
+// Consumes nothing; the caller owns the raw (un-normed) result.
+fn nodeSubstX2(alloc: std.mem.Allocator, n: *const SNode) anyerror!*SNode {
+    switch (n.kind) {
+        .dec => return try nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
+        .atom => {
+            if (n.atom != 3) return try nodeAtom(alloc, n.atom);
+            const a = try nodeAtom(alloc, 3);
+            errdefer nodeFree(alloc, a);
+            const b = try nodeAtom(alloc, 3);
+            errdefer nodeFree(alloc, b);
+            return try nodePair(alloc, .mul, a, b);
+        },
+        .sq => return try nodeAtom(alloc, 3), // radicand is x by the lane precheck
+        .inv, .log, .atan, .exp => return try nodeUnary(alloc, n.kind, try nodeSubstX2(alloc, n.kid)),
+        .add, .mul => {
+            const kids = try alloc.alloc(*SNode, n.kids.len);
+            var built: usize = 0;
+            errdefer {
+                for (kids[0..built]) |k| nodeFree(alloc, k);
+                alloc.free(kids);
+            }
+            for (n.kids, 0..) |k, i| {
+                kids[i] = try nodeSubstX2(alloc, k);
+                built = i + 1;
+            }
+            return try nodeList(alloc, n.kind, kids);
+        },
+        .rsum => return CertgenErr.RsumUnsupported, // integrands can't carry rsum
+    }
+}
+
+fn sqsubLane(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    if (depth >= 6) return null;
+    if (nt_var.kind == .add) return null; // sum-split recurses per term
+    var sqs = std.ArrayList(*const SNode){};
+    defer sqs.deinit(alloc);
+    try collectSqKids(alloc, nt_var, &sqs);
+    if (sqs.items.len == 0) return null;
+    // the transform clears every radical at once — a single foreign
+    // radicand would leave an algebraic strand behind, so refuse to
+    // run at all rather than hand the inner call a leftover sq.
+    for (sqs.items) |q| {
+        const kc = try canonOf(alloc, q.kid);
+        defer alloc.free(kc);
+        if (!std.mem.eql(u8, kc, "x")) {
+            lane_extra.* = "sqrt-subst-mixed-radicand";
+            return null;
+        }
+    }
+    // F(t) = 2t*H(t*t): the dx factor rides the product into the norm.
+    var fmk = std.ArrayList(*SNode){};
+    defer fmk.deinit(alloc);
+    try fmk.append(alloc, try nodeDec(alloc, .{ .neg = false, .m = try BI.initSet(alloc, 2), .e = 0 }));
+    try fmk.append(alloc, try nodeAtom(alloc, 3));
+    try fmk.append(alloc, try nodeSubstX2(alloc, nt_var));
+    const fm = try nodeList(alloc, .mul, try fmk.toOwnedSlice(alloc));
+    defer nodeFree(alloc, fm);
+    const fnn = norm(alloc, fm) catch @panic("std/sym:sqsub F norm");
+    defer nodeFree(alloc, fnn);
+    const ftxt = try canonOf(alloc, fnn);
+    defer alloc.free(ftxt);
+    var t_anti: ?[]u8 = null;
+    defer if (t_anti) |ta| alloc.free(ta);
+    const sub = decideIntegralInner(alloc, ftxt, max_order, max_deg, &t_anti, depth + 1);
+    switch (sub) {
+        .elementary => |b| {
+            defer alloc.free(b);
+            if (t_anti == null) {
+                lane_extra.* = "sqrt-subst-inner-no-anti";
+                return null;
+            }
+        },
+        .holonomic_special => |b| {
+            alloc.free(b);
+            lane_extra.* = "sqrt-subst-inner";
+            return null;
+        },
+        .unresolved => |b| {
+            alloc.free(b);
+            lane_extra.* = "sqrt-subst-inner";
+            return null;
+        },
+        .not_holonomic => |b| {
+            alloc.free(b);
+            lane_extra.* = "sqrt-subst-inner";
+            return null;
+        },
+        .non_rational, .non_analytic, .bad => {
+            lane_extra.* = "sqrt-subst-inner";
+            return null;
+        },
+    }
+    const an = parseTree(alloc, t_anti.?) catch @panic("std/sym:sqsub anti parse");
+    defer nodeFree(alloc, an);
+    const ann = norm(alloc, an) catch @panic("std/sym:sqsub anti norm");
+    defer nodeFree(alloc, ann);
+    const sqx = try nodeUnary(alloc, .sq, try nodeAtom(alloc, 3));
+    defer nodeFree(alloc, sqx);
+    const res = (try nodeSubstTheta(alloc, ann, sqx)) orelse {
+        lane_extra.* = "sqrt-subst-rsum";
+        return null;
+    };
+    defer nodeFree(alloc, res);
+    const resn = norm(alloc, res) catch @panic("std/sym:sqsub res norm");
+    defer nodeFree(alloc, resn);
+    // checked-exact needs no post-check — same chain-rule argument as
+    // gsubTry: the inner call verified d/dt res = F(t), and
+    // d/dx res(sqrt x) = F(sqrt x) * (1/(2 sqrt x)) = H(x).
+    const atxt = try canonOf(alloc, resn);
+    const anti = try antiWithConst(alloc, atxt, const_txt);
+    defer alloc.free(anti);
+    const blob = try std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=risch-sqrt-subst-constructed;checked-exact", .{anti});
+    return elemRet(blob, anti, anti_out);
+}

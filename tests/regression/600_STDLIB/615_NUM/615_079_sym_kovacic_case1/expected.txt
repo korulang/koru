@@ -1,0 +1,6 @@
+decide(layer=liouvillian)|r=(2e0*inv(x)*inv(x))|sol=P:1e0|factors=(0:2)|note=kovacic-case1-constructed;exact
+decide(layer=liouvillian)|r=(2e0*inv((-1e0+x))*inv(x))|sol=P:1e0|factors=(0:1),(1:1)|note=kovacic-case1-constructed;exact
+decide(layer=liouvillian)|r=(2e0*inv((1e0+x))*inv(x)*inv(x))|sol=P:1e0|factors=(-1:1),(0:-1)|note=kovacic-case1-constructed;exact
+un:kovacic-necessary-conditions-met:open-cases=1:kovacic-case1-bound:pole-order>2
+un:kovacic-necessary-conditions-met:open-cases=1,3:kovacic-case1-bound:poles-nonrational
+un:kovacic-necessary-conditions-met:open-cases=1,2,3:kovacic-case1-bound:exponent-nonrational

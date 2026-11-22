@@ -1,0 +1,219 @@
+// ============================================================================
+// ~part aeuler — Euler's third substitution for a quadratic radicand
+// with a rational root: u = a(x-r)(x-s) with a < 0 — the arcsin
+// family the first substitution cannot reach (it needs a > 0).
+//
+//   t = sqrt(u)/(r-x)   <=>   x = (t^2 r - a s)/(t^2 - a)
+//   sqrt(u) = a(s-r) t/(t^2 - a)      dx/dt = 2a(s-r) t/(t^2 - a)^2
+//
+// The rational root is the whole question: the discriminant must be
+// a positive rational square, and both qeuler pre-steps leave its
+// squareness invariant — the lane sees a<0 directly, no pre-pass.
+// Back-substitution t -> sqrt(u)/(r-x) spells answers in log/atan —
+// e.g. atan(sqrt(u)/(r-x)) is the arcsin class, no trig needed.
+// checked-exact rides the chain rule exactly as ~euler.
+// Refusals:
+//   euler-radicand-roots  a<0 but Δ not a positive rational square —
+//                         non-real radicand (Δ<=0) or answers living
+//                         over Q(√Δ), outside the rational lane
+// ============================================================================
+
+// A Rat inside the sexpr DSL: bare n for integers, n*inv(d) for
+// fractions, negatives wrap in (-1e0*(...)) — '-' opens no factor.
+fn ratSpell(alloc: std.mem.Allocator, r: *const Rat) ![]u8 {
+    const ns = try r.n.toString(alloc, 10, .lower);
+    defer alloc.free(ns);
+    var nt = ns;
+    var neg = false;
+    if (ns.len > 0 and ns[0] == '-') {
+        neg = true;
+        nt = ns[1..];
+    }
+    if (denIsOne(r)) {
+        if (neg) return std.fmt.allocPrint(alloc, "(-1e0*({s}))", .{nt});
+        return alloc.dupe(u8, nt);
+    }
+    const ds = try r.d.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    if (neg) return std.fmt.allocPrint(alloc, "(-1e0*(({s})*inv(({s}))))", .{ nt, ds });
+    return std.fmt.allocPrint(alloc, "(({s})*inv(({s})))", .{ nt, ds });
+}
+
+fn aeulerLane(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    if (depth >= 6) return null;
+    var sqs = std.ArrayList(*const SNode){};
+    defer sqs.deinit(alloc);
+    try collectSqKids(alloc, nt_var, &sqs);
+    // x-free-radicand sqs are algebraic coefficients, not the variable.
+    var rads = std.ArrayList(*const SNode){};
+    defer rads.deinit(alloc);
+    for (sqs.items) |q| {
+        if (nodeHasX(q.kid)) try rads.append(alloc, q);
+    }
+    if (rads.items.len == 0) return null;
+    // every radical must share one radicand — same precheck as ~euler.
+    const uc = try canonOf(alloc, rads.items[0].kid);
+    defer alloc.free(uc);
+    for (rads.items[1..]) |q| {
+        const kc = try canonOf(alloc, q.kid);
+        defer alloc.free(kc);
+        if (!std.mem.eql(u8, kc, uc)) {
+            lane_extra.* = "euler-radicand-mixed";
+            return null;
+        }
+    }
+    const u = rads.items[0].kid;
+    const up = (try polyOfNode(alloc, u)) orelse {
+        lane_extra.* = "euler-radicand-shape";
+        return null;
+    };
+    defer polyFree(alloc, up);
+    if (up.len != 3 or up[2].n.isPositive() or ratIsZero(&up[2])) {
+        lane_extra.* = "euler-radicand-shape";
+        return null;
+    }
+    // Δ = b^2 - 4ac must be a positive rational square — then
+    // r = (-b+√Δ)/(2a) and s = (-b-√Δ)/(2a) are rational roots.
+    var ac = try ratMul(alloc, &up[2], &up[0]);
+    defer ratDeinit(&ac);
+    var ac4 = try ratMulInt(alloc, &ac, 4);
+    defer ratDeinit(&ac4);
+    var b2 = try ratMul(alloc, &up[1], &up[1]);
+    defer ratDeinit(&b2);
+    var disc = try ratSub(alloc, &b2, &ac4);
+    defer ratDeinit(&disc);
+    if (disc.n.toConst().orderAgainstScalar(@as(i64, 0)) != .gt) {
+        lane_extra.* = "euler-radicand-roots";
+        return null;
+    }
+    var ns = (try biIsSquare(alloc, &disc.n)) orelse {
+        lane_extra.* = "euler-radicand-roots";
+        return null;
+    };
+    defer ns.deinit();
+    var ds = (try biIsSquare(alloc, &disc.d)) orelse {
+        lane_extra.* = "euler-radicand-roots";
+        return null;
+    };
+    defer ds.deinit();
+    var sqd = Rat{ .n = try ns.clone(), .d = try ds.clone() };
+    defer ratDeinit(&sqd);
+    var nb = try ratNeg(&up[1]);
+    defer ratDeinit(&nb);
+    var a2 = try ratMulInt(alloc, &up[2], 2);
+    defer ratDeinit(&a2);
+    var rn = try ratAdd(alloc, &nb, &sqd);
+    defer ratDeinit(&rn);
+    var sn = try ratSub(alloc, &nb, &sqd);
+    defer ratDeinit(&sn);
+    var r = try ratDiv(alloc, &rn, &a2);
+    defer ratDeinit(&r);
+    var s = try ratDiv(alloc, &sn, &a2);
+    defer ratDeinit(&s);
+    // transform coefficients: a*s, k1 = a(s-r), k2 = 2*k1.
+    var ams = try ratMul(alloc, &up[2], &s);
+    defer ratDeinit(&ams);
+    var smr = try ratSub(alloc, &s, &r);
+    defer ratDeinit(&smr);
+    var k1 = try ratMul(alloc, &up[2], &smr);
+    defer ratDeinit(&k1);
+    var k2 = try ratMulInt(alloc, &k1, 2);
+    defer ratDeinit(&k2);
+    // transform pieces, spelled in the inner variable (canon "x" is t).
+    const rt = try ratSpell(alloc, &r);
+    defer alloc.free(rt);
+    const at = try ratSpell(alloc, &up[2]);
+    defer alloc.free(at);
+    const amst = try ratSpell(alloc, &ams);
+    defer alloc.free(amst);
+    const k1t = try ratSpell(alloc, &k1);
+    defer alloc.free(k1t);
+    const k2t = try ratSpell(alloc, &k2);
+    defer alloc.free(k2t);
+    const xt_txt = try std.fmt.allocPrint(alloc, "((((x*x)*({s}))+(-1e0*({s})))*inv(((x*x)+(-1e0*({s})))))", .{ rt, amst, at });
+    defer alloc.free(xt_txt);
+    const xt = try parseTree(alloc, xt_txt);
+    defer nodeFree(alloc, xt);
+    const sqt_txt = try std.fmt.allocPrint(alloc, "((({s})*x)*inv(((x*x)+(-1e0*({s})))))", .{ k1t, at });
+    defer alloc.free(sqt_txt);
+    const sqt = try parseTree(alloc, sqt_txt);
+    defer nodeFree(alloc, sqt);
+    const dx_txt = try std.fmt.allocPrint(alloc, "((({s})*x)*inv((((x*x)+(-1e0*({s})))*((x*x)+(-1e0*({s}))))))", .{ k2t, at, at });
+    defer alloc.free(dx_txt);
+    const dxn = try parseTree(alloc, dx_txt);
+    var dx_live = true;
+    defer if (dx_live) nodeFree(alloc, dxn);
+    // F(t) = H(x(t), sqrt(t)) * dx/dt — rational in t over Q.
+    var fmk = std.ArrayList(*SNode){};
+    defer fmk.deinit(alloc);
+    try fmk.append(alloc, dxn);
+    dx_live = false;
+    try fmk.append(alloc, try nodeSubstEuler(alloc, nt_var, xt, sqt));
+    const fm = try nodeList(alloc, .mul, try fmk.toOwnedSlice(alloc));
+    defer nodeFree(alloc, fm);
+    const fnn = norm(alloc, fm) catch @panic("std/sym:aeuler F norm");
+    defer nodeFree(alloc, fnn);
+    const ftxt = try canonOf(alloc, fnn);
+    defer alloc.free(ftxt);
+    var t_anti: ?[]u8 = null;
+    defer if (t_anti) |ta| alloc.free(ta);
+    const sub = decideIntegralInner(alloc, ftxt, max_order, max_deg, &t_anti, depth + 1);
+    switch (sub) {
+        .elementary => |b| {
+            defer alloc.free(b);
+            if (t_anti == null) {
+                lane_extra.* = "euler-inner-no-anti";
+                return null;
+            }
+        },
+        .holonomic_special => |b| {
+            alloc.free(b);
+            lane_extra.* = "euler-inner";
+            return null;
+        },
+        .unresolved => |b| {
+            alloc.free(b);
+            lane_extra.* = "euler-inner";
+            return null;
+        },
+        .not_holonomic => |b| {
+            alloc.free(b);
+            lane_extra.* = "euler-inner";
+            return null;
+        },
+        .non_rational, .non_analytic, .bad => {
+            lane_extra.* = "euler-inner";
+            return null;
+        },
+    }
+    const an = parseTree(alloc, t_anti.?) catch @panic("std/sym:aeuler anti parse");
+    defer nodeFree(alloc, an);
+    const ann = norm(alloc, an) catch @panic("std/sym:aeuler anti norm");
+    defer nodeFree(alloc, ann);
+    // t back-substitutes to sqrt(u)/(r-x).
+    const tb_txt = try std.fmt.allocPrint(alloc, "(√({s})*inv(({s})+(-1e0*x)))", .{ uc, rt });
+    defer alloc.free(tb_txt);
+    const tb = try parseTree(alloc, tb_txt);
+    defer nodeFree(alloc, tb);
+    const res = (try nodeSubstTheta(alloc, ann, tb)) orelse {
+        lane_extra.* = "euler-subst-rsum";
+        return null;
+    };
+    defer nodeFree(alloc, res);
+    const resn = norm(alloc, res) catch @panic("std/sym:aeuler res norm");
+    defer nodeFree(alloc, resn);
+    const atxt = try canonOf(alloc, resn);
+    const anti = try antiWithConst(alloc, atxt, const_txt);
+    defer alloc.free(anti);
+    const blob = try std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=risch-euler3-subst-constructed;checked-exact", .{anti});
+    return elemRet(blob, anti, anti_out);
+}

@@ -1,0 +1,347 @@
+// ============================================================================
+// ~part exptheta — exp-theta substitution lane for decide-integral.
+//
+// An integrand that is a rational function of a single exponential element
+//   t = e^{g},   g = c0*x + b0 affine, c0 != 0,
+// — where every exp leaf carries an integer multiple of g (the arguments
+// form an affine Z-lattice on one common root, so e^{k*g0} is t^k) —
+// reduces by dt = c0*t dx to the plain rational integral
+//   ∫ F(t)/(c0*t) dt,
+// which re-enters the decider: Hermite + Trager + rsum all apply on the
+// t-side.  The t-antiderivative substitutes x -> e^g node-wise and is
+// re-verified exactly: deriveNode of the substituted result is again
+// theta-rational, and it must equal the original F as an element of Q(t).
+// An rsum leaf in the t-antiderivative names a refusal — S(e^g, alpha) is
+// not expressible in the rsum payload grammar.
+// ============================================================================
+
+// Every .exp leaf of the tree, in walk order.
+fn collectExpKids(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(*const SNode)) !void {
+    switch (n.kind) {
+        .dec, .atom, .rsum => {},
+        .sq, .inv, .log, .atan, .exp => {
+            if (n.kind == .exp) try out.append(alloc, n);
+            try collectExpKids(alloc, n.kid, out);
+        },
+        .add, .mul => for (n.kids) |k| try collectExpKids(alloc, k, out),
+    }
+}
+
+// gcd of two nonzero rationals: gcd(p/q, r/s) = gcd(p, r) / lcm(q, s).
+fn ratGcd(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var na = try a.n.clone();
+    defer na.deinit();
+    na.abs();
+    var nb = try b.n.clone();
+    defer nb.deinit();
+    nb.abs();
+    var g = try biGcd(alloc, &na, &nb);
+    errdefer g.deinit();
+    var l = try biLcm(alloc, &a.d, &b.d);
+    errdefer l.deinit();
+    return try ratNorm(alloc, g, l);
+}
+
+// The rational function F(t) of a node built from rationals and e^{k*g0}
+// (k integer) under +, *, inv — null if anything else appears: a bare x,
+// log/atan/sqrt/rsum leaves, or an exp leaf off the lattice.
+fn fracOfTheta(alloc: std.mem.Allocator, n: *const SNode, c0: *const Rat, b0: *const Rat) anyerror!?Frac {
+    switch (n.kind) {
+        .dec => {
+            const np = try alloc.alloc(Rat, 1);
+            errdefer alloc.free(np);
+            np[0] = try ratFromDec(alloc, &n.dec);
+            const dp = try polyOne(alloc);
+            return try fracNorm(alloc, np, dp);
+        },
+        .exp => {
+            const g = (try polyOfNode(alloc, n.kid)) orelse return null;
+            defer polyFree(alloc, g);
+            if (polyDegIdx(g) != 1) return null;
+            var k = try ratDiv(alloc, &g[1], c0);
+            defer ratDeinit(&k);
+            var ki = ratToInt(&k) catch |err| switch (err) {
+                error.NonInt => return null,
+                else => return err,
+            };
+            defer ki.deinit();
+            const e = ki.toConst().toInt(i64) catch return null;
+            if (e == 0 or @abs(e) > 512) return null;
+            var kb = try ratMul(alloc, &k, b0);
+            defer ratDeinit(&kb);
+            var bd = try ratSub(alloc, &g[0], &kb);
+            defer ratDeinit(&bd);
+            if (!ratIsZero(&bd)) return null;
+            const mag: usize = @intCast(@abs(e));
+            const p = try alloc.alloc(Rat, mag + 1);
+            errdefer alloc.free(p);
+            var i: usize = 0;
+            errdefer while (i > 0) {
+                i -= 1;
+                ratDeinit(&p[i]);
+            };
+            while (i < mag) : (i += 1) p[i] = try ratFromInt(alloc, 0);
+            p[mag] = try ratFromInt(alloc, 1);
+            if (e > 0) return try fracNorm(alloc, p, try polyOne(alloc));
+            return try fracNorm(alloc, try polyOne(alloc), p);
+        },
+        .add => {
+            var acc = Frac{ .n = try polyEmpty(alloc), .d = try polyOne(alloc) };
+            errdefer fracFree(alloc, &acc);
+            for (n.kids) |k| {
+                var kf = (try fracOfTheta(alloc, k, c0, b0)) orelse {
+                    fracFree(alloc, &acc);
+                    return null;
+                };
+                defer fracFree(alloc, &kf);
+                const nf = try fracAdd(alloc, &acc, &kf);
+                fracFree(alloc, &acc);
+                acc = nf;
+            }
+            return acc;
+        },
+        .mul => {
+            var acc = (try fracOfTheta(alloc, n.kids[0], c0, b0)) orelse return null;
+            errdefer fracFree(alloc, &acc);
+            for (n.kids[1..]) |k| {
+                var kf = (try fracOfTheta(alloc, k, c0, b0)) orelse {
+                    fracFree(alloc, &acc);
+                    return null;
+                };
+                defer fracFree(alloc, &kf);
+                const nf = try fracMul(alloc, &acc, &kf);
+                fracFree(alloc, &acc);
+                acc = nf;
+            }
+            return acc;
+        },
+        .inv => {
+            var kf = (try fracOfTheta(alloc, n.kid, c0, b0)) orelse return null;
+            defer fracFree(alloc, &kf);
+            if (fracIsZero(&kf)) return null;
+            return try fracInv(alloc, &kf);
+        },
+        .atom, .sq, .log, .atan, .rsum => return null,
+    }
+}
+
+// Clone n with every x-atom replaced by theta; null when a leaf is not
+// substitutable — an rsum's S(x, alpha) payload cannot spell S(e^g, alpha).
+fn nodeSubstTheta(alloc: std.mem.Allocator, n: *const SNode, theta: *const SNode) anyerror!?*SNode {
+    switch (n.kind) {
+        .atom => {
+            if (n.atom == 3) return try nodeClone(alloc, theta);
+            return try nodeAtom(alloc, n.atom);
+        },
+        .dec => return try nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
+        .rsum => return null,
+        .sq, .inv, .log, .atan, .exp => {
+            const k = (try nodeSubstTheta(alloc, n.kid, theta)) orelse return null;
+            return try nodeUnary(alloc, n.kind, k);
+        },
+        .add, .mul => {
+            const kids = try alloc.alloc(*SNode, n.kids.len);
+            var built: usize = 0;
+            errdefer {
+                for (kids[0..built]) |k2| nodeFree(alloc, k2);
+                alloc.free(kids);
+            }
+            for (n.kids, 0..) |k, i| {
+                kids[i] = (try nodeSubstTheta(alloc, k, theta)) orelse {
+                    for (kids[0..built]) |k2| nodeFree(alloc, k2);
+                    alloc.free(kids);
+                    return null;
+                };
+                built += 1;
+            }
+            return try nodeList(alloc, n.kind, kids);
+        },
+    }
+}
+
+// The lane itself.  Returns a decision when the integrand is a rational
+// function of one exponential element and the t-side constructs; null (with
+// a named lane tag when the refusal is structural) otherwise.
+fn thetaLane(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    if (depth >= 6) return null;
+    var exps = std.ArrayList(*const SNode){};
+    defer exps.deinit(alloc);
+    try collectExpKids(alloc, nt_var, &exps);
+    if (exps.items.len == 0) return null;
+
+    // Lattice pass: every exp argument must be an affine c_i*x + b_i with
+    // c_i != 0 on a common root r = b_i/c_i; then g0 = c0*x + b0 with
+    // c0 = gcd(c_i) (positive) and b0 = r*c0 generates all of them as
+    // integer multiples.
+    var c0: ?Rat = null;
+    var rref: ?Rat = null;
+    defer {
+        if (c0) |*v| ratDeinit(v);
+        if (rref) |*v| ratDeinit(v);
+    }
+    for (exps.items) |e| {
+        const g = (try polyOfNode(alloc, e.kid)) orelse {
+            lane_extra.* = "exp-theta-arg-nonpoly";
+            return null;
+        };
+        defer polyFree(alloc, g);
+        if (polyDegIdx(g) != 1) {
+            lane_extra.* = "exp-theta-arg-nonlinear";
+            return null;
+        }
+        var ri = try ratDiv(alloc, &g[0], &g[1]);
+        if (rref) |*rr| {
+            defer ratDeinit(&ri);
+            var dd = try ratSub(alloc, &ri, rr);
+            defer ratDeinit(&dd);
+            if (!ratIsZero(&dd)) {
+                lane_extra.* = "exp-theta-lattice";
+                return null;
+            }
+        } else {
+            rref = ri;
+        }
+        if (c0) |*c| {
+            const nc = try ratGcd(alloc, c, &g[1]);
+            ratDeinit(c);
+            c0 = nc;
+        } else {
+            var an = try g[1].n.clone();
+            errdefer an.deinit();
+            an.abs();
+            c0 = try ratNorm(alloc, an, try g[1].d.clone());
+        }
+    }
+    const cc0 = &(c0 orelse unreachable);
+    var b0 = try ratMul(alloc, &(rref.?), cc0);
+    defer ratDeinit(&b0);
+    // Integrality and exponent bound per leaf (fracOfTheta re-checks
+    // internally — this pass names the refusal arm precisely).
+    for (exps.items) |e| {
+        const g = (try polyOfNode(alloc, e.kid)) orelse unreachable;
+        defer polyFree(alloc, g);
+        var k = try ratDiv(alloc, &g[1], cc0);
+        defer ratDeinit(&k);
+        var ki = ratToInt(&k) catch |err| switch (err) {
+            error.NonInt => {
+                lane_extra.* = "exp-theta-lattice";
+                return null;
+            },
+            else => return err,
+        };
+        defer ki.deinit();
+        const kv = ki.toConst().toInt(i64) catch {
+            lane_extra.* = "exp-theta-exp-bound";
+            return null;
+        };
+        if (kv == 0 or @abs(kv) > 512) {
+            lane_extra.* = "exp-theta-exp-bound";
+            return null;
+        }
+    }
+    var F = (try fracOfTheta(alloc, nt_var, cc0, &b0)) orelse {
+        lane_extra.* = "exp-theta-not-rational";
+        return null;
+    };
+    defer fracFree(alloc, &F);
+
+    // t-integrand F(t)/(c0*t), then a recursive decide on the t-side.
+    const ctp = try alloc.alloc(Rat, 2);
+    errdefer alloc.free(ctp);
+    ctp[0] = try ratFromInt(alloc, 0);
+    ctp[1] = try ratClone(cc0);
+    var invct = try fracNorm(alloc, try polyOne(alloc), ctp);
+    defer fracFree(alloc, &invct);
+    var ft = try fracMul(alloc, &F, &invct);
+    defer fracFree(alloc, &ft);
+    const n_txt = try polyTextOf(alloc, ft.n);
+    defer alloc.free(n_txt);
+    const d_txt = try polyTextOf(alloc, ft.d);
+    defer alloc.free(d_txt);
+    const itxt = try std.fmt.allocPrint(alloc, "(({s})*inv(({s})))", .{ n_txt, d_txt });
+    defer alloc.free(itxt);
+    var t_anti: ?[]u8 = null;
+    defer if (t_anti) |ta| alloc.free(ta);
+    const sub = decideIntegralInner(alloc, itxt, max_order, max_deg, &t_anti, depth + 1);
+    switch (sub) {
+        .elementary => |b| {
+            defer alloc.free(b);
+            if (t_anti == null) {
+                lane_extra.* = "exp-theta-inner-no-anti";
+                return null;
+            }
+        },
+        .holonomic_special => |b| {
+            alloc.free(b);
+            lane_extra.* = "exp-theta-inner";
+            return null;
+        },
+        .unresolved => |b| {
+            alloc.free(b);
+            lane_extra.* = "exp-theta-inner";
+            return null;
+        },
+        .not_holonomic => |b| {
+            alloc.free(b);
+            lane_extra.* = "exp-theta-inner";
+            return null;
+        },
+        .non_rational, .non_analytic, .bad => {
+            lane_extra.* = "exp-theta-inner";
+            return null;
+        },
+    }
+
+    // x -> e^{c0*x + b0} node-wise in the t-antiderivative.
+    const an = parseTree(alloc, t_anti.?) catch @panic("std/sym:exptheta anti parse");
+    defer nodeFree(alloc, an);
+    const ann = norm(alloc, an) catch @panic("std/sym:exptheta anti norm");
+    defer nodeFree(alloc, ann);
+    const g0 = try alloc.alloc(Rat, 2);
+    g0[0] = try ratClone(&b0);
+    g0[1] = try ratClone(cc0);
+    defer {
+        ratDeinit(&g0[0]);
+        ratDeinit(&g0[1]);
+        alloc.free(g0);
+    }
+    const g0_txt = try polyTextOf(alloc, g0);
+    defer alloc.free(g0_txt);
+    const th_txt = try std.fmt.allocPrint(alloc, "exp({s})", .{g0_txt});
+    defer alloc.free(th_txt);
+    const tn0 = parseTree(alloc, th_txt) catch @panic("std/sym:exptheta theta parse");
+    defer nodeFree(alloc, tn0);
+    const tn = norm(alloc, tn0) catch @panic("std/sym:exptheta theta norm");
+    defer nodeFree(alloc, tn);
+    const res = (try nodeSubstTheta(alloc, ann, tn)) orelse {
+        lane_extra.* = "exp-theta-anti-rsum";
+        return null;
+    };
+    defer nodeFree(alloc, res);
+
+    // Exact check at the Frac level: d/dx res is again theta-rational and
+    // must equal the integrand F elementwise in Q(t).
+    const dn = deriveNode(alloc, res) catch @panic("std/sym:exptheta derive");
+    defer nodeFree(alloc, dn);
+    var df = (try fracOfTheta(alloc, dn, cc0, &b0)) orelse
+        @panic("std/sym:exptheta derivative escaped theta");
+    defer fracFree(alloc, &df);
+    if (!(try fracEql(alloc, &df, &F)))
+        @panic("std/sym:exptheta subst failed its exact check");
+
+    // antiWithConst consumes atxt — free the result only.
+    const atxt = try canonOf(alloc, res);
+    const anti = try antiWithConst(alloc, atxt, const_txt);
+    defer alloc.free(anti);
+    const blob = try std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note=risch-exp-theta-subst;checked-exact", .{anti});
+    return elemRet(blob, anti, anti_out);
+}

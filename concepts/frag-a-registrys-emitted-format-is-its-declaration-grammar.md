@@ -1,0 +1,72 @@
+---
+type: belief
+id: frag-a-registrys-emitted-format-is-its-declaration-grammar
+provenance: rel-decls commit on quantity-numbers — batch declaration parsing the emitted tail
+ts: 2026-11-14
+tags: [koru, sym, rel, registry, canonical-text, dsl]
+---
+
+# A registry's emitted format is its declaration grammar — the batch tor is a re-parse, not a new DSL (belief)
+
+`rel:v1;sin=g(cos);cos=(-1e0*g(sin))` is what `rel-seed`/`rel-law` emit
+after threading. It is also a complete *declaration*: every entry is
+`name`, `name=law`, or a value-law — `name=(lhs=rhs)` or bare `(lhs=rhs)`
+— `;`- or newline-separated. The two-phase order the threaded path
+imposes still holds (all generator names exist before any law parses,
+so cyclic pairs and forward references both resolve; value-law sides
+join the same second pass for the same reason). One entry per line is
+the `std/kernel` block convention; the `;` survives inline because the
+emitted wire text is a single line. `rel-decls(reg, source)` takes that
+grammar as input — optionally `rel:v1`-prefixed — and the consequence
+is free composition: registry text concatenates into registry text, and
+`rel-decls(r, otherRegistryText)` is a merge.
+
+The value-law shape earns the generalization's hard case: `name=(lhs=rhs)`
+is the one entry whose split requires knowing `=` lives at paren depth,
+not just that `=` exists — a depth-0 scan separates `name=` from the
+`(lhs=rhs)` inside. And the design keeps `=` out of the expression
+grammar entirely: each side parses as an ordinary expression and the
+label is advisory, never an atom — `g(pythag)` refuses
+`unknown-generator` even while `pythag=(g(sin)*g(sin)+g(cos)*g(cos)=1e0)`
+round-trips byte-identically through emit and re-parse (615_079).
+Equations are *stored*, not yet *applied* — rewriting under value-laws
+is a later rung, and the format reserves the spelling without claiming
+the semantics.
+
+The ruling generalizes beyond rel: when a value's canonical string form
+enumerates its construction steps (each `;`-entry is one declaration),
+the format IS the DSL — the batch tor needs no separate block grammar,
+no keyword, no transform. Designing the emitted format is designing the
+declaration language; a format that can't be re-declared is a format
+that lost information.
+
+The discipline is the same two-phase everywhere: a declaration block
+collects its complete name set before any law parses — batch and
+threaded semantics agree by construction, not by parallel convention.
+Atomicity falls out of staging: the block builds under an arena and
+emits only on success, so a `dup`/`full`/`unknown-generator`/`bad`
+anywhere voids the whole block — one arm set, not one per entry.
+
+Both spellings remain by design, and the choice is presentational, not
+semantic: the batch block `{ sin=g(cos); cos=(-1e0*g(sin)) }` fuses
+seed+law per entry and is the natural home for cyclic sets (two calls
+collapse into one block whose entries already serialize as the pair);
+the staged `rel-seed(name: x) |> rel-law(name: x) { law }` threads the
+registry through each step when per-entry arm granularity or stepwise
+registry values are wanted. Neither expresses something the other
+cannot — a registry is a value, and the two spellings are two ways to
+construct the same one (615_077 pins both).
+
+Pairs with [[frag-a-phantom-can-only-promise-what-a-producer-can-prove]]
+(registry text stays plain `string` — validity is still parse-under-ctx)
+and the trusted-literal frag (the *authored* lane keeps `lit`-style
+capture; a registry block is data, not provenance — `source` is a plain
+composable string by design).
+
+Second instance, same day: `unitreg:v1;USD=axis(currency)` declares
+non-SI axes with the identical shape — emitted format and declaration
+grammar are one language, `-decls` merges registries by re-parsing,
+refusals void the block. Two differences measured: unitreg needs no
+two-phase (an `axis(kind)` entry references no other axis — no cycles
+exist to close over), and entries may omit the `=` entirely (a bare
+name is a kindless axis).

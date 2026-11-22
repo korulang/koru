@@ -3,22 +3,24 @@
 import std/io
 import std/quantity
 
-std/quantity:lit { 5 m }
-| exact a |> std/quantity:lit { 2 m }
+std/quantity:lit(5*m)
+| exact a |> std/quantity:lit(2*m)
     | exact b |> std/quantity:sub(a, b)
-        | exact r |> std/quantity:render(n: r): t |> std/io:print.ln("{{ t:s }}")
+        | exact r |> std/quantity:render(n: r): t |> std/io:print.ln("{{ t:s }}") |> std/io:free(content: t)
         | dim-mismatch |> std/io:print.ln("dim-mismatch")
         | mixed-cov |> std/io:print.ln("mixed-cov")
     | bad x |> std/io:print.ln("bad")
 | bad y |> std/io:print.ln("bad")
 
-std/quantity:lit { 5+-0.5 m/s }
-| exact v |> std/quantity:neg(n: v): nv |> std/quantity:render(n: nv): t2 |> std/io:print.ln("{{ t2:s }}")
+std/quantity:lit(5*m/s, unc: 0.5)
+| exact v |> std/quantity:neg(n: v): nv |> std/quantity:render(n: nv): t2 |> std/io:print.ln("{{ t2:s }}") |> std/io:free(content: t2)
 | bad z |> std/io:print.ln("bad")
 
-// 5 m - 2 s refuses dims, same lawful branch as add.
-std/quantity:lit { 5 m }
-| exact c |> std/quantity:lit { 2 s }
+// 5 m - 2 s refuses dims, same lawful branch as add — runtime values
+// from the text lane, where the arm is the law (lit+lit refuses at
+// compile time; pinned in 615_075).
+std/quantity:ingest(s: "5 m"): e1 |> std/quantity:parse(s: e1)
+| exact c |> std/quantity:ingest(s: "2 s"): e2 |> std/quantity:parse(s: e2)
     | exact d |> std/quantity:sub(a: c, b: d)
         | exact r |> std/io:print.ln("subtracted") |> std/quantity:free(n: r)
         | dim-mismatch |> std/io:print.ln("dim-mismatch")

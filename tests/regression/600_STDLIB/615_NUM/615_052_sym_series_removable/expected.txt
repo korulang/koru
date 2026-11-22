@@ -1,0 +1,8 @@
+catalan series: terms=10:1,1,2,5,14,42,132,429,1430,4862
+catalan ode: ode(k=2,d=2,verified=30)|p0=[2,0,0]|p1=[-2,10,0]|p2=[0,-1,4]
+catalan recurrence: rec(k=3,d=2,via=bridge,det=0)|p0=[0]|p1=[0]|p2=[30,22,4]|p3=[-12,-7,-1]
+1/x series: non-analytic
+(sqrt(1+x)-1)/x: terms=5:1/2,-1/8,1/16,-5/128,7/256
+sqrt(x^2): non-analytic
+sqrt(x): non-analytic
+sqrt(x^4(1+x)): terms=5:0,0,1,1/2,-1/8

@@ -1,0 +1,436 @@
+// ============================================================================
+// std/smt — SMT checking over vendored Z3 (koru-libs/z3).
+//
+// The query language is a small honest s-expr dialect, not SMT-LIB:
+//   (check (declare x int) (declare y int)
+//          (assert (> (+ x y) 10)) (assert (< x 5)))
+// sorts: int | bool.  terms: integer numerals of any size, declared
+// names, true/false, (+ ..), (- ..), (* ..), (= a b), (< a b), (<= ..),
+// (> ..), (>= ..), (and ..), (or ..), (not t).  Everything else is named
+// bad with a reason — no silent coercions, no guessed semantics.
+//
+//   smt-check  q  -> sat "smt:v1;<name>=<val>;..." | unsat | unknown
+//                 | bad "reason"
+//
+// The module links libz3.so through ~requires: emitted programs carry
+// the koru-libs path on their rpath and run from any cwd.  If the lib is
+// absent the BUILD fails — availability is a build-time fact, not a
+// runtime arm, and that is the honest place for it.
+// ============================================================================
+
+~import std/io
+
+~std/build:requires {
+    const REL_TO_ROOT = "${REL_TO_ROOT}";
+    const z3_dir = std.fs.path.resolve(b.allocator, &.{ b.build_root.path orelse ".", REL_TO_ROOT, "koru-libs/z3/lib" }) catch @panic("std/smt:requires");
+    exe.addLibraryPath(.{ .cwd_relative = z3_dir });
+    exe.addRPath(.{ .cwd_relative = z3_dir });
+    exe.linkSystemLibrary("z3");
+    exe.linkLibC();
+}
+
+const std = @import("std");
+
+// ---------------- z3 C API (extern "z3") ----------------
+
+const Z3 = struct {
+    extern fn Z3_mk_config() ?*anyopaque;
+    extern fn Z3_del_config(c: ?*anyopaque) void;
+    extern fn Z3_mk_context(c: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_del_context(c: ?*anyopaque) void;
+    extern fn Z3_mk_solver(c: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_solver_inc_ref(c: ?*anyopaque, s: ?*anyopaque) void;
+    extern fn Z3_solver_dec_ref(c: ?*anyopaque, s: ?*anyopaque) void;
+    extern fn Z3_solver_assert(c: ?*anyopaque, s: ?*anyopaque, a: ?*anyopaque) void;
+    extern fn Z3_solver_check(c: ?*anyopaque, s: ?*anyopaque) c_int;
+    extern fn Z3_solver_get_model(c: ?*anyopaque, s: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_model_inc_ref(c: ?*anyopaque, m: ?*anyopaque) void;
+    extern fn Z3_model_dec_ref(c: ?*anyopaque, m: ?*anyopaque) void;
+    extern fn Z3_model_eval(c: ?*anyopaque, m: ?*anyopaque, a: ?*anyopaque, completion: bool, v: *?*anyopaque) bool;
+    extern fn Z3_ast_to_string(c: ?*anyopaque, a: ?*anyopaque) ?[*:0]const u8;
+    extern fn Z3_mk_int_sort(c: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_bool_sort(c: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_string_symbol(c: ?*anyopaque, s: [*:0]const u8) ?*anyopaque;
+    extern fn Z3_mk_const(c: ?*anyopaque, sym: ?*anyopaque, sort: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_numeral(c: ?*anyopaque, s: [*:0]const u8, sort: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_true(c: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_false(c: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_add(c: ?*anyopaque, n: c_uint, args: [*]const ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_mul(c: ?*anyopaque, n: c_uint, args: [*]const ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_sub(c: ?*anyopaque, n: c_uint, args: [*]const ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_unary_minus(c: ?*anyopaque, a: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_eq(c: ?*anyopaque, a: ?*anyopaque, b: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_lt(c: ?*anyopaque, a: ?*anyopaque, b: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_le(c: ?*anyopaque, a: ?*anyopaque, b: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_gt(c: ?*anyopaque, a: ?*anyopaque, b: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_ge(c: ?*anyopaque, a: ?*anyopaque, b: ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_and(c: ?*anyopaque, n: c_uint, args: [*]const ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_or(c: ?*anyopaque, n: c_uint, args: [*]const ?*anyopaque) ?*anyopaque;
+    extern fn Z3_mk_not(c: ?*anyopaque, a: ?*anyopaque) ?*anyopaque;
+};
+
+// ---------------- s-expr surface ----------------
+
+const SExpr = union(enum) {
+    atom: []const u8,
+    list: []SExpr,
+};
+
+const SmtParser = struct {
+    s: []const u8,
+    i: usize,
+    alloc: std.mem.Allocator,
+
+    fn ws(self: *SmtParser) void {
+        while (self.i < self.s.len) {
+            const c = self.s[self.i];
+            if (c == ' ' or c == '\t' or c == '\n' or c == '\r') {
+                self.i += 1;
+            } else if (c == ';' and (self.i + 1 >= self.s.len or self.s[self.i + 1] == ';')) {
+                while (self.i < self.s.len and self.s[self.i] != '\n') self.i += 1;
+            } else break;
+        }
+    }
+
+    fn sexpr(self: *SmtParser) error{ OutOfMemory, Bad }!SExpr {
+        self.ws();
+        if (self.i >= self.s.len) return error.Bad;
+        const c = self.s[self.i];
+        if (c == '(') {
+            self.i += 1;
+            var items = std.ArrayList(SExpr){};
+            while (true) {
+                self.ws();
+                if (self.i >= self.s.len) return error.Bad;
+                if (self.s[self.i] == ')') {
+                    self.i += 1;
+                    return .{ .list = try items.toOwnedSlice(self.alloc) };
+                }
+                const e = try self.sexpr();
+                try items.append(self.alloc, e);
+            }
+        }
+        if (c == ')') return error.Bad;
+        const start = self.i;
+        while (self.i < self.s.len) {
+            const d = self.s[self.i];
+            if (d == ' ' or d == '\t' or d == '\n' or d == '\r' or d == '(' or d == ')') break;
+            self.i += 1;
+        }
+        if (self.i == start) return error.Bad;
+        return .{ .atom = self.s[start..self.i] };
+    }
+};
+
+// ---------------- term semantics ----------------
+
+const Sort = enum { int, bool_ };
+
+const VarE = struct {
+    name: []const u8,
+    sort: Sort,
+    ast: ?*anyopaque,
+};
+
+const Checker = struct {
+    ctx: ?*anyopaque,
+    solver: ?*anyopaque,
+    int_sort: ?*anyopaque,
+    bool_sort: ?*anyopaque,
+    alloc: std.mem.Allocator, // arena
+    vars: std.ArrayList(VarE),
+    err: ?[]const u8,
+
+    fn fail(self: *Checker, comptime fmt: []const u8, args: anytype) error{Bad} {
+        self.err = std.fmt.allocPrint(self.alloc, fmt, args) catch "oom";
+        return error.Bad;
+    }
+
+    fn findVar(self: *Checker, name: []const u8) ?*VarE {
+        for (self.vars.items) |*v| {
+            if (std.mem.eql(u8, v.name, name)) return v;
+        }
+        return null;
+    }
+
+    const Tm = struct { ast: ?*anyopaque, sort: Sort };
+
+    fn intArgs(self: *Checker, kids: []const SExpr) error{ OutOfMemory, Bad }![]?*anyopaque {
+        const args = try self.alloc.alloc(?*anyopaque, kids.len);
+        for (kids, 0..) |k, i| {
+            const t = try self.term(k);
+            if (t.sort != .int) return self.fail("int-arg-expected", .{});
+            args[i] = t.ast;
+        }
+        return args;
+    }
+
+    fn term(self: *Checker, e: SExpr) error{ OutOfMemory, Bad }!Tm {
+        switch (e) {
+            .atom => |a| {
+                if (std.mem.eql(u8, a, "true")) return .{ .ast = Z3.Z3_mk_true(self.ctx), .sort = .bool_ };
+                if (std.mem.eql(u8, a, "false")) return .{ .ast = Z3.Z3_mk_false(self.ctx), .sort = .bool_ };
+                if (self.findVar(a)) |v| return .{ .ast = v.ast, .sort = v.sort };
+                // numeral?  optional leading '-', digits otherwise.
+                var t = a;
+                var ok = t.len > 0;
+                if (t.len > 0 and t[0] == '-') t = t[1..];
+                if (t.len == 0) ok = false;
+                for (t) |c| {
+                    if (c < '0' or c > '9') ok = false;
+                }
+                if (ok) {
+                    const z = try self.alloc.dupeZ(u8, a);
+                    return .{ .ast = Z3.Z3_mk_numeral(self.ctx, z, self.int_sort), .sort = .int };
+                }
+                return self.fail("unknown-var:{s}", .{a});
+            },
+            .list => |l| {
+                if (l.len == 0) return self.fail("empty-list-term", .{});
+                const head = switch (l[0]) {
+                    .atom => |a| a,
+                    else => return self.fail("non-atom-head", .{}),
+                };
+                const kids = l[1..];
+                if (std.mem.eql(u8, head, "+") or std.mem.eql(u8, head, "*")) {
+                    if (kids.len < 2) return self.fail("arity:{s}", .{head});
+                    const args = try self.intArgs(kids);
+                    const ast = if (head[0] == '+')
+                        Z3.Z3_mk_add(self.ctx, @intCast(kids.len), args.ptr)
+                    else
+                        Z3.Z3_mk_mul(self.ctx, @intCast(kids.len), args.ptr);
+                    return .{ .ast = ast, .sort = .int };
+                }
+                if (std.mem.eql(u8, head, "-")) {
+                    if (kids.len < 1) return self.fail("arity:-", .{});
+                    const args = try self.intArgs(kids);
+                    // Z3_mk_sub with one argument is identity, not negation —
+                    // unary minus has its own constructor.
+                    const ast = if (kids.len == 1)
+                        Z3.Z3_mk_unary_minus(self.ctx, args[0])
+                    else
+                        Z3.Z3_mk_sub(self.ctx, @intCast(kids.len), args.ptr);
+                    return .{ .ast = ast, .sort = .int };
+                }
+                if (std.mem.eql(u8, head, "and") or std.mem.eql(u8, head, "or")) {
+                    if (kids.len < 2) return self.fail("arity:{s}", .{head});
+                    const args = try self.alloc.alloc(?*anyopaque, kids.len);
+                    for (kids, 0..) |k, i| {
+                        const t = try self.term(k);
+                        if (t.sort != .bool_) return self.fail("bool-arg-expected:{s}", .{head});
+                        args[i] = t.ast;
+                    }
+                    const ast = if (head[0] == 'a')
+                        Z3.Z3_mk_and(self.ctx, @intCast(kids.len), args.ptr)
+                    else
+                        Z3.Z3_mk_or(self.ctx, @intCast(kids.len), args.ptr);
+                    return .{ .ast = ast, .sort = .bool_ };
+                }
+                if (std.mem.eql(u8, head, "not")) {
+                    if (kids.len != 1) return self.fail("arity:not", .{});
+                    const t = try self.term(kids[0]);
+                    if (t.sort != .bool_) return self.fail("bool-arg-expected:not", .{});
+                    return .{ .ast = Z3.Z3_mk_not(self.ctx, t.ast), .sort = .bool_ };
+                }
+                if (std.mem.eql(u8, head, "=")) {
+                    if (kids.len != 2) return self.fail("arity:=", .{});
+                    const a = try self.term(kids[0]);
+                    const b = try self.term(kids[1]);
+                    if (a.sort != b.sort) return self.fail("eq-sort-mismatch", .{});
+                    return .{ .ast = Z3.Z3_mk_eq(self.ctx, a.ast, b.ast), .sort = .bool_ };
+                }
+                if (std.mem.eql(u8, head, "<") or std.mem.eql(u8, head, "<=") or std.mem.eql(u8, head, ">") or std.mem.eql(u8, head, ">=")) {
+                    if (kids.len != 2) return self.fail("arity:{s}", .{head});
+                    const a = try self.term(kids[0]);
+                    const b = try self.term(kids[1]);
+                    if (a.sort != .int or b.sort != .int) return self.fail("cmp-int-expected:{s}", .{head});
+                    const ast = if (std.mem.eql(u8, head, "<"))
+                        Z3.Z3_mk_lt(self.ctx, a.ast, b.ast)
+                    else if (std.mem.eql(u8, head, "<="))
+                        Z3.Z3_mk_le(self.ctx, a.ast, b.ast)
+                    else if (std.mem.eql(u8, head, ">"))
+                        Z3.Z3_mk_gt(self.ctx, a.ast, b.ast)
+                    else
+                        Z3.Z3_mk_ge(self.ctx, a.ast, b.ast);
+                    return .{ .ast = ast, .sort = .bool_ };
+                }
+                return self.fail("unknown-form:{s}", .{head});
+            },
+        }
+    }
+
+    // (declare name int|bool)
+    fn declare(self: *Checker, l: []const SExpr) error{ OutOfMemory, Bad }!void {
+        if (l.len != 3) return self.fail("declare-arity", .{});
+        const name = switch (l[1]) {
+            .atom => |a| a,
+            else => return self.fail("declare-name-nonatom", .{}),
+        };
+        const sort_s = switch (l[2]) {
+            .atom => |a| a,
+            else => return self.fail("declare-sort-nonatom", .{}),
+        };
+        var sort: Sort = undefined;
+        var zsort: ?*anyopaque = undefined;
+        if (std.mem.eql(u8, sort_s, "int")) {
+            sort = .int;
+            zsort = self.int_sort;
+        } else if (std.mem.eql(u8, sort_s, "bool")) {
+            sort = .bool_;
+            zsort = self.bool_sort;
+        } else return self.fail("declare-sort:{s}", .{sort_s});
+        if (self.findVar(name) != null) return self.fail("declare-dup:{s}", .{name});
+        const zname = try self.alloc.dupeZ(u8, name);
+        const sym = Z3.Z3_mk_string_symbol(self.ctx, zname);
+        const ast = Z3.Z3_mk_const(self.ctx, sym, zsort);
+        try self.vars.append(self.alloc, .{ .name = name, .sort = sort, .ast = ast });
+    }
+
+    // (assert <bool-term>)
+    fn assert_(self: *Checker, l: []const SExpr) error{ OutOfMemory, Bad }!void {
+        if (l.len != 2) return self.fail("assert-arity", .{});
+        const t = try self.term(l[1]);
+        if (t.sort != .bool_) return self.fail("assert-nonbool", .{});
+        Z3.Z3_solver_assert(self.ctx, self.solver, t.ast);
+    }
+};
+
+~pub tor smt-check { q: string }
+| sat string<std/io:allocated!>
+| unsat
+| unknown
+| bad string<std/io:allocated!>
+
+~proc smt-check|zig {
+    const alloc = koru_allocator();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ar = arena.allocator();
+
+    // parse the whole input as one top-level form
+    var p = SmtParser{ .s = q, .i = 0, .alloc = ar };
+    const top = p.sexpr() catch |e| switch (e) {
+        error.OutOfMemory => @panic("std/smt:smt-check"),
+        error.Bad => {
+            const m = std.fmt.allocPrint(alloc, "parse-error", .{}) catch @panic("std/smt:smt-check");
+            return .{ .bad = m };
+        },
+    };
+    p.ws();
+    if (p.i != q.len) {
+        const m = std.fmt.allocPrint(alloc, "trailing-input", .{}) catch @panic("std/smt:smt-check");
+        return .{ .bad = m };
+    }
+    const l = switch (top) {
+        .list => |l| l,
+        else => {
+            const m = std.fmt.allocPrint(alloc, "toplevel-not-list", .{}) catch @panic("std/smt:smt-check");
+            return .{ .bad = m };
+        },
+    };
+    if (l.len == 0) {
+        const m = std.fmt.allocPrint(alloc, "empty-check", .{}) catch @panic("std/smt:smt-check");
+        return .{ .bad = m };
+    }
+    const head = switch (l[0]) {
+        .atom => |a| a,
+        else => {
+            const m = std.fmt.allocPrint(alloc, "toplevel-nonatom-head", .{}) catch @panic("std/smt:smt-check");
+            return .{ .bad = m };
+        },
+    };
+    if (!std.mem.eql(u8, head, "check")) {
+        const m = std.fmt.allocPrint(alloc, "toplevel-not-check:{s}", .{head}) catch @panic("std/smt:smt-check");
+        return .{ .bad = m };
+    }
+
+    // z3 context + solver
+    const cfg = Z3.Z3_mk_config() orelse @panic("std/smt:cfg");
+    defer Z3.Z3_del_config(cfg);
+    const ctx = Z3.Z3_mk_context(cfg) orelse @panic("std/smt:ctx");
+    defer Z3.Z3_del_context(ctx);
+    const solver = Z3.Z3_mk_solver(ctx) orelse @panic("std/smt:solver");
+    Z3.Z3_solver_inc_ref(ctx, solver);
+    defer Z3.Z3_solver_dec_ref(ctx, solver);
+
+    var ck = Checker{
+        .ctx = ctx,
+        .solver = solver,
+        .int_sort = Z3.Z3_mk_int_sort(ctx),
+        .bool_sort = Z3.Z3_mk_bool_sort(ctx),
+        .alloc = ar,
+        .vars = std.ArrayList(VarE){},
+        .err = null,
+    };
+
+    for (l[1..]) |form| {
+        const fl = switch (form) {
+            .list => |fl| fl,
+            else => {
+                const m = std.fmt.allocPrint(alloc, "form-not-list", .{}) catch @panic("std/smt:smt-check");
+                return .{ .bad = m };
+            },
+        };
+        if (fl.len == 0) {
+            const m = std.fmt.allocPrint(alloc, "form-empty", .{}) catch @panic("std/smt:smt-check");
+            return .{ .bad = m };
+        }
+        const fh = switch (fl[0]) {
+            .atom => |a| a,
+            else => {
+                const m = std.fmt.allocPrint(alloc, "form-head-nonatom", .{}) catch @panic("std/smt:smt-check");
+                return .{ .bad = m };
+            },
+        };
+        const r = if (std.mem.eql(u8, fh, "declare"))
+            ck.declare(fl)
+        else if (std.mem.eql(u8, fh, "assert"))
+            ck.assert_(fl)
+        else
+            ck.fail("unknown-form:{s}", .{fh});
+        r catch |e| switch (e) {
+            error.OutOfMemory => @panic("std/smt:smt-check"),
+            error.Bad => {
+                const m = std.fmt.allocPrint(alloc, "{s}", .{ck.err orelse "bad"}) catch @panic("std/smt:smt-check");
+                return .{ .bad = m };
+            },
+        };
+    }
+
+    const rc = Z3.Z3_solver_check(ctx, solver);
+    switch (rc) {
+        1 => {
+            const m = Z3.Z3_solver_get_model(ctx, solver) orelse {
+                const e = std.fmt.allocPrint(alloc, "sat-no-model", .{}) catch @panic("std/smt:smt-check");
+                return .{ .bad = e };
+            };
+            Z3.Z3_model_inc_ref(ctx, m);
+            defer Z3.Z3_model_dec_ref(ctx, m);
+            var buf = std.ArrayList(u8){};
+            buf.appendSlice(alloc, "smt:v1") catch @panic("std/smt:smt-check");
+            for (ck.vars.items) |v| {
+                var ev: ?*anyopaque = null;
+                const ev_ok = Z3.Z3_model_eval(ctx, m, v.ast, true, &ev);
+                const ns = if (ev_ok) Z3.Z3_ast_to_string(ctx, ev) else null;
+                buf.appendSlice(alloc, ";") catch @panic("std/smt:smt-check");
+                buf.appendSlice(alloc, v.name) catch @panic("std/smt:smt-check");
+                buf.appendSlice(alloc, "=") catch @panic("std/smt:smt-check");
+                if (ns) |s| {
+                    const txt = std.mem.span(s);
+                    // Z3 renders negatives as (- N); unwrap to -N.
+                    if (txt.len > 4 and txt[0] == '(' and txt[1] == '-' and txt[2] == ' ' and txt[txt.len - 1] == ')') {
+                        buf.appendSlice(alloc, "-") catch @panic("std/smt:smt-check");
+                        buf.appendSlice(alloc, txt[3 .. txt.len - 1]) catch @panic("std/smt:smt-check");
+                    } else {
+                        buf.appendSlice(alloc, txt) catch @panic("std/smt:smt-check");
+                    }
+                } else {
+                    buf.appendSlice(alloc, "?") catch @panic("std/smt:smt-check");
+                }
+            }
+            return .{ .sat = buf.toOwnedSlice(alloc) catch @panic("std/smt:smt-check") };
+        },
+        -1 => return .{ .unsat = .{} },
+        else => return .{ .unknown = .{} },
+    }
+}

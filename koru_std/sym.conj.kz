@@ -1,0 +1,113 @@
+// ============================================================================
+// ~part conj — the conjugate rationalization fold.  An exact
+// field-arithmetic rewrite that removes the inv spellings Euler's
+// t = c + x + sqrt(u) leaves behind:
+//
+//   normConjInv:      inv(a + sqrt u)  -> (sqrt u - a) * inv(u - a^2)
+//                     when u - a^2 is a nonzero dec — the classic
+//                     rationalization; conjugate denominators leave no
+//                     add under an inv.  a may itself be a sum (the
+//                     shifted quadratic's c+x); norm keeps that square
+//                     factored, so the dec test expands a^2 pairwise,
+//                     locally, only for the check.
+//
+// The twin fold — c*(a+b)^2 - c*(a-b)^2 -> 4*c*a*b inside a sum's
+// (coeff, base) grouping — lives in ~part conjm.
+// ============================================================================
+
+// Canon of (-1)*n — the negation test used by both folds.
+fn negCanonOf(alloc: std.mem.Allocator, n: *const SNode) ![]u8 {
+    const neg = try nodePair(alloc, .mul, try nodeDec(alloc, try decOneN(alloc, true)), try nodeClone(alloc, n));
+    defer nodeFree(alloc, neg);
+    const nn = try norm(alloc, neg);
+    defer nodeFree(alloc, nn);
+    return canonOf(alloc, nn);
+}
+
+// inv(a + sqrt(u)) where the add kids split into one .sq leaf and a
+// remainder a: rationalize iff u - a^2 is a nonzero dec.  Consumes
+// nothing — returns a fresh normed node or null.
+fn normConjInv(alloc: std.mem.Allocator, inner: *const SNode) !?*SNode {
+    var sq_kid: ?*const SNode = null;
+    var rest = std.ArrayList(*const SNode){};
+    defer rest.deinit(alloc);
+    for (inner.kids) |k| {
+        if (k.kind == .sq and sq_kid == null) sq_kid = k else try rest.append(alloc, k);
+    }
+    const sqn = sq_kid orelse return null;
+    if (rest.items.len == 0) return null; // bare inv(sqrt u): no conjugate
+    // a as a node (clone the single rest kid or re-add the pieces).
+    const a = blk: {
+        if (rest.items.len == 1) break :blk try nodeClone(alloc, rest.items[0]);
+        const ks = try alloc.alloc(*SNode, rest.items.len);
+        var made: usize = 0;
+        errdefer {
+            for (ks[0..made]) |kk| nodeFree(alloc, kk);
+            alloc.free(ks);
+        }
+        for (rest.items, 0..) |k, i| {
+            ks[i] = try nodeClone(alloc, k);
+            made = i + 1;
+        }
+        const raw = try nodeList(alloc, .add, ks);
+        defer nodeFree(alloc, raw);
+        break :blk try norm(alloc, raw);
+    };
+    defer nodeFree(alloc, a);
+    // u - a^2 must be a nonzero dec for the rationalization to close.
+    // norm keeps an add's square factored (squares are the merge target),
+    // so a^2 is expanded here — pairwise products — or the dec never
+    // surfaces when a itself is a sum (shifted Euler, t = c+x+sqrt u).
+    const aa = blk: {
+        if (a.kind != .add) {
+            const pr = try nodePair(alloc, .mul, try nodeClone(alloc, a), try nodeClone(alloc, a));
+            defer nodeFree(alloc, pr);
+            break :blk try norm(alloc, pr);
+        }
+        const n = a.kids.len;
+        const ks = try alloc.alloc(*SNode, n * n);
+        var made: usize = 0;
+        errdefer {
+            for (ks[0..made]) |kk| nodeFree(alloc, kk);
+            alloc.free(ks);
+        }
+        for (a.kids) |k1| {
+            for (a.kids) |k2| {
+                ks[made] = try nodePair(alloc, .mul, try nodeClone(alloc, k1), try nodeClone(alloc, k2));
+                made += 1;
+            }
+        }
+        const raw = try nodeList(alloc, .add, ks);
+        defer nodeFree(alloc, raw);
+        break :blk try norm(alloc, raw);
+    };
+    defer nodeFree(alloc, aa);
+    // diff = u - a^2, negated per-term: norm keeps -1*add factored, so a
+    // summed square would never collect against u.  Each aa kid takes its
+    // own -1 factor and the like terms can cancel to the dec.
+    var dk = std.ArrayList(*SNode){};
+    defer dk.deinit(alloc);
+    try dk.append(alloc, try nodeClone(alloc, sqn.kid));
+    if (aa.kind == .add) {
+        for (aa.kids) |k| {
+            try dk.append(alloc, try nodePair(alloc, .mul, try nodeDec(alloc, try decOneN(alloc, true)), try nodeClone(alloc, k)));
+        }
+    } else {
+        try dk.append(alloc, try nodePair(alloc, .mul, try nodeDec(alloc, try decOneN(alloc, true)), try nodeClone(alloc, aa)));
+    }
+    const diff = try nodeList(alloc, .add, try dk.toOwnedSlice(alloc));
+    defer nodeFree(alloc, diff);
+    const dn = try norm(alloc, diff);
+    defer nodeFree(alloc, dn);
+    if (dn.kind != .dec or dn.dec.m.eqlZero()) return null;
+    // (sqrt u - a) * inv(u - a^2), re-normed once to settle signs.
+    const neg_a = try nodePair(alloc, .mul, try nodeDec(alloc, try decOneN(alloc, true)), try nodeClone(alloc, a));
+    defer nodeFree(alloc, neg_a);
+    const conj = try nodePair(alloc, .add, try nodeClone(alloc, sqn), try nodeClone(alloc, neg_a));
+    defer nodeFree(alloc, conj);
+    const iv = try nodeUnary(alloc, .inv, try nodeClone(alloc, dn));
+    defer nodeFree(alloc, iv);
+    const res = try nodePair(alloc, .mul, try nodeClone(alloc, conj), try nodeClone(alloc, iv));
+    defer nodeFree(alloc, res);
+    return try norm(alloc, res);
+}

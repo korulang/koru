@@ -5,17 +5,16 @@
 // These types were uplifted from runtime.specs / interpreter.contracts /
 // the interpreter's value-transport block: an interface descriptor
 // (ScopeEvent) names inputs, branches, obligation create/discharge and the
-// dispatcher contract — none of that is runtime-specific, it is the *spec
-// of a surface*. std/runtime, std/interpreter and every consumer re-alias
-// these names so emitted code (`koru_std.koru_runtime.ScopeEvent` in
-// generated dispatchers, `koru_std.koru_interpreter.CreateSpec` in shape
-// checking) keeps resolving to this single definition.
-//
+// dispatcher contract — none of it is runtime-specific, it is the *spec
+// of a surface*; consumers re-alias these names so generated code keeps
+// resolving to this single definition.
 // `spec` is the generic declaration carrier: data attached to the AST as a
 // [norun] site, harvested by a [comptime|command] consumer through
-// `spec.sites(program, qualifier, tor)`. A domain that wants its own
-// spelling declares its own [norun] tor and harvests it under its own
-// qualifier — std/realize's `row`/`arm` are that, one level down.
+// `spec.sites(program, qualifier, tor)` — std/realize's `row`/`arm` are
+// that, one level down.
+
+~part linear
+~part claims
 
 ~[comptime|runtime]
 
@@ -28,9 +27,10 @@
 // a norun tor, so without this there is no koru_std.koru_spec to resolve).
 ~[retain]pub tor spec.revision {} -> string
 
-~proc spec.revision|zig {
-    return "std/spec:0";
-}
+// A Koru impl, not a |zig proc: the revision is pure data, and the lane
+// that emits it gets the same answer — a host-language body would ask
+// every target for a twin (the C lane refused exactly that).
+~spec.revision -> "std/spec:0"
 
 const std = @import("std");
 const ast = @import("ast");

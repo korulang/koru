@@ -62,7 +62,12 @@ filter_violations() {
         if is_allowlisted "$path"; then
             continue
         fi
-        git check-ignore -v --no-index "$path" 2>/dev/null >> "$filtered" || true
+        # check-ignore -v prints the LAST matching rule, negations included:
+        # a "!pattern" match means deliberately un-ignored, not refused.
+        # Only a positive-rule match is a violation.
+        git check-ignore -v --no-index "$path" 2>/dev/null \
+            | awk -F'\t' '{ split($1, f, ":"); pat = f[3]; for (i = 4; i <= length(f); i++) pat = pat ":" f[i]; if (pat !~ /^!/) print }' \
+            >> "$filtered" || true
     done < "$raw"
 }
 

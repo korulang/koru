@@ -65,6 +65,19 @@ The two beliefs meet at the general shape both are instances of: **a principle i
 only as strong as the weakest artifact that records it**, and a comment promising
 future permissiveness is weaker than no comment at all.
 
+## A confirming removal
+
+The `residue-cofactor-deg{d}-beyond-extgcd-bound` wall was the same shape with a
+happier ending: the refusal comment named both the bound and its lift ("the K[x]
+Euclid inverts through algInvPoly's naive rational extended gcd ... a
+subresultant PRS lifts the wall"). Executing the parked intention verified the
+note exactly — primitive-PRS gcd plus Bareiss fraction-free inversion gives
+polynomially-bounded intermediates, and deg-5/6 cofactors construct
+checked-exact in seconds. What made the removal cheap was that the wall named
+the *mechanism* of its bound, not just the bound: the fix could aim at the
+named cause instead of rediscovering it. A budget refusal that names its cause
+is a work order; one that names only a number is a riddle.
+
 ## What would correct this
 
 A legitimate need for Koru structure inside a host body that a top-level subflow

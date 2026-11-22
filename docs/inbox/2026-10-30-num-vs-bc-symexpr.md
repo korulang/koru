@@ -499,14 +499,56 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
 
 - `decide-integral(a, max-order, max-deg)`: polynomial integrand ->
   constructed antiderivative (`integral=[coeff list]`, termwise over Q).
-  Otherwise structural cert-of + certShifted -> holonomic-special with
-  `integrand=` + `antiderivative=` cert texts; the note field marks
-  `integrand-cert-theorem-grade` vs `seed-finite-witness` (discovery
-  fallback) and records `no-risch-elementary-form-not-constructed` —
-  honest about the missing Risch engine (1/(1-x) has an elementary form
-  Koru does not construct; it is represented holonomically instead).
-  Grammar has no trig nodes so the artifact's Euler-rewrite leg is
-  vacuous. Unresolved names the searched bounds + structural refusal.
+  Rational integrand -> Hermite reduction + Rothstein–Trager log part:
+  rational residues give `c*log(gcd)` terms, degree-2 residue fields give
+  conjugate real-log pairs (disc>0) or a real log+atan pair (disc<0, no
+  i); every emission is checked exactly against the integrand before it
+  is returned (`checked-exact`). Residue cofactors of degree 3/4 emit a
+  root-sum `rsum(f;...)` node built over the residue ring Q[t]/(f)
+  (zero divisors split the modulus; check via trace/norm, still exact);
+  degree >=5 names `residue-cofactor-deg{d}-beyond-extgcd-bound`.
+  F*exp(G) with F rational, G polynomial -> the Risch exp-monomial lane
+  (R'+G'R=F: polynomial solve, or the Rothstein denominator bound
+  reducing it to linDESolve); an integrand rational in a single
+  exponential element e^{k*g0} — affine g0 = c0*x+b0 on a common root —
+  substitutes t = e^{g0}, re-enters the decider on F(t)/(c0*t), and
+  substitutes back node-wise, still `checked-exact` by re-extracting
+  the derivative's theta-frac. A polynomial in one log(u), u
+  rational, with theta-free coefficients -> the primitive-monomial
+  cascade r_i' = a_i - (i+1)h*r_{i+1} (h = theta'), each step
+  re-entering the decider; the same lane covers every primitive
+  element (log(u): h=u'/u; atan(u): h=u'/(1+u^2)), accepts the
+  parity twin of u (atan(-u) = -theta, log(1/u) = -theta) since
+  Trager emits negated roots, and every free constant resolves by
+  limited integration (the computed antiderivative's theta-part must
+  be gamma*theta, gamma constant, else `{kind}-mono-limited`);
+  coefficients are compared as Q(x) elements rather than strings.
+  A fourth lane is the algebraic pre-step: when every radical leaf
+  is sq(x), t = sqrt(x) rationalizes the whole integrand (x -> t*t,
+  dx -> 2t dt), the decider re-enters on a rational-function tower,
+  and the answer back-substitutes t -> sqrt(x) — checked-exact by
+  the same chain rule; a foreign radicand refuses
+  `sqrt-subst-mixed-radicand` rather than partially transform.
+  Norm also folds u*inv(sqrt u) -> sqrt u (exact field arithmetic,
+  no sign guard) and log(sqrt u) -> (1/2)*log u (exact on the
+  principal branch, nested radicals recurse) — the log family over
+  sqrt x routes through the ordinary log lanes in base field. An integrand that
+  carries a tower element's dlog factor — g'*e^g for theta = e^g (g
+  any polynomial, not just affine), u'/u for theta = log(u),
+  u'/(2*theta) for theta = sqrt(u), u'/(1+u^2) for theta = atan(u) —
+  substitutes t = theta and re-enters the decider on the rational
+  t-side (`checked-exact` by the chain rule over the inner check);
+  bare x atoms surviving norm mean the substitution reintroduces x.
+  The sqrt element alone needs a recovery: norm pairs equal radicals
+  into the radicand, so even theta powers hide inside the u spelling —
+  a canon-equal u extracts as t^2 (which also makes the nested
+  sqrt(sqrt(u)) case construct, inner = u as a factor).
+  Off-lattice roots,
+  bare-x coefficients without the dlog factor, nested exp, and
+  t-antiderivatives containing rsum each name a refusal arm. Other non-rational integrands keep the
+  structural cert + holonomic-special lane with
+  `no-risch-elementary-form-not-constructed` notes. Unresolved names the
+  searched bounds + structural refusal.
 - `decide-ode(r)`: Kovacic pole-structure port. Over C every
   non-constant denominator has roots, so the artifact's `poles == []`
   collapses to "r constant" — bounded -> liouvillian arm with the
@@ -516,8 +558,8 @@ sym.certgen.kz. Layer order preserved: ELEMENTARY -> HOLONOMIC_SPECIAL
   blobs — the composition seam into cert-reg-put (the artifact's
   registry_key path) without record-payload arms.
 
-615_048 pins all arms incl. (1+x)^(1/4) fallback, the bounded/unbounded/
-unclassifiable decide-ode split, and decide-field nf. 615: 40/40.
+615_048 pins all arms incl. the bounded/unbounded/
+unclassifiable decide-ode split, and decide-field nf. 615: 59/59.
 
 ## Design only — non-SI extension surface (currency et al.)
 
@@ -617,3 +659,27 @@ same boundary the cert layer draws). Generator application g(name, arg)
 needs subst-X machinery — band 2. Nonlinear jet relations / full
 differential algebra — honest refusal territory, same posture as
 cert-compose.
+
+## independent oracle — sympy 1.14 + mpmath 1.4 via nix (landed)
+
+pip never existed on this box; nix supplied python3.14 + sympy + mpmath from
+store paths. `tests/benchmarks/016_num_precision_race/sympy_oracle.py` +
+`run_oracle.sh` — a checker sharing no code with koru/bc/decimal.
+
+- digits: every emitted digit of every workload matches mpmath mp.dps=3100
+  references — w1/w2/w9 exact to all digits (3999, 47713, 997); w3–w7, w10
+  all emitted digits correct; w8 Machin off in its last 4 of 2023 (the
+  documented boundary accumulation).
+- certs: sympy verifies all 12 recorded ODE certificates annihilate their
+  functions (residual symbolically 0), all 3 recurrences hold on true series
+  coefficients, the cser tail for sqrt(1+x) equals sympy's series term for
+  term, and D(sin^2+cos^2) reduces to 0 under sympy's own differentiation.
+- decide-ode sanity: sympy dsolve(y''=xy) returns Airy — consistent with
+  koru's non-Liouvillian classification.
+- speed honesty: mpmath does all five transcendentals in ~8ms total
+  (AGM-class, not Taylor). That gap is algorithmic — the next ceiling after
+  Newton-division.
+- gotchas recorded: python3.11+ int-str limit (set_int_max_str_digits) for
+  the 5000-digit operand; mpf can't hold 4000-digit exact products — exact
+  ops must compare digit strings, not float diffs.
+- SageMath not run; sympy+mpmath covered the comparison surface.

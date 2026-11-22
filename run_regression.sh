@@ -736,7 +736,7 @@ while [[ $# -gt 0 ]]; do
             # block editor's save path and the language beautifier both stand
             # on (BLOCK_EDITOR.md §10/§13).
             if [ "$REBUILD_COMPILER" = "true" ]; then
-                (cd "$SCRIPT_DIR" && zig build) || exit 1
+                (cd "$SCRIPT_DIR" && zig build ${KORU_OPTIMIZE:+-Doptimize=$KORU_OPTIMIZE}) || exit 1
             fi
             exec "$SCRIPT_DIR/scripts/roundtrip_harness.sh" "${@:2}"
             ;;
@@ -1027,16 +1027,20 @@ export KORU_RUN_SCOPE=board
 # COMPILER BUILD - Ensure tests run against current code
 # ════════════════════════════════════════
 if [ "$REBUILD_COMPILER" = true ]; then
+    # KORU_OPTIMIZE=ReleaseFast builds a fast koruc for the suite — the
+    # compiler's own Debug safety checks are not what the board judges
+    # (emitted programs still compile -O Debug), and the frontend's
+    # stdlib analysis is the dominant per-test cost at ~3x Debug speedup.
     echo "🔨 Building compiler..."
     BUILD_LOG="${TMPDIR:-/tmp}/koru-zig-build.log"
     if [ "$VERBOSE" = true ]; then
-        if ! zig build 2>&1; then
+        if ! zig build ${KORU_OPTIMIZE:+-Doptimize=$KORU_OPTIMIZE} 2>&1; then
             echo ""
             echo -e "${RED}❌ Compiler build failed${NC}"
             exit 1
         fi
     else
-        if zig build >"$BUILD_LOG" 2>&1; then
+        if zig build ${KORU_OPTIMIZE:+-Doptimize=$KORU_OPTIMIZE} >"$BUILD_LOG" 2>&1; then
             tail -5 "$BUILD_LOG"
         else
             echo ""
@@ -1302,6 +1306,28 @@ PY
             fi
             rm -f "$dir/SUCCESS" "$dir/FAILURE" 2>/dev/null
         done < "$FILTERED_LIST"
+    fi
+
+    # Cold-start guard: every backend build keys on the same linked closure,
+    # so one serial warm-up fills the cache for the whole wave. Without it, N
+    # workers each miss and run a full backend compile under contention —
+    # measured 2026-11-22: 12 parallel ReleaseFast builds all starved past the
+    # per-test 600s timeout and nothing ever stored.
+    WARM_DIR=""
+    while IFS= read -r -d '' dir; do
+        if { [ -f "$dir/input.k" ] || [ -f "$dir/input.kz" ]; } \
+           && [ ! -f "$dir/MUST_ERROR" ] && [ ! -f "$dir/TODO" ] \
+           && [ ! -f "$dir/SKIP" ] && [ ! -f "$dir/BROKEN" ] \
+           && [ ! -f "$dir/BENCHMARK" ]; then
+            WARM_DIR="$dir"
+            break
+        fi
+    done < "$FILTERED_LIST"
+    if [ -n "$WARM_DIR" ]; then
+        echo "🔥 Warming backend cache with $(basename "$WARM_DIR")..."
+        env REGRESSION_QUIET=true CHECK_LEAKS="$CHECK_LEAKS" VERBOSE="$VERBOSE" ZIG_GLOBAL_CACHE="$ZIG_GLOBAL_CACHE" \
+            KORU_CROSS_TARGETS="$CROSS_TARGETS" KORU_TIMING_FILE="$KORU_TIMING_FILE" \
+            ./run_single_test.sh "$WARM_DIR" >/dev/null 2>&1 || true
     fi
 
     # Run in parallel, capture output for debugging only. Per-run temp path

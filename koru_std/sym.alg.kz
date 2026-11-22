@@ -1,0 +1,638 @@
+// ============================================================================
+// std/sym part: alg — algebraic numbers as residue classes of Q[x]/(p(x)).
+//
+// An algebraic number is a polynomial v mod a nonconstant rational
+// polynomial p — canon `alg:v1;<p>;<v>` with p monic and deg v < deg p.
+// The modulus is embedded in every value, so values are self-describing;
+// mixed-modulus arithmetic refuses |modulus-mismatch.  The laws are exact
+// polynomial remainder arithmetic — no approximation enters.  p is NOT
+// required irreducible: Q[x]/(p) is a ring, and elements whose gcd with
+// p is nontrivial are honestly named |zero-divisor with the common
+// factor attached instead of pretending a field.  Value-equivalence is
+// string equality on the canon, same law as std/num and the sym canon.
+//
+//   alg-mod  p        -> exact "algm:v1;<p>" | bad          (monic, deg>=1)
+//   alg-lit  mod, v   -> exact "alg:v1;<p>;<v>" | bad       (v reduced mod p)
+//   alg-add  a, b     -> exact | modulus-mismatch | bad
+//   alg-sub  a, b     -> exact | modulus-mismatch | bad
+//   alg-neg  a        -> exact | bad
+//   alg-mul  a, b     -> exact | modulus-mismatch | bad
+//   alg-inv  a        -> exact | zero-divisor blob | bad
+//   alg-div  a, b     -> exact | zero-divisor blob | modulus-mismatch | bad
+//   alg-pow  a, n     -> exact | zero-divisor blob | bad    (n<0 via inverse)
+// ============================================================================
+
+const AlgVal = struct { m: []Rat, v: []Rat, m_txt: []u8 };
+
+fn algValFree(alloc: std.mem.Allocator, a: *AlgVal) void {
+    polyFree(alloc, a.m);
+    polyFree(alloc, a.v);
+    alloc.free(a.m_txt);
+}
+
+// Scale by 1/lead — canonical modulus equality is then poly equality.
+fn polyMonic(alloc: std.mem.Allocator, p: []const Rat) ![]Rat {
+    const d = polyDegIdx(p);
+    var li = try ratInv(alloc, &p[d]);
+    defer ratDeinit(&li);
+    return polyScal(alloc, p, &li);
+}
+
+// sexpr text -> monic polynomial of degree >= 1, or null (non-poly /
+// constant / malformed).  A constant modulus makes Q[x]/(p) the zero
+// ring — refusing it is the honest read.
+fn modPolyOf(alloc: std.mem.Allocator, s: []const u8) !?[]Rat {
+    const t = parseTree(alloc, s) catch return null;
+    defer nodeFree(alloc, t);
+    const nt = norm(alloc, t) catch return null;
+    defer nodeFree(alloc, nt);
+    const p0 = (polyOfNode(alloc, nt) catch return null) orelse return null;
+    defer polyFree(alloc, p0);
+    if (polyIsZero(p0) or polyDegIdx(p0) == 0) return null;
+    return try polyMonic(alloc, p0);
+}
+
+// sexpr text -> any polynomial reduced mod m, or null.
+fn valPolyOf(alloc: std.mem.Allocator, s: []const u8, m: []const Rat) !?[]Rat {
+    const t = parseTree(alloc, s) catch return null;
+    defer nodeFree(alloc, t);
+    const nt = norm(alloc, t) catch return null;
+    defer nodeFree(alloc, nt);
+    const p0 = (polyOfNode(alloc, nt) catch return null) orelse return null;
+    defer polyFree(alloc, p0);
+    const dm = try polyDivMod(alloc, p0, m);
+    polyFree(alloc, dm.q);
+    return dm.r;
+}
+
+// "alg:v1;<p>;<v>" -> AlgVal with p monic-normalized and v reduced.
+// The two fields never contain ';' (canonical sexprs), so one split
+// suffices; the modulus field is re-derived rather than trusted, so the
+// canon modulus text rides along for mismatch checks and re-emission.
+fn algParseVal(alloc: std.mem.Allocator, s: []const u8) !?AlgVal {
+    const head = "alg:v1;";
+    if (!std.mem.startsWith(u8, s, head)) return null;
+    const rest = s[head.len..];
+    const sep = std.mem.indexOfScalar(u8, rest, ';') orelse return null;
+    const m = (try modPolyOf(alloc, rest[0..sep])) orelse return null;
+    errdefer polyFree(alloc, m);
+    const v = (try valPolyOf(alloc, rest[sep + 1 ..], m)) orelse return null;
+    errdefer polyFree(alloc, v);
+    const m_txt = polyCanonTxt(alloc, m) catch return null;
+    return .{ .m = m, .v = v, .m_txt = m_txt };
+}
+
+// poly -> canonical sym sexpr text (polyText emits a looser a+b*x
+// form; normCanon folds it to the real canon so alg:v1 fields are
+// self-canonical and round-trip through the sym grammar).
+fn polyCanonTxt(alloc: std.mem.Allocator, p: []const Rat) ![]u8 {
+    const t = try polyTextOf(alloc, p);
+    defer alloc.free(t);
+    return normCanon(alloc, t);
+}
+
+fn algEmit(alloc: std.mem.Allocator, m_txt: []const u8, v: []const Rat) ![]u8 {
+    const v_txt = try polyCanonTxt(alloc, v);
+    defer alloc.free(v_txt);
+    return std.fmt.allocPrint(alloc, "alg:v1;{s};{s}", .{ m_txt, v_txt });
+}
+
+// ---------- integer poly helpers (bounded inversion machinery) ----------
+//
+// The naive rational extended gcd over Q[x] explodes in fraction size at
+// degree >= 5 — each Euclid step compounds numerators faster than the
+// problem grows. The same answers factor through two bounded tools:
+// the gcd runs as a primitive PRS over Z[x] (pseudo-remainder, content
+// removed each step — coefficient growth is polynomial, not
+// exponential), and the inverse solves v*u = 1 mod m as an n-by-n
+// linear system in u's coefficients by fraction-free Bareiss
+// elimination — every intermediate stays integral, bounded by the
+// determinant.
+
+fn biPolyIsZero(p: []const BI) bool {
+    for (p) |*c| {
+        if (!c.eqlZero()) return false;
+    }
+    return true;
+}
+
+fn biPolyDegIdx(p: []const BI) usize {
+    var i = p.len;
+    while (i > 0) {
+        i -= 1;
+        if (!p[i].eqlZero()) return i;
+    }
+    return 0;
+}
+
+fn biPolyFreeB(alloc: std.mem.Allocator, p: []BI) void {
+    for (p) |*c| c.deinit();
+    alloc.free(p);
+}
+
+fn biPolyCloneB(alloc: std.mem.Allocator, p: []const BI) ![]BI {
+    const out = try alloc.alloc(BI, p.len);
+    var i: usize = 0;
+    errdefer {
+        for (out[0..i]) |*c| c.deinit();
+        alloc.free(out);
+    }
+    while (i < p.len) : (i += 1) out[i] = try p[i].clone();
+    return out;
+}
+
+// Primitive part: coeffs divided by their content gcd, lead positive.
+fn biPolyPrimitive(alloc: std.mem.Allocator, p_in: []const BI) ![]BI {
+    if (biPolyIsZero(p_in)) return biPolyCloneB(alloc, p_in);
+    var g = try p_in[biPolyDegIdx(p_in)].clone();
+    defer g.deinit();
+    var i: usize = 0;
+    while (i < p_in.len) : (i += 1) {
+        if (p_in[i].eqlZero()) continue;
+        const ng = try biGcd(alloc, &g, &p_in[i]);
+        g.deinit();
+        g = ng;
+    }
+    if (p_in[biPolyDegIdx(p_in)].toConst().orderAgainstScalar(@as(i64, 0)) == .lt) g.negate();
+    const out = try alloc.alloc(BI, p_in.len);
+    var j: usize = 0;
+    errdefer {
+        for (out[0..j]) |*c| c.deinit();
+        alloc.free(out);
+    }
+    while (j < p_in.len) : (j += 1) {
+        out[j] = try BI.init(alloc);
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try out[j].divTrunc(&rem, &p_in[j], &g);
+    }
+    return out;
+}
+
+// Pseudo-remainder: lc(b)^(da-db+1) * a rem b — integer throughout.
+fn biPolyPrem(alloc: std.mem.Allocator, a_in: []const BI, b: []const BI) ![]BI {
+    var a = try biPolyCloneB(alloc, a_in);
+    errdefer biPolyFreeB(alloc, a);
+    const db = biPolyDegIdx(b);
+    while (!biPolyIsZero(a)) {
+        const da = biPolyDegIdx(a);
+        if (da < db) break;
+        const s = da - db;
+        // a <- lcb*a - lca * x^s * b; the lead cancels exactly.
+        var lca = try a[da].clone();
+        defer lca.deinit();
+        const out = try alloc.alloc(BI, a.len);
+        var i: usize = 0;
+        errdefer {
+            for (out[0..i]) |*c| c.deinit();
+            alloc.free(out);
+        }
+        while (i < a.len) : (i += 1) {
+            var t1 = try BI.init(alloc);
+            errdefer t1.deinit();
+            try t1.mul(&b[db], &a[i]);
+            if (i >= s and i - s <= db) {
+                var t2 = try BI.init(alloc);
+                errdefer t2.deinit();
+                try t2.mul(&lca, &b[i - s]);
+                try t1.sub(&t1, &t2);
+                t2.deinit();
+            }
+            out[i] = t1;
+        }
+        biPolyFreeB(alloc, a);
+        a = out;
+    }
+    return a;
+}
+
+// Primitive-PRS gcd over Z[x]: pseudo-remainder then content removal —
+// coefficient growth bounded by the subresultants themselves. Returns a
+// primitive poly with positive lead; [1] when coprime over Q.
+fn biPolyGcdZZ(alloc: std.mem.Allocator, a_in: []const BI, b_in: []const BI) ![]BI {
+    var a = try biPolyPrimitive(alloc, a_in);
+    errdefer biPolyFreeB(alloc, a);
+    var b = try biPolyPrimitive(alloc, b_in);
+    errdefer biPolyFreeB(alloc, b);
+    while (!biPolyIsZero(b)) {
+        if (biPolyDegIdx(b) == 0) {
+            biPolyFreeB(alloc, a);
+            biPolyFreeB(alloc, b);
+            const one = try alloc.alloc(BI, 1);
+            one[0] = try BI.initSet(alloc, 1);
+            return one;
+        }
+        const pr = try biPolyPrem(alloc, a, b);
+        defer biPolyFreeB(alloc, pr);
+        const r = try biPolyPrimitive(alloc, pr);
+        biPolyFreeB(alloc, a);
+        a = b;
+        b = r;
+    }
+    biPolyFreeB(alloc, b);
+    return a;
+}
+
+// v^{-1} mod m. gcd runs over Z[x] by primitive PRS; a unit then solves
+// v*u = 1 mod m by Bareiss fraction-free elimination on the
+// multiplication matrix — n-by-n, every intermediate integral and
+// determinant-bounded where the rational extended gcd exploded.
+// Returns null for a zero divisor; `g_out` gets the factor either way.
+fn algInvPoly(alloc: std.mem.Allocator, v: []const Rat, m: []const Rat, g_out: *[]Rat) !?[]Rat {
+    const n = polyDegIdx(m);
+    if (polyIsZero(v)) {
+        g_out.* = try polyClone(alloc, m);
+        return null;
+    }
+    const vm = try intPolysFromRats(alloc, &.{ v, m });
+    defer {
+        for (vm) |p| biPolyFreeB(alloc, p);
+        alloc.free(vm);
+    }
+    const vz = vm[0];
+    const mz = vm[1];
+    const gz = try biPolyGcdZZ(alloc, vz, mz);
+    defer biPolyFreeB(alloc, gz);
+    if (!biPolyIsZero(gz) and biPolyDegIdx(gz) > 0) {
+        const gq = try polyFromInts(alloc, gz);
+        defer polyFree(alloc, gq);
+        g_out.* = try polyMonic(alloc, gq);
+        return null;
+    }
+    // Columns: col_j = v*x^j mod m, coeffs i = 0..n-1. The system
+    // A.u = e0 is nonsingular exactly when v is a unit.
+    const cols = try alloc.alloc([]Rat, n);
+    var cj: usize = 0;
+    var cols_built = false;
+    errdefer if (!cols_built) {
+        for (cols[0..cj]) |c| polyFree(alloc, c);
+        alloc.free(cols);
+    };
+    while (cj < n) : (cj += 1) {
+        const mono = try alloc.alloc(Rat, cj + 1);
+        var mi: usize = 0;
+        errdefer {
+            for (mono[0..mi]) |*r| ratDeinit(r);
+            alloc.free(mono);
+        }
+        while (mi <= cj) : (mi += 1) mono[mi] = try ratFromInt(alloc, 0);
+        ratDeinit(&mono[cj]);
+        mono[cj] = try ratFromInt(alloc, 1);
+        defer polyFree(alloc, mono);
+        const vxj = try polyMul(alloc, v, mono);
+        defer polyFree(alloc, vxj);
+        const dm = try polyDivMod(alloc, vxj, m);
+        polyFree(alloc, dm.q);
+        defer polyFree(alloc, dm.r);
+        // pad remainder to n coeffs
+        const col = try alloc.alloc(Rat, n);
+        var i: usize = 0;
+        errdefer {
+            for (col[0..i]) |*r| ratDeinit(r);
+            alloc.free(col);
+        }
+        while (i < n) : (i += 1) {
+            col[i] = if (i < dm.r.len) try ratClone(&dm.r[i]) else try ratFromInt(alloc, 0);
+        }
+        cols[cj] = col;
+    }
+    cols_built = true;
+    defer {
+        for (cols) |c| polyFree(alloc, c);
+        alloc.free(cols);
+    }
+    // Integer matrix: rows[i][j] = D * cols[j][i], rows[i][n] = D*e0.
+    var big_d = try BI.initSet(alloc, 1);
+    defer big_d.deinit();
+    for (cols) |c| {
+        for (c) |*r| {
+            const nl = try biLcm(alloc, &big_d, &r.d);
+            big_d.deinit();
+            big_d = nl;
+        }
+    }
+    const width = n + 1;
+    const rows = try alloc.alloc([]BI, n);
+    var ri: usize = 0;
+    var rows_built = false;
+    errdefer if (!rows_built) {
+        for (rows[0..ri]) |r| biPolyFreeB(alloc, r);
+        alloc.free(rows);
+    };
+    while (ri < n) : (ri += 1) {
+        rows[ri] = try alloc.alloc(BI, width);
+        var i: usize = 0;
+        errdefer {
+            for (rows[ri][0..i]) |*c| c.deinit();
+            alloc.free(rows[ri]);
+        }
+        while (i < width) : (i += 1) rows[ri][i] = try BI.initSet(alloc, 0);
+    }
+    rows_built = true;
+    defer {
+        for (rows) |r| biPolyFreeB(alloc, r);
+        alloc.free(rows);
+    }
+    for (cols, 0..) |c, jj| {
+        for (c, 0..) |*r, i| {
+            var q = try BI.init(alloc);
+            defer q.deinit();
+            var rem = try BI.init(alloc);
+            defer rem.deinit();
+            try q.divTrunc(&rem, &big_d, &r.d);
+            rows[i][jj].deinit();
+            rows[i][jj] = try BI.init(alloc);
+            try rows[i][jj].mul(&r.n, &q);
+        }
+    }
+    rows[0][n].deinit();
+    rows[0][n] = try big_d.clone();
+    // Bareiss fraction-free elimination: pivot k, divide by d_prev —
+    // exact integer division, intermediates bounded by minors.
+    var d_prev = try BI.initSet(alloc, 1);
+    defer d_prev.deinit();
+    var k: usize = 0;
+    while (k < n) : (k += 1) {
+        if (rows[k][k].eqlZero()) {
+            var l = k + 1;
+            while (l < n and rows[l][k].eqlZero()) : (l += 1) {}
+            if (l == n) @panic("std/sym: unit multiplication matrix singular");
+            const t = rows[k];
+            rows[k] = rows[l];
+            rows[l] = t;
+        }
+        var i = k + 1;
+        while (i < n) : (i += 1) {
+            var jj = k + 1;
+            while (jj < width) : (jj += 1) {
+                var t1 = try BI.init(alloc);
+                defer t1.deinit();
+                try t1.mul(&rows[i][jj], &rows[k][k]);
+                var t2 = try BI.init(alloc);
+                defer t2.deinit();
+                try t2.mul(&rows[i][k], &rows[k][jj]);
+                try t1.sub(&t1, &t2);
+                var nv = try BI.init(alloc);
+                var rem = try BI.init(alloc);
+                defer rem.deinit();
+                try nv.divTrunc(&rem, &t1, &d_prev);
+                rows[i][jj].deinit();
+                rows[i][jj] = nv;
+            }
+            rows[i][k].deinit();
+            rows[i][k] = try BI.initSet(alloc, 0);
+        }
+        const nd = try rows[k][k].clone();
+        d_prev.deinit();
+        d_prev = nd;
+    }
+    // Back-substitute over Q: u_i = (b_i - sum_{j>i} U_ij u_j) / U_ii.
+    const u = try alloc.alloc(Rat, n);
+    var filled: usize = 0;
+    errdefer {
+        for (u[n - filled ..]) |*r| ratDeinit(r);
+        alloc.free(u);
+    }
+    var ii = n;
+    while (ii > 0) {
+        ii -= 1;
+        var s = try ratNorm(alloc, try rows[ii][n].clone(), try BI.initSet(alloc, 1));
+        var jj = ii + 1;
+        while (jj < n) : (jj += 1) {
+            var c_rat = try ratNorm(alloc, try rows[ii][jj].clone(), try BI.initSet(alloc, 1));
+            defer ratDeinit(&c_rat);
+            var t = try ratMul(alloc, &c_rat, &u[jj]);
+            defer ratDeinit(&t);
+            const ns = try ratSub(alloc, &s, &t);
+            ratDeinit(&s);
+            s = ns;
+        }
+        var d_rat = try ratNorm(alloc, try rows[ii][ii].clone(), try BI.initSet(alloc, 1));
+        defer ratDeinit(&d_rat);
+        u[ii] = try ratDiv(alloc, &s, &d_rat);
+        ratDeinit(&s);
+        filled += 1;
+    }
+    const one = try alloc.alloc(Rat, 1);
+    one[0] = try ratFromInt(alloc, 1);
+    g_out.* = one;
+    return u;
+}
+
+// a*b mod m then reduce — the ring law.
+fn algMulMod(alloc: std.mem.Allocator, a: []const Rat, b: []const Rat, m: []const Rat) ![]Rat {
+    const p = try polyMul(alloc, a, b);
+    defer polyFree(alloc, p);
+    const dm = try polyDivMod(alloc, p, m);
+    polyFree(alloc, dm.q);
+    return dm.r;
+}
+
+// ---------- tors ----------
+
+// Declare a modulus: p a nonzero, nonconstant rational polynomial in x.
+~pub tor alg-mod { p: string<!sexpr> }
+| exact string<std/io:allocated!>
+| bad
+
+~proc alg-mod|zig {
+    defer symFree(p);
+    const alloc = koru_allocator();
+    const mp = (modPolyOf(alloc, p) catch @panic("std/sym:alg-mod")) orelse return .{ .bad = .{} };
+    defer polyFree(alloc, mp);
+    const txt = polyCanonTxt(alloc, mp) catch @panic("std/sym:alg-mod");
+    defer alloc.free(txt);
+    const blob = std.fmt.allocPrint(alloc, "algm:v1;{s}", .{txt}) catch @panic("std/sym:alg-mod");
+    return .{ .exact = blob };
+}
+
+// Value literal: v reduced mod the declared modulus.
+~pub tor alg-lit { mod: string<*>, v: string<!sexpr> }
+| exact string<std/io:allocated!>
+| bad
+
+~proc alg-lit|zig {
+    defer symFree(v);
+    const alloc = koru_allocator();
+    const head = "algm:v1;";
+    if (!std.mem.startsWith(u8, mod, head)) return .{ .bad = .{} };
+    const m = (modPolyOf(alloc, mod[head.len..]) catch @panic("std/sym:alg-lit")) orelse return .{ .bad = .{} };
+    defer polyFree(alloc, m);
+    const vp = (valPolyOf(alloc, v, m) catch @panic("std/sym:alg-lit")) orelse return .{ .bad = .{} };
+    defer polyFree(alloc, vp);
+    const m_txt = polyCanonTxt(alloc, m) catch @panic("std/sym:alg-lit");
+    defer alloc.free(m_txt);
+    const blob = algEmit(alloc, m_txt, vp) catch @panic("std/sym:alg-lit");
+    return .{ .exact = blob };
+}
+
+// Shared binary ring op: 0=add, 1=sub, 2=mul.  Returns blob text or
+// null for modulus mismatch; error.Bad for malformed input.
+fn algBin(alloc: std.mem.Allocator, a: []const u8, b: []const u8, op: u8) !?[]u8 {
+    var va = (try algParseVal(alloc, a)) orelse return error.Bad;
+    defer algValFree(alloc, &va);
+    var vb = (try algParseVal(alloc, b)) orelse return error.Bad;
+    defer algValFree(alloc, &vb);
+    if (!std.mem.eql(u8, va.m_txt, vb.m_txt)) return null;
+    const r = switch (op) {
+        0 => try polyAdd(alloc, va.v, vb.v),
+        1 => try polySub(alloc, va.v, vb.v),
+        else => blk: {
+            const pr = try polyMul(alloc, va.v, vb.v);
+            defer polyFree(alloc, pr);
+            const dm = try polyDivMod(alloc, pr, va.m);
+            polyFree(alloc, dm.q);
+            break :blk dm.r;
+        },
+    };
+    defer polyFree(alloc, r);
+    return try algEmit(alloc, va.m_txt, r);
+}
+
+~pub tor alg-add { a: string<*>, b: string<*> }
+| exact string<std/io:allocated!>
+| modulus-mismatch
+| bad
+
+~proc alg-add|zig {
+    const alloc = koru_allocator();
+    const blob = (algBin(alloc, a, b, 0) catch |e| switch (e) {
+        error.Bad => return .{ .bad = .{} },
+        else => @panic("std/sym:alg-add"),
+    }) orelse return .{ .modulus_mismatch = .{} };
+    return .{ .exact = blob };
+}
+
+~pub tor alg-sub { a: string<*>, b: string<*> }
+| exact string<std/io:allocated!>
+| modulus-mismatch
+| bad
+
+~proc alg-sub|zig {
+    const alloc = koru_allocator();
+    const blob = (algBin(alloc, a, b, 1) catch |e| switch (e) {
+        error.Bad => return .{ .bad = .{} },
+        else => @panic("std/sym:alg-sub"),
+    }) orelse return .{ .modulus_mismatch = .{} };
+    return .{ .exact = blob };
+}
+
+~pub tor alg-mul { a: string<*>, b: string<*> }
+| exact string<std/io:allocated!>
+| modulus-mismatch
+| bad
+
+~proc alg-mul|zig {
+    const alloc = koru_allocator();
+    const blob = (algBin(alloc, a, b, 2) catch |e| switch (e) {
+        error.Bad => return .{ .bad = .{} },
+        else => @panic("std/sym:alg-mul"),
+    }) orelse return .{ .modulus_mismatch = .{} };
+    return .{ .exact = blob };
+}
+
+~pub tor alg-neg { a: string<*> }
+| exact string<std/io:allocated!>
+| bad
+
+~proc alg-neg|zig {
+    const alloc = koru_allocator();
+    var va = (algParseVal(alloc, a) catch @panic("std/sym:alg-neg")) orelse return .{ .bad = .{} };
+    defer algValFree(alloc, &va);
+    const r = polyNeg(alloc, va.v) catch @panic("std/sym:alg-neg");
+    defer polyFree(alloc, r);
+    const blob = algEmit(alloc, va.m_txt, r) catch @panic("std/sym:alg-neg");
+    return .{ .exact = blob };
+}
+
+~pub tor alg-inv { a: string<*> }
+| exact string<std/io:allocated!>
+| zero-divisor string<std/io:allocated!>
+| bad
+
+~proc alg-inv|zig {
+    const alloc = koru_allocator();
+    var va = (algParseVal(alloc, a) catch @panic("std/sym:alg-inv")) orelse return .{ .bad = .{} };
+    defer algValFree(alloc, &va);
+    var g: []Rat = undefined;
+    const inv = (algInvPoly(alloc, va.v, va.m, &g) catch @panic("std/sym:alg-inv")) orelse {
+        defer polyFree(alloc, g);
+        const blob = algEmit(alloc, va.m_txt, g) catch @panic("std/sym:alg-inv");
+        return .{ .zero_divisor = blob };
+    };
+    defer polyFree(alloc, inv);
+    defer polyFree(alloc, g);
+    const blob = algEmit(alloc, va.m_txt, inv) catch @panic("std/sym:alg-inv");
+    return .{ .exact = blob };
+}
+
+~pub tor alg-div { a: string<*>, b: string<*> }
+| exact string<std/io:allocated!>
+| zero-divisor string<std/io:allocated!>
+| modulus-mismatch
+| bad
+
+~proc alg-div|zig {
+    const alloc = koru_allocator();
+    var va = (algParseVal(alloc, a) catch @panic("std/sym:alg-div")) orelse return .{ .bad = .{} };
+    defer algValFree(alloc, &va);
+    var vb = (algParseVal(alloc, b) catch @panic("std/sym:alg-div")) orelse return .{ .bad = .{} };
+    defer algValFree(alloc, &vb);
+    if (!std.mem.eql(u8, va.m_txt, vb.m_txt)) return .{ .modulus_mismatch = .{} };
+    var g: []Rat = undefined;
+    const vinv = (algInvPoly(alloc, vb.v, va.m, &g) catch @panic("std/sym:alg-div")) orelse {
+        defer polyFree(alloc, g);
+        const blob = algEmit(alloc, va.m_txt, g) catch @panic("std/sym:alg-div");
+        return .{ .zero_divisor = blob };
+    };
+    defer polyFree(alloc, vinv);
+    defer polyFree(alloc, g);
+    const r = algMulMod(alloc, va.v, vinv, va.m) catch @panic("std/sym:alg-div");
+    defer polyFree(alloc, r);
+    const blob = algEmit(alloc, va.m_txt, r) catch @panic("std/sym:alg-div");
+    return .{ .exact = blob };
+}
+
+~pub tor alg-pow { a: string<*>, n: i64 }
+| exact string<std/io:allocated!>
+| zero-divisor string<std/io:allocated!>
+| bad
+
+~proc alg-pow|zig {
+    const alloc = koru_allocator();
+    var va = (algParseVal(alloc, a) catch @panic("std/sym:alg-pow")) orelse return .{ .bad = .{} };
+    defer algValFree(alloc, &va);
+    var base = polyClone(alloc, va.v) catch @panic("std/sym:alg-pow");
+    defer polyFree(alloc, base);
+    var e = n;
+    if (e < 0) {
+        var g: []Rat = undefined;
+        const vinv = (algInvPoly(alloc, va.v, va.m, &g) catch @panic("std/sym:alg-pow")) orelse {
+            defer polyFree(alloc, g);
+            const blob = algEmit(alloc, va.m_txt, g) catch @panic("std/sym:alg-pow");
+            return .{ .zero_divisor = blob };
+        };
+        defer polyFree(alloc, g);
+        polyFree(alloc, base);
+        base = vinv;
+        e = -e;
+    }
+    var acc = polyOne(alloc) catch @panic("std/sym:alg-pow");
+    defer polyFree(alloc, acc);
+    var ee: u64 = @intCast(e);
+    while (ee > 0) {
+        if (ee & 1 == 1) {
+            const na = algMulMod(alloc, acc, base, va.m) catch @panic("std/sym:alg-pow");
+            polyFree(alloc, acc);
+            acc = na;
+        }
+        ee >>= 1;
+        if (ee > 0) {
+            const nb = algMulMod(alloc, base, base, va.m) catch @panic("std/sym:alg-pow");
+            polyFree(alloc, base);
+            base = nb;
+        }
+    }
+    const blob = algEmit(alloc, va.m_txt, acc) catch @panic("std/sym:alg-pow");
+    return .{ .exact = blob };
+}

@@ -1,0 +1,108 @@
+// ============================================================================
+// ~part mulfolds — pair-cancels and sqrt folds over the factor list
+// of a mul, extracted from norm's mul arm (the wall moved it here
+// when coeff*inv(dec) grew the arm past its pin):
+//   sq(u)*sq(u)     -> u for provably nonneg u (dec>=0, atom,
+//                      inv of a positive dec)
+//   f * inv(f)      -> 1, incl. the inv(sq u)*u -> sq(u) fuse
+//   coeff * inv(k)  -> coeff/k when the dec division is exact —
+//                      the cancellation dec factors cannot reach once
+//                      they are absorbed into coeff
+// ============================================================================
+fn mulFoldPairs(alloc: std.mem.Allocator, facs: *std.ArrayList(*SNode), coeff: *Dec) !void {
+    // pair equal sqrt factors into their radicand (provably nonneg)
+    var ci: usize = 0;
+    while (ci < facs.items.len) {
+        const f = facs.items[ci];
+        if (f.kind != .sq) {
+            ci += 1;
+            continue;
+        }
+        const nonneg = switch (f.kid.kind) {
+            .dec => !f.kid.dec.neg,
+            .atom => true,
+            // inv of a positive dec is provably positive —
+            // sqrt(inv 3)*sqrt(inv 3) fuses to inv 3.
+            .inv => f.kid.kid.kind == .dec and !f.kid.kid.dec.neg and !f.kid.kid.dec.m.eqlZero(),
+            else => false,
+        };
+        if (!nonneg) {
+            ci += 1;
+            continue;
+        }
+        const fc = try canonOf(alloc, f);
+        defer alloc.free(fc);
+        var replaced = false;
+        var j: usize = ci + 1;
+        while (j < facs.items.len) : (j += 1) {
+            const g = facs.items[j];
+            if (g.kind != .sq) continue;
+            const gc = try canonOf(alloc, g);
+            defer alloc.free(gc);
+            if (std.mem.eql(u8, gc, fc)) {
+                const rad = try nodeClone(alloc, f.kid);
+                nodeFree(alloc, f);
+                nodeFree(alloc, g);
+                _ = facs.orderedRemove(j);
+                facs.items[ci] = rad;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) ci += 1;
+    }
+    // pair-cancel f with inv(f): scan, on hit remove both, restart
+    ci = 0;
+    while (ci < facs.items.len) {
+        const f = facs.items[ci];
+        if (f.kind != .inv) {
+            ci += 1;
+            continue;
+        }
+        // coeff-level cancellation: c * inv(k) -> c/k when the
+        // dec division is exact (3*inv(3) -> 1).  dec factors
+        // are absorbed into coeff before this loop, so the
+        // pair-cancel below never sees them.
+        if (f.kid.kind == .dec and !f.kid.dec.neg and !f.kid.dec.m.eqlZero() and !coeff.m.eqlZero()) {
+            var q = try BI.init(alloc);
+            var r = try BI.init(alloc);
+            try q.divTrunc(&r, &coeff.m, &f.kid.dec.m);
+            if (r.eqlZero()) {
+                r.deinit();
+                coeff.m.deinit();
+                coeff.m = q;
+                coeff.e -= f.kid.dec.e;
+                nodeFree(alloc, f);
+                _ = facs.orderedRemove(ci);
+                continue;
+            }
+            q.deinit();
+            r.deinit();
+        }
+        const fc = try canonOf(alloc, f.kid);
+        defer alloc.free(fc);
+        const us: ?[]u8 = if (f.kid.kind == .sq) try canonOf(alloc, f.kid.kid) else null;
+        defer if (us) |q| alloc.free(q);
+        var removed = false;
+        var j: usize = 0;
+        while (j < facs.items.len) : (j += 1) {
+            if (j == ci) continue;
+            const g = facs.items[j];
+            if (g.kind == .inv) continue;
+            const gc = try canonOf(alloc, g);
+            defer alloc.free(gc);
+            const fuse = us != null and std.mem.eql(u8, gc, us.?);
+            if (std.mem.eql(u8, gc, fc) or fuse) {
+                const rep: ?*SNode = if (fuse) try nodeUnary(alloc, .sq, try nodeClone(alloc, f.kid.kid)) else null;
+                nodeFree(alloc, f);
+                nodeFree(alloc, g);
+                _ = facs.orderedRemove(@max(ci, j));
+                _ = facs.orderedRemove(@min(ci, j));
+                if (rep) |sqn| try facs.insert(alloc, @min(ci, j), sqn);
+                removed = true;
+                break;
+            }
+        }
+        if (!removed) ci += 1;
+    }
+}

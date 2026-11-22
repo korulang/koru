@@ -660,6 +660,13 @@ pub const VisitorEmitter = struct {
                     // that module's bodies into the emitted program.
                     for (event.input.fields) |f| {
                         if (f.is_source or f.is_expression) continue;
+                        // Compiler-machine fields (a `reporter` opting the
+                        // event's transform into diagnostics) inject into the
+                        // transform ABI only; their declared type homes in
+                        // std.compiler, which must never weld into emitted
+                        // runtime output.
+                        if (std.mem.eql(u8, f.name, "reporter") and
+                            std.mem.indexOf(u8, f.type, "ErrorReporter") != null) continue;
                         try noteType(self, set, qualified, f.type, f.module_path, scanning_module);
                     }
                     if (event.return_type) |rt| try noteType(self, set, qualified, rt, null, scanning_module);
@@ -1507,7 +1514,12 @@ pub const VisitorEmitter = struct {
                 // Compiler infrastructure and phase annotations apply to all events,
                 // including those with comptime parameters (ProgramAST, Source, etc.)
                 if (shouldFilter(event.annotations, module_annotations, event.module, self.emit_mode)) {
-                    return;
+                    // A `~[transform]proc` on an ordinary runtime event is still
+                    // comptime machinery: run_pass()'s registration table references
+                    // `<event>_event` whether or not the event itself survives this
+                    // phase's filter — dropping it here dangles the registry.
+                    if (self.emit_mode == .runtime_only or
+                        emitter.findTransformProc(items_to_search, event.path.segments) == null) return;
                 }
                 if (annotationsAreConsumedCompilerSurface(event.annotations, self.emit_mode)) {
                     return;
@@ -2553,9 +2565,15 @@ pub const VisitorEmitter = struct {
         // Zig union). The generated handler uses the machine convention
         // instead: (invocation, item, program, allocator) → transformed:
         // SiteResult — the transform-stub ABI in run_pass()'s dispatch table.
-        if (emitter.findTransformProc(items_to_search, event.path.segments)) |tproc| {
-            try self.emitTransformProcEventStruct(event, tproc, items_to_search);
-            return;
+        // The machine-ABI struct is the COMPTIME view of the event — in a
+        // runtime_only emit the same event must lower its ordinary runtime
+        // handler instead, or `output_emitted.zig` gets a struct whose Input
+        // pulls compiler-only modules (`errors`, `log`).
+        if (self.emit_mode != .runtime_only) {
+            if (emitter.findTransformProc(items_to_search, event.path.segments)) |tproc| {
+                try self.emitTransformProcEventStruct(event, tproc, items_to_search);
+                return;
+            }
         }
 
         // NOTE: Filtering already done in visitItem() via shouldFilter()
@@ -2584,6 +2602,19 @@ pub const VisitorEmitter = struct {
         self.code_emitter.indent_level += 1;
 
         for (event.input.fields) |field| {
+            // Machine-convention params are the transform/comptime ABI, never
+            // user args — an ErrorReporter type on a runtime event would pull
+            // koru_compiler (and `errors`) into the emitted program. The field
+            // stays (handlers destructure it by name) but lowers to a dead
+            // opaque slot calls leave null.
+            if (self.emit_mode == .runtime_only and
+                std.mem.eql(u8, field.name, "reporter") and
+                std.mem.indexOf(u8, field.type, "ErrorReporter") != null)
+            {
+                try self.code_emitter.writeIndent();
+                try self.code_emitter.write("reporter: ?*anyopaque = null,\n");
+                continue;
+            }
             try self.code_emitter.writeIndent();
             try emitter.writeBranchName(self.code_emitter, field.name);
             try self.code_emitter.write(": ");
@@ -4015,19 +4046,28 @@ pub const VisitorEmitter = struct {
                                             // twin checks as emitArgs: the decl
                                             // field, then arg.source_value for
                                             // callees the decl lookup misses.
+                                            // A source-block arg bound to a
+                                            // NON-Source field transports its
+                                            // captured text as a quoted string —
+                                            // `tor { ... }` feeding `source:
+                                            // string` — never the Source struct.
                                             var sf_is_source = arg.source_value != null;
-                                            if (!sf_is_source) {
-                                                if (invoked_event) |inv_event| {
-                                                    for (inv_event.input.fields) |*field| {
-                                                        if (std.mem.eql(u8, field.name, param_name) and field.is_source) {
-                                                            sf_is_source = true;
-                                                            break;
-                                                        }
+                                            var sf_text_only = false;
+                                            if (invoked_event) |inv_event| {
+                                                var sf_field_seen = false;
+                                                for (inv_event.input.fields) |*field| {
+                                                    if (std.mem.eql(u8, field.name, param_name)) {
+                                                        sf_field_seen = true;
+                                                        sf_is_source = field.is_source;
+                                                        break;
                                                     }
                                                 }
+                                                sf_text_only = arg.source_value != null and sf_field_seen and !sf_is_source;
                                             }
 
-                                            if (sf_is_source) {
+                                            if (sf_text_only) {
+                                                try self.code_emitter.writeZigStringLiteral(arg.value);
+                                            } else if (sf_is_source) {
                                                 try emitter.emitSourceValue(self.code_emitter, &arg);
                                             } else if (arg.value.len >= 2 and arg.value[0] == '[' and arg.value[arg.value.len - 1] == ']') {
                                                 const field = blk: {

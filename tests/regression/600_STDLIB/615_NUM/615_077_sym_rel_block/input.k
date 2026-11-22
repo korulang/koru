@@ -1,0 +1,37 @@
+import std/io
+import std/sym
+
+// source blocks bind 'source: string' params by name: 'tor { ... }' hands
+// the captured text to the runtime callee, the same transport Expression
+// params use. rel-decls takes the whole registry in one block; rel-law
+// takes one law per block. D(sin^2+cos^2) folds to 0e0 either way.
+// Entries split on ';' or newline — one entry per line is the std/kernel
+// convention; a law cannot wrap lines.
+std/sym:rel-new()
+|> std/sym:rel-decls {
+      sin=g(cos)
+      cos=(-1e0*g(sin))
+    }
+    | exact |> std/sym:rel-derive { g(sin)*g(sin)+g(cos)*g(cos) }
+        | exact d |> std/io:print.ln("{{ d:s }}") |> std/io:free(content: d)
+        | unknown-generator |> std/io:print.ln("ug")
+        | lawless |> std/io:print.ln("ll")
+        | bad |> std/io:print.ln("bad-d")
+    | dup |> std/io:print.ln("dup")
+    | full |> std/io:print.ln("full")
+    | unknown-generator |> std/io:print.ln("ug")
+    | bad |> std/io:print.ln("bad-s")
+
+std/sym:rel-new(): q0
+|> std/sym:rel-seed(name: f, reg: q0)
+    | exact q1 |> std/sym:rel-law(name: f, reg: q1) { g(f, x+1e0) }
+        | exact q2 |> std/sym:rel-derive(reg: q2) { g(f, x*x) }
+            | exact d2 |> std/io:print.ln("{{ d2:s }}") |> std/io:free(content: d2)
+            | unknown-generator |> std/io:print.ln("ug")
+            | lawless |> std/io:print.ln("ll")
+            | bad |> std/io:print.ln("bad-d2")
+        | unknown-generator |> std/io:print.ln("ug")
+        | bad |> std/io:print.ln("bad-l")
+    | dup |> std/io:print.ln("dup")
+    | full |> std/io:print.ln("full")
+    | bad |> std/io:print.ln("bad-s")

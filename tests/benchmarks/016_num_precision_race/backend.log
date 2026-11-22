@@ -1,0 +1,7 @@
+std/target catalog: `target` rows harvested: 3
+std/target catalog: `target` rows harvested: 3
+✓ Generated output_emitted.zig (240993 bytes)
+std/target catalog: `target` rows harvested: 3
+note: koru zig-lib overlay unavailable — building emitted program against stock zig std
+✓ Compiled to a.out (ReleaseFast)
+🎯 Compiler coordination: Passes: 22 (flow-based: elaborate, analysis, emission)

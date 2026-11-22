@@ -1,0 +1,228 @@
+// ============================================================================
+// ~part gsuba — the algebraic and inverse-trig candidates of the
+// generalized-substitution lane (split from ~part gsub for the line
+// wall; gsubLane calls gsubAlgCandidates after the exp/log loops).
+//
+//   theta = sqrt(u):  dlog = u'/(2*theta)   (theta^2 = u in the field —
+//                     even powers hide in the radicand spelling)
+//   theta = atan(u):  dlog = u'/(1+u^2)
+// gsubTry lives here with its callers: one candidate's F = H/dlog
+// extraction, inner t-integration, back-substitution, checked-exact by
+// the chain rule.
+// ============================================================================
+
+// Every .sq leaf of the tree, in walk order.
+fn collectSqKids(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(*const SNode)) !void {
+    switch (n.kind) {
+        .dec, .atom, .rsum => {},
+        .sq, .inv, .log, .atan, .exp => {
+            if (n.kind == .sq) try out.append(alloc, n);
+            try collectSqKids(alloc, n.kid, out);
+        },
+        .add, .mul => for (n.kids) |k| try collectSqKids(alloc, k, out),
+    }
+}
+
+// Every .atan leaf of the tree, in walk order.
+fn collectAtanKids(alloc: std.mem.Allocator, n: *const SNode, out: *std.ArrayList(*const SNode)) !void {
+    switch (n.kind) {
+        .dec, .atom, .rsum => {},
+        .sq, .inv, .log, .atan, .exp => {
+            if (n.kind == .atan) try out.append(alloc, n);
+            try collectAtanKids(alloc, n.kid, out);
+        },
+        .add, .mul => for (n.kids) |k| try collectAtanKids(alloc, k, out),
+    }
+}
+
+// One candidate: theta_node is the canonical tower element, tkind its
+// kind, dlog_node the factor H must carry (g'*theta for exp, u'/u for
+// log).  Returns the emitted decision or null (tag in lane_extra on a
+// structural refusal).
+fn gsubTry(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    theta_node: *const SNode,
+    tkind: NodeKind,
+    gkey: []const u8,
+    gp: ?[]const Rat,
+    dlog_node: *const SNode,
+    note: []const u8,
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    // F = H / dlog — the t-integrand, as a node first (norm does the
+    // x-cancellation), then as a Frac over Q[t].
+    var fmk = std.ArrayList(*SNode){};
+    defer fmk.deinit(alloc);
+    try fmk.append(alloc, try nodeClone(alloc, nt_var));
+    try appendInvFactors(alloc, dlog_node, &fmk);
+    const fm = try nodeList(alloc, .mul, try fmk.toOwnedSlice(alloc));
+    defer nodeFree(alloc, fm);
+    const fnn = norm(alloc, fm) catch @panic("std/sym:gsub F norm");
+    defer nodeFree(alloc, fnn);
+    var F = (try fracOfT(alloc, fnn, tkind, gkey, gp)) orelse return null;
+    defer fracFree(alloc, &F);
+    const n_txt = try polyTextOf(alloc, F.n);
+    defer alloc.free(n_txt);
+    const d_txt = try polyTextOf(alloc, F.d);
+    defer alloc.free(d_txt);
+    const itxt = try std.fmt.allocPrint(alloc, "(({s})*inv(({s})))", .{ n_txt, d_txt });
+    defer alloc.free(itxt);
+    var t_anti: ?[]u8 = null;
+    defer if (t_anti) |ta| alloc.free(ta);
+    const sub = decideIntegralInner(alloc, itxt, max_order, max_deg, &t_anti, depth + 1);
+    switch (sub) {
+        .elementary => |b| {
+            defer alloc.free(b);
+            if (t_anti == null) {
+                lane_extra.* = "gsub-inner-no-anti";
+                return null;
+            }
+        },
+        .holonomic_special => |b| {
+            alloc.free(b);
+            lane_extra.* = "gsub-inner";
+            return null;
+        },
+        .unresolved => |b| {
+            alloc.free(b);
+            lane_extra.* = "gsub-inner";
+            return null;
+        },
+        .not_holonomic => |b| {
+            alloc.free(b);
+            lane_extra.* = "gsub-inner";
+            return null;
+        },
+        .non_rational, .non_analytic, .bad => {
+            lane_extra.* = "gsub-inner";
+            return null;
+        },
+    }
+    const an = parseTree(alloc, t_anti.?) catch @panic("std/sym:gsub anti parse");
+    defer nodeFree(alloc, an);
+    const ann = norm(alloc, an) catch @panic("std/sym:gsub anti norm");
+    defer nodeFree(alloc, ann);
+    const res = (try nodeSubstTheta(alloc, ann, theta_node)) orelse {
+        lane_extra.* = "gsub-anti-rsum";
+        return null;
+    };
+    defer nodeFree(alloc, res);
+
+    // checked-exact needs no post-check: fracOfT extracted the semantic
+    // content of H/dlog, the inner call verified d/dt res = F(t), and
+    // the chain rule closes it — res(theta) differentiates to
+    // F(theta) * dlog = (H/dlog) * dlog = H.  A post-check would only
+    // re-verify trusted primitives (deriveNode, norm, subst).
+    const atxt = try canonOf(alloc, res);
+    const anti = try antiWithConst(alloc, atxt, const_txt);
+    defer alloc.free(anti);
+    const blob = try std.fmt.allocPrint(alloc, "decide(layer=elementary)|antiderivative={s}|note={s}", .{ anti, note });
+    return elemRet(blob, anti, anti_out);
+}
+
+// The sqrt and atan candidate loops, split out of gsubLane.  sqs and
+// atans are pre-collected leaf lists; seen carries the exp/log
+// argument keys already tried so a shared argument is not retried.
+fn gsubAlgCandidates(
+    alloc: std.mem.Allocator,
+    nt_var: *const SNode,
+    sqs: *std.ArrayList(*const SNode),
+    atans: *std.ArrayList(*const SNode),
+    seen: *std.ArrayList([]u8),
+    max_order: i64,
+    max_deg: i64,
+    const_txt: ?[]const u8,
+    anti_out: ?*?[]u8,
+    depth: u8,
+    lane_extra: *?[]const u8,
+) !?DecideIntegOut {
+    // sqrt candidates: theta = sqrt(u), dlog = u'/(2*theta).
+    for (sqs.items) |e| {
+        if (!nodeHasVar(e.kid)) continue;
+        const gkey = try canonOf(alloc, e.kid);
+        var dup = false;
+        for (seen.items) |s| {
+            if (std.mem.eql(u8, s, gkey)) {
+                dup = true;
+                break;
+            }
+        }
+        if (dup) {
+            alloc.free(gkey);
+            continue;
+        }
+        try seen.append(alloc, gkey);
+        const tn = try nodeUnary(alloc, .sq, try nodeClone(alloc, e.kid));
+        defer nodeFree(alloc, tn);
+        const tnn = try norm(alloc, tn);
+        defer nodeFree(alloc, tnn);
+        if (tnn.kind != .sq) continue; // folded to a constant
+        const du = try deriveNode(alloc, e.kid);
+        defer nodeFree(alloc, du);
+        const dun = try norm(alloc, du);
+        defer nodeFree(alloc, dun);
+        const dmk = try alloc.alloc(*SNode, 3);
+        dmk[0] = try nodeClone(alloc, dun);
+        dmk[1] = try nodeUnary(alloc, .inv, try nodeDec(alloc, try decFromDigits(alloc, "2", 0, false)));
+        dmk[2] = try nodeUnary(alloc, .inv, try nodeClone(alloc, tnn));
+        const dlog0 = try nodeList(alloc, .mul, dmk);
+        defer nodeFree(alloc, dlog0);
+        const dlog = try norm(alloc, dlog0);
+        defer nodeFree(alloc, dlog);
+        if (try gsubTry(alloc, nt_var, tnn, .sq, gkey, null, dlog, "risch-sq-gsub-subst;checked-exact", max_order, max_deg, const_txt, anti_out, depth, lane_extra)) |o| return o;
+        if (lane_extra.* == null) lane_extra.* = "sq-gsub-not-rational";
+    }
+
+    // atan candidates: theta = atan(u), dlog = u'/(1+u^2).
+    for (atans.items) |e| {
+        if (!nodeHasVar(e.kid)) continue;
+        const gkey = try canonOf(alloc, e.kid);
+        var dup = false;
+        for (seen.items) |s| {
+            if (std.mem.eql(u8, s, gkey)) {
+                dup = true;
+                break;
+            }
+        }
+        if (dup) {
+            alloc.free(gkey);
+            continue;
+        }
+        try seen.append(alloc, gkey);
+        const tn = try nodeUnary(alloc, .atan, try nodeClone(alloc, e.kid));
+        defer nodeFree(alloc, tn);
+        const tnn = try norm(alloc, tn);
+        defer nodeFree(alloc, tnn);
+        if (tnn.kind != .atan) continue; // folded (atan(1) -> pi/4)
+        const du = try deriveNode(alloc, e.kid);
+        defer nodeFree(alloc, du);
+        const dun = try norm(alloc, du);
+        defer nodeFree(alloc, dun);
+        const uuk = try alloc.alloc(*SNode, 2);
+        uuk[0] = try nodeClone(alloc, e.kid);
+        uuk[1] = try nodeClone(alloc, e.kid);
+        const uu = try nodeList(alloc, .mul, uuk);
+        defer nodeFree(alloc, uu);
+        const dsk = try alloc.alloc(*SNode, 2);
+        dsk[0] = try nodeDec(alloc, try decOneN(alloc, false));
+        dsk[1] = try nodeClone(alloc, uu);
+        const ds = try nodeList(alloc, .add, dsk);
+        defer nodeFree(alloc, ds);
+        const dmk = try alloc.alloc(*SNode, 2);
+        dmk[0] = try nodeClone(alloc, dun);
+        dmk[1] = try nodeUnary(alloc, .inv, try nodeClone(alloc, ds));
+        const dlog0 = try nodeList(alloc, .mul, dmk);
+        defer nodeFree(alloc, dlog0);
+        const dlog = try norm(alloc, dlog0);
+        defer nodeFree(alloc, dlog);
+        if (try gsubTry(alloc, nt_var, tnn, .atan, gkey, null, dlog, "risch-atan-gsub-subst;checked-exact", max_order, max_deg, const_txt, anti_out, depth, lane_extra)) |o| return o;
+        if (lane_extra.* == null) lane_extra.* = "atan-gsub-not-rational";
+    }
+    return null;
+}

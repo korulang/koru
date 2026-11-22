@@ -1,0 +1,8 @@
+compose-bad
+pack-bad
+scale-bad
+pow-exp-too-large
+qpow-exp-too-large
+ovf-bad:qty:mul: dimension exponent overflow
+6e0|m^1 s^-1 kg^1 A^0 K^0 mol^0 cd^0|-
+8e0|m^3 s^-3 kg^0 A^0 K^0 mol^0 cd^0|-

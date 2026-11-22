@@ -1,0 +1,5 @@
+✓ Compiled input.k → backend.zig
+✓ Generated ./backend_output_emitted.zig (912144 bytes)
+✓ Found 1 compiler requirement(s) for backend
+✓ Generated ./build_backend.zig
+✓ Generated ./build.zig (for backend compilation)

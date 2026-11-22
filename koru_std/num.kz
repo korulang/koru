@@ -21,7 +21,7 @@
 //   At runtime a num is just a []const u8 the module owns; every num-owned
 //   buffer is allocator-freed exactly once, at consume time.
 //
-// Arithmetic: mantissa is an arbitrary-precision integer (std.math.big), the
+// Arithmetic: mantissa is an owned arbitrary-precision Int (limbs + sign), the
 // exponent is decimal. Exact for +,-,*,pow; `div`/`sqrt` take an explicit
 // significant-digit `prec` because a decimal expansion need not terminate.
 //
@@ -31,12 +31,258 @@
 // std/quantity.
 
 ~import std/io
+~part nt
+~part bases
 
 const std = @import("std");
-const big = std.math.big;
-const BI = std.math.big.int.Managed;
-const Limb = std.math.big.Limb;
-const DoubleLimb = std.math.big.DoubleLimb;
+const Limb = u64;
+const DoubleLimb = u128;
+
+// ============================================================================
+// Int — owned arbitrary-precision signed integer: magnitude limbs + sign.
+// Replaces std.math.big.int.Managed throughout this module (A1.4): the same
+// subset API (init/initSet/initCapacity/deinit/clone/toConst/eqlZero/
+// isPositive/negate/abs/order/add/sub/mul/setLen/setSign/toString/toInt)
+// over our own limb kernels — mulL/addL/subL/divAnyL/isqrtL/limbsToDigits/
+// digitsToLimbs. Canonical invariant: value 0 is always positive.
+// ============================================================================
+
+const IntConst = struct {
+    limbs: []const Limb,
+    positive: bool,
+
+    pub fn toInt(self: IntConst, comptime T: type) error{Overflow}!T {
+        var v: u128 = 0;
+        var i = self.limbs.len;
+        while (i > 0) {
+            i -= 1;
+            if (v > std.math.maxInt(u128) >> 64) return error.Overflow;
+            v = (v << 64) | self.limbs[i];
+        }
+        if (self.positive) return std.math.cast(T, v) orelse error.Overflow;
+        const info = @typeInfo(T);
+        if (info != .int or info.int.signedness != .signed) return error.Overflow;
+        const lim: u128 = @as(u128, 1) << @as(u7, @intCast(info.int.bits - 1));
+        if (v > lim) return error.Overflow;
+        if (v == lim) return std.math.minInt(T);
+        return @intCast(-@as(i128, @intCast(v)));
+    }
+};
+
+const Int = struct {
+    allocator: std.mem.Allocator,
+    limbs: []Limb, // capacity
+    len: usize, // used
+    positive: bool,
+
+    fn magL(self: *const Int) []const Limb {
+        return ltrimc(self.limbs[0..self.len]);
+    }
+
+    pub fn init(allocator: std.mem.Allocator) !Int {
+        const l = try allocator.alloc(Limb, 1);
+        l[0] = 0;
+        return .{ .allocator = allocator, .limbs = l, .len = 1, .positive = true };
+    }
+
+    pub fn initSet(allocator: std.mem.Allocator, value: anytype) !Int {
+        const T = @TypeOf(value);
+        if (T == Int or T == *const Int) return value.clone();
+        var umag: u128 = undefined;
+        var pos = true;
+        if (value < 0) {
+            pos = false;
+            umag = @intCast(-@as(i128, value));
+        } else {
+            umag = @intCast(value);
+        }
+        const n: usize = if (umag == 0) 1 else @intCast((128 - @clz(umag) + 63) / 64);
+        const l = try allocator.alloc(Limb, @max(n, 1));
+        var i: usize = 0;
+        while (umag > 0) : (i += 1) {
+            l[i] = @truncate(umag);
+            umag >>= 64;
+        }
+        if (i == 0) l[0] = 0;
+        return .{ .allocator = allocator, .limbs = l, .len = @max(i, 1), .positive = pos };
+    }
+
+    pub fn initCapacity(allocator: std.mem.Allocator, cap: usize) !Int {
+        const l = try allocator.alloc(Limb, @max(cap, 1));
+        l[0] = 0;
+        return .{ .allocator = allocator, .limbs = l, .len = 1, .positive = true };
+    }
+
+    pub fn deinit(self: *Int) void {
+        self.allocator.free(self.limbs);
+        self.* = undefined;
+    }
+
+    pub fn clone(self: *const Int) !Int {
+        const l = try self.allocator.alloc(Limb, @max(self.len, 1));
+        @memcpy(l[0..self.len], self.limbs[0..self.len]);
+        return .{ .allocator = self.allocator, .limbs = l, .len = self.len, .positive = self.positive };
+    }
+
+    pub fn toConst(self: *const Int) IntConst {
+        return .{ .limbs = self.magL(), .positive = self.positive };
+    }
+
+    pub fn eqlZero(self: *const Int) bool {
+        return self.magL().len == 0;
+    }
+
+    pub fn isPositive(self: *const Int) bool {
+        return self.positive;
+    }
+
+    pub fn negate(self: *Int) void {
+        if (!self.eqlZero()) self.positive = !self.positive;
+    }
+
+    pub fn abs(self: *Int) void {
+        self.positive = true;
+    }
+
+    pub fn setLen(self: *Int, n: usize) void {
+        std.debug.assert(n <= self.limbs.len);
+        self.len = n;
+        if (self.eqlZero()) self.positive = true;
+    }
+
+    pub fn setSign(self: *Int, positive: bool) void {
+        self.positive = positive;
+        if (self.eqlZero()) self.positive = true;
+    }
+
+    pub fn order(a: *const Int, b: Int) std.math.Order {
+        if (a.positive != b.positive) return if (a.positive) .gt else .lt;
+        const c = cmpL(a.magL(), b.magL());
+        const o: std.math.Order = if (c < 0) .lt else if (c > 0) .gt else .eq;
+        return if (a.positive) o else switch (o) {
+            .lt => .gt,
+            .gt => .lt,
+            .eq => .eq,
+        };
+    }
+
+    // exact-sized owned Int from a magnitude slice (copies; limb-op
+    // intermediates may be arena-owned and size-trimmed).
+    fn fromMag(allocator: std.mem.Allocator, mag: []const Limb, pos: bool) !Int {
+        const m = ltrimc(mag);
+        const l = try allocator.alloc(Limb, @max(m.len, 1));
+        if (m.len == 0) {
+            l[0] = 0;
+        } else {
+            @memcpy(l[0..m.len], m);
+        }
+        return .{ .allocator = allocator, .limbs = l, .len = @max(m.len, 1), .positive = pos or m.len == 0 };
+    }
+
+    pub fn add(r: *Int, a: *const Int, b: *const Int) !void {
+        const alloc = r.allocator;
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        const ar = arena.allocator();
+        const am = a.magL();
+        const bm = b.magL();
+        var mag: []const Limb = undefined;
+        var pos = true;
+        if (a.positive == b.positive) {
+            mag = try addL(ar, am, bm);
+            pos = a.positive;
+        } else switch (cmpL(am, bm)) {
+            0 => mag = am[0..0],
+            1 => {
+                mag = try subL(ar, am, bm);
+                pos = a.positive;
+            },
+            else => {
+                mag = try subL(ar, bm, am);
+                pos = b.positive;
+            },
+        }
+        const out = try Int.fromMag(alloc, mag, pos);
+        r.deinit();
+        r.* = out;
+    }
+
+    pub fn sub(r: *Int, a: *const Int, b: *const Int) !void {
+        var nb = b.*;
+        nb.positive = !b.positive;
+        return add(r, a, &nb);
+    }
+
+    pub fn mul(r: *Int, a: *const Int, b: *const Int) !void {
+        const alloc = r.allocator;
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        const mag = try mulL(arena.allocator(), a.magL(), b.magL());
+        const out = try Int.fromMag(alloc, mag, a.positive == b.positive);
+        r.deinit();
+        r.* = out;
+    }
+
+    pub fn toString(x: *const Int, alloc: std.mem.Allocator, base: u8, case: std.fmt.Case) ![]u8 {
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        const ar = arena.allocator();
+        const mag = x.magL();
+        var ds: []u8 = undefined;
+        if (base == 10) {
+            ds = try limbsToDigits(ar, mag);
+        } else {
+            ds = try intToBase(ar, mag, base, case);
+        }
+        if (x.positive or mag.len == 0) return alloc.dupe(u8, ds);
+        var out = try alloc.alloc(u8, ds.len + 1);
+        out[0] = '-';
+        @memcpy(out[1..], ds);
+        return out;
+    }
+};
+
+const BI = Int;
+
+// base (2..36) digits of a limb magnitude: chunk by largest power of base
+// fitting one limb, divmod repeatedly, little-endian chunks.
+fn intToBase(alloc: std.mem.Allocator, x_in: []const Limb, base: u8, case: std.fmt.Case) error{OutOfMemory}![]u8 {
+    if (x_in.len == 0) return alloc.dupe(u8, "0");
+    var e: usize = 0;
+    var chunk: Limb = 1;
+    while (chunk <= std.math.maxInt(Limb) / @as(Limb, base)) {
+        chunk *= base;
+        e += 1;
+    }
+    var rem = try alloc.dupe(Limb, x_in);
+    // digits bound: x < 2^(64*len) -> base>=2 -> <= 64*len digits
+    var scratch = try alloc.alloc(u8, x_in.len * 64 + e);
+    var total: usize = 0;
+    const digits_l = "0123456789abcdefghijklmnopqrstuvwxyz";
+    const digits_u = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const dg = if (case == .lower) digits_l else digits_u;
+    while (rem.len > 0) {
+        const qr = try div1L(alloc, rem, chunk);
+        rem = qr.q;
+        var c = qr.r;
+        var k: usize = 0;
+        while (k < e) : (k += 1) {
+            scratch[total + k] = dg[@intCast(c % @as(Limb, base))];
+            c /= @as(Limb, base);
+        }
+        total += e;
+    }
+    // digits least-significant-first in scratch; reverse in place and trim.
+    var i: usize = 0;
+    while (i < total / 2) : (i += 1) {
+        const t = scratch[i];
+        scratch[i] = scratch[total - 1 - i];
+        scratch[total - 1 - i] = t;
+    }
+    var start: usize = 0;
+    while (start + 1 < total and scratch[start] == '0') start += 1;
+    return scratch[start..total];
+}
 
 // ============================================================================
 // Canonical decimal: value = (neg ? -1 : 1) * m * 10^e, m >= 0, no trailing
@@ -115,9 +361,8 @@ fn decFromDigits(alloc: std.mem.Allocator, raw: []const u8, e: i64, neg: bool) !
     }
 
     const stripped_trailing = raw.len - end;
-    var m = try BI.initSet(alloc, 0);
+    var m = try biFromDigits(alloc, raw[start..end]);
     errdefer m.deinit();
-    try m.setString(10, raw[start..end]);
     return .{ .neg = neg, .m = m, .e = e + @as(i64, @intCast(stripped_trailing)) };
 }
 
@@ -125,7 +370,7 @@ fn decFromDigits(alloc: std.mem.Allocator, raw: []const u8, e: i64, neg: bool) !
 fn decToString(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
     if (d.m.eqlZero()) return alloc.dupe(u8, "0e0");
 
-    const ds = try d.m.toString(alloc, 10, .lower);
+    const ds = try biToDigits(alloc, &d.m);
     defer alloc.free(ds);
 
     // adjusted exponent: value = ds[0].ds[1..] * 10^adj
@@ -146,7 +391,73 @@ fn decToString(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
     return out.toOwnedSlice(alloc);
 }
 
-// r = a * 10^k (k >= 0), into a fresh Managed.
+// Prefix-sniffed base spellings for the lit/parse gate: after an optional
+// sign, 0x/0X is hex, 0b/0B binary, 0o/0O octal — the digit slice follows.
+// No prefix: the decimal grammar handles it. Prefixed spellings are
+// integers; a point or exponent is malformed, never guessed at.
+fn basePrefix(t: []const u8) ?struct { base: i64, rest: []const u8 } {
+    if (t.len > 2 and t[0] == '0') {
+        const b: i64 = switch (t[1]) {
+            'x', 'X' => 16,
+            'b', 'B' => 2,
+            'o', 'O' => 8,
+            else => return null,
+        };
+        return .{ .base = b, .rest = t[2..] };
+    }
+    return null;
+}
+
+// Accumulate base-b digit text into a fresh Int. error.BadDigit on a
+// foreign or out-of-range character; an empty slice refuses too.
+fn biFromBaseDigits(alloc: std.mem.Allocator, ds: []const u8, base: i64) !BI {
+    if (ds.len == 0) return error.BadDigit;
+    var v = BI.initSet(alloc, 0) catch return error.OutOfMemory;
+    errdefer v.deinit();
+    var bb = BI.initSet(alloc, base) catch return error.OutOfMemory;
+    defer bb.deinit();
+    for (ds) |c| {
+        const dig: i64 = if (c >= '0' and c <= '9')
+            c - '0'
+        else if (c >= 'a' and c <= 'z')
+            c - 'a' + 10
+        else if (c >= 'A' and c <= 'Z')
+            c - 'A' + 10
+        else
+            return error.BadDigit;
+        if (dig >= base) return error.BadDigit;
+        var dd = BI.initSet(alloc, dig) catch return error.OutOfMemory;
+        defer dd.deinit();
+        mulFast(&v, &v, &bb) catch return error.OutOfMemory;
+        v.add(&v, &dd) catch return error.OutOfMemory;
+    }
+    return v;
+}
+
+// The shared admission gate for lit and parse — one grammar on both lanes.
+// Prefixed base spellings (sign, then 0x/0b/0o) or the canonical decimal
+// text of decParse; anything else is BadNumber.
+fn numParseGate(alloc: std.mem.Allocator, s: []const u8) !Dec {
+    var t = std.mem.trim(u8, s, " \t\r\n");
+    var neg = false;
+    if (t.len > 0 and (t[0] == '+' or t[0] == '-')) {
+        neg = t[0] == '-';
+        t = t[1..];
+    }
+    if (basePrefix(t)) |bp| {
+        var v = biFromBaseDigits(alloc, bp.rest, bp.base) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.BadNumber,
+        };
+        defer v.deinit();
+        const ds = v.toString(alloc, 10, .lower) catch return error.OutOfMemory;
+        defer alloc.free(ds);
+        return decFromDigits(alloc, ds, 0, neg and !v.eqlZero());
+    }
+    return decParse(alloc, s);
+}
+
+// r = a * 10^k (k >= 0), into a fresh Int.
 fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
     if (k <= 0) return BI.initSet(alloc, 1);
     var ten = try BI.initSet(alloc, 10);
@@ -181,9 +492,7 @@ fn decAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     var m_abs = try r.clone();
     m_abs.abs();
     defer m_abs.deinit();
-    const ds = try m_abs.toString(alloc, 10, .lower);
-    defer alloc.free(ds);
-    return decFromDigits(alloc, ds, e_min, rneg);
+    return decFromMag(alloc, &m_abs, e_min, rneg);
 }
 
 
@@ -283,8 +592,66 @@ fn mulSB(alloc: std.mem.Allocator, x: []const Limb, y: []const Limb) ![]Limb {
     return ltrim(r);
 }
 
+// Schoolbook squaring: off-diagonal products appear twice in x*x — compute
+// each once and double it. The doubled product needs a 129th bit: p<<1's
+// lost top bit is folded into the carry alongside the usual high limb.
+fn sqSB(alloc: std.mem.Allocator, x: []const Limb) ![]Limb {
+    const n = x.len;
+    if (n == 0) return alloc.alloc(Limb, 0);
+    var r = try alloc.alloc(Limb, 2 * n);
+    @memset(r, 0);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const t0 = @as(DoubleLimb, x[i]) * x[i] + r[2 * i];
+        r[2 * i] = @truncate(t0);
+        var carry: DoubleLimb = t0 >> 64;
+        var j = i + 1;
+        while (j < n) : (j += 1) {
+            const p = @as(DoubleLimb, x[i]) * x[j];
+            // 2p is 129 bits — split it: low limb into t, high bits into
+            // carry. Adding the full (p<<1)+r+carry in one u128 can wrap.
+            const t = @as(DoubleLimb, r[i + j]) + @as(DoubleLimb, @as(Limb, @truncate(p << 1))) + carry;
+            r[i + j] = @truncate(t);
+            carry = (t >> 64) + (p >> 63);
+        }
+        var k = i + n;
+        while (carry != 0) {
+            if (k >= r.len) @panic("std/num sq: carry overflow");
+            const t = @as(DoubleLimb, r[k]) + carry;
+            r[k] = @truncate(t);
+            carry = t >> 64;
+            k += 1;
+        }
+    }
+    return ltrim(r);
+}
+
+// Karatsuba squaring: z0 = x0^2, z2 = x1^2, z1 = (x0+x1)^2 - z0 - z2.
+// All three subproducts are squares again — the saving compounds down the
+// tree, which is why pow's squaring ladder pays it.
+fn sqL(alloc: std.mem.Allocator, x: []const Limb) ![]Limb {
+    if (x.len == 0) return alloc.alloc(Limb, 0);
+    if (x.len <= KARA_MIN) return sqSB(alloc, x);
+    const m = x.len / 2;
+    const x0 = x[0..m];
+    const x1 = x[m..];
+    const z0 = try sqL(alloc, x0);
+    const z2 = try sqL(alloc, x1);
+    const sx = try addL(alloc, x0, x1);
+    const zt = try sqL(alloc, sx);
+    const w = try subL(alloc, zt, z0);
+    const z1 = try subL(alloc, w, z2);
+    var r = try alloc.alloc(Limb, 2 * x.len);
+    @memset(r, 0);
+    @memcpy(r[0..z0.len], z0);
+    addInto(r[m..], z1);
+    addInto(r[2 * m ..], z2);
+    return ltrim(r);
+}
+
 // karatsuba over the arena. x.len >= y.len is not required; both orders work.
 fn mulL(alloc: std.mem.Allocator, xin: []const Limb, yin: []const Limb) ![]Limb {
+    if (xin.ptr == yin.ptr and xin.len == yin.len) return sqL(alloc, xin);
     var x = xin;
     var y = yin;
     if (x.len < y.len) {
@@ -315,6 +682,690 @@ fn mulL(alloc: std.mem.Allocator, xin: []const Limb, yin: []const Limb) ![]Limb 
     addInto(r[m..], z1);
     addInto(r[2 * m ..], z2);
     return ltrim(r);
+}
+
+
+// ---------------------------------------------------------------------------
+// Limb-level division — own algorithm, not Zig's primitives.
+// Small divisors: Knuth Algorithm D (TAOCP 4.3.1) over normalized limbs —
+// the only hardware divide used is 2-by-1 limb estimation. Large divisors
+// (>= NEWTON_MIN limbs): one reciprocal R = floor(beta^(3n)/B) by Newton
+// iteration R' = 2R - (B*R^2 >> 3n limbs), seeded from B's top two limbs and
+// converged to |R' - R| <= 1, then bounded correction. The whole quotient is
+// (A*R) >> 3n limbs in one multiply when A fits 3n limbs; wider dividends
+// take ~n quotient limbs per step off a 2n-limb window. Prototyped and
+// differential-tested before landing — see tests/benchmarks/016. Threshold
+// measured on the same rig.
+// ---------------------------------------------------------------------------
+const NEWTON_MIN: usize = 512;
+
+fn cmpL(x: []const Limb, y: []const Limb) i8 {
+    const lx = ltrimc(x).len;
+    const ly = ltrimc(y).len;
+    if (lx != ly) return if (lx < ly) -1 else 1;
+    var i = lx;
+    while (i > 0) {
+        i -= 1;
+        if (x[i] != y[i]) return if (x[i] < y[i]) -1 else 1;
+    }
+    return 0;
+}
+
+fn ltrimc(x: []const Limb) []const Limb {
+    var n = x.len;
+    while (n > 0 and x[n - 1] == 0) n -= 1;
+    return x[0..n];
+}
+
+// x << (s bits), s in 0..63. Returns normalized.
+fn shlBitsL(alloc: std.mem.Allocator, x: []const Limb, s: u6) ![]Limb {
+    if (x.len == 0) return alloc.alloc(Limb, 0);
+    var r = try alloc.alloc(Limb, x.len + 1);
+    var carry: Limb = 0;
+    for (x, 0..) |v, i| {
+        r[i] = (v << s) | carry;
+        carry = if (s == 0) 0 else v >> @as(u6, @intCast(64 - @as(u7, s)));
+    }
+    r[x.len] = carry;
+    return ltrim(r);
+}
+
+// x >> (s bits), s in 0..63. Returns normalized.
+fn shrBitsL(alloc: std.mem.Allocator, x: []const Limb, s: u6) ![]Limb {
+    if (x.len == 0) return alloc.alloc(Limb, 0);
+    var r = try alloc.alloc(Limb, x.len);
+    var i = x.len;
+    var carry: Limb = 0;
+    while (i > 0) {
+        i -= 1;
+        r[i] = (x[i] >> s) | carry;
+        carry = if (s == 0) 0 else x[i] << @as(u6, @intCast(64 - @as(u7, s)));
+    }
+    return ltrim(r);
+}
+
+// dst -= src. Requires dst >= src (proof violation -> panic).
+fn subInto(dst: []Limb, src: []const Limb) void {
+    var borrow: Limb = 0;
+    var i: usize = 0;
+    while (i < dst.len) : (i += 1) {
+        const sv: Limb = if (i < src.len) src[i] else 0;
+        const d = @subWithOverflow(dst[i], sv);
+        const d2 = @subWithOverflow(d[0], borrow);
+        dst[i] = d2[0];
+        borrow = d[1] + d2[1];
+    }
+    if (borrow != 0) @panic("std/num div: subInto borrow out");
+}
+
+// x << limbs: dst[0..shift] = 0, dst[shift..] = x.
+fn limbShift(alloc: std.mem.Allocator, x: []const Limb, shift: usize) ![]Limb {
+    var r = try alloc.alloc(Limb, x.len + shift);
+    @memset(r[0..shift], 0);
+    @memcpy(r[shift..], x);
+    return r;
+}
+
+// x / d for single-limb d -> {q, r}. r is a limb.
+const DivQR = struct { q: []Limb, r: []Limb };
+
+fn div1L(alloc: std.mem.Allocator, x: []const Limb, d: Limb) error{OutOfMemory}!struct { q: []Limb, r: Limb } {
+    var q = try alloc.alloc(Limb, x.len);
+    var rem: DoubleLimb = 0;
+    var i = x.len;
+    while (i > 0) {
+        i -= 1;
+        const cur = (rem << 64) | x[i];
+        q[i] = @intCast(cur / d);
+        rem = cur % d;
+    }
+    return .{ .q = ltrim(q), .r = @intCast(rem) };
+}
+
+// Decimal trailing zeros, limb-level: x = q * 10^z. One O(n) divmod pass
+// strips 19 zeros at a time; most inputs end after a single rem != 0 —
+// that is the whole cost of canonicalizing a product.
+const StripZ = struct { q: []Limb, zeros: usize };
+
+// callers must pass an arena-style allocator: ltrim'd slices are freed
+// inside, which a size-checking allocator rejects.
+fn stripDecZeros(alloc: std.mem.Allocator, x_in: []const Limb) error{OutOfMemory}!StripZ {
+    var x = try alloc.dupe(Limb, x_in);
+    var zeros: usize = 0;
+    while (x.len > 0) {
+        const qr = try div1L(alloc, x, POW10_U64[19]);
+        if (qr.r == 0) {
+            zeros += 19;
+            alloc.free(x);
+            x = qr.q;
+            continue;
+        }
+        // 10^k | x iff 10^k | r for k <= 19, and r < 10^19 has < 19 zeros
+        var c: Limb = qr.r;
+        var k: usize = 0;
+        while (@mod(c, 10) == 0) : (c = @divTrunc(c, 10)) k += 1;
+        if (k > 0) {
+            const qr2 = try div1L(alloc, x, POW10_U64[k]);
+            alloc.free(x);
+            alloc.free(qr.q);
+            x = qr2.q;
+            zeros += k;
+        } else alloc.free(qr.q);
+        break;
+    }
+    return .{ .q = x, .zeros = zeros };
+}
+
+// Canonical Dec from a magnitude + exponent — decFromDigits' contract
+// (trailing-zero strip -> e bump, canonical zero) without the radix
+// round-trip.
+fn decFromMag(alloc: std.mem.Allocator, m_in: *const BI, e: i64, neg: bool) error{OutOfMemory}!Dec {
+    if (m_in.eqlZero()) {
+        const mz = try BI.initSet(alloc, 0);
+        return .{ .neg = false, .m = mz, .e = 0 };
+    }
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const s = try stripDecZeros(arena.allocator(), m_in.toConst().limbs);
+    const m = try biFromLimbs(alloc, s.q);
+    return .{ .neg = neg, .m = m, .e = e + @as(i64, @intCast(s.zeros)) };
+}
+
+// Decimal digit count of a limb magnitude without rendering it: the
+// bit-length estimate is an upper bound off by at most one.
+fn limbDigitLen(alloc: std.mem.Allocator, x_in: []const Limb) error{OutOfMemory}!usize {
+    const x = ltrimc(x_in);
+    if (x.len == 0) return 1;
+    const bits: usize = 64 * (x.len - 1) + (64 - @clz(x[x.len - 1]));
+    var nd: usize = @as(usize, @intFromFloat(@floor(@as(f64, @floatFromInt(bits)) * 0.3010299956639812))) + 1;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const p = try pow10L(arena.allocator(), nd - 1);
+    if (cmpL(x, p) < 0) nd -= 1;
+    return nd;
+}
+
+// Knuth Algorithm D, a >= b > 0, b.len >= 2.
+fn divSB(alloc: std.mem.Allocator, a_in: []const Limb, b_in: []const Limb) error{OutOfMemory}!DivQR {
+    const n = b_in.len;
+    const s: u6 = @intCast(@clz(b_in[n - 1]));
+    const v = try shlBitsL(alloc, b_in, s);
+    const un0 = try shlBitsL(alloc, a_in, s);
+    var u = try alloc.alloc(Limb, un0.len + 1);
+    @memcpy(u[0..un0.len], un0);
+    u[un0.len] = 0;
+
+    const m = u.len - v.len; // quotient limb count
+    var q = try alloc.alloc(Limb, m);
+    var j = m;
+    while (j > 0) {
+        j -= 1;
+        const hi: DoubleLimb = (@as(DoubleLimb, u[j + n]) << 64) | u[j + n - 1];
+        var qhat: DoubleLimb = hi / v[n - 1];
+        var rhat: DoubleLimb = hi % v[n - 1];
+        // qhat >= beta folds the clamp into the loop (Knuth D3). The
+        // rhat < beta guard is load-bearing: with rhat >= beta the test is
+        // certainly false AND (rhat << 64) would wrap u128 — Zig << truncates
+        // silently, which produced qhat one too small when qhat0 == beta.
+        while (qhat >= (@as(DoubleLimb, 1) << 64) or
+            (n >= 2 and rhat < (@as(DoubleLimb, 1) << 64) and
+                qhat * v[n - 2] > ((rhat << 64) | u[j + n - 2])))
+        {
+            qhat -= 1;
+            rhat += v[n - 1];
+        }
+        const qh: Limb = @intCast(qhat);
+
+        // u[j..j+n] -= qh * v
+        var mul_carry: DoubleLimb = 0;
+        var sub_carry: Limb = 0;
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            const prod = @as(DoubleLimb, qh) * v[i] + mul_carry;
+            mul_carry = prod >> 64;
+            const d1 = @subWithOverflow(u[j + i], @as(Limb, @truncate(prod)));
+            const d2 = @subWithOverflow(d1[0], sub_carry);
+            u[j + i] = d2[0];
+            sub_carry = d1[1] + d2[1];
+        }
+        const d1 = @subWithOverflow(u[j + n], @as(Limb, @truncate(mul_carry)));
+        const d2 = @subWithOverflow(d1[0], sub_carry);
+        u[j + n] = d2[0];
+        const neg = d1[1] + d2[1] != 0;
+
+        if (neg) {
+            // rare: qhat was one too big; add v back.
+            q[j] = qh - 1;
+            var carry: Limb = 0;
+            i = 0;
+            while (i < n) : (i += 1) {
+                const a1 = @addWithOverflow(u[j + i], v[i]);
+                const a2 = @addWithOverflow(a1[0], carry);
+                u[j + i] = a2[0];
+                carry = a1[1] + a2[1];
+            }
+            u[j + n] +%= carry;
+        } else {
+            q[j] = qh;
+        }
+    }
+    const rl = try shrBitsL(alloc, u[0..n], s);
+    return .{ .q = ltrim(q), .r = rl };
+}
+
+// R = floor(beta^(3n)/B) for n-limb B, top limb nonzero.
+// Newton R' = 2R - (B*R^2 >> 3n limbs). Seed: beta^6 / top-2-limbs of B,
+// shifted to ~2n limbs — relative error < 1/beta, squares per step.
+// Terminates on |R' - R| <= 1, then bounded correction to the exact floor.
+fn recipL(alloc: std.mem.Allocator, b: []const Limb) error{OutOfMemory}![]Limb {
+    const n = b.len;
+    std.debug.assert(n >= 2 and b[n - 1] != 0);
+    if (n <= 4) {
+        // exact: beta^(3n) / B via Knuth D — numerator is 1 followed by 3n limbs of 0.
+        var num = try alloc.alloc(Limb, 3 * n + 1);
+        @memset(num, 0);
+        num[3 * n] = 1;
+        const qr = try divAnyL(alloc, num, b);
+        return qr.q;
+    }
+    // stage sizes: 4, 8, ..., n. R_i = floor(beta^(3i)/B_i) on the top i
+    // limbs; stage 2i seeds R_i << 2i limbs (beta^(3·2i)/B_2i ~ R_i·beta^2i)
+    // and Newton converges in ~2 steps. Base: exact small division.
+    var stage: usize = 4;
+    const bt4 = b[n - stage ..];
+    var num0 = try alloc.alloc(Limb, 3 * stage + 1);
+    @memset(num0, 0);
+    num0[3 * stage] = 1;
+    const qr0 = try divSB(alloc, num0, bt4);
+    var r = qr0.q;
+    while (stage < n) {
+        const ns = @min(2 * stage, n);
+        const bsub = b[n - ns ..];
+        var rseed = try limbShift(alloc, r, 2 * (ns - stage));
+        // Newton at stage-ns size: X' = 2X - (Bsub*X^2 >> 3*ns limbs)
+        var it: usize = 0;
+        while (it < 64) : (it += 1) {
+            const bx = try mulL(alloc, bsub, rseed);
+            const bx2 = try mulL(alloc, bx, rseed);
+            const t2 = ltrimc(bx2)[@min(3 * ns, ltrimc(bx2).len)..];
+            var r2v = try alloc.alloc(Limb, rseed.len + 1);
+            @memset(r2v, 0);
+            @memcpy(r2v[0..rseed.len], rseed);
+            addInto(r2v, rseed);
+            if (cmpL(r2v, t2) < 0) @panic("std/num div: newton underflow");
+            const r2 = try subL(alloc, r2v, t2);
+            const diff = if (cmpL(r2, rseed) >= 0) try subL(alloc, r2, rseed) else try subL(alloc, rseed, r2);
+            rseed = r2;
+            if (cmpL(diff, &[_]Limb{1}) <= 0) break;
+        }
+        r = rseed;
+        stage = ns;
+    }
+
+
+    // bounded correction to the exact floor: 0 <= (beta^(3n) - B*R) < 2*B.
+    var t = try alloc.alloc(Limb, 3 * n + 1);
+    @memset(t, 0);
+    t[3 * n] = 1;
+    var corr: usize = 0;
+    while (true) {
+        const br = try mulL(alloc, b, r);
+        const c = cmpL(br, t);
+        if (c > 0) {
+            // R too big
+            r = try subL(alloc, r, &[_]Limb{1});
+            corr += 1;
+        } else {
+            const br1 = try addL(alloc, br, b);
+            if (cmpL(br1, t) <= 0) {
+                r = try addL(alloc, r, &[_]Limb{1});
+                corr += 1;
+            } else break;
+        }
+        if (corr > 4) @panic("std/num div: recip correction bound exceeded");
+    }
+    return ltrim(r);
+}
+
+// a / b over limbs, any sizes. q and r normalized; a < b -> {0, a}.
+fn divAnyL(alloc: std.mem.Allocator, a_in: []const Limb, b_in: []const Limb) error{OutOfMemory}!DivQR {
+    const b = ltrimc(b_in);
+    const a = ltrimc(a_in);
+    if (b.len == 0) @panic("std/num div: division by zero");
+    if (cmpL(a, b) < 0) {
+        const z = try alloc.alloc(Limb, 0);
+        return .{ .q = z, .r = try limbShift(alloc, a, 0) };
+    }
+    if (b.len == 1) {
+        const qr = try div1L(alloc, a, b[0]);
+        var rr = try alloc.alloc(Limb, 1);
+        rr[0] = qr.r;
+        return .{ .q = qr.q, .r = ltrim(rr) };
+    }
+    // Newton pays only when the reciprocal amortizes over a huge quotient:
+    // measured 016 + divbench, recipL costs ~4-14 mulL at ~5n limbs while
+    // schoolbook does (a.len - n) passes at n limbs — schoolbook wins at
+    // every operand size we exercise (<= 3000 limbs). The gate below is the
+    // documented ceiling: Newton needs short products (top-limb-only
+    // B*R^2 per iteration) before it earns its slot.
+    if (b.len < NEWTON_MIN or a.len < 3 * b.len) return divSB(alloc, a, b);
+
+    const n = b.len;
+    const x = try recipL(alloc, b);
+
+    if (a.len <= 3 * n) {
+        // one-shot: q = (A * R) >> 3n limbs
+        const p = try mulL(alloc, a, x);
+        var qhat = try limbShift(alloc, ltrimc(p)[@min(3 * n, ltrimc(p).len)..], 0);
+        const qb = try mulL(alloc, qhat, b);
+        var r = try subL(alloc, a, qb);
+        var corr: usize = 0;
+        while (cmpL(r, b) >= 0) {
+            r = try subL(alloc, r, b);
+            qhat = try addL(alloc, qhat, &[_]Limb{1});
+            corr += 1;
+            if (corr > 3) @panic("std/num div: one-shot correction bound exceeded");
+        }
+        return .{ .q = ltrim(qhat), .r = ltrim(r) };
+    }
+
+    // chunked: ~n quotient limbs per step off the top 2n limbs of u.
+    var q = try alloc.alloc(Limb, 0);
+    var u = try limbShift(alloc, a, 0);
+    while (cmpL(u, b) >= 0) {
+        const un = ltrimc(u).len;
+        const w = @min(2 * n, un);
+        const m = un - w;
+        const uu = ltrimc(u[m..]);
+        var qhat: []Limb = undefined;
+        if (uu.len <= n) {
+            const qr = try divSB(alloc, uu, b);
+            qhat = qr.q;
+        } else {
+            const p = try mulL(alloc, uu, x);
+            qhat = try limbShift(alloc, ltrimc(p)[@min(3 * n, ltrimc(p).len)..], 0);
+            if (qhat.len == 0) {
+                const qr = try divSB(alloc, uu, b);
+                qhat = qr.q;
+            }
+        }
+        // r = u - qhat*B*beta^m, correcting down on negative.
+        var qb = try mulL(alloc, qhat, b);
+        var qbm = try limbShift(alloc, qb, m);
+        var corr: usize = 0;
+        while (cmpL(u, qbm) < 0) {
+            qhat = try subL(alloc, qhat, &[_]Limb{1});
+            qb = try mulL(alloc, qhat, b);
+            qbm = try limbShift(alloc, qb, m);
+            corr += 1;
+            if (corr > 3) @panic("std/num div: chunk correction bound exceeded");
+        }
+        var r = try subL(alloc, u, qbm);
+        while (cmpL(r, try limbShift(alloc, b, m)) >= 0 and corr <= 3) {
+            const bm = try limbShift(alloc, b, m);
+            r = try subL(alloc, r, bm);
+            qhat = try addL(alloc, qhat, &[_]Limb{1});
+            corr += 1;
+        }
+        if (corr > 3) @panic("std/num div: chunk correction bound exceeded");
+        const qm = try limbShift(alloc, qhat, m);
+        q = try addL(alloc, q, qm);
+        u = r;
+    }
+    return .{ .q = ltrim(q), .r = ltrim(u) };
+}
+
+// ---------------------------------------------------------------------------
+// Limb-level integer square root — recursive-seed Newton, own algorithm
+// dogfooding divAnyL. Seed: isqrt(top half) + 1 shifted (dropped limbs * 32
+// bits) — a strict overestimate, so Newton descends monotonically and the
+// fixup needs <= a few unit steps. Prototyped + differential-tested vs
+// math.isqrt on 6000 randomized shapes incl. unnormalized top limbs.
+// ---------------------------------------------------------------------------
+
+// floor(isqrt(x)) for x: u128, Newton with monotone descent from a
+// bit-length overestimate.
+fn isqrt128(x: u128) u64 {
+    if (x == 0) return 0;
+    // bits can be 128 for x >= 2^127 — wider than u7 holds.
+    const bits: u8 = @intCast(128 - @clz(x));
+    var s: u128 = @as(u128, 1) << @as(u7, @intCast((bits + 1) / 2 + 1));
+    while (true) {
+        const s2 = (s + x / s) >> 1;
+        if (s2 >= s) break;
+        s = s2;
+    }
+    while (s * s > x) s -= 1;
+    while ((s + 1) * (s + 1) <= x) s += 1;
+    return @intCast(s);
+}
+
+// floor(isqrt(a)) over limbs.
+fn isqrtL(alloc: std.mem.Allocator, a_in: []const Limb) error{OutOfMemory}![]Limb {
+    const a = ltrimc(a_in);
+    const n = a.len;
+    if (n == 0) return alloc.alloc(Limb, 0);
+    if (n <= 2) {
+        var v: u128 = 0;
+        var i = a.len;
+        while (i > 0) {
+            i -= 1;
+            v = (v << 64) | a[i];
+        }
+        const r = isqrt128(v);
+        var out = try alloc.alloc(Limb, 1);
+        out[0] = r;
+        return ltrim(out);
+    }
+    // recursive seed: isqrt(top ceil(n/2) limbs) + 1, shifted (n - h) * 32
+    // bits — A < (H+1)*beta^drop so sqrt(A) < (isqrt(H)+1)*2^(32*drop).
+    const h = (n + 1) / 2;
+    const drop = n - h;
+    const s1 = try isqrtL(alloc, a[drop..]);
+    const s1p = try addL(alloc, s1, &[_]Limb{1});
+    const sh: u6 = @intCast((32 * drop) % 64);
+    const sl = try shlBitsL(alloc, s1p, sh);
+    var cur: []Limb = try limbShift(alloc, sl, drop / 2);
+    var steps: usize = 0;
+    while (steps < 128) : (steps += 1) {
+        const qr = try divAnyL(alloc, a, cur);
+        var nxt = try addL(alloc, qr.q, cur);
+        nxt = (try shrBitsL(alloc, nxt, 1));
+        if (cmpL(nxt, cur) >= 0) break;
+        cur = nxt;
+    }
+    var corr: usize = 0;
+    while (true) {
+        const c2 = try mulL(alloc, cur, cur);
+        if (cmpL(c2, a) <= 0) {
+            const cp1 = try addL(alloc, cur, &[_]Limb{1});
+            const c2p = try mulL(alloc, cp1, cp1);
+            if (cmpL(c2p, a) > 0) break;
+            cur = cp1;
+        } else {
+            cur = try subL(alloc, cur, &[_]Limb{1});
+        }
+        corr += 1;
+        if (corr > 4) @panic("std/num sqrt: correction bound exceeded");
+    }
+    return ltrim(cur);
+}
+
+// ---------------------------------------------------------------------------
+// Radix conversion, both directions divide-and-conquer — replaces Zig's
+// per-digit quadratic setString/toString (measured 231ms + 35ms on the
+// 47713-digit w2 operand). Below RADIX_DNC_MIN digits the schoolbook paths
+// chunk 19 digits per limb step.
+// ---------------------------------------------------------------------------
+
+const RADIX_DNC_MIN: usize = 600;
+
+const POW10_U64 = [20]Limb{
+    1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000,
+    1000000000, 10000000000, 100000000000, 1000000000000,
+    10000000000000, 100000000000000, 1000000000000000,
+    10000000000000000, 100000000000000000, 1000000000000000000,
+    10000000000000000000,
+};
+
+// m = x*s + c in one pass (s, c single limbs).
+fn mulAddSmall(alloc: std.mem.Allocator, x: []const Limb, s: Limb, c: Limb) error{OutOfMemory}![]Limb {
+    var r = try alloc.alloc(Limb, x.len + 1);
+    var carry: DoubleLimb = c;
+    for (x, 0..) |v, i| {
+        const prod = @as(DoubleLimb, v) * s + carry;
+        r[i] = @truncate(prod);
+        carry = prod >> 64;
+    }
+    r[x.len] = @intCast(carry);
+    return ltrim(r);
+}
+
+// digits -> limbs, schoolbook: 19-digit chunks, m = m*10^chunk + c.
+fn digitsToLimbsSB(alloc: std.mem.Allocator, digs: []const u8) error{OutOfMemory}![]Limb {
+    var m: []Limb = try alloc.alloc(Limb, 0);
+    var i: usize = 0;
+    while (i < digs.len) {
+        const chunk = @min(19, digs.len - i);
+        var c: Limb = 0;
+        for (digs[i .. i + chunk]) |ch| c = c * 10 + (ch - '0');
+        m = try mulAddSmall(alloc, m, POW10_U64[chunk], c);
+        i += chunk;
+    }
+    return ltrim(m);
+}
+
+// limbs -> digits, schoolbook: divmod by 10^19, little-endian chunks.
+fn limbsToDigitsSB(alloc: std.mem.Allocator, x_in: []const Limb) error{OutOfMemory}![]u8 {
+    if (x_in.len == 0) return alloc.dupe(u8, "0");
+    var rem = try limbShift(alloc, x_in, 0); // scratch copy
+    // x < 2^(64*len) -> at most 20*len digits -> chunks bound len*20 + 19.
+    var buf = try alloc.alloc(u8, x_in.len * 20 + 19);
+    var n_chunks: usize = 0;
+    while (rem.len > 0) {
+        const qr = try div1L(alloc, rem, POW10_U64[19]);
+        rem = qr.q;
+        var c = qr.r;
+        var k: usize = 19;
+        const base = n_chunks * 19;
+        while (k > 0) : (k -= 1) {
+            buf[base + k - 1] = '0' + @as(u8, @intCast(c % 10));
+            c /= 10;
+        }
+        n_chunks += 1;
+    }
+    // chunks are least-significant-first: reverse by 19-digit blocks,
+    // then strip leading zeros of the most significant block.
+    var out = try alloc.alloc(u8, n_chunks * 19);
+    var i: usize = 0;
+    while (i < n_chunks) : (i += 1) {
+        @memcpy(out[i * 19 .. i * 19 + 19],
+            buf[(n_chunks - 1 - i) * 19 .. (n_chunks - i) * 19]);
+    }
+    var start: usize = 0;
+    while (start + 1 < out.len and out[start] == '0') start += 1;
+    return out[start..];
+}
+
+// 10^k over limbs by binary exponentiation on mulL.
+fn pow10L(alloc: std.mem.Allocator, k: usize) error{OutOfMemory}![]Limb {
+    var r: []Limb = try alloc.dupe(Limb, &[_]Limb{1});
+    var b: []Limb = try alloc.dupe(Limb, &[_]Limb{10});
+    var e = k;
+    while (e > 0) {
+        if (e & 1 == 1) r = try mulL(alloc, r, b);
+        if (e > 1) b = try mulL(alloc, b, b);
+        e >>= 1;
+    }
+    return ltrim(r);
+}
+
+// digits -> limbs: val(hi)*10^lo.len + val(lo), recursively.
+fn digitsToLimbs(alloc: std.mem.Allocator, digs: []const u8) error{OutOfMemory}![]Limb {
+    if (digs.len == 0) return alloc.alloc(Limb, 0);
+    if (digs.len <= RADIX_DNC_MIN) return digitsToLimbsSB(alloc, digs);
+    const lo_len = digs.len / 2;
+    const hi = digs[0 .. digs.len - lo_len];
+    const lo = digs[digs.len - lo_len ..];
+    const p10 = try pow10L(alloc, lo_len);
+    const lohi = try digitsToLimbs(alloc, hi);
+    const lolo = try digitsToLimbs(alloc, lo);
+    const prod = try mulL(alloc, lohi, p10);
+    return addL(alloc, prod, lolo);
+}
+
+// limbs -> digits: split x = q*10^split + r, recurse, pad r to `split`.
+fn limbsToDigits(alloc: std.mem.Allocator, x_in: []const Limb) error{OutOfMemory}![]u8 {
+    const x = ltrimc(x_in);
+    if (x.len == 0) return alloc.dupe(u8, "0");
+    // decimal-digit estimate: bits*log10(2), upper bound, off by <=1.
+    const bits: usize = 64 * (x.len - 1) + (64 - @clz(x[x.len - 1]));
+    const nd: usize = @as(usize, @intFromFloat(@floor(@as(f64, @floatFromInt(bits)) * 0.3010299956639812))) + 1;
+    if (nd <= RADIX_DNC_MIN) return limbsToDigitsSB(alloc, x);
+    const split = nd / 2;
+    const p10 = try pow10L(alloc, split);
+    if (cmpL(x, p10) < 0) return limbsToDigitsSB(alloc, x); // estimate edge (x < 10^split: only tiny cases)
+    const qr = try divAnyL(alloc, x, p10);
+    const hi_s = try limbsToDigits(alloc, qr.q);
+    const lo_s = try limbsToDigits(alloc, qr.r);
+    var out = try alloc.alloc(u8, hi_s.len + split);
+    @memcpy(out[0..hi_s.len], hi_s);
+    if (lo_s.len > split) @panic("std/num radix: low half overflow");
+    const pad = split - lo_s.len;
+    @memset(out[hi_s.len .. hi_s.len + pad], '0');
+    @memcpy(out[hi_s.len + pad ..], lo_s);
+    return out;
+}
+
+// BI wrapper: decimal digit string of x's magnitude (caller owns).
+fn biToDigits(alloc: std.mem.Allocator, x: *const BI) ![]u8 {
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ds = try limbsToDigits(arena.allocator(), x.toConst().limbs);
+    return try alloc.dupe(u8, ds);
+}
+
+// BI from limbs (positive magnitude).
+fn biFromLimbs(alloc: std.mem.Allocator, r: []const Limb) !BI {
+    var ss = try BI.initCapacity(alloc, @max(r.len, 1));
+    errdefer ss.deinit();
+    if (r.len == 0) {
+        ss.limbs[0] = 0;
+        ss.setLen(1);
+    } else {
+        @memcpy(ss.limbs[0..r.len], r);
+        ss.setLen(r.len);
+    }
+    ss.setSign(true);
+    return ss;
+}
+
+// decimal digit string -> BI (magnitude), D&C.
+fn biFromDigits(alloc: std.mem.Allocator, digs: []const u8) !BI {
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const lm = try digitsToLimbs(arena.allocator(), digs);
+    return biFromLimbs(alloc, lm);
+}
+
+// Int wrapper: s = floor(sqrt(x)); x must be nonnegative — matches
+// floor-isqrt semantics on the magnitude lane.
+fn sqrtFast(s: *BI, x: *const BI) !void {
+    const alloc = s.allocator;
+    std.debug.assert(x.toConst().positive);
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const r = try isqrtL(arena.allocator(), x.toConst().limbs);
+
+    var ss = try BI.initCapacity(alloc, @max(r.len, 1));
+    errdefer ss.deinit();
+    if (r.len == 0) {
+        ss.limbs[0] = 0;
+        ss.setLen(1);
+    } else {
+        @memcpy(ss.limbs[0..r.len], r);
+        ss.setLen(r.len);
+    }
+    ss.setSign(true);
+    s.deinit();
+    s.* = ss;
+}
+
+// Int wrapper: truncated division, sign(q) = a.sign != b.sign,
+// sign(r) = a.sign — truncating-division convention.
+fn divFast(q: *BI, r: *BI, a: *const BI, b: *const BI) !void {
+    const alloc = q.allocator;
+    if (b.eqlZero()) @panic("division by zero");
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const qr = try divAnyL(arena.allocator(), a.toConst().limbs, b.toConst().limbs);
+
+    var qq = try BI.initCapacity(alloc, @max(qr.q.len, 1));
+    errdefer qq.deinit();
+    if (qr.q.len == 0) {
+        qq.limbs[0] = 0;
+        qq.setLen(1);
+        qq.setSign(true);
+    } else {
+        @memcpy(qq.limbs[0..qr.q.len], qr.q);
+        qq.setLen(qr.q.len);
+        qq.setSign(a.toConst().positive == b.toConst().positive);
+    }
+    var rr = try BI.initCapacity(alloc, @max(qr.r.len, 1));
+    errdefer rr.deinit();
+    if (qr.r.len == 0) {
+        rr.limbs[0] = 0;
+        rr.setLen(1);
+        rr.setSign(true);
+    } else {
+        @memcpy(rr.limbs[0..qr.r.len], qr.r);
+        rr.setLen(qr.r.len);
+        rr.setSign(a.toConst().positive);
+    }
+    q.deinit();
+    q.* = qq;
+    r.deinit();
+    r.* = rr;
 }
 
 // Managed wrapper: below cutoff Zig's schoolbook stays (proven path);
@@ -371,24 +1422,38 @@ fn decMul(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     var r = try BI.init(alloc);
     defer r.deinit();
     try mulFast(&r, &a.m, &b.m);
-    const ds = try r.toString(alloc, 10, .lower);
-    defer alloc.free(ds);
-    return decFromDigits(alloc, ds, a.e + b.e, a.neg != b.neg);
+    return decFromMag(alloc, &r, a.e + b.e, a.neg != b.neg);
 }
 
-// a / b to `prec` significant digits (floor-magnitude, then renorm).
+// First `prec` digits of a digit string (floor-magnitude) and the exponent
+// bump for the digits dropped.
+const Trimmed = struct { digits: []const u8, e_adj: i64 };
+
+fn trimDigits(ds: []const u8, prec: i64) Trimmed {
+    const L: i64 = @intCast(ds.len);
+    const keep = @max(prec, 1);
+    if (L <= keep) return .{ .digits = ds, .e_adj = 0 };
+    return .{ .digits = ds[0..@intCast(keep)], .e_adj = L - keep };
+}
+
+// a truncated to `prec` significant digits (floor-magnitude).
+fn decTrunc(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
+    const ds = try biToDigits(alloc, &a.m);
+    defer alloc.free(ds);
+    const t = trimDigits(ds, prec);
+    return decFromDigits(alloc, t.digits, a.e + t.e_adj, a.neg);
+}
+
+// a / b to exactly `prec` significant digits (floor-magnitude, then renorm).
 fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !Dec {
     if (b.m.eqlZero()) return error.DivZero;
     if (a.m.eqlZero()) return decInit(alloc, 0, 0);
 
-    // result digits: len(A) - len(B) + 1 magnitudes; scale A so the quotient
-    // carries `prec` significant digits.
-    const la = try a.m.toString(alloc, 10, .lower);
-    defer alloc.free(la);
-    const lb = try b.m.toString(alloc, 10, .lower);
-    defer alloc.free(lb);
-    const rough: i64 = @as(i64, @intCast(la.len)) - @as(i64, @intCast(lb.len)) + 1;
-    var k: i64 = prec - rough;
+    // an m-digit by n-digit integer quotient has m-n or m-n+1 digits; scale A
+    // so m-n = prec, then trim to prec.
+    const la = try limbDigitLen(alloc, a.m.toConst().limbs);
+    const lb = try limbDigitLen(alloc, b.m.toConst().limbs);
+    var k: i64 = prec - @as(i64, @intCast(la)) + @as(i64, @intCast(lb));
     if (k < 0) k = 0;
 
     var num = try a.m.clone();
@@ -401,25 +1466,25 @@ fn decDiv(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec, prec: i64) !De
     defer q.deinit();
     var rem = try BI.init(alloc);
     defer rem.deinit();
-    try q.divTrunc(&rem, &num, &b.m);
+    try divFast(&q, &rem, &num, &b.m);
 
-    const qs = try q.toString(alloc, 10, .lower);
+    const qs = try biToDigits(alloc, &q);
     defer alloc.free(qs);
-    return decFromDigits(alloc, qs, a.e - b.e - k, a.neg != b.neg);
+    const t = trimDigits(qs, prec);
+    return decFromDigits(alloc, t.digits, a.e - b.e - k + t.e_adj, a.neg != b.neg);
 }
 
-// sqrt(a) to `prec` significant digits. a < 0 refuses at the tor level.
+// sqrt(a) to exactly `prec` significant digits (floor-magnitude). a < 0
+// refuses at the tor level.
 fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
     if (a.m.eqlZero()) return decInit(alloc, 0, 0);
 
-    // Want r = sqrt(A * 10^E). Compute s = isqrt(A * 10^k) with even k chosen
-    // so s has ~prec digits; result = s * 10^((E - k)/2).
-    const la = try a.m.toString(alloc, 10, .lower);
-    defer alloc.free(la);
-    const rough_mag: i64 = @divFloor(a.e + @as(i64, @intCast(la.len)), 2);
-    var k: i64 = 2 * (prec - rough_mag + a.e) - a.e;
+    // Want r = sqrt(A * 10^E). Compute s = isqrt(A * 10^k) with k = E (mod 2)
+    // and len(A) + k >= 2*prec, so s has >= prec digits; result = s * 10^((E - k)/2).
+    const la = try limbDigitLen(alloc, a.m.toConst().limbs);
+    var k: i64 = 2 * @max(prec, 1) - @as(i64, @intCast(la));
     if (k < 0) k = 0;
-    if (@mod(k, 2) != 0) k += 1;
+    if (@mod(k - a.e, 2) != 0) k += 1;
 
     var x = try a.m.clone();
     defer x.deinit();
@@ -429,11 +1494,12 @@ fn decSqrt(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
 
     var s = try BI.init(alloc);
     defer s.deinit();
-    try s.sqrt(&x);
+    try sqrtFast(&s, &x);
 
-    const ss = try s.toString(alloc, 10, .lower);
+    const ss = try biToDigits(alloc, &s);
     defer alloc.free(ss);
-    return decFromDigits(alloc, ss, @divFloor(a.e - k, 2), false);
+    const t = trimDigits(ss, prec);
+    return decFromDigits(alloc, t.digits, @divExact(a.e - k, 2) + t.e_adj, false);
 }
 
 // |a|, |b| compare by absolute value: -1, 0, 1.
@@ -462,9 +1528,12 @@ fn decCmpAbs(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !i8 {
 
 // ============================================================================
 // Fixed-point layer for the transcendentals. An FX value is a signed bigint X
-// standing for X * 10^-w with the width w ambient per call. Series loops
-// terminate because terms eventually truncate to zero. GUARD digits absorb
-// the per-step truncation; results truncate (floor-magnitude) like div/sqrt.
+// standing for X * 10^-w with the width w ambient per call, paired with a
+// tracked error bound. Series loops terminate because terms eventually
+// truncate to zero; emitted digits are the floor-magnitude prefix (the
+// first `prec` digits of the true expansion), with the error bound
+// required to clear the cut — on a straddle the caller recomputes at
+// finer w (Ziv loop). Same contract as div/sqrt/mod throughout.
 // ============================================================================
 
 const GUARD: i64 = 12;
@@ -472,10 +1541,43 @@ const GUARD: i64 = 12;
 // |overflow, not a silent multi-minute Debug-mode multiply.
 const EXP_DIGCAP: i64 = 4;
 
-fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !BI {
+// ---- fixed-point with error accounting -----------------------------------
+// Fx: a w-digit fixed-point value X * 10^-w plus e, an upper bound on
+// |computed - true| / 10^-w in ulps. Each op derives its bound from the
+// operand bounds and the real magnitudes (fxMag ~ log10(|x| * 10^-w); +-1
+// digit slack only inflates the bound):
+//   mul      e <= a.e*|B| + b.e*|A| + 1        (truncation + propagation)
+//   div      e <= a.e/|B| + b.e*|V|/|B| + 1    (V = result magnitude)
+//   sqrt     e <= a.e/|V| + 1                  (sqrt contracts rel. error)
+//   add/sub  e <= a.e + b.e     scale c: e*|c|   trunc-div d: e/|d| + 1
+// Emission (fxToDec) emits the floor-magnitude prefix — the first `prec`
+// digits of the true expansion, matching the div/sqrt contract. floor()'s
+// only discontinuities are integer multiples of the cut, so the prefix is
+// provable iff [f, f+e) fits inside [0, 10^k). On a straddle the caller
+// recomputes at finer w (Ziv loop).
+const Fx = struct { v: BI, e: f64 };
+
+fn fxDeinit(x: *Fx) void {
+    x.v.deinit();
+}
+
+fn fxMag(x: *const BI, w: i64) f64 {
+    const m = x.magL();
+    if (m.len == 0) return -1e30;
+    const bits: f64 = @floatFromInt(m.len * 64 - @as(usize, @clz(m[m.len - 1])));
+    return bits * 0.3010299956639812 - @as(f64, @floatFromInt(w));
+}
+
+fn fxP10(m: f64) f64 {
+    return std.math.pow(f64, 10.0, m);
+}
+
+// Dec -> X * 10^w. e = 0 when scaling up (exact), 1 when digits truncate.
+fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !Fx {
     const k = d.e + w;
     var x = try d.m.clone();
     errdefer x.deinit();
+    var e0: f64 = 0;
     if (k >= 0) {
         var p = try pow10(alloc, k);
         defer p.deinit();
@@ -486,50 +1588,86 @@ fn fxFromDec(alloc: std.mem.Allocator, d: *const Dec, w: i64) !BI {
         var rem = try BI.init(alloc);
         defer rem.deinit();
         var q = try BI.init(alloc);
-        try q.divTrunc(&rem, &x, &p);
+        try divFast(&q, &rem, &x, &p);
+        // exact iff the trunc div dropped nothing (e.g. x * 10^-w hits
+        // an integer — sin/cos of 0 stay provably exact through it)
+        e0 = if (rem.eqlZero()) 0 else 1;
         x.deinit();
         x = q;
     }
     if (d.neg) x.negate();
-    return x;
+    return .{ .v = x, .e = e0 };
 }
 
-// X * 10^-w -> canonical Dec at `prec` significant digits (truncated).
-fn fxToDec(alloc: std.mem.Allocator, x: *const BI, w: i64, prec: i64) !Dec {
-    var xa = try x.clone();
+// X * 10^-w -> Dec at `prec` significant digits, floor-magnitude like
+// div/sqrt — i.e. the first `prec` digits of the true expansion, not the
+// nearest prec-digit value. floor()'s only discontinuities are the integer
+// multiples of the cut 10^k, so the emitted prefix is provable iff the
+// dropped part f clears both sides: f >= e and f + e < 10^k — every
+// candidate in [v-e, v+e] then shares the same floor. error.Boundary = the
+// bound straddles a cut; the caller recomputes at finer w (Ziv loop).
+fn fxToDec(alloc: std.mem.Allocator, x: *const Fx, w: i64, prec: i64) !Dec {
+    var xa = try x.v.clone();
     defer xa.deinit();
     const neg = !xa.isPositive() and !xa.eqlZero();
     xa.abs();
-    const ds = try xa.toString(alloc, 10, .lower);
+    if (xa.eqlZero()) {
+        // the all-zero prefix is provable only when the bound keeps the
+        // true value's leading digit beyond `prec`.
+        if (x.e < fxP10(@floatFromInt(w - prec)))
+            return decFromDigits(alloc, "0", 0, false);
+        return error.Boundary;
+    }
+    const ds = try biToDigits(alloc, &xa);
     defer alloc.free(ds);
     const L: i64 = @intCast(ds.len);
-    var keep = ds;
-    var e_adj: i64 = 0;
-    if (L > prec) {
-        keep = ds[0..@intCast(prec)];
-        e_adj = L - prec;
+    const k: i64 = L - prec;
+    if (k <= 0) {
+        // emitting every computed digit — honest only when the bound
+        // cannot reach the last one.
+        if (x.e < 0.5 * fxP10(@floatFromInt(k)))
+            return decFromDigits(alloc, ds, -w, neg);
+        return error.Boundary;
     }
-    return decFromDigits(alloc, keep, -w + e_adj, neg);
+    const pi64: usize = @intCast(prec);
+    var f = try biFromDigits(alloc, ds[pi64..]);
+    defer f.deinit();
+    var cap = try pow10(alloc, k);
+    defer cap.deinit();
+    const eint: u64 = if (x.e < 0) 0 else @intFromFloat(@ceil(x.e));
+    var eb = try BI.initSet(alloc, eint);
+    defer eb.deinit();
+    if (f.order(eb) == .lt) return error.Boundary;
+    var fpe = try f.clone();
+    defer fpe.deinit();
+    try fpe.add(&fpe, &eb);
+    if (fpe.order(cap) != .lt) return error.Boundary;
+    return decFromDigits(alloc, ds[0..pi64], -w + L - prec, neg);
 }
 
-// a * b / 10^w
-fn fxMul(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
+// a * b / 10^w (truncated), error e <= a.e*|B| + b.e*|A| + (rem != 0).
+fn fxMul(alloc: std.mem.Allocator, a: *const Fx, b: *const Fx, w: i64) !Fx {
     var p = try BI.init(alloc);
     defer p.deinit();
-    try mulFast(&p, a, b);
+    try mulFast(&p, &a.v, &b.v);
     var d = try pow10(alloc, w);
     defer d.deinit();
     var q = try BI.init(alloc);
     errdefer q.deinit();
     var rem = try BI.init(alloc);
     defer rem.deinit();
-    try q.divTrunc(&rem, &p, &d);
-    return q;
+    try divFast(&q, &rem, &p, &d);
+    return .{
+        .v = q,
+        .e = a.e * fxP10(fxMag(&b.v, w)) + b.e * fxP10(fxMag(&a.v, w)) +
+            (if (rem.eqlZero()) @as(f64, 0) else 1),
+    };
 }
 
-// a / b in FX: a * 10^w / b (truncated).
-fn fxDiv(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
-    var n = try a.clone();
+// a / b in FX: a * 10^w / b (truncated). e <= a.e/|B| + b.e*|V|/|B| +
+// (rem != 0).
+fn fxDiv(alloc: std.mem.Allocator, a: *const Fx, b: *const Fx, w: i64) !Fx {
+    var n = try a.v.clone();
     defer n.deinit();
     var p = try pow10(alloc, w);
     defer p.deinit();
@@ -538,118 +1676,589 @@ fn fxDiv(alloc: std.mem.Allocator, a: *const BI, b: *const BI, w: i64) !BI {
     errdefer q.deinit();
     var rem = try BI.init(alloc);
     defer rem.deinit();
-    try q.divTrunc(&rem, &n, b);
-    return q;
+    try divFast(&q, &rem, &n, &b.v);
+    return .{
+        .v = q,
+        .e = a.e * fxP10(-fxMag(&b.v, w)) +
+            b.e * fxP10(fxMag(&q, w) - fxMag(&b.v, w)) +
+            (if (rem.eqlZero()) @as(f64, 0) else 1),
+    };
 }
 
-// sqrt(X * 10^-w) = isqrt(X * 10^w)
-fn fxSqrt(alloc: std.mem.Allocator, x: *const BI, w: i64) !BI {
-    var n = try x.clone();
+// sqrt(X * 10^-w) = isqrt(X * 10^w). e <= a.e/|V| + (s*s != n) (rel. err
+// contracts; the +1 is the isqrt floor, dropped when the root is exact).
+fn fxSqrt(alloc: std.mem.Allocator, x: *const Fx, w: i64) !Fx {
+    var n = try x.v.clone();
     defer n.deinit();
     var p = try pow10(alloc, w);
     defer p.deinit();
     try mulFast(&n, &n, &p);
     var s = try BI.init(alloc);
     errdefer s.deinit();
-    try s.sqrt(&n);
-    return s;
+    try sqrtFast(&s, &n);
+    var s2 = try BI.init(alloc);
+    defer s2.deinit();
+    try mulFast(&s2, &s, &s);
+    return .{ .v = s, .e = x.e * fxP10(-fxMag(&s, w)) +
+        (if (s2.order(n) == .eq) @as(f64, 0) else 1) };
 }
 
-fn fxConst(alloc: std.mem.Allocator, v: i64, w: i64) !BI {
+// a * c for exact integer c: e *= |c|.
+fn fxScale(alloc: std.mem.Allocator, a: *const Fx, c: i64) !Fx {
+    var v = try a.v.clone();
+    errdefer v.deinit();
+    var cc = try BI.initSet(alloc, c);
+    defer cc.deinit();
+    try mulFast(&v, &v, &cc);
+    const cf: f64 = @floatFromInt(if (c < 0) -c else c);
+    return .{ .v = v, .e = a.e * cf };
+}
+
+// trunc(a / d) for exact integer d != 0: e <= a.e/|d| + (rem != 0).
+fn fxTruncDiv(alloc: std.mem.Allocator, a: *const Fx, d: *const BI) !Fx {
+    var q = try BI.init(alloc);
+    errdefer q.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try divFast(&q, &rem, &a.v, d);
+    return .{ .v = q, .e = a.e * fxP10(-fxMag(d, 0)) +
+        (if (rem.eqlZero()) @as(f64, 0) else 1) };
+}
+
+fn fxConst(alloc: std.mem.Allocator, v: i64, w: i64) !Fx {
     var r = try BI.initSet(alloc, v);
     errdefer r.deinit();
     var p = try pow10(alloc, w);
     defer p.deinit();
     try mulFast(&r, &r, &p);
-    return r;
+    return .{ .v = r, .e = 0 };
 }
 
-// atan(1/k) * SCALE via the alternating series sum (-1)^j / ((2j+1) k^(2j+1)).
-// Plain-bigint terms: term_j = SCALE / (k^(2j+1) * (2j+1)), stops at zero.
-fn fxAtanInv(alloc: std.mem.Allocator, k: i64, w: i64) !BI {
-    var sum = try BI.init(alloc);
-    var kk = try BI.initSet(alloc, k * k);
-    defer kk.deinit();
-    var pk = try BI.initSet(alloc, k);
-    defer pk.deinit();
-    var unit = try pow10(alloc, w);
-    defer unit.deinit();
-    var j: i64 = 0;
-    var neg = false;
-    while (true) : (j += 1) {
-        var den = try pk.clone();
-        defer den.deinit();
-        var dj = try BI.initSet(alloc, 2 * j + 1);
-        defer dj.deinit();
-        try mulFast(&den, &den, &dj);
+// ============================================================================
+// A2.2 — algorithm upgrades: binary splitting (pi, e, ln2), AGM ln,
+// head/tail split exp. The Fx error contract is unchanged; exact-integer product
+// trees make these bounds tighter than the Taylor loops they replace.
+// ============================================================================
+
+// Binary-split result over [a,b): sum_{k=a}^{b-1} prod_{j=a}^{k} (p_j/q_j)
+// is exactly t/q. All-integer until the final division.
+const BsT = struct { p: BI, q: BI, t: BI };
+
+fn bsDeinit(r: *BsT) void {
+    r.p.deinit();
+    r.q.deinit();
+    r.t.deinit();
+}
+
+// Combine: T = T_L*Q_R + P_L*T_R ; P = P_L*P_R ; Q = Q_L*Q_R.
+fn bsSum(alloc: std.mem.Allocator, a: usize, b: usize, comptime leaf: anytype, ctx: anytype) error{OutOfMemory}!BsT {
+    if (b - a <= 1) return leaf(alloc, ctx, a);
+    const m = a + (b - a) / 2;
+    var L = try bsSum(alloc, a, m, leaf, ctx);
+    defer bsDeinit(&L);
+    var R = try bsSum(alloc, m, b, leaf, ctx);
+    defer bsDeinit(&R);
+    var out = BsT{
+        .p = try BI.init(alloc),
+        .q = try BI.init(alloc),
+        .t = try BI.init(alloc),
+    };
+    errdefer bsDeinit(&out);
+    var t1 = try BI.init(alloc);
+    defer t1.deinit();
+    try mulFast(&t1, &L.t, &R.q);
+    var t2 = try BI.init(alloc);
+    defer t2.deinit();
+    try mulFast(&t2, &L.p, &R.t);
+    try out.t.add(&t1, &t2);
+    try mulFast(&out.p, &L.p, &R.p);
+    try mulFast(&out.q, &L.q, &R.q);
+    return out;
+}
+
+// T*10^w/Q as Fx; only error is the final trunc (+ dropped tail, caller's
+// tail_e bound).
+fn bsToFx(alloc: std.mem.Allocator, r: *BsT, w: i64, tail_e: f64) !Fx {
+    var num = try BI.init(alloc);
+    defer num.deinit();
+    var p = try pow10(alloc, w);
+    defer p.deinit();
+    try mulFast(&num, &r.t, &p);
+    var v = try BI.init(alloc);
+    errdefer v.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try divFast(&v, &rem, &num, &r.q);
+    return .{ .v = v, .e = (if (rem.eqlZero()) @as(f64, 0) else 1) + tail_e };
+}
+
+// Chudnovsky leaves: term k carries p_k = (6k-5)(2k-1)(6k-1),
+// q_k = k^3 * 640320^3/24, t_k = p_k*(13591409+545140134k)*(-1)^k.
+// ~14.18 digits per term.
+fn leafChud(alloc: std.mem.Allocator, _: anytype, k: usize) error{OutOfMemory}!BsT {
+    var p = try BI.initSet(alloc, 1);
+    errdefer p.deinit();
+    var q = try BI.initSet(alloc, 1);
+    errdefer q.deinit();
+    const ki: i64 = @intCast(k);
+    if (k > 0) {
+        // (6k-5)(2k-1)(6k-1) fits i64 for any reachable k (< ~2.9e5 terms)
+        p.deinit();
+        p = try BI.initSet(alloc, (6 * ki - 5) * (2 * ki - 1) * (6 * ki - 1));
+        var kk = try BI.initSet(alloc, ki);
+        defer kk.deinit();
+        try mulFast(&q, &q, &kk);
+        try mulFast(&q, &q, &kk);
+        try mulFast(&q, &q, &kk);
+        var c = try BI.initSet(alloc, 10939058860032000); // 640320^3/24
+        defer c.deinit();
+        try mulFast(&q, &q, &c);
+    }
+    var t = try p.clone();
+    errdefer t.deinit();
+    var l = try BI.initSet(alloc, 13591409 + 545140134 * ki);
+    defer l.deinit();
+    try mulFast(&t, &t, &l);
+    if (k % 2 == 1) t.negate();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// pi * 10^w = trunc(426880 * Q * isqrt(10005*10^2w) / T). The only
+// approximations are the isqrt floor (<0.05 ulp of the quotient) and the
+// final div; the sum itself is exact integer arithmetic. Replaces the
+// Machin 16*atan(1/5) - 4*atan(1/239) Taylor pair.
+fn fxPi(alloc: std.mem.Allocator, w: i64) !Fx {
+    const wf: f64 = @floatFromInt(w);
+    const n: usize = @intFromFloat(wf / 14.181647462725477 + 4);
+    var r = try bsSum(alloc, 0, n, leafChud, {});
+    defer bsDeinit(&r);
+    var n2 = try pow10(alloc, 2 * w);
+    defer n2.deinit();
+    var c5 = try BI.initSet(alloc, 10005);
+    defer c5.deinit();
+    try mulFast(&n2, &n2, &c5);
+    var s = try BI.init(alloc);
+    defer s.deinit();
+    try sqrtFast(&s, &n2);
+    var num = try BI.init(alloc);
+    defer num.deinit();
+    try mulFast(&num, &r.q, &s);
+    var c426880 = try BI.initSet(alloc, 426880);
+    defer c426880.deinit();
+    try mulFast(&num, &num, &c426880);
+    var v = try BI.init(alloc);
+    errdefer v.deinit();
+    var rem = try BI.init(alloc);
+    defer rem.deinit();
+    try divFast(&v, &rem, &num, &r.t);
+    return .{ .v = v, .e = (if (rem.eqlZero()) @as(f64, 0) else 1) + 3 };
+}
+
+// e leaves: t_k = 1/k! = prod_{j=1}^{k} 1/j — f_0 = 1, f_k = 1/k.
+fn leafE(alloc: std.mem.Allocator, _: anytype, k: usize) error{OutOfMemory}!BsT {
+    var p = try BI.initSet(alloc, 1);
+    errdefer p.deinit();
+    var q = try BI.initSet(alloc, @max(@as(i64, @intCast(k)), 1));
+    errdefer q.deinit();
+    var t = try BI.initSet(alloc, 1);
+    errdefer t.deinit();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// e * 10^w by binary splitting of sum 1/k!. N! > 10^{w+8} makes the tail
+// << 1 ulp. N via fixed-point Stirling iteration.
+fn fxE(alloc: std.mem.Allocator, w: i64) !Fx {
+    const wf: f64 = @floatFromInt(w);
+    var nf: f64 = @max(wf * 0.4, 8);
+    var i: usize = 0;
+    while (i < 12) : (i += 1)
+        nf = (wf + 8) / (@log10(nf) - 0.4342944819032518);
+    const n: usize = @intFromFloat(@ceil(nf) + 4);
+    var r = try bsSum(alloc, 0, n, leafE, {});
+    defer bsDeinit(&r);
+    return bsToFx(alloc, &r, w, 2);
+}
+
+// ln2 leaves: ln2 = 2*atanh(1/3) = sum_k t_k with t_0 = 2/3 and
+// t_k/t_{k-1} = (2k-1)/(9(2k+1)).
+fn leafLn2(alloc: std.mem.Allocator, _: anytype, k: usize) error{OutOfMemory}!BsT {
+    const ki: i64 = @intCast(k);
+    var p = try BI.initSet(alloc, if (k == 0) @as(i64, 2) else 2 * ki - 1);
+    errdefer p.deinit();
+    var q = try BI.initSet(alloc, if (k == 0) @as(i64, 3) else 9 * (2 * ki + 1));
+    errdefer q.deinit();
+    var t = try p.clone();
+    errdefer t.deinit();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// ln 2 * 10^w by binary splitting; 9^N > 10^{w+8} for the tail.
+fn fxLnTwo(alloc: std.mem.Allocator, w: i64) !Fx {
+    const wf: f64 = @floatFromInt(w);
+    const n: usize = @intFromFloat((wf + 8) / 0.9542425094393249 + 2);
+    var r = try bsSum(alloc, 0, n, leafLn2, {});
+    defer bsDeinit(&r);
+    return bsToFx(alloc, &r, w, 2);
+}
+
+// atanh(1/9) leaves for ln10 = 3 ln2 + 2 atanh(1/9): t_0 = 2/9,
+// t_k/t_{k-1} = (2k-1)/(81(2k+1)).
+fn leafLn10(alloc: std.mem.Allocator, _: anytype, k: usize) error{OutOfMemory}!BsT {
+    const ki: i64 = @intCast(k);
+    var p = try BI.initSet(alloc, if (k == 0) @as(i64, 2) else 2 * ki - 1);
+    errdefer p.deinit();
+    var q = try BI.initSet(alloc, if (k == 0) @as(i64, 9) else 81 * (2 * ki + 1));
+    errdefer q.deinit();
+    var t = try p.clone();
+    errdefer t.deinit();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// ln 10 * 10^w = 3 ln2 + 2 atanh(1/9); 81^N > 10^{w+8} for the tail.
+fn fxLnTen(alloc: std.mem.Allocator, w: i64, ln2: *const Fx) !Fx {
+    const wf: f64 = @floatFromInt(w);
+    const n: usize = @intFromFloat((wf + 8) / 1.9084850188867997 + 2);
+    var r = try bsSum(alloc, 0, n, leafLn10, {});
+    defer bsDeinit(&r);
+    var a9 = try bsToFx(alloc, &r, w, 2);
+    defer fxDeinit(&a9);
+    var l3 = try fxScale(alloc, ln2, 3);
+    defer fxDeinit(&l3);
+    var res = Fx{ .v = try BI.init(alloc), .e = a9.e + l3.e };
+    errdefer res.v.deinit();
+    try res.v.add(&a9.v, &l3.v);
+    return res;
+}
+
+const AtanRCtx = struct { num: BI, den: BI, num2: BI, den2: BI };
+
+// atan(num/den) leaves: t_0 = num/den,
+// t_k/t_{k-1} = -num^2 (2k-1) / ((2k+1) den^2); sign lives in t.
+fn leafAtanR(alloc: std.mem.Allocator, ctx: *const AtanRCtx, k: usize) error{OutOfMemory}!BsT {
+    const ki: i64 = @intCast(k);
+    if (k == 0) {
+        var p = try ctx.num.clone();
+        errdefer p.deinit();
+        var q = try ctx.den.clone();
+        errdefer q.deinit();
+        var t = try ctx.num.clone();
+        errdefer t.deinit();
+        return .{ .p = p, .q = q, .t = t };
+    }
+    var p = try ctx.num2.clone();
+    errdefer p.deinit();
+    var c1 = try BI.initSet(alloc, 2 * ki - 1);
+    defer c1.deinit();
+    try mulFast(&p, &p, &c1);
+    var q = try ctx.den2.clone();
+    errdefer q.deinit();
+    var c2 = try BI.initSet(alloc, 2 * ki + 1);
+    defer c2.deinit();
+    try mulFast(&q, &q, &c2);
+    var t = try p.clone();
+    errdefer t.deinit();
+    if (k % 2 == 1) t.negate();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// atan(num/den) * 10^w by binary splitting — exact for small rationals.
+fn fxAtanRat(alloc: std.mem.Allocator, num: *const BI, den: *const BI, w: i64) !Fx {
+    var ctx = AtanRCtx{
+        .num = try num.clone(),
+        .den = try den.clone(),
+        .num2 = try BI.init(alloc),
+        .den2 = try BI.init(alloc),
+    };
+    defer { ctx.num.deinit(); ctx.den.deinit(); ctx.num2.deinit(); ctx.den2.deinit(); }
+    try mulFast(&ctx.num2, num, num);
+    try mulFast(&ctx.den2, den, den);
+    const wf: f64 = @floatFromInt(w);
+    const usq_r = @exp(@log(10.0) * (fxMag(&ctx.num2, 0) - fxMag(&ctx.den2, 0)));
+    const per: f64 = -@log10(usq_r);
+    const n: usize = @intFromFloat((wf + 8) / @max(per, 0.1) + 3);
+    var r = try bsSum(alloc, 0, n, leafAtanR, &ctx);
+    defer bsDeinit(&r);
+    return bsToFx(alloc, &r, w, 2);
+}
+
+fn pow2BI(alloc: std.mem.Allocator, p: i64) !BI {
+    const np: usize = @intCast(p);
+    var lm = try alloc.alloc(Limb, np / 64 + 1);
+    defer alloc.free(lm);
+    @memset(lm, 0);
+    lm[np / 64] = @as(Limb, 1) << @as(u6, @intCast(np % 64));
+    return biFromLimbs(alloc, lm);
+}
+
+// Rescale an Fx between widths: v * 10^{to-from} up (exact, e scales —
+// clamped so coarse seeds can't overflow the f64 bound) or trunc-div
+// down (+1 when digits drop).
+fn fxRescale(alloc: std.mem.Allocator, a: *const Fx, w_from: i64, w_to: i64) !Fx {
+    var v = try a.v.clone();
+    errdefer v.deinit();
+    var e = a.e;
+    if (w_to >= w_from) {
+        var p = try pow10(alloc, w_to - w_from);
+        defer p.deinit();
+        try mulFast(&v, &v, &p);
+        e = @min(e * fxP10(@floatFromInt(w_to - w_from)), 1e290);
+    } else {
+        var p = try pow10(alloc, w_from - w_to);
+        defer p.deinit();
         var q = try BI.init(alloc);
-        defer q.deinit();
+        errdefer q.deinit();
         var rem = try BI.init(alloc);
         defer rem.deinit();
-        try q.divTrunc(&rem, &unit, &den);
-        if (q.eqlZero()) break;
-        if (neg) q.negate();
-        try sum.add(&sum, &q);
-        neg = !neg;
-        try mulFast(&pk, &pk, &kk);
+        try divFast(&q, &rem, &v, &p);
+        v.deinit();
+        v = q;
+        e = e * fxP10(@floatFromInt(w_to - w_from)) +
+            (if (rem.eqlZero()) @as(f64, 0) else 1);
     }
-    return sum;
+    return .{ .v = v, .e = e };
 }
 
-// pi * SCALE via Machin: pi = 16 atan(1/5) - 4 atan(1/239).
-fn fxPi(alloc: std.mem.Allocator, w: i64) !BI {
-    var a5 = try fxAtanInv(alloc, 5, w);
-    defer a5.deinit();
-    var a239 = try fxAtanInv(alloc, 239, w);
-    defer a239.deinit();
-    var c16 = try BI.initSet(alloc, 16);
-    defer c16.deinit();
-    var c4 = try BI.initSet(alloc, 4);
-    defer c4.deinit();
-    try mulFast(&a5, &a5, &c16);
-    try mulFast(&a239, &a239, &c4);
-    var r = try BI.init(alloc);
-    errdefer r.deinit();
-    try r.sub(&a5, &a239);
-    return r;
+const AgmConsts = struct { ln2: Fx, pi: Fx };
+
+fn agmConsts(alloc: std.mem.Allocator, w: i64) !AgmConsts {
+    return .{ .ln2 = try fxLnTwo(alloc, w), .pi = try fxPi(alloc, w) };
+}
+
+fn agmConstsDeinit(c: *AgmConsts) void {
+    fxDeinit(&c.ln2);
+    fxDeinit(&c.pi);
+}
+
+fn agmConstsAt(alloc: std.mem.Allocator, c: *const AgmConsts, w: i64, w2: i64) !AgmConsts {
+    return .{
+        .ln2 = try fxRescale(alloc, &c.ln2, w, w2),
+        .pi = try fxRescale(alloc, &c.pi, w, w2),
+    };
+}
+
+// ln(x) via AGM: for s = x * 2^p with s >= ~10^{w/2+16}, Brent's
+// ln s = pi/(2*AGM(1, 4/s)) holds with error O(ln s / s^2) — far below
+// one ulp; margin +8 covers it. ln x = pi/(2A) - p*ln2. The AGM iterate
+// converges quadratically; ~15 iterations of add + mul + isqrt at w
+// digits replace the sqrt-reduction + atanh Taylor path.
+fn fxLnAgm(alloc: std.mem.Allocator, x: *const Fx, w: i64, c: *const AgmConsts) !Fx {
+    // The iterate is computed at wA ~ 2w + margin: while b is tiny (b ~ 4/s)
+    // a 1-ulp floor in b_k perturbs the limit by ~M/b_k ulps — absolute-ulp
+    // error tracking can't see through isqrt, so the drift is bounded
+    // directly: sum 2*|a-b| sensitivity per iter, times |a|. Working wide
+    // and rescaling the RESULT down gives a provable bound at w.
+    const wA: i64 = 2 * w + 40;
+    const wAf: f64 = @floatFromInt(wA);
+    const xbits = fxMag(&x.v, w) * 3.321928094887362;
+    const need: f64 = (wAf * 0.5 + 16.0) * 3.321928094887362;
+    const p: i64 = @intFromFloat(@ceil(need - xbits));
+    var s = try x.v.clone();
+    defer s.deinit();
+    var two_p = try pow2BI(alloc, p);
+    defer two_p.deinit();
+    try mulFast(&s, &s, &two_p);
+    var sc = try pow10(alloc, wA - w);
+    defer sc.deinit();
+    try mulFast(&s, &s, &sc);
+    // b = 4/s at wA scale: b.v = floor(4 * 10^{2 wA} / s.v)
+    var bnum = try pow10(alloc, 2 * wA);
+    defer bnum.deinit();
+    var fourb = try BI.initSet(alloc, 4);
+    defer fourb.deinit();
+    try mulFast(&bnum, &bnum, &fourb);
+    var b = try BI.init(alloc);
+    defer b.deinit();
+    var brem = try BI.init(alloc);
+    defer brem.deinit();
+    try divFast(&b, &brem, &bnum, &s);
+    var a = try pow10(alloc, wA);
+    defer a.deinit();
+    var two = try BI.initSet(alloc, 2);
+    defer two.deinit();
+    var lim = try BI.initSet(alloc, 32);
+    defer lim.deinit();
+    var drift: f64 = 0;
+    var it: usize = 0;
+    var done = false;
+    while (it < 200 and !done) : (it += 1) {
+        var d = try BI.init(alloc);
+        defer d.deinit();
+        try d.sub(&a, &b);
+        d.abs();
+        if (d.order(lim) != .gt) {
+            done = true;
+            break;
+        }
+        // per-iter sensitivity of the limit to floor noise: ~M/a + M/b
+        drift += fxP10(-fxMag(&b, wA)) + fxP10(-fxMag(&a, wA));
+        var an = try BI.init(alloc);
+        defer an.deinit();
+        try an.add(&a, &b);
+        var ah = try BI.init(alloc);
+        errdefer ah.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try divFast(&ah, &rem, &an, &two);
+        var bm = try BI.init(alloc);
+        defer bm.deinit();
+        try mulFast(&bm, &a, &b);
+        var bn = try BI.init(alloc);
+        errdefer bn.deinit();
+        try sqrtFast(&bn, &bm);
+        a.deinit();
+        b.deinit();
+        a = ah;
+        b = bn;
+    }
+    if (!done) @panic("std/num: AGM ln did not converge");
+    const ax = Fx{ .v = a, .e = 8 * drift * fxP10(fxMag(&a, wA)) +
+        8 * @as(f64, @floatFromInt(it)) + 64 };
+    var c2 = try agmConstsAt(alloc, c, w, wA);
+    defer agmConstsDeinit(&c2);
+    var a2 = try fxScale(alloc, &ax, 2);
+    defer fxDeinit(&a2);
+    var ls = try fxDiv(alloc, &c2.pi, &a2, wA);
+    defer fxDeinit(&ls);
+    var pl = try fxScale(alloc, &c2.ln2, p);
+    defer fxDeinit(&pl);
+    var res = Fx{ .v = try BI.init(alloc), .e = ls.e + pl.e + 8 +
+        x.e * fxP10(-fxMag(&x.v, w)) * fxP10(@floatFromInt(wA - w)) };
+    defer fxDeinit(&res);
+    try res.v.sub(&ls.v, &pl.v);
+    return fxRescale(alloc, &res, wA, w);
+}
+
+const ExpHiCtx = struct { x: *const BI, m10: *const BI };
+
+// exp(x_hi) leaves for the head of the reduced argument, x_hi = X_hi/10^m:
+// term_0 = 1, term_k/term_{k-1} = X_hi/(k * 10^m).
+fn leafExpHi(alloc: std.mem.Allocator, ctx: *const ExpHiCtx, k: usize) error{OutOfMemory}!BsT {
+    var p = try BI.initSet(alloc, 1);
+    errdefer p.deinit();
+    if (k > 0) {
+        p.deinit();
+        p = try ctx.x.clone();
+    }
+    var q = try BI.initSet(alloc, 1);
+    errdefer q.deinit();
+    if (k > 0) {
+        q.deinit();
+        q = try BI.initSet(alloc, @as(i64, @intCast(k)));
+        try mulFast(&q, &q, ctx.m10);
+    }
+    var t = try p.clone();
+    errdefer t.deinit();
+    return .{ .p = p, .q = q, .t = t };
+}
+
+// exp(r) * SCALE for |r| <= 1/16 by head/tail split: X = r*10^w splits
+// into X_hi (~m digits, exp via exact binary splitting over small leaves)
+// and X_lo (< 10^{-m}, exp via self-terminating truncated Taylor).
+// O((w/m) * M(w) + M(w) log N_hi) — the generic-x analogue of the
+// small-rational split: the head's intermediates stay ~w digits because
+// m*N_hi ~ w. Input error lives entirely in the tail (the head digits
+// are exact).
+fn fxExpBs(alloc: std.mem.Allocator, r: *const Fx, w: i64) !Fx {
+    const wf: f64 = @floatFromInt(w);
+    // head width m: measured plateau ~10-14 for w <= 32k — smaller m
+    // inflates N_hi (more BS levels), larger m inflates the intermediates
+    // (~m*N_hi digits). The optimum drifts up slowly with w; 10 holds the
+    // shallow minimum across the measured range.
+    const m: i64 = 10;
+    var p1 = try pow10(alloc, w - m);
+    defer p1.deinit();
+    var xhi = try BI.init(alloc);
+    defer xhi.deinit();
+    var xlo = try BI.init(alloc);
+    defer xlo.deinit();
+    try divFast(&xhi, &xlo, &r.v, &p1);
+    var e_hi = try fxConst(alloc, 1, w);
+    errdefer fxDeinit(&e_hi);
+    if (!xhi.eqlZero()) {
+        var m10 = try pow10(alloc, m);
+        defer m10.deinit();
+        const ctx = ExpHiCtx{ .x = &xhi, .m10 = &m10 };
+        // tail (1/16)^n / n! < 10^{-(w+8)}: n*(log10 16 + log10(n/e)) > w+8
+        var n: usize = 2;
+        while (@as(f64, @floatFromInt(n)) *
+            (1.2041199826559248 + @log10(@as(f64, @floatFromInt(n)) * 0.36787944117144233)) < wf + 8) n += 1;
+        var bs = try bsSum(alloc, 0, n, leafExpHi, &ctx);
+        defer bsDeinit(&bs);
+        fxDeinit(&e_hi);
+        e_hi = try bsToFx(alloc, &bs, w, 4);
+    }
+    if (xlo.eqlZero()) {
+        e_hi.e += r.e;
+        return e_hi;
+    }
+    var lo = Fx{ .v = try xlo.clone(), .e = r.e };
+    defer lo.v.deinit();
+    var e_lo = try fxExpSmall(alloc, &lo, w);
+    defer fxDeinit(&e_lo);
+    const out = try fxMul(alloc, &e_hi, &e_lo, w);
+    fxDeinit(&e_hi);
+    return out;
 }
 
 // exp(r) * SCALE for |r| <= 1/16 by Taylor; terms truncate to zero to stop.
-fn fxExpSmall(alloc: std.mem.Allocator, r: *const BI, w: i64) !BI {
-    var sum = try pow10(alloc, w);
-    var term = try pow10(alloc, w);
-    defer term.deinit();
+fn fxExpSmall(alloc: std.mem.Allocator, r: *const Fx, w: i64) !Fx {
+    var sum = try fxConst(alloc, 1, w);
+    errdefer fxDeinit(&sum);
+    var term = try fxConst(alloc, 1, w);
+    defer fxDeinit(&term);
     var n: i64 = 1;
-    while (!term.eqlZero()) : (n += 1) {
+    while (!term.v.eqlZero()) : (n += 1) {
         var t = try fxMul(alloc, &term, r, w);
-        defer t.deinit();
+        defer fxDeinit(&t);
         var dn = try BI.initSet(alloc, n);
         defer dn.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        term.deinit();
-        term = try BI.init(alloc);
-        try term.divTrunc(&rem, &t, &dn);
-        try sum.add(&sum, &term);
+        const nt = try fxTruncDiv(alloc, &t, &dn);
+        fxDeinit(&term);
+        term = nt;
+        try sum.v.add(&sum.v, &term.v);
+        sum.e += term.e;
     }
     return sum;
 }
 
 fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
     if (a.m.eqlZero()) return decFromDigits(alloc, "1", 0, false);
-    // Overflow gate: result digits ~ x * log10(e); cap at 10^EXP_DIGCAP digits.
+    // Overflow gate: result digits ~ x * log10(e); cap at 10^EXP_DIGCAP.
     if (!a.neg) {
         var le = try decParse(alloc, "4.3429448190325182765e-1");
         defer decDeinit(&le);
         var prod = try decMul(alloc, a, &le);
         defer decDeinit(&prod);
-        const ps = try prod.m.toString(alloc, 10, .lower);
+        const ps = try biToDigits(alloc, &prod.m);
         defer alloc.free(ps);
         if (prod.e + @as(i64, @intCast(ps.len)) > EXP_DIGCAP) return error.Overflow;
     }
-    const w = prec + GUARD + @max(@as(i64, 0), a.e) + 8;
+    var extra: i64 = 0;
+    while (extra <= 512) : (extra += 32) {
+        if (decExpW(alloc, a, prec, extra)) |d| {
+            return d;
+        } else |err| switch (err) {
+            error.Boundary => continue,
+            else => return err,
+        }
+    }
+    @panic("std/num:exp: rounding boundary unresolved");
+}
+
+fn decExpW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec {
+    const w = prec + extra + GUARD + @max(@as(i64, 0), a.e) + 8;
+    {
+        // exp(1) = e — the canonical constant: binary-split directly.
+        var one = try BI.initSet(alloc, 1);
+        defer one.deinit();
+        if (!a.neg and a.e == 0 and a.m.order(one) == .eq) {
+            var ee = try fxE(alloc, w);
+            defer fxDeinit(&ee);
+            return fxToDec(alloc, &ee, w, prec);
+        }
+    }
     var x = try fxFromDec(alloc, a, w);
-    defer x.deinit();
+    defer fxDeinit(&x);
     // k = smallest halving count with |x| / 2^k <= SCALE/16
     var k: usize = 0;
     {
@@ -659,8 +2268,8 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         defer c16.deinit();
         var rem = try BI.init(alloc);
         defer rem.deinit();
-        try bound.divTrunc(&rem, &bound, &c16);
-        var ax = try x.clone();
+        try divFast(&bound, &rem, &bound, &c16);
+        var ax = try x.v.clone();
         defer ax.deinit();
         ax.abs();
         while (ax.order(bound) == .gt) : (k += 1) {
@@ -677,289 +2286,374 @@ fn decExp(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
         defer two.deinit();
         while (i < k) : (i += 1) try mulFast(&p2, &p2, &two);
     }
-    var r = try BI.init(alloc);
-    defer r.deinit();
-    var rem = try BI.init(alloc);
-    defer rem.deinit();
-    try r.divTrunc(&rem, &x, &p2);
-    var e = try fxExpSmall(alloc, &r, w);
-    defer e.deinit();
+    var r = try fxTruncDiv(alloc, &x, &p2);
+    defer fxDeinit(&r);
+    // Lane choice is a measured tuning constant, not a correctness
+    // question (both arms are proved at the emit cut). The head/tail
+    // split beats Newton-inversion-of-AGM-ln 18-25x at every width we
+    // can measure (4500-16000): each ladder level pays a 2w-wide AGM
+    // ln, and that constant only amortizes around w~10^6 — out of
+    // range for this layer. MPFR/Arb made the same call: series-based
+    // exp at all widths.
+    var e: Fx = undefined;
+    if (w > 96) {
+        e = try fxExpBs(alloc, &r, w);
+    } else {
+        e = try fxExpSmall(alloc, &r, w);
+    }
+    defer fxDeinit(&e);
     var i: usize = 0;
     while (i < k) : (i += 1) {
         const e2 = try fxMul(alloc, &e, &e, w);
-        e.deinit();
+        fxDeinit(&e);
         e = e2;
     }
     return fxToDec(alloc, &e, w, prec);
 }
 
-// ln(f) * SCALE for f in [1,10): 3 sqrt-reductions then 2*atanh(u).
-fn fxLnF(alloc: std.mem.Allocator, f: *const BI, w: i64) !BI {
-    var g = try f.clone();
-    defer g.deinit();
-    var unit = try pow10(alloc, w);
-    defer unit.deinit();
-    var i: usize = 0;
-    while (i < 3) : (i += 1) {
-        const g2 = try fxSqrt(alloc, &g, w);
-        g.deinit();
-        g = g2;
-    }
-    var num = try BI.init(alloc);
-    defer num.deinit();
-    try num.sub(&g, &unit);
-    var den = try BI.init(alloc);
-    defer den.deinit();
-    try den.add(&g, &unit);
-    var u = try fxDiv(alloc, &num, &den, w);
-    defer u.deinit();
-    var usq = try fxMul(alloc, &u, &u, w);
-    defer usq.deinit();
-    var term = try u.clone();
-    defer term.deinit();
-    var sum = try BI.init(alloc);
-    defer sum.deinit();
-    var n: i64 = 1;
-    while (!term.eqlZero()) : (n += 1) {
-        var dn = try BI.initSet(alloc, 2 * n - 1);
-        defer dn.deinit();
-        var q = try BI.init(alloc);
-        defer q.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        try q.divTrunc(&rem, &term, &dn);
-        try sum.add(&sum, &q);
-        const t2 = try fxMul(alloc, &term, &usq, w);
-        term.deinit();
-        term = t2;
-    }
-    var c16 = try BI.initSet(alloc, 16);
-    defer c16.deinit();
-    var res = try BI.init(alloc);
-    errdefer res.deinit();
-    try mulFast(&res, &sum, &c16);
-    return res;
-}
-
-fn fxLnTen(alloc: std.mem.Allocator, w: i64) !BI {
-    var ten = try fxConst(alloc, 10, w);
-    defer ten.deinit();
-    return fxLnF(alloc, &ten, w);
-}
-
 // ln(a) for a > 0. a = f * 10^t with f in [1,10): ln = ln(f) + t*ln(10).
 fn decLn(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
-    const w = prec + GUARD + 8;
-    const ms = try a.m.toString(alloc, 10, .lower);
+    var extra: i64 = 0;
+    while (extra <= 512) : (extra += 32) {
+        if (decLnW(alloc, a, prec, extra)) |d| {
+            return d;
+        } else |err| switch (err) {
+            error.Boundary => continue,
+            else => return err,
+        }
+    }
+    @panic("std/num:ln: rounding boundary unresolved");
+}
+
+fn decLnW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec {
+    const w = prec + extra + GUARD + 8;
+    {
+        // ln(2): dedicated-constant lane (2*atanh(1/3) binary split).
+        var two = try BI.initSet(alloc, 2);
+        defer two.deinit();
+        if (!a.neg and a.e == 0 and a.m.order(two) == .eq) {
+            var l2 = try fxLnTwo(alloc, w);
+            defer fxDeinit(&l2);
+            return fxToDec(alloc, &l2, w, prec);
+        }
+    }
+    const ms = try biToDigits(alloc, &a.m);
     defer alloc.free(ms);
     const L: i64 = @intCast(ms.len);
     var fdec = Dec{ .neg = false, .m = try a.m.clone(), .e = 1 - L };
     defer fdec.m.deinit();
     var f = try fxFromDec(alloc, &fdec, w);
-    defer f.deinit();
-    var lnf = try fxLnF(alloc, &f, w);
-    defer lnf.deinit();
-    var ln10 = try fxLnTen(alloc, w);
-    defer ln10.deinit();
-    var tt = try BI.initSet(alloc, a.e + L - 1);
-    defer tt.deinit();
-    var tterm = try fxMul(alloc, &tt, &ln10, w);
-    defer tterm.deinit();
-    var res = try BI.init(alloc);
-    defer res.deinit();
-    try res.add(&lnf, &tterm);
+    defer fxDeinit(&f);
+    var c = try agmConsts(alloc, w);
+    defer agmConstsDeinit(&c);
+    var lnf = try fxLnAgm(alloc, &f, w, &c);
+    defer fxDeinit(&lnf);
+    var ln10 = try fxLnTen(alloc, w, &c.ln2);
+    defer fxDeinit(&ln10);
+    var tterm = try fxScale(alloc, &ln10, a.e + L - 1);
+    defer fxDeinit(&tterm);
+    var res = Fx{ .v = try BI.init(alloc), .e = lnf.e + tterm.e };
+    defer fxDeinit(&res);
+    try res.v.add(&lnf.v, &tterm.v);
     return fxToDec(alloc, &res, w, prec);
 }
 
 // sin(u) * SCALE by Taylor on the folded argument u in [0, pi/2].
-fn fxSinSmall(alloc: std.mem.Allocator, u: *const BI, w: i64) !BI {
+fn fxSinSmall(alloc: std.mem.Allocator, u: *const Fx, w: i64) !Fx {
     var usq = try fxMul(alloc, u, u, w);
-    defer usq.deinit();
-    var term = try u.clone();
-    defer term.deinit();
-    var sum = try u.clone();
-    errdefer sum.deinit();
+    defer fxDeinit(&usq);
+    var term = Fx{ .v = try u.v.clone(), .e = u.e };
+    defer fxDeinit(&term);
+    var sum = Fx{ .v = try u.v.clone(), .e = u.e };
+    errdefer fxDeinit(&sum);
     var n: i64 = 1;
-    while (!term.eqlZero()) : (n += 1) {
+    while (!term.v.eqlZero()) : (n += 1) {
         var t = try fxMul(alloc, &term, &usq, w);
-        defer t.deinit();
+        defer fxDeinit(&t);
         var dn = try BI.initSet(alloc, (2 * n) * (2 * n + 1));
         defer dn.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        term.deinit();
-        term = try BI.init(alloc);
-        try term.divTrunc(&rem, &t, &dn);
-        term.negate();
-        try sum.add(&sum, &term);
+        const nt = try fxTruncDiv(alloc, &t, &dn);
+        fxDeinit(&term);
+        term = nt;
+        term.v.negate();
+        try sum.v.add(&sum.v, &term.v);
+        sum.e += term.e;
     }
     return sum;
 }
 
 // cos(u) * SCALE by Taylor on u in [0, pi/2].
-fn fxCosSmall(alloc: std.mem.Allocator, u: *const BI, w: i64) !BI {
+fn fxCosSmall(alloc: std.mem.Allocator, u: *const Fx, w: i64) !Fx {
     var usq = try fxMul(alloc, u, u, w);
-    defer usq.deinit();
-    var term = try pow10(alloc, w);
-    defer term.deinit();
-    var sum = try term.clone();
-    errdefer sum.deinit();
+    defer fxDeinit(&usq);
+    var term = try fxConst(alloc, 1, w);
+    defer fxDeinit(&term);
+    var sum = try fxConst(alloc, 1, w);
+    errdefer fxDeinit(&sum);
     var n: i64 = 1;
-    while (!term.eqlZero()) : (n += 1) {
+    while (!term.v.eqlZero()) : (n += 1) {
         var t = try fxMul(alloc, &term, &usq, w);
-        defer t.deinit();
+        defer fxDeinit(&t);
         var dn = try BI.initSet(alloc, (2 * n - 1) * (2 * n));
         defer dn.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        term.deinit();
-        term = try BI.init(alloc);
-        try term.divTrunc(&rem, &t, &dn);
-        term.negate();
-        try sum.add(&sum, &term);
+        const nt = try fxTruncDiv(alloc, &t, &dn);
+        fxDeinit(&term);
+        term = nt;
+        term.v.negate();
+        try sum.v.add(&sum.v, &term.v);
+        sum.e += term.e;
     }
     return sum;
 }
 
-// Reduce x mod 2pi and fold to u in [0, pi/2]; reports the sin sign and the
-// cos flip that the fold implies.
 fn decTrig(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool) !Dec {
-    const w = prec + GUARD + @max(@as(i64, 0), a.e) + 8;
-    var pi = try fxPi(alloc, w);
-    defer pi.deinit();
-    var two_pi = try BI.init(alloc);
-    defer two_pi.deinit();
-    var two = try BI.initSet(alloc, 2);
-    defer two.deinit();
-    try mulFast(&two_pi, &pi, &two);
-    var half_pi = try BI.init(alloc);
-    defer half_pi.deinit();
-    var rem = try BI.init(alloc);
-    defer rem.deinit();
-    try half_pi.divTrunc(&rem, &pi, &two);
-    var x = try fxFromDec(alloc, a, w);
-    defer x.deinit();
-    // q = round(x / 2pi), r = x - q*2pi in [-pi, pi]
-    var qf = try fxDiv(alloc, &x, &two_pi, w);
-    defer qf.deinit();
-    {
-        var half = try pow10(alloc, w);
-        defer half.deinit();
-        try half.divTrunc(&rem, &half, &two);
-        if (qf.isPositive()) {
-            try qf.add(&qf, &half);
-        } else {
-            try qf.sub(&qf, &half);
+    var extra: i64 = 0;
+    while (extra <= 512) : (extra += 32) {
+        if (decTrigW(alloc, a, prec, want_sin, extra)) |d| {
+            return d;
+        } else |err| switch (err) {
+            error.Boundary => continue,
+            else => return err,
         }
     }
+    @panic("std/num:trig: rounding boundary unresolved");
+}
+
+// Reduce x mod 2pi and fold to u in [0, pi/2]; reports the sin sign and the
+// cos flip that the fold implies.
+fn decTrigW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, want_sin: bool, extra: i64) !Dec {
+    const w = prec + extra + GUARD + @max(@as(i64, 0), a.e) + 8;
+    var pi = try fxPi(alloc, w);
+    defer fxDeinit(&pi);
+    var two_pi = try fxScale(alloc, &pi, 2);
+    defer fxDeinit(&two_pi);
+    var two = try BI.initSet(alloc, 2);
+    defer two.deinit();
+    var half_pi = try fxTruncDiv(alloc, &pi, &two);
+    defer fxDeinit(&half_pi);
+    var x = try fxFromDec(alloc, a, w);
+    defer fxDeinit(&x);
+    // q = round(x / 2pi), r = x - q*2pi in [-pi, pi]
+    var qf = try fxDiv(alloc, &x, &two_pi, w);
+    defer fxDeinit(&qf);
     var unit = try pow10(alloc, w);
     defer unit.deinit();
     var qi = try BI.init(alloc);
     defer qi.deinit();
-    try qi.divTrunc(&rem, &qf, &unit);
-    var qt = try BI.init(alloc);
-    defer qt.deinit();
-    try mulFast(&qt, &qi, &two_pi);
-    var r = try BI.init(alloc);
-    defer r.deinit();
-    try r.sub(&x, &qt);
+    {
+        var qfr = try qf.v.clone();
+        defer qfr.deinit();
+        var half = try unit.clone();
+        defer half.deinit();
+        var rem = try BI.init(alloc);
+        defer rem.deinit();
+        try divFast(&half, &rem, &half, &two);
+        if (qfr.isPositive()) {
+            try qfr.add(&qfr, &half);
+        } else {
+            try qfr.sub(&qfr, &half);
+        }
+        try divFast(&qi, &rem, &qfr, &unit);
+    }
+    // qt = qi * 2pi exactly scaled; the qf rounding contributes <= ~2pi ulps,
+    // but only when the quotient actually rounded (an exact-integer qf needs
+    // none — that is what keeps sin/cos of 0 provably exact).
+    var qrem = try BI.init(alloc);
+    defer qrem.deinit();
+    var qint = try BI.init(alloc);
+    defer qint.deinit();
+    try divFast(&qint, &qrem, &qf.v, &unit);
+    const quant: f64 = if (qrem.eqlZero() and qf.e == 0) 0 else 4;
+    var qt = Fx{ .v = try BI.init(alloc), .e = qf.e * fxP10(fxMag(&two_pi.v, w)) + quant };
+    defer fxDeinit(&qt);
+    try mulFast(&qt.v, &qi, &two_pi.v);
+    qt.e += fxP10(fxMag(&qi, 0)) * two_pi.e;
+    var r = Fx{ .v = try BI.init(alloc), .e = x.e + qt.e };
+    defer fxDeinit(&r);
+    try r.v.sub(&x.v, &qt.v);
     // fold to [0, pi/2]
-    var u = try r.clone();
-    defer u.deinit();
+    var u = try r.v.clone();
+    var ue = r.e;
     const neg_r = !u.isPositive() and !u.eqlZero();
     u.abs();
     var flip_cos = false;
-    if (u.order(half_pi) == .gt) {
+    if (u.order(half_pi.v) == .gt) {
         var usq = try BI.init(alloc);
-        defer usq.deinit();
-        try usq.sub(&pi, &u);
+        try usq.sub(&pi.v, &u);
         u.deinit();
-        u = try usq.clone();
+        u = usq;
+        ue += pi.e;
         flip_cos = true;
     }
+    var uf = Fx{ .v = u, .e = ue };
+    defer fxDeinit(&uf);
     var res = if (want_sin)
-        try fxSinSmall(alloc, &u, w)
+        try fxSinSmall(alloc, &uf, w)
     else
-        try fxCosSmall(alloc, &u, w);
-    defer res.deinit();
-    if ((want_sin and neg_r) or (!want_sin and flip_cos)) res.negate();
+        try fxCosSmall(alloc, &uf, w);
+
+    defer fxDeinit(&res);
+    if ((want_sin and neg_r) or (!want_sin and flip_cos)) res.v.negate();
     return fxToDec(alloc, &res, w, prec);
 }
 
 // atan(a) * SCALE->Dec: reduce to |x| <= 1 (atan x = pi/2 - atan(1/x)),
 // then 3 argument halvings atan x = 2 atan(x/(1+sqrt(1+x^2))), then Taylor.
 fn decAtan(alloc: std.mem.Allocator, a: *const Dec, prec: i64) !Dec {
-    const w = prec + GUARD + @max(@as(i64, 0), a.e) + 8;
+    var extra: i64 = 0;
+    while (extra <= 512) : (extra += 32) {
+        if (decAtanW(alloc, a, prec, extra)) |d| {
+            return d;
+        } else |err| switch (err) {
+            error.Boundary => continue,
+            else => return err,
+        }
+    }
+    @panic("std/num:atan: rounding boundary unresolved");
+}
+
+fn decAtanW(alloc: std.mem.Allocator, a: *const Dec, prec: i64, extra: i64) !Dec {
+    const w = prec + extra + GUARD + @max(@as(i64, 0), a.e) + 8;
+    {
+        // rational lane: |a| = num/den with small mantissa/exponent and
+        // ratio <= 1/2 -> exact-integer binary split, no halvings.
+        var num = try a.m.clone();
+        defer num.deinit();
+        var den = try BI.initSet(alloc, 1);
+        defer den.deinit();
+        var ok = true;
+        if (a.e >= 0) {
+            if (a.e > 9) {
+                ok = false;
+            } else {
+                var p = try pow10(alloc, a.e);
+                defer p.deinit();
+                try mulFast(&num, &num, &p);
+            }
+        } else {
+            if (-a.e > 9) {
+                ok = false;
+            } else {
+                den.deinit();
+                den = try pow10(alloc, -a.e);
+            }
+        }
+        if (ok and fxMag(&num, 0) <= 9.0 and fxMag(&den, 0) <= 9.0) {
+            var num2 = try BI.init(alloc);
+            defer num2.deinit();
+            try mulFast(&num2, &num, &num);
+            var den2 = try BI.init(alloc);
+            defer den2.deinit();
+            try mulFast(&den2, &den, &den);
+            var num4 = try BI.init(alloc);
+            defer num4.deinit();
+            var c2 = try BI.initSet(alloc, 2);
+            defer c2.deinit();
+            try mulFast(&num4, &num, &c2);
+            if (num.eqlZero()) {
+                var z = try BI.init(alloc);
+                defer z.deinit();
+                const zx = Fx{ .v = z, .e = 0 };
+                return fxToDec(alloc, &zx, w, prec);
+            } else if (num4.order(den) != .gt) {
+                // |u| <= 1/2 -> direct
+                var ar = try fxAtanRat(alloc, &num, &den, w);
+                defer fxDeinit(&ar);
+                if (a.neg) ar.v.negate();
+                return fxToDec(alloc, &ar, w, prec);
+            } else if (num4.order(den) == .gt) {
+                var den4 = try BI.init(alloc);
+                defer den4.deinit();
+                try mulFast(&den4, &den, &c2);
+                if (den4.order(num) != .gt) {
+                    // |u| > 2 -> atan = sign*(pi/2 - atan(den/num))
+                    var ar = try fxAtanRat(alloc, &den, &num, w);
+                    defer fxDeinit(&ar);
+                    var pi = try fxPi(alloc, w);
+                    defer fxDeinit(&pi);
+                    var twob = try BI.initSet(alloc, 2);
+                    defer twob.deinit();
+                    var hpi = try fxTruncDiv(alloc, &pi, &twob);
+                    defer fxDeinit(&hpi);
+                    var res = Fx{ .v = try BI.init(alloc), .e = ar.e + hpi.e };
+                    defer fxDeinit(&res);
+                    try res.v.sub(&hpi.v, &ar.v);
+                    if (a.neg) res.v.negate();
+                    return fxToDec(alloc, &res, w, prec);
+                }
+            }
+        }
+    }
     var x = try fxFromDec(alloc, a, w);
-    defer x.deinit();
-    const neg = !x.isPositive() and !x.eqlZero();
-    x.abs();
-    var unit = try pow10(alloc, w);
-    defer unit.deinit();
+    defer fxDeinit(&x);
+    const neg = !x.v.isPositive() and !x.v.eqlZero();
+    x.v.abs();
+    var unit = try fxConst(alloc, 1, w);
+    defer fxDeinit(&unit);
     var inv = false;
-    if (x.order(unit) == .gt) {
+    if (x.v.order(unit.v) == .gt) {
         const xi = try fxDiv(alloc, &unit, &x, w);
-        x.deinit();
+        fxDeinit(&x);
         x = xi;
         inv = true;
     }
     var i: usize = 0;
     while (i < 3) : (i += 1) {
         var x2 = try fxMul(alloc, &x, &x, w);
-        defer x2.deinit();
-        var s = try BI.init(alloc);
-        defer s.deinit();
-        try s.add(&x2, &unit);
+        defer fxDeinit(&x2);
+        var s = Fx{ .v = try BI.init(alloc), .e = x2.e };
+        defer fxDeinit(&s);
+        try s.v.add(&x2.v, &unit.v);
         var sq = try fxSqrt(alloc, &s, w);
-        defer sq.deinit();
-        var den = try BI.init(alloc);
-        defer den.deinit();
-        try den.add(&sq, &unit);
+        defer fxDeinit(&sq);
+        var den = Fx{ .v = try BI.init(alloc), .e = sq.e };
+        defer fxDeinit(&den);
+        try den.v.add(&sq.v, &unit.v);
         const nx = try fxDiv(alloc, &x, &den, w);
-        x.deinit();
+        fxDeinit(&x);
         x = nx;
     }
     // Taylor atan x = x - x^3/3 + x^5/5 - ...
     var x2 = try fxMul(alloc, &x, &x, w);
-    defer x2.deinit();
-    var term = try x.clone();
-    defer term.deinit();
-    var sum = try x.clone();
-    defer sum.deinit();
+    defer fxDeinit(&x2);
+    var term = Fx{ .v = try x.v.clone(), .e = x.e };
+    defer fxDeinit(&term);
+    var sum = Fx{ .v = try x.v.clone(), .e = x.e };
+    defer fxDeinit(&sum);
     var n: i64 = 1;
-    while (!term.eqlZero()) : (n += 1) {
+    while (!term.v.eqlZero()) : (n += 1) {
         var t = try fxMul(alloc, &term, &x2, w);
-        defer t.deinit();
-        var dn = try BI.initSet(alloc, 2 * n + 1);
-        defer dn.deinit();
+        defer fxDeinit(&t);
         var num2 = try BI.initSet(alloc, 2 * n - 1);
         defer num2.deinit();
-        try mulFast(&t, &t, &num2);
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        term.deinit();
-        term = try BI.init(alloc);
-        try term.divTrunc(&rem, &t, &dn);
-        term.negate();
-        try sum.add(&sum, &term);
+        try mulFast(&t.v, &t.v, &num2);
+        t.e *= @floatFromInt(2 * n - 1);
+        var dn = try BI.initSet(alloc, 2 * n + 1);
+        defer dn.deinit();
+        const nt = try fxTruncDiv(alloc, &t, &dn);
+        fxDeinit(&term);
+        term = nt;
+        term.v.negate();
+        try sum.v.add(&sum.v, &term.v);
+        sum.e += term.e;
     }
-    var c8 = try BI.initSet(alloc, 8);
-    defer c8.deinit();
-    try mulFast(&sum, &sum, &c8);
+    var sum8 = try fxScale(alloc, &sum, 8);
+    defer fxDeinit(&sum8);
     if (inv) {
         var pi = try fxPi(alloc, w);
-        defer pi.deinit();
+        defer fxDeinit(&pi);
         var two = try BI.initSet(alloc, 2);
         defer two.deinit();
-        var hp = try BI.init(alloc);
-        defer hp.deinit();
-        var rem = try BI.init(alloc);
-        defer rem.deinit();
-        try hp.divTrunc(&rem, &pi, &two);
-        try sum.sub(&hp, &sum);
+        var hp = try fxTruncDiv(alloc, &pi, &two);
+        defer fxDeinit(&hp);
+        var res = Fx{ .v = try BI.init(alloc), .e = hp.e + sum8.e };
+        defer fxDeinit(&res);
+        try res.v.sub(&hp.v, &sum8.v);
+        if (neg) res.v.negate();
+        return fxToDec(alloc, &res, w, prec);
     }
-    if (neg) sum.negate();
-    return fxToDec(alloc, &sum, w, prec);
+    if (neg) sum8.v.negate();
+    return fxToDec(alloc, &sum8, w, prec);
 }
 
 // Exact remainder: r = a - b*trunc(a/b) at the finer exponent — C-style
@@ -980,11 +2674,9 @@ fn decMod(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
     defer q.deinit();
     var r = try BI.init(alloc);
     defer r.deinit();
-    try q.divTrunc(&r, &am, &bm);
-    const rs = try r.toString(alloc, 10, .lower);
-    defer alloc.free(rs);
+    try divFast(&q, &r, &am, &bm);
     // r >= 0 as a magnitude; sign follows the dividend (trunc-mod).
-    return decFromDigits(alloc, rs, e, a.neg and !r.eqlZero());
+    return decFromMag(alloc, &r, e, a.neg and !r.eqlZero());
 }
 
 fn ownedCopy(s: []const u8) []u8 {
@@ -1029,7 +2721,7 @@ fn numFree(s: []const u8) void {
 | bad string<std/io:allocated!>
 
 ~proc parse|zig {
-    var d = decParse(koru_allocator(), s) catch |err| switch (err) {
+    var d = numParseGate(koru_allocator(), s) catch |err| switch (err) {
         error.OutOfMemory => @panic("std/num: out of memory"),
         else => return .{ .bad = s },
     };
@@ -1041,14 +2733,14 @@ fn numFree(s: []const u8) void {
 
 // Parse trusted in-program text — a literal. Same gate, no taint to consume.
 // `bad` returns the offending slice.
-~pub tor lit { expr: Expression }
+~pub tor lit { s: string }
 | exact string<exact!>
 | bad string
 
 ~proc lit|zig {
-    var d = decParse(koru_allocator(), expr) catch |err| switch (err) {
+    var d = numParseGate(koru_allocator(), s) catch |err| switch (err) {
         error.OutOfMemory => @panic("std/num: out of memory"),
-        else => return .{ .bad = expr },
+        else => return .{ .bad = s },
     };
     defer decDeinit(&d);
     const canon = decToString(koru_allocator(), &d) catch @panic("std/num: out of memory");
@@ -1149,6 +2841,7 @@ fn numFree(s: []const u8) void {
 ~pub tor pow { a: string<!exact>, n: i64 }
 | exact string<exact!>
 | neg-exp
+| exp-too-large
 
 ~proc pow|zig {
     defer numFree(a);
@@ -1158,17 +2851,27 @@ fn numFree(s: []const u8) void {
     // mantissa^n, e*n — then renorm through the digit string.
     var r = BI.initSet(koru_allocator(), 1) catch @panic("std/num:pow: out of memory");
     defer r.deinit();
-    if (n > std.math.maxInt(u32)) @panic("std/num:pow: exponent too large");
+    if (n > std.math.maxInt(u32)) return .{ .exp_too_large = .{} };
     {
         const pr = biPowFast(koru_allocator(), &d.m, @intCast(n)) catch @panic("std/num:pow: out of memory");
         r.deinit();
         r = pr;
     }
-    const ds = r.toString(koru_allocator(), 10, .lower) catch @panic("std/num:pow: out of memory");
-    defer koru_allocator().free(ds);
-    var out = decFromDigits(koru_allocator(), ds, d.e * n, d.neg and @mod(n, 2) != 0) catch @panic("std/num:pow: out of memory");
+    var out = decFromMag(koru_allocator(), &r, d.e * n, d.neg and @mod(n, 2) != 0) catch @panic("std/num:pow: out of memory");
     defer decDeinit(&out);
     return .{ .exact = decToString(koru_allocator(), &out) catch @panic("std/num:pow: out of memory") };
+}
+
+// a truncated to `prec` significant digits (floor-magnitude); unchanged if it already has <= prec.
+~pub tor trunc { a: string<!exact>, prec: i64 } -> string<exact!>
+
+~proc trunc|zig {
+    defer numFree(a);
+    var da = decParse(koru_allocator(), a) catch @panic("std/num:trunc: malformed operand");
+    defer decDeinit(&da);
+    var r = decTrunc(koru_allocator(), &da, prec) catch @panic("std/num:trunc: out of memory");
+    defer decDeinit(&r);
+    return decToString(koru_allocator(), &r) catch @panic("std/num:trunc: out of memory");
 }
 
 // sqrt(a^2 + b^2) to `prec` significant digits — quadrature addition. The
@@ -1482,78 +3185,3 @@ fn numFree(s: []const u8) void {
     defer decDeinit(&d);
     return if (d.e < 0) -d.e else 0;
 }
-
-// Render an integral value in base 2..36 (bc's obase, honest about scope:
-// non-integers refuse rather than emitting bc's digit-vector notation).
-~pub tor to-base { a: string<!exact>, base: i64 }
-| exact string<exact!>
-| non-int
-| bad-base
-
-~proc to-base|zig {
-    defer numFree(a);
-    if (base < 2 or base > 36) return .{ .bad_base = .{} };
-    var d = decParse(koru_allocator(), a) catch @panic("std/num:to-base: malformed operand");
-    defer decDeinit(&d);
-    if (d.e < 0) return .{ .non_int = .{} };
-    var v = d.m.clone() catch @panic("std/num: out of memory");
-    defer v.deinit();
-    var p = pow10(koru_allocator(), d.e) catch @panic("std/num: out of memory");
-    defer p.deinit();
-    mulFast(&v, &v, &p) catch @panic("std/num: out of memory");
-    const b8: u8 = @intCast(base);
-    const s = v.toString(koru_allocator(), b8, .lower) catch @panic("std/num: out of memory");
-    if (d.neg and !v.eqlZero()) {
-        var out = koru_allocator().alloc(u8, s.len + 1) catch @panic("std/num: out of memory");
-        out[0] = '-';
-        @memcpy(out[1..], s);
-        koru_allocator().free(s);
-        return .{ .exact = out };
-    }
-    return .{ .exact = s };
-}
-
-// Parse digits in base 2..36 into an integer value (bc's ibase; lit-lane —
-// the text is trusted, same contract as lit). Upper and lower case both
-// accepted; '_' separators refused, a leading '-' negates.
-~pub tor from-base { s: string, base: i64 }
-| exact string<exact!>
-| bad-digit
-| bad-base
-
-~proc from-base|zig {
-    if (base < 2 or base > 36) return .{ .bad_base = .{} };
-    var i: usize = 0;
-    var neg = false;
-    if (s.len > 0 and s[0] == '-') {
-        neg = true;
-        i = 1;
-    }
-    if (i >= s.len) return .{ .bad_digit = .{} };
-    var v = BI.initSet(koru_allocator(), 0) catch @panic("std/num: out of memory");
-    defer v.deinit();
-    var bb = BI.initSet(koru_allocator(), base) catch @panic("std/num: out of memory");
-    defer bb.deinit();
-    while (i < s.len) : (i += 1) {
-        const c = s[i];
-        const dig: i64 = if (c >= '0' and c <= '9')
-            c - '0'
-        else if (c >= 'a' and c <= 'z')
-            c - 'a' + 10
-        else if (c >= 'A' and c <= 'Z')
-            c - 'A' + 10
-        else
-            return .{ .bad_digit = .{} };
-        if (dig >= base) return .{ .bad_digit = .{} };
-        var dd = BI.initSet(koru_allocator(), dig) catch @panic("std/num: out of memory");
-        defer dd.deinit();
-        mulFast(&v, &v, &bb) catch @panic("std/num: out of memory");
-        v.add(&v, &dd) catch @panic("std/num: out of memory");
-    }
-    const ds = v.toString(koru_allocator(), 10, .lower) catch @panic("std/num: out of memory");
-    defer koru_allocator().free(ds);
-    var out = decFromDigits(koru_allocator(), ds, 0, neg and !v.eqlZero()) catch @panic("std/num: out of memory");
-    defer decDeinit(&out);
-    return .{ .exact = decToString(koru_allocator(), &out) catch @panic("std/num: out of memory") };
-}
-

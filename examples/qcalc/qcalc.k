@@ -6,8 +6,8 @@
 //     5 m/s ; mul ; 3 s           ->  1.5e1 | m^1 ...        (15 m)
 //     5 m/s ; div ; 2 s           ->  2.5e0 | m^1 s^-2 ...   (2.5 m/s^2)
 //     4 N ; mul ; 2 m             ->  8e0 | kg^1 m^2 s^-2    (== 8 J)
-//     2 m±0.1 ; add ; 1 m±0.1     ->  uncertainty in quadrature
-//     2 m±0.1@bias ; sub ; 1 m±0.1@bias
+//     2±0.1 m ; add ; 1±0.1 m     ->  uncertainty in quadrature
+//     2±0.1@bias m ; sub ; 1±0.1@bias m
 //                                 ->  correlated sigma cancels
 //     2 m ; add ; 3 s             ->  dim-mismatch (a lawful refusal,
 //                                     not a silent wrong answer)

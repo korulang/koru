@@ -1,0 +1,5 @@
+rel:v1;sin=g(cos);cos=(-1e0*g(sin));exp=g(exp);pythag=(((g(sin)*g(sin))+(g(cos)*g(cos)))=1e0);(g(exp)=g(exp))
+rel:v1;sin=g(cos);cos=(-1e0*g(sin));exp=g(exp);pythag=(((g(sin)*g(sin))+(g(cos)*g(cos)))=1e0);(g(exp)=g(exp))
+ug
+dup
+bad

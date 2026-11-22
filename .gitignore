@@ -203,6 +203,9 @@ target/
 *.dylib
 *.so
 
+# koru-libs vendored deps are source-of-truth, not build output.
+!koru-libs/z3/lib/libz3.so
+
 # Unikraft build output — .unikraft/, zig-out and the compiled archive rode
 # in once as examples/unikraft-net (3,248 files); kraft builds regenerate
 # them in the example's own tree

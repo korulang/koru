@@ -3,7 +3,7 @@
 //
 // A generator is a named function of x declared in a `rel:v1` registry:
 //   rel:v1;exp=;sin=g(cos);cos=(-1e0*g(sin))
-// Entry i internes atom 4+i; `g(name)` in an expression resolves against the
+// Entry i internes atom 5+i; `g(name)` in an expression resolves against the
 // registry's names. A law is a canonical sexpr (over x, decimals, √/inv and
 // other generators) giving D(g_i) — attached after declaration so cyclic
 // law pairs (sin <-> cos) and self-laws (exp' = exp) both work.
@@ -15,49 +15,167 @@
 // surfaces take and return plain strings.
 //
 // Tors:
-//   rel-new    -> rel:v1                                        (allocated!)
-//   rel-seed   reg, name      -> exact reg' | dup | full | bad   declare a name
-//   rel-law    reg, name, law -> exact reg' | unknown-generator | bad
-//   rel-derive reg, expr      -> exact text | unknown-generator | lawless | bad
-//   rel-norm   reg, expr      -> exact text | unknown-generator | bad
+//   rel-new    -> rel:v1                                         (allocated!)
+//   rel-seed   reg, name         -> exact reg' | dup | full | bad
+//   rel-law    reg, name, source -> exact reg' | unknown-generator | bad
+//   rel-decls  reg, source       -> exact reg' | dup | full | unknown-generator | bad
+//   rel-derive reg, source       -> exact text | unknown-generator | lawless | bad
+//   rel-norm   reg, source       -> exact text | unknown-generator | bad
 //
 // rel-derive applies the declared laws mechanically (chain rule) and returns
-// the normalized canonical text — theorem-grade, since each step is the
-// derivative rule or a declared law substitution. rel-norm gives the canonical
-// form: two expressions provably-equal under the laws iff their canonical
-// texts match (the equality-check primitive is caller-side text compare).
+// the normalized canonical text — each step is the derivative rule or a
+// declared law substitution. rel-norm gives the canonical form: matching
+// canonical texts IMPLY provable equality under the laws (soundness); the
+// converse fails — sin^2+cos^2 and 1 are law-equal but normalize
+// differently (the equality-check primitive is caller-side text compare).
+//
+// Band 2: `g(name, arg)` — explicit application; `g(name)` is `g(name, x)`.
+// An atom's `garg` holds the argument; D g(f,u) = law_f[x:=u] * u' via
+// substX below. Laws may themselves carry arguments (`f' = g(f, x+1)`
+// is a shift-law), since law and expression share one grammar.
 // ============================================================================
+
+// Substitute u for x (atom 3) through a law tree — the band-2 machinery.
+// A bare generator atom (>= 5, garg null) means "applied to x", so under
+// x:=u it lifts to the explicit application g(name, u); an applied atom
+// substitutes inside its argument instead.
+fn substX(alloc: std.mem.Allocator, n: *const SNode, u: *const SNode) anyerror!*SNode {
+    switch (n.kind) {
+        .dec => return nodeDec(alloc, .{ .neg = n.dec.neg, .m = try n.dec.m.clone(), .e = n.dec.e }),
+        .atom => {
+            if (n.atom == 3) return nodeClone(alloc, u);
+            if (n.atom < 5) return nodeAtom(alloc, n.atom);
+            const an = try nodeAtom(alloc, n.atom);
+            errdefer nodeFree(alloc, an);
+            an.garg = if (n.garg) |a| try substX(alloc, a, u) else try nodeClone(alloc, u);
+            return an;
+        },
+        .sq, .inv, .log, .atan, .exp => return nodeUnary(alloc, n.kind, try substX(alloc, n.kid, u)),
+        .rsum => return error.Bad, // aux embeds x-polys as text — cannot substitute honestly
+        .add, .mul => {
+            const kids = try alloc.alloc(*SNode, n.kids.len);
+            var built: usize = 0;
+            errdefer {
+                for (kids[0..built]) |k| nodeFree(alloc, k);
+                alloc.free(kids);
+            }
+            for (n.kids, 0..) |k, i| {
+                kids[i] = try substX(alloc, k, u);
+                built += 1;
+            }
+            return nodeList(alloc, n.kind, kids);
+        },
+    }
+}
 
 fn relNameOk(nm: []const u8) bool {
     if (nm.len == 0) return false;
     if (!(std.ascii.isAlphabetic(nm[0]) or nm[0] == '_')) return false;
-    for (nm[1..]) |ch| {
-        if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return false;
-    }
+    for (nm[1..]) |ch| if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return false;
     return true;
+}
+
+// First `=` at paren depth 0, or null. The entry split must not see the
+// `=` inside a bare value-law's outer parens — `;(a=b)` is one law, not a
+// `nm=lawtext` entry with a broken name.
+fn depth0Eq(s: []const u8) ?usize {
+    var d: usize = 0;
+    for (s, 0..) |ch, i| {
+        if (ch == '(') d += 1 else if (ch == ')') {
+            if (d == 0) return null;
+            d -= 1;
+        } else if (ch == '=' and d == 0) return i;
+    }
+    return null;
+}
+
+// Strip one layer of outer parens when they wrap the whole text;
+// `(a=b)` → `a=b`, `(x*y)` → `x*y`, `(a)*(b)` unchanged.
+fn stripOuter(s0: []const u8) []const u8 {
+    const s = std.mem.trim(u8, s0, " \t\n\r");
+    if (s.len < 2 or s[0] != '(' or s[s.len - 1] != ')') return s;
+    var d: usize = 0;
+    for (s, 0..) |ch, i| {
+        if (ch == '(') d += 1;
+        if (ch == ')') d -= 1;
+        if (d == 0 and i + 1 < s.len) return s;
+    }
+    return std.mem.trim(u8, s[1 .. s.len - 1], " \t\n\r");
+}
+
+fn eqLabelTaken(g: *const GReg, nm: []const u8) bool {
+    for (g.eqs.items) |el| {
+        if (el.label) |l| {
+            if (std.mem.eql(u8, l, nm)) return true;
+        }
+    }
+    return false;
+}
+
+// A value-law's sides: `(lhs=rhs)` or `lhs=rhs` — outer parens stripped,
+// the depth-0 `=` splits; each side is an ordinary expression, normalized
+// so the canonical equation is the key. Returns null when the text is not
+// an equation (no depth-0 `=` after stripping).
+const EqSides = struct { lhs: *SNode, rhs: *SNode };
+fn parseEqLaw(alloc: std.mem.Allocator, s: []const u8, g: *GReg) !?EqSides {
+    const inner = stripOuter(s);
+    const eq = depth0Eq(inner) orelse return null;
+    const lt = try parseTreeG(alloc, std.mem.trim(u8, inner[0..eq], " \t\n\r"), g);
+    errdefer nodeFree(alloc, lt);
+    const rt = try parseTreeG(alloc, std.mem.trim(u8, inner[eq + 1 ..], " \t\n\r"), g);
+    errdefer nodeFree(alloc, rt);
+    const nl = try norm(alloc, lt);
+    nodeFree(alloc, lt);
+    const nr = norm(alloc, rt) catch |e| {
+        nodeFree(alloc, nl);
+        return e;
+    };
+    nodeFree(alloc, rt);
+    return .{ .lhs = nl, .rhs = nr };
 }
 
 // Two-pass: names first (all entries), then each law under the complete
 // registry — so stored laws may reference names declared after them in the
-// text (cyclic pairs serialize fine).
+// text (cyclic pairs serialize fine). Value-law sides parse in the same
+// second pass for the same reason.
 fn relParse(alloc: std.mem.Allocator, s: []const u8) !GReg {
     if (!std.mem.startsWith(u8, s, "rel:v1")) return error.Malformed;
     const tail = s["rel:v1".len..];
-    if (tail.len > 0 and tail[0] != ';') return error.Malformed;
-    var g = GReg{ .names = .{}, .laws = .{} };
+    if (tail.len > 0 and tail[0] != ';' and tail[0] != '\n') return error.Malformed;
+    var g = GReg{ .names = .{}, .laws = .{}, .eqs = .{} };
     var raws = std.ArrayList(?[]const u8){};
     defer raws.deinit(alloc);
-    var it = std.mem.splitScalar(u8, tail, ';');
-    while (it.next()) |ent| {
+    const RawEq = struct { label: ?[]const u8, text: []const u8 };
+    var eqraws = std.ArrayList(RawEq){};
+    defer eqraws.deinit(alloc);
+    var it = std.mem.splitAny(u8, tail, ";\n");
+    while (it.next()) |ent0| {
+        const ent = std.mem.trim(u8, ent0, " \t\n\r");
         if (ent.len == 0) continue;
-        const eq = std.mem.indexOfScalar(u8, ent, '=') orelse return error.Malformed;
-        const nm = ent[0..eq];
-        if (!relNameOk(nm)) return error.Malformed;
-        for (g.names.items) |n2| {
-            if (std.mem.eql(u8, n2, nm)) return error.Malformed;
+        if (depth0Eq(ent)) |eq| {
+            const nm = std.mem.trim(u8, ent[0..eq], " \t\n\r");
+            if (!relNameOk(nm)) return error.Malformed;
+            const lt: []const u8 = if (eq + 1 < ent.len) ent[eq + 1 ..] else "";
+            if (depth0Eq(stripOuter(lt)) != null) {
+                // `name=(lhs=rhs)` — a value-law; the label is advisory and
+                // never enters the generator namespace.
+                if (relFind(&g, nm) != null or eqLabelTaken(&g, nm)) return error.Malformed;
+                try eqraws.append(alloc, .{ .label = nm, .text = lt });
+                continue;
+            }
+            for (g.names.items) |n2| {
+                if (std.mem.eql(u8, n2, nm)) return error.Malformed;
+            }
+            if (eqLabelTaken(&g, nm)) return error.Malformed;
+            try g.names.append(alloc, nm);
+            try raws.append(alloc, if (lt.len > 0) lt else null);
+        } else {
+            // No `=` at depth 0: either a bare value-law `(lhs=rhs)` — the
+            // parens are required, `a=b` at entry level is `name=lawtext`
+            // — or malformed text.
+            if (depth0Eq(stripOuter(ent)) == null) return error.Malformed;
+            try eqraws.append(alloc, .{ .label = null, .text = ent });
         }
-        try g.names.append(alloc, nm);
-        try raws.append(alloc, if (eq + 1 < ent.len) ent[eq + 1 ..] else null);
     }
     for (raws.items) |r| {
         if (r) |lt| {
@@ -66,6 +184,10 @@ fn relParse(alloc: std.mem.Allocator, s: []const u8) !GReg {
         } else {
             try g.laws.append(alloc, null);
         }
+    }
+    for (eqraws.items) |er| {
+        const sides = (try parseEqLaw(alloc, er.text, &g)) orelse return error.Malformed;
+        try g.eqs.append(alloc, .{ .label = er.label, .lhs = sides.lhs, .rhs = sides.rhs });
     }
     return g;
 }
@@ -83,6 +205,22 @@ fn relEmit(alloc: std.mem.Allocator, g: *const GReg) ![]u8 {
             defer alloc.free(c);
             try out.appendSlice(alloc, c);
         }
+    }
+    for (g.eqs.items) |el| {
+        try out.append(alloc, ';');
+        if (el.label) |l| {
+            try out.appendSlice(alloc, l);
+            try out.append(alloc, '=');
+        }
+        const lc = try canonOfG(alloc, el.lhs, g);
+        defer alloc.free(lc);
+        const rc = try canonOfG(alloc, el.rhs, g);
+        defer alloc.free(rc);
+        try out.append(alloc, '(');
+        try out.appendSlice(alloc, lc);
+        try out.append(alloc, '=');
+        try out.appendSlice(alloc, rc);
+        try out.append(alloc, ')');
     }
     return out.toOwnedSlice(alloc);
 }
@@ -102,7 +240,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 }
 
 // Declare a generator name (lawless until rel-law attaches a law).
-~pub tor rel-seed { name: Expression, reg: string<std/io:!allocated> }
+~pub tor rel-seed { reg: string<std/io:!allocated>, name: Expression }
 | exact string<std/io:allocated!>
 | dup
 | full
@@ -127,7 +265,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 // Attach (or replace) the derivative law for a declared generator. The law
 // is a sexpr over x and generator names — self- and mutual references
 // resolve since the name set is complete at attach time.
-~pub tor rel-law { name: Expression, reg: string<std/io:!allocated>, source: Source }
+~pub tor rel-law { reg: string<std/io:!allocated>, name: Expression, source: Source }
 | exact string<std/io:allocated!>
 | unknown-generator
 | bad
@@ -150,9 +288,94 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     return .{ .exact = out };
 }
 
+// Declare a whole block at once: source is a `;`-separated list of `name`
+// and `name=law` entries — the rel:v1 tail grammar, optionally prefixed
+// (so `rel-decls(r, otherRegistryText)` merges two registries). Two
+// phases like the threaded path: every LHS name is seeded first, then
+// each law parses under the complete name set — cyclic blocks and
+// forward references both resolve. Atomic: a `dup`, `full`,
+// `unknown-generator`, or `bad` anywhere refuses the whole block.
+~pub tor rel-decls { reg: string<std/io:!allocated>, source: string<*> }
+| exact string<std/io:allocated!>
+| dup
+| full
+| unknown-generator
+| bad
+
+~proc rel-decls|zig {
+    defer symFree(reg);
+    const alloc = koru_allocator();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var g = relParse(a, reg) catch return .{ .bad = .{} };
+    var tail = source;
+    if (std.mem.startsWith(u8, tail, "rel:v1")) {
+        tail = tail["rel:v1".len..];
+        if (tail.len > 0 and tail[0] != ';' and tail[0] != '\n') return .{ .bad = .{} };
+    }
+    const Entry = struct { nm: []const u8, law: ?[]const u8 };
+    const RawEq = struct { label: ?[]const u8, text: []const u8 };
+    var entries = std.ArrayList(Entry){};
+    var eqraws = std.ArrayList(RawEq){};
+    var it = std.mem.splitAny(u8, tail, ";\n");
+    while (it.next()) |ent0| {
+        const ent = std.mem.trim(u8, ent0, " \t\n\r");
+        if (ent.len == 0) continue;
+        if (depth0Eq(ent)) |eq| {
+            const nm = std.mem.trim(u8, ent[0..eq], " \t\n\r");
+            if (!relNameOk(nm)) return .{ .bad = .{} };
+            const lt: []const u8 = if (eq + 1 < ent.len) ent[eq + 1 ..] else "";
+            if (depth0Eq(stripOuter(lt)) != null) {
+                // `name=(lhs=rhs)` — a value-law; label is advisory, not a
+                // generator name, so it skips the names/laws arrays.
+                if (relFind(&g, nm) != null or eqLabelTaken(&g, nm)) return .{ .dup = .{} };
+                eqraws.append(a, .{ .label = nm, .text = lt }) catch @panic("std/sym:rel-decls: oom");
+                continue;
+            }
+            if (relFind(&g, nm) != null or eqLabelTaken(&g, nm)) return .{ .dup = .{} };
+            if (g.names.items.len >= 252) return .{ .full = .{} };
+            g.names.append(a, nm) catch @panic("std/sym:rel-decls: oom");
+            g.laws.append(a, null) catch @panic("std/sym:rel-decls: oom");
+            entries.append(a, .{ .nm = nm, .law = if (lt.len > 0) lt else null }) catch @panic("std/sym:rel-decls: oom");
+        } else if (depth0Eq(stripOuter(ent)) != null) {
+            // Bare `(lhs=rhs)` — a nameless value-law. The outer parens are
+            // required: `a=b` at entry level is already `name=lawtext`.
+            eqraws.append(a, .{ .label = null, .text = ent }) catch @panic("std/sym:rel-decls: oom");
+        } else {
+            const nm = ent;
+            if (!relNameOk(nm)) return .{ .bad = .{} };
+            if (relFind(&g, nm) != null or eqLabelTaken(&g, nm)) return .{ .dup = .{} };
+            if (g.names.items.len >= 252) return .{ .full = .{} };
+            g.names.append(a, nm) catch @panic("std/sym:rel-decls: oom");
+            g.laws.append(a, null) catch @panic("std/sym:rel-decls: oom");
+            entries.append(a, .{ .nm = nm, .law = null }) catch @panic("std/sym:rel-decls: oom");
+        }
+    }
+    for (entries.items) |en| {
+        if (en.law) |lt| {
+            const t = parseTreeG(a, lt, &g) catch |e| switch (e) {
+                error.UnknownGenerator => return .{ .unknown_generator = .{} },
+                else => return .{ .bad = .{} },
+            };
+            const nt = norm(a, t) catch return .{ .bad = .{} };
+            g.laws.items[relFind(&g, en.nm).?] = nt;
+        }
+    }
+    for (eqraws.items) |er| {
+        const sides = (parseEqLaw(a, er.text, &g) catch |e| switch (e) {
+            error.UnknownGenerator => return .{ .unknown_generator = .{} },
+            else => return .{ .bad = .{} },
+        }) orelse return .{ .bad = .{} };
+        g.eqs.append(a, .{ .label = er.label, .lhs = sides.lhs, .rhs = sides.rhs }) catch @panic("std/sym:rel-decls: oom");
+    }
+    const out = relEmit(alloc, &g) catch @panic("std/sym:rel-decls: emit");
+    return .{ .exact = out };
+}
+
 // d/dx of expr under the declared laws — theorem-grade: every rewrite step
 // is a derivative rule or a declared-law substitution.
-~pub tor rel-derive { reg: string<*>, source: Source }
+~pub tor rel-derive { reg: string<*>, source: string<*> }
 | exact string<std/io:allocated!>
 | unknown-generator
 | lawless
@@ -164,7 +387,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     defer arena.deinit();
     const ar = arena.allocator();
     var g = relParse(ar, reg) catch return .{ .bad = .{} };
-    const t = parseTreeG(ar, source.text, &g) catch |e| switch (e) {
+    const t = parseTreeG(ar, source, &g) catch |e| switch (e) {
         error.UnknownGenerator => return .{ .unknown_generator = .{} },
         else => return .{ .bad = .{} },
     };
@@ -179,7 +402,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
 
 // Canonical normal form of expr under the registry's name set — the
 // caller-side equality primitive: canon-equal texts are provably equal.
-~pub tor rel-norm { reg: string<*>, source: Source }
+~pub tor rel-norm { reg: string<*>, source: string<*> }
 | exact string<std/io:allocated!>
 | unknown-generator
 | bad
@@ -190,7 +413,7 @@ fn relFind(g: *const GReg, nm: []const u8) ?usize {
     defer arena.deinit();
     const ar = arena.allocator();
     var g = relParse(ar, reg) catch return .{ .bad = .{} };
-    const t = parseTreeG(ar, source.text, &g) catch |e| switch (e) {
+    const t = parseTreeG(ar, source, &g) catch |e| switch (e) {
         error.UnknownGenerator => return .{ .unknown_generator = .{} },
         else => return .{ .bad = .{} },
     };

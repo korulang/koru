@@ -1,0 +1,9 @@
+decide(layer=elementary)|antiderivative=((-1e0*log((1e0+exp(x))))+log(exp(x)))|note=risch-exp-theta-subst;checked-exact
+decide(layer=elementary)|antiderivative=log((1e0+exp(x)))|note=risch-exp-theta-subst;checked-exact
+decide(layer=elementary)|antiderivative=((-1e0*log((1e0+exp(x))))+exp(x))|note=risch-exp-theta-subst;checked-exact
+decide(layer=elementary)|antiderivative=(5e-1*((-1e0*log((1e0+exp((3e0+(2e0*x))))))+log(exp((3e0+(2e0*x))))))|note=risch-exp-theta-subst;checked-exact
+decide(layer=elementary)|antiderivative=((-1e0*log((1e0+exp(x))))+log(exp(x)))|note=risch-exp-theta-subst;checked-exact
+nr
+nr
+nr
+nr

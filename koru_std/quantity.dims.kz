@@ -1,0 +1,165 @@
+// ============================================================================
+// ~part dims — compile-time dimension check for statically-decidable ops.
+//
+// `| dim-mismatch` exists because runtime values — ingest, parse, computed
+// magnitudes — cannot be dimension-checked until they exist. When BOTH
+// operands of add/sub trace, through the chain's own arm bindings, to
+// std/quantity:lit(...) literals, the dims are decidable now: a mismatch is
+// an authoring error, so KORU189 refuses at compile time and the arm is
+// honest dead code at that site.
+//
+// The check is deliberately narrow — it fires only when both arg names
+// resolve to arm bindings whose producing invocation is a qualified
+// std/quantity:lit call. ingest, parse, lit-x (the registry is runtime
+// data), lit-sym, computed or rebound-to-computed values, destructured
+// fields, and shadowed `lit` all stay opaque — the runtime arm remains
+// the law for everything it cannot prove.
+// ============================================================================
+
+const ast = @import("ast");
+const emitter_helpers = @import("emitter_helpers");
+
+const Binding = struct {
+    name: []const u8,
+    producer: *const ast.Invocation,
+};
+
+// The continuation whose node IS `target` — for a top-level dispatch
+// (`flow.site_of == null`), the holding continuation lives inside the real
+// flow body directly.
+fn contHolding(cont: *const ast.Continuation, target: *const ast.Invocation) ?*const ast.Continuation {
+    if (cont.node) |*n| {
+        if (n.* == .invocation and &n.invocation == target) return cont;
+    }
+    for (cont.continuations) |*c| {
+        if (contHolding(c, target)) |found| return found;
+    }
+    return null;
+}
+
+// A continuation's binding is produced by its parent site's node: in
+// `X | exact a |> Y`, `a` is X's answer, bound for the subtree under that
+// `exact` continuation. Walk `cont` (the REAL flow body) down to `site`,
+// accumulating only the bindings on the path — sibling arms' bindings are
+// never in scope and never collected. Returns true when `site` is reached.
+fn pathBindings(
+    alloc: std.mem.Allocator,
+    cont: *const ast.Continuation,
+    site: *const ast.Continuation,
+    acc: *std.ArrayList(Binding),
+) bool {
+    if (cont == site) return true;
+    const prod: ?*const ast.Invocation = if (cont.node) |*n| (if (n.* == .invocation) &n.invocation else null) else null;
+    for (cont.continuations) |*c| {
+        const mark = acc.items.len;
+        if (c.binding) |b| {
+            if (prod) |p| {
+                acc.append(alloc, .{ .name = b, .producer = p }) catch @panic("std/quantity: out of memory");
+            }
+        }
+        if (pathBindings(alloc, c, site, acc)) return true;
+        acc.shrinkRetainingCapacity(mark);
+    }
+    return false;
+}
+
+// The producer must be std/quantity:lit itself — an unqualified or
+// foreign-qualified `lit` is a shadow this check cannot resolve. Its first
+// arg is an Expression, so the authored text lives in expression_value; a
+// literal qtySplitExpr can split is a decided dimension.
+fn qtyLitDim(alloc: std.mem.Allocator, inv: *const ast.Invocation) ?[]u8 {
+    if (inv.path.segments.len != 1 or !std.mem.eql(u8, inv.path.segments[0], "lit")) return null;
+    const mq = inv.path.module_qualifier orelse return null;
+    if (!std.mem.eql(u8, mq, "std.quantity")) return null;
+    if (inv.args.len == 0) return null;
+    const ev = inv.args[0].expression_value orelse return null;
+    var f: SplitFields = undefined;
+    qtySplitExpr(alloc, ev.text, "0e0", "-", null, &f) catch return null;
+    alloc.free(f.mag);
+    alloc.free(f.unc);
+    alloc.free(f.scale);
+    alloc.free(f.cov);
+    alloc.free(f.ext);
+    return f.dim;
+}
+
+// The operand text for param `want` — named arg or positional; anything not
+// resolving to a bare identifier cannot be traced to a producer.
+fn argText(inv: *const ast.Invocation, want: []const u8, want_pos: usize) ?[]const u8 {
+    var pos: usize = 0;
+    for (inv.args) |a| {
+        if (a.had_explicit_label) {
+            if (std.mem.eql(u8, std.mem.trim(u8, a.name, " \t"), want)) return a.value;
+        } else {
+            if (pos == want_pos) return a.value;
+            pos += 1;
+        }
+    }
+    return null;
+}
+
+fn bareName(s: []const u8) bool {
+    if (s.len == 0 or std.ascii.isDigit(s[0])) return false;
+    for (s) |ch| {
+        if (!std.ascii.isAlphanumeric(ch) and ch != '_' and ch != '-') return false;
+    }
+    return true;
+}
+
+// Resolve one operand to a decided dimension, or null when the value is
+// anything but a chain-bound name whose producer is lit. Last matching
+// binding wins — a rebind shadows the earlier producer.
+fn argLitDim(
+    alloc: std.mem.Allocator,
+    items: []const ast.Item,
+    flow: *const ast.Flow,
+    target: *const ast.Invocation,
+    want: []const u8,
+    want_pos: usize,
+) ?[]u8 {
+    const text = argText(target, want, want_pos) orelse return null;
+    const name = std.mem.trim(u8, text, " \t");
+    if (!bareName(name)) return null;
+    // Nested dispatch hands a re-rooted site view: `flow.site_of` is the
+    // REAL holding continuation and the ancestors live in the real program.
+    // Top-level dispatch has no site_of; the site sits in `flow.body`.
+    const site: *const ast.Continuation = flow.site_of orelse
+        (contHolding(&flow.body, target) orelse return null);
+    const real: *const ast.Flow = if (flow.site_of != null)
+        (emitter_helpers.findFlowHoldingCont(items, site) orelse return null)
+    else
+        flow;
+    var acc = std.ArrayList(Binding){};
+    defer acc.deinit(alloc);
+    if (!pathBindings(alloc, &real.body, site, &acc)) return null;
+    var i = acc.items.len;
+    while (i > 0) {
+        i -= 1;
+        if (std.mem.eql(u8, acc.items[i].name, name)) {
+            return qtyLitDim(alloc, acc.items[i].producer);
+        }
+    }
+    return null;
+}
+
+~[comptime|transform]proc add|zig {
+    if (item.* != .flow) return .{ .transformed = .{} };
+    const flow = &item.flow;
+    const da = argLitDim(allocator, program.items, flow, invocation, "a", 0) orelse return .{ .transformed = .{} };
+    defer allocator.free(da);
+    const db = argLitDim(allocator, program.items, flow, invocation, "b", 1) orelse return .{ .transformed = .{} };
+    defer allocator.free(db);
+    if (std.mem.eql(u8, da, db)) return .{ .transformed = .{} };
+    return .{ .transformed = ast.refuse(allocator, reporter, .KORU189, flow.location, flow.module, "std/quantity:add: statically incompatible dimensions — `{s}` vs `{s}` — both operands are authored lit() literals, so this is an authoring error, not a runtime refusal; convert one operand explicitly or compute it at runtime", .{ da, db }) };
+}
+
+~[comptime|transform]proc sub|zig {
+    if (item.* != .flow) return .{ .transformed = .{} };
+    const flow = &item.flow;
+    const da = argLitDim(allocator, program.items, flow, invocation, "a", 0) orelse return .{ .transformed = .{} };
+    defer allocator.free(da);
+    const db = argLitDim(allocator, program.items, flow, invocation, "b", 1) orelse return .{ .transformed = .{} };
+    defer allocator.free(db);
+    if (std.mem.eql(u8, da, db)) return .{ .transformed = .{} };
+    return .{ .transformed = ast.refuse(allocator, reporter, .KORU189, flow.location, flow.module, "std/quantity:sub: statically incompatible dimensions — `{s}` vs `{s}` — both operands are authored lit() literals, so this is an authoring error, not a runtime refusal; convert one operand explicitly or compute it at runtime", .{ da, db }) };
+}

@@ -99,7 +99,7 @@ fn regCertAt(alloc: std.mem.Allocator, reg: []const u8, key: []const u8) !?OdeCe
 
 // Register a declared law body — the abstract-term path, appended as
 // the next G entry with via=seed.
-~pub tor cert-reg-seed { reg: string<std/io:!allocated>, body: string }
+~pub tor cert-reg-seed { reg: string<std/io:!allocated>, body: string<*> }
 | exact string<std/io:allocated!>
 | bad-cert string<std/io:allocated!>
 
@@ -131,7 +131,7 @@ fn regCertAt(alloc: std.mem.Allocator, reg: []const u8, key: []const u8) !?OdeCe
 }
 
 // integralShift at registry level: G_new = shift(G_key), via=shift(Gk).
-~pub tor cert-reg-shift { reg: string<std/io:!allocated>, key: string }
+~pub tor cert-reg-shift { reg: string<std/io:!allocated>, key: string<*> }
 | exact string<std/io:allocated!>
 | not-found
 | bad-cert string<std/io:allocated!>
@@ -155,7 +155,7 @@ fn regCertAt(alloc: std.mem.Allocator, reg: []const u8, key: []const u8) !?OdeCe
 }
 
 // Sum closure at registry level: G_new = sum(G_a, G_b), via=sum(Ga,Gb).
-~pub tor cert-reg-sum { reg: string<std/io:!allocated>, a: string, b: string }
+~pub tor cert-reg-sum { reg: string<std/io:!allocated>, a: string<*>, b: string<*> }
 | exact string<std/io:allocated!>
 | not-found
 | bad-cert string<std/io:allocated!>
@@ -184,7 +184,7 @@ fn regCertAt(alloc: std.mem.Allocator, reg: []const u8, key: []const u8) !?OdeCe
 }
 
 // Product closure at registry level, via=prod(Ga,Gb).
-~pub tor cert-reg-prod { reg: string<std/io:!allocated>, a: string, b: string }
+~pub tor cert-reg-prod { reg: string<std/io:!allocated>, a: string<*>, b: string<*> }
 | exact string<std/io:allocated!>
 | not-found
 | bad-cert string<std/io:allocated!>
@@ -243,7 +243,7 @@ fn regCertAt(alloc: std.mem.Allocator, reg: []const u8, key: []const u8) !?OdeCe
 
 // Composition at registry level: validate both keys resolve to certs,
 // then refuse by name — the impossibility is a theorem.
-~pub tor cert-reg-compose { reg: string<std/io:!allocated>, outer: string, inner: string }
+~pub tor cert-reg-compose { reg: string<std/io:!allocated>, outer: string<*>, inner: string<*> }
 | not-holonomic string<std/io:allocated!>
 | not-found
 | bad-cert string<std/io:allocated!>
@@ -262,7 +262,7 @@ fn regCertAt(alloc: std.mem.Allocator, reg: []const u8, key: []const u8) !?OdeCe
 
 // Fetch a cert's text by key. Borrows the registry — the blob's
 // allocated! obligation stays with the caller.
-~pub tor cert-reg-get { reg: string<*>, key: string }
+~pub tor cert-reg-get { reg: string<*>, key: string<*> }
 | exact string<std/io:allocated!>
 | not-found
 | bad-cert string<std/io:allocated!>
