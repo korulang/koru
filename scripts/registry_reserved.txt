@@ -130,3 +130,12 @@ KORU001
 # `std/tree` lane refusals — koru_std/tree.*.kz transforms; .kz emit sites are
 # invisible to the zig-only scan, same situation as KORU178 above.
 KORU184
+
+# Pass-graph contract lane (KORU185-188) — declared in errors.zig for the
+# contract:requires/preserves/obliges machinery; the emit sites in
+# src/pass_graph.zig / src/transform_pass_runner.zig are not yet wired to
+# print these codes. Reserved until the contract lane emits them.
+KORU185
+KORU186
+KORU187
+KORU188
