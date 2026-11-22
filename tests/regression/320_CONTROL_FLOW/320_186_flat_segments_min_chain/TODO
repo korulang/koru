@@ -1,0 +1,1 @@
+BUG: the segment emitter lowers to @call(.always_tail, ...) which stage2_x86_64 does not implement — output_emitted.zig fails to compile on the default zig 0.15.1 Debug backend (needs LLVM or a trampoline loop).

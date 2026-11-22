@@ -1,0 +1,1 @@
+BUG: emit produces self-referential `const __koru_prod_i_N = __koru_prod_i_N + 1` — the minted name shadows the RHS read of the pre-stage binding; output_emitted.zig cannot compile (use of undeclared identifier).
