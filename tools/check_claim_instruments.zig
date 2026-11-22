@@ -45,14 +45,14 @@ fn isStampWord(w: []const u8) bool {
 /// A claim entry line: optional whitespace, `-`, whitespace, a stamp word.
 /// Anything else (incl. `// - measured x` — a comment) is not an entry.
 fn parseEntry(line: []const u8) ?struct { stamp: []const u8, pointer: []const u8 } {
-    const t = std.mem.trim(u8, line, " \t");
+    const t = std.mem.trim(u8, line, " \t\r");
     if (t.len < 2 or t[0] != '-') return null;
     if (t[1] != ' ' and t[1] != '\t') return null; // `->` is not an entry
-    const rest = std.mem.trim(u8, t[1..], " \t");
+    const rest = std.mem.trim(u8, t[1..], " \t\r");
     const sp = std.mem.indexOfAny(u8, rest, " \t");
     const word = if (sp) |i| rest[0..i] else rest;
     if (!isStampWord(word)) return null;
-    const pointer = if (sp) |i| std.mem.trim(u8, rest[i..], " \t") else "";
+    const pointer = if (sp) |i| std.mem.trim(u8, rest[i..], " \t\r") else "";
     return .{ .stamp = word, .pointer = pointer };
 }
 
@@ -70,7 +70,7 @@ fn scanFile(alloc: std.mem.Allocator, path: []const u8, out: *std.ArrayList(Clai
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |line| {
         lineno += 1;
-        const t = std.mem.trim(u8, line, " \t");
+        const t = std.mem.trim(u8, line, " \t\r");
         if (!in_ann) {
             const opens = std.mem.eql(u8, t, ANN_OPEN) or std.mem.eql(u8, t, ANN_OPEN_BARE);
             if (opens) in_ann = true;
@@ -153,11 +153,11 @@ fn loadAllow(alloc: std.mem.Allocator, path: []const u8) !std.ArrayList(Allow) {
     };
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |line| {
-        const t = std.mem.trim(u8, line, " \t");
+        const t = std.mem.trim(u8, line, " \t\r");
         if (t.len == 0 or t[0] == '#') continue;
         var parts = std.mem.splitScalar(u8, t, '|');
-        const p = std.mem.trim(u8, parts.next() orelse continue, " \t");
-        const entry = std.mem.trim(u8, parts.next() orelse continue, " \t");
+        const p = std.mem.trim(u8, parts.next() orelse continue, " \t\r");
+        const entry = std.mem.trim(u8, parts.next() orelse continue, " \t\r");
         try list.append(alloc, .{ .path = p, .entry = entry });
     }
     return list;
@@ -232,11 +232,17 @@ pub fn main() !u8 {
         switch (pointerResolves(repo_root, c.pointer, alloc)) {
             .nowhere => {
                 // repo-relative path for allow matching: strip a leading "../"
+                // and normalize separators — a Windows walk emits `tests\…`
+                // while the allow file is written in `/`.
                 const rel = if (std.mem.startsWith(u8, c.file, "../")) c.file[3..] else c.file;
+                const rel_norm = alloc.dupe(u8, rel) catch unreachable;
+                for (rel_norm) |*ch| {
+                    if (ch.* == '\\') ch.* = '/';
+                }
                 const entry_text = std.fmt.allocPrint(alloc, "- {s} {s}", .{ c.stamp, c.pointer }) catch unreachable;
                 var exempt = false;
                 for (allows.items) |*a| {
-                    if (std.mem.eql(u8, a.path, rel) and std.mem.eql(u8, a.entry, entry_text)) {
+                    if (std.mem.eql(u8, a.path, rel_norm) and std.mem.eql(u8, a.entry, entry_text)) {
                         a.used = true;
                         exempt = true;
                     }

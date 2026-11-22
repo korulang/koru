@@ -336,6 +336,10 @@ fn __appendFmtLiteralByte(buf: *std.ArrayList(u8), allocator: std.mem.Allocator,
 // stack (order 4 = 16 pages, exactly 64 KB), and a writer needing a second copy
 // of that would double a requirement that is already the whole stack.
 //
+// Windows gets its own arm: `std.posix.write` exists there but takes a HANDLE,
+// not the i32 fd this template threads through — GetStdHandle + WriteFile is
+// the same zero-buffer shape the freestanding fputs arm uses.
+//
 // KORU_OUT_UNESCAPED is the source of truth. KORU_OUT_FN is the same text with
 // braces doubled, derived at comptime, because four of the five call sites splice
 // it into an allocPrint FORMAT string where a bare `{` is a format specifier and
@@ -351,10 +355,16 @@ const KORU_OUT_UNESCAPED: []const u8 =
     "@memcpy(__kt[0..__kn], __b[__ki * (__kt.len - 1)..][0..__kn]); __kt[__kn] = 0; " ++
     "@import(\"std\").mem.doNotOptimizeAway(__kc.fputs(@as([*:0]const u8, @ptrCast(&__kt)), " ++
     "if (__fd == 2) __kc.stderr else __kc.stdout)); } " ++
+    "} else if (@import(\"builtin\").os.tag == .windows) { " ++
+    "const __w32 = @import(\"std\").os.windows; " ++
+    "const __wh = __w32.kernel32.GetStdHandle(if (__fd == 2) __w32.STD_ERROR_HANDLE else __w32.STD_OUTPUT_HANDLE) orelse return; " ++
+    "var __wo: u32 = 0; " ++
+    "@import(\"std\").mem.doNotOptimizeAway(__w32.kernel32.WriteFile(__wh, __b.ptr, @intCast(__b.len), &__wo, null)); " ++
     "} else { @import(\"std\").mem.doNotOptimizeAway(@import(\"std\").posix.write(__fd, __b) catch @as(usize, 0)); } } ";
 
 fn __doubleBraces(comptime s: []const u8) []const u8 {
     comptime {
+        @setEvalBranchQuota(100_000);
         var out: []const u8 = "";
         for (s) |c| {
             out = out ++ switch (c) {

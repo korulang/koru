@@ -98,7 +98,9 @@ pub fn assembleMacApp(
     {
         const f = try root.openFile(dst_exe, .{});
         defer f.close();
-        try f.chmod(0o755);
+        if (comptime @import("builtin").os.tag != .windows) {
+            try f.chmod(0o755);
+        }
     }
 
     // Adhoc signature — seals the bundle for LaunchServices and proves the

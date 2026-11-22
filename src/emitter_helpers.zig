@@ -4,6 +4,7 @@ const log = @import("log");
 // The old procedural orchestrators remain in emitter.zig as reference only
 
 const std = @import("std");
+
 const ast = @import("ast");
 const errors = @import("errors");
 const tap_registry_module = @import("tap_registry");
@@ -1469,7 +1470,7 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool, needs_
     // DebugAllocator (per-site alloc tracking) and starts a watch thread —
     // servers never reach koru_leak_check's exit hook, so the report has to
     // come out while the process is alive.
-    const leak_mode = std.posix.getenv("KORU_LEAK_REPORT") != null;
+    const leak_mode = (std.process.getEnvVarOwned(std.heap.page_allocator, "KORU_LEAK_REPORT") catch null) != null;
     try emitter.write("const __koru_backing = if (@import(\"builtin\").link_libc) @import(\"std\").heap.c_allocator else if (@import(\"builtin\").os.tag == .freestanding and !@import(\"builtin\").cpu.arch.isWasm()) __koru_bare.allocator else @import(\"std\").heap.page_allocator;\n");
     try emitter.write(if (leak_mode) "const __koru_leak_mode = true;\n" else "const __koru_leak_mode = false;\n");
     try emitter.write("var __koru_gpa: @import(\"std\").heap.DebugAllocator(.{ .stack_trace_frames = 16 }) = .init;\n");
@@ -10334,7 +10335,7 @@ fn emitInvocationMetaFields(
     try emitter.write(".location = ");
     if (ctx.current_flow_location) |loc| {
         try emitter.write(".{ .file = \"");
-        try emitter.write(loc.file);
+        try emitEscapedString(emitter, loc.file);
         try emitter.write("\", .line = ");
         var line_buf: [16]u8 = undefined;
         const line_str = std.fmt.bufPrint(&line_buf, "{d}", .{loc.line}) catch "0";
@@ -16221,9 +16222,16 @@ pub fn outputExeName(allocator: std.mem.Allocator) []const u8 {
 /// zig fetch) — the two processes must agree, or the zig-lib overlay
 /// byte-verified against one version gets applied to another's std.
 /// posix.getenv, not getEnvVarOwned: zero-alloc — an owned read leaks past
-/// the GPA's exit report on every KORU_ZIG compile.
+/// the GPA's exit report on every KORU_ZIG compile. Windows has no
+/// std.posix.getenv (env is WTF-16): getenvW + a static utf8 scratch keeps
+/// the same zero-alloc contract there.
+var zig_exe_buf: [4096]u8 = undefined;
+
 pub fn zigExe() []const u8 {
-    const v = std.posix.getenv("KORU_ZIG") orelse return "zig";
+    const v = if (@import("builtin").os.tag == .windows) blk: {
+        const w = std.process.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("KORU_ZIG")) orelse return "zig";
+        break :blk zig_exe_buf[0..std.unicode.wtf16LeToWtf8(&zig_exe_buf, w)];
+    } else std.posix.getenv("KORU_ZIG") orelse return "zig";
     return if (v.len == 0) "zig" else v;
 }
 

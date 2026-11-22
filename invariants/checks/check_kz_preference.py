@@ -115,6 +115,8 @@ def main():
         print(__doc__.strip().splitlines()[-3])
         return 2
     koruc = os.path.abspath(args[0])
+    if not os.path.exists(koruc) and os.path.exists(koruc + ".exe"):
+        koruc += ".exe"  # Windows host: the binary carries an extension
     repo = os.path.abspath(args[1]) if len(args) > 1 else \
         os.path.abspath(os.path.join(HERE, "..", ".."))
     allow_path = args[2] if len(args) > 2 else \

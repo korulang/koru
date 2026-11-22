@@ -145,9 +145,18 @@ def collect_files(roots):
 
 
 def ast_of(path):
-    proc = subprocess.run([KORUC, "--ast-canon", path],
-                          capture_output=True, text=True)
-    if proc.returncode != 0:
+    # Windows host: parallel subprocess pipes flake on win32 — a
+    # CompletedProcess can come back rc=0 with stdout=None (pipe reader
+    # lost the capture under handle-inheritance contention). That is a
+    # transport failure, not a canon verdict: bounded retry, and if the
+    # pipe never delivers the file lands in skipped like any unparseable.
+    proc = None
+    for _ in range(4):
+        proc = subprocess.run([KORUC, "--ast-canon", path],
+                              capture_output=True, text=True)
+        if proc.stdout is not None:
+            break
+    if proc is None or proc.returncode != 0 or proc.stdout is None:
         return None
     try:
         return json.loads(proc.stdout)
@@ -326,6 +335,8 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     global KORUC, MIN_NODES, MIN_TOKENS, TOP, JOBS
     KORUC = os.path.abspath(args[0])
+    if not os.path.exists(KORUC) and os.path.exists(KORUC + ".exe"):
+        KORUC += ".exe"  # Windows host: the binary carries an extension
     roots = args[1:]
     MIN_NODES, MIN_TOKENS, TOP, JOBS = 32, 48, 20, 8
     host = "--host" in sys.argv[1:]

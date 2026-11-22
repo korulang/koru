@@ -396,6 +396,15 @@ pub fn emitOutputBuildZig(
         \\            if (__koru_d.len != 0) __koru_exe.addLibraryPath(.{ .cwd_relative = __koru_d });
         \\        }
         \\    } else |_| {}
+        \\    // KORU_BACKEND_INCLUDEPATH: path-list dirs added as -I for @cInclude.
+        \\    // Same host-property shape as LIBPATH — a C header's location belongs
+        \\    // to the machine, not the program (e.g. yyjson.h in ~/.koru/include).
+        \\    if (std.process.getEnvVarOwned(__koru_b.allocator, "KORU_BACKEND_INCLUDEPATH")) |__koru_ip| {
+        \\        var __koru_iit = std.mem.splitScalar(u8, __koru_ip, std.fs.path.delimiter);
+        \\        while (__koru_iit.next()) |__koru_d| {
+        \\            if (__koru_d.len != 0) __koru_exe.addIncludePath(.{ .cwd_relative = __koru_d });
+        \\        }
+        \\    } else |_| {}
         \\
         \\
     );
