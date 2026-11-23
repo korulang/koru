@@ -136,5 +136,18 @@ members=1139
 # documented). control.for.kz's synthetic stays unparseable both
 # sides of this diff (37 -> 39 errors — nested template arms; it was
 # already in the escaped set, so its host text never counted).
-clusters=1283
-members=1139
+# Re-pinned 2026-11-23: the roll fired on the grammartext splice-ban
+# commit (koru_std/runtime.grammartext.kz VALUES rule — string-literal
+# prompt text, zero host-Zig delta; the fingerprint floor never sees
+# it). Decomposed: +104 clusters / +112 members is committed drift
+# under rolls that missed — store.new.kz catch shells lead the board
+# (cluster #1, 9x catch, w=10223), trellis var-decl twins (#2),
+# fmt/io.blk cross-file var-decls (#3), sym.* while_cont twins (#4),
+# store.qtail/store.new catch family (#5) — the same families every
+# prior re-pin named. Coverage debt stands: 20 files stay UNPARSEABLE
+# (control.for/zip/capture, control.kz, io, yaml, declarations,
+# fs.dir, benchmarking.climb et al — dormant proc bodies per the row's
+# contract), so measured understates the true mass until they parse.
+# Re-pinned to measured.
+clusters=1387
+members=1251

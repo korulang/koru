@@ -14,7 +14,7 @@ const WIRE_GRAMMAR_HEAD =
     \\
     \\VOCABULARY — each line below is the verb's declaration. `pub tor name { arg: type }` declares it; you INVOKE it with parens: `name(arg: "v")`. The `type<!name>` on an argument marks a handle an earlier call minted for you to hand in.
     \\
-    \\VALUES — a field takes a "quoted string" or a bare expression (`42`, `r3.total * 2`, `u.user_id`). `{{ name }}` inside a quoted string splices a bound value into prose; `{{ u.field }}` lifts one level of fields — a deeper path refuses, so read nested shapes out of the report instead.
+    \\VALUES — a field takes a "quoted string" or a bare expression (`42`, `r3.total * 2`, `u.user_id`). `{{ name }}` inside a quoted string splices a bound value into prose; `{{ u.field }}` lifts one level of fields — a deeper path refuses, so read nested shapes out of the report instead. No wildcards or indexes in splices — `{{ r.flights[*].x }}` and `{{ r.flights[0].x }}` are not spellings; `{{ r.flights }}` renders the whole list, and a single item's fields are read from the report or passed to a call as `rN.list[i].field`.
 ;
 
 const WIRE_OUTCOMES_RULE =
