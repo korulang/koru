@@ -9819,8 +9819,237 @@ fn wlHasParallelSelfCall(cont: ast.Continuation, self_path: ast.DottedPath) bool
     return false;
 }
 
+// ── Asymmetry gate ────────────────────────────────────────────────────────
+//
+// The worklist only pays where the marked self-calls fan out into UNEVEN
+// subtrees — the skew fork/join leaves as stragglers (coins: one arm shrinks
+// `amount` by a coin value while the other shrinks `kind` by one). Symmetric
+// recursion — every call shrinking the same param(s) by similar literal
+// steps (fib's n-1 / n-2) — is already near-optimal on fork/join, and the
+// worklist's push/pop plus done-flag polling is pure overhead there
+// (measured: fib-par ~34ms worklist vs ~20ms fork/join). Anything the
+// classifier cannot prove either way — permuted args, non-literal steps on
+// a shared param, a lone self-call — keeps fork/join: unsure means the
+// proven path, never the experiment.
+
+const WlArgClass = struct {
+    kind: enum { same, decrease, other },
+    /// Set when the decrease's subtracted term is an integer literal.
+    lit: ?u64 = null,
+};
+
+const WlDecParam = struct {
+    name: []const u8,
+    lit: ?u64,
+};
+
+const WlCallShape = struct {
+    /// Params this call shrinks, with the literal step when provable.
+    decs: std.ArrayList(WlDecParam) = .empty,
+    /// Any arg that is neither passthrough nor `param - step` — permutations,
+    /// literals, calls-free complex shapes. One `other` makes the whole tor
+    /// UNSURE → fork/join.
+    has_other: bool = false,
+};
+
+fn wlUnwrapGrouped(expr: *const ast.Expression) *const ast.Expression {
+    var cur = expr;
+    while (true) {
+        switch (cur.node) {
+            .grouped => |g| cur = g,
+            else => return cur,
+        }
+    }
+}
+
+/// Classify one self-call arg against the param it binds: `same` (the param
+/// itself), `decrease` (`param - step`, `lit` set for integer steps), or
+/// `other` (everything else — a permutation like tak's `x: y - 1`, a
+/// literal, an increase, a non-subtract shape).
+fn wlSelfArgClassExpr(expr: *const ast.Expression, param: []const u8) WlArgClass {
+    const e = wlUnwrapGrouped(expr);
+    switch (e.node) {
+        .identifier => |id| {
+            if (std.mem.eql(u8, id, param)) return .{ .kind = .same };
+            return .{ .kind = .other };
+        },
+        .binary => |b| {
+            if (b.op != .subtract) return .{ .kind = .other };
+            const lid = switch (wlUnwrapGrouped(b.left).node) {
+                .identifier => |id| id,
+                else => return .{ .kind = .other },
+            };
+            if (!std.mem.eql(u8, lid, param)) return .{ .kind = .other };
+            const lit: ?u64 = switch (wlUnwrapGrouped(b.right).node) {
+                .literal => |litv| switch (litv) {
+                    .number => |txt| std.fmt.parseInt(u64, txt, 10) catch null,
+                    else => null,
+                },
+                else => null,
+            };
+            return .{ .kind = .decrease, .lit = lit };
+        },
+        else => return .{ .kind = .other },
+    }
+}
+
+/// Text fallback for args whose `parsed_expression` never populated (a
+/// partial parse leaves it null): `param` → same, `param - <step>` →
+/// decrease, anything else → other. The `-` must hug the param name so
+/// `n2 - 1` can't masquerade as a decrease of `n`.
+fn wlSelfArgClassText(value: []const u8, param: []const u8) WlArgClass {
+    if (param.len == 0) return .{ .kind = .other };
+    const v = std.mem.trim(u8, value, " \t");
+    if (std.mem.eql(u8, v, param)) return .{ .kind = .same };
+    if (std.mem.startsWith(u8, v, param)) {
+        const rest = std.mem.trimLeft(u8, v[param.len..], " \t");
+        if (rest.len > 0 and rest[0] == '-') {
+            const dec = std.mem.trim(u8, rest[1..], " \t");
+            if (dec.len > 0) {
+                return .{ .kind = .decrease, .lit = std.fmt.parseInt(u64, dec, 10) catch null };
+            }
+        }
+    }
+    return .{ .kind = .other };
+}
+
+fn wlSelfArgClass(arg: *const ast.Arg, param: []const u8) WlArgClass {
+    if (arg.parsed_expression) |pe| return wlSelfArgClassExpr(pe, param);
+    return wlSelfArgClassText(arg.value, param);
+}
+
+fn wlCountParSelfCalls(cont: *const ast.Continuation, self_path: ast.DottedPath) usize {
+    var n: usize = 0;
+    if (cont.node) |node| {
+        switch (node) {
+            .invocation => |inv| {
+                for (inv.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "parallel") and sameDottedPath(inv.path, self_path)) n += 1;
+                }
+            },
+            else => {},
+        }
+    }
+    for (cont.continuations) |*c| n += wlCountParSelfCalls(c, self_path);
+    return n;
+}
+
+fn wlCollectParSelfCalls(
+    cont: *const ast.Continuation,
+    self_path: ast.DottedPath,
+    out: *std.ArrayList(ast.Invocation),
+) void {
+    if (cont.node) |node| {
+        switch (node) {
+            .invocation => |inv| {
+                for (inv.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "parallel") and sameDottedPath(inv.path, self_path)) {
+                        out.appendAssumeCapacity(inv);
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+    for (cont.continuations) |*c| wlCollectParSelfCalls(c, self_path, out);
+}
+
+fn wlCallShape(
+    allocator: std.mem.Allocator,
+    inv: *const ast.Invocation,
+    fields: []const ast.Field,
+) !WlCallShape {
+    var shape = WlCallShape{};
+    shape.decs.ensureTotalCapacity(allocator, inv.args.len) catch return error.OutOfMemory;
+    for (inv.args, 0..) |*arg, idx| {
+        // Resolve the bound param exactly like emitArgs does — a bare pun
+        // names its field even when appended late; index is the fallback.
+        const param = ast.resolveArgParamName(arg.*, idx, fields);
+        const cls = wlSelfArgClass(arg, param);
+        switch (cls.kind) {
+            .same => {},
+            .decrease => shape.decs.appendAssumeCapacity(.{ .name = param, .lit = cls.lit }),
+            .other => shape.has_other = true,
+        }
+    }
+    return shape;
+}
+
+fn wlSameDecSet(a: []const WlDecParam, b: []const WlDecParam) bool {
+    if (a.len != b.len) return false;
+    for (a) |da| {
+        var found = false;
+        for (b) |db| {
+            if (std.mem.eql(u8, da.name, db.name)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+/// True only on POSITIVE asymmetry evidence: the marked self-calls shrink
+/// different parameter sets (coins: `amount` on one arm, `kind` on the
+/// other), or shrink the same parameter(s) by literal steps differing by
+/// more than 2x. Symmetric literal-step recursion (fib's n-1 / n-2),
+/// non-literal steps on a shared parameter, permuted/`other` args, and
+/// single-call chains all return false → the proven fork/join path.
+fn wlRecursionAsymmetric(
+    allocator: std.mem.Allocator,
+    flow: *const ast.Flow,
+    event: *const ast.EventDecl,
+) bool {
+    const n = wlCountParSelfCalls(&flow.body, event.path);
+    if (n < 2) return false;
+    var calls = std.ArrayList(ast.Invocation){};
+    defer calls.deinit(allocator);
+    calls.ensureTotalCapacity(allocator, n) catch return false;
+    wlCollectParSelfCalls(&flow.body, event.path, &calls);
+
+    var shapes = std.ArrayList(WlCallShape){};
+    defer {
+        for (shapes.items) |*s| s.decs.deinit(allocator);
+        shapes.deinit(allocator);
+    }
+    shapes.ensureTotalCapacity(allocator, n) catch return false;
+    var any_other = false;
+    for (calls.items) |*inv| {
+        const shape = wlCallShape(allocator, inv, event.input.fields) catch return false;
+        if (shape.has_other) any_other = true;
+        shapes.appendAssumeCapacity(shape);
+    }
+    if (any_other) return false;
+
+    const ref = shapes.items[0].decs.items;
+    for (shapes.items[1..]) |shape| {
+        if (!wlSameDecSet(ref, shape.decs.items)) return true;
+    }
+    // Identical decreased-param sets: symmetric only when every step is a
+    // literal within 2x per param. A non-literal step on the shared param
+    // can't be compared — unsure → fork/join.
+    for (ref) |rd| {
+        var min: u64 = std.math.maxInt(u64);
+        var max: u64 = 0;
+        for (shapes.items) |shape| {
+            for (shape.decs.items) |d| {
+                if (!std.mem.eql(u8, d.name, rd.name)) continue;
+                const lit = d.lit orelse return false;
+                min = @min(min, lit);
+                max = @max(max, lit);
+                break;
+            }
+        }
+        const doubled = std.math.mul(u64, min, 2) catch std.math.maxInt(u64);
+        if (max > doubled) return true;
+    }
+    return false;
+}
+
 /// The qualification gate: self-recursive via `[parallel]` self-call, every
-/// `[parallel]` invocation a self-call, and the whole body provably pure.
+/// `[parallel]` invocation a self-call, the whole body provably pure, AND
+/// the recursion provably asymmetric (the skew fork/join can't balance).
 pub fn flowQualifiesForWorklist(
     ctx: *EmissionContext,
     event: *const ast.EventDecl,
@@ -9828,6 +10057,9 @@ pub fn flowQualifiesForWorklist(
     all_items: []const ast.Item,
 ) bool {
     if (!wlHasParallelSelfCall(flow.body, event.path)) {
+        return false;
+    }
+    if (!wlRecursionAsymmetric(ctx.allocator, flow, event)) {
         return false;
     }
     var purity = WlPurity{

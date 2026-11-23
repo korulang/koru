@@ -16,7 +16,7 @@ pushes an item onto a per-event deque, workers steal items, and the join
 is a done-count wait. This is Bend's evaluation idea compiled as a Koru
 strategy — but gated on a proof Bend never requires.
 
-Two measured rulings came out of the build:
+Three measured rulings came out of the build:
 
 - **Depth-gated push breadth, not value floors.** Work-item count must be
   bounded by recursion DEPTH (`WL_PUSH_DEPTH`), not input magnitude — a
@@ -26,10 +26,23 @@ Two measured rulings came out of the build:
 - **One shared deque.** A thread-local-plus-spill hybrid starved because
   `help()` drained the local queue before it could spill — steal count
   went to zero. Single shared deque with an atomic length mirror won.
+- **Asymmetry, not purity alone, selects the worklist.** The first cut
+  lowered every proven-pure self-recursive tor — including symmetric
+  recursion where fork/join already wins (fib-par ~34ms worklist vs
+  ~20ms fork/join, same loaded box; worklist min 25.6 vs fork/join min
+  18.2). Push/pop and done-flag polling is overhead on balanced trees;
+  the steal-everything deque is the win on skewed ones. The gate now
+  requires positive skew evidence: the marked self-calls must shrink
+  different parameter sets (coins: `amount` on one arm, `kind` on the
+  other) or the same param(s) by literal steps differing >2x.
+  Symmetric literal-step recursion, non-literal steps on a shared
+  param, permuted args, and single-call chains keep fork/join — unsure
+  means the proven path, never the experiment.
 
 The division of labor this establishes: fork/join + the SIZE_FLOOR guard
-remains the path for everything the purity gate cannot prove; the
-worklist is the strategy for the proven-pure self-recursive slice. The
+remains the path for everything the purity gate cannot prove AND for
+proven-pure recursion that measures symmetric; the worklist is the
+strategy for the proven-pure ASYMMETRIC self-recursive slice. The
 compiler picks — that selection is the language-language claim made
 executable: analyze the shape, prove the subset, compile the machine that
 fits, keep the sequential path native.
