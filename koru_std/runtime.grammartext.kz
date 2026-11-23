@@ -22,7 +22,7 @@ const WIRE_OUTCOMES_RULE =
 ;
 
 const WIRE_BINDINGS_RULE =
-    \\BINDINGS — `| {s} n |>` binds the outcome to `n` for the rest of this reply; a call five items later still sees it, and the name dies with the reply. Every dispatched result also binds a durable `r1, r2, …` name that outlives the reply — `| {s} n |>` for threading within a reply, `rN` across replies.
+    \\BINDINGS — `| {s} n |>` binds the outcome to `n` for the rest of this reply; a call five items later still sees it, and the name dies with the reply. Every dispatched result also binds a durable `r1, r2, …` name that outlives the reply — `| {s} n |>` for threading within a reply, `rN` across replies. When an argument's value already sits inside a result you hold, pass the path — `rN.field`, `rN.list[i].field` — never re-type the literal; arg paths reach list items even though `{{ }}` splices lift one level only.
 ;
 
 const WIRE_GRAMMAR_TAIL =
