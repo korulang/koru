@@ -33,13 +33,17 @@ cannot ride the machine. Today's worklist lowering (`a23a1ef03`) fires
 only for proven-pure self-recursive tors; the purity gate is the honest
 edge of what we can currently encode.*
 
-*This is not "invent Bend's IO" — Bend's `IO.OP` is the crude prototype.
-Koru already has the real semantics as proofs; the work is a projection of
-existing proof structures onto machine states, which is what compilers
-do. Sanity advantage over Bend: no new surface syntax (proof metadata
-already exists), proofs ride the work item as witnesses (Bend's unchecked
-lowering can't claim that), and coverage expands by discharging more
-proof classes — never by dropping a check.*
+*This is not "invent Bend's IO" — `IO.OP` is a beautiful solution: a
+monadic interface that makes effects first-class terms on a reduction
+machine, with `base.bend` and `effs/*` as its honest runtime. Koru's
+difference is not that theirs is crude and ours is real — it is that our
+semantics already exist as proofs rather than as a surface encoding. The
+work is a projection of existing proof structures onto machine states,
+which is what compilers do. Advantage over Bend, stated plainly: no new
+surface syntax (proof metadata already exists), proofs ride the work item
+as witnesses (Bend's lowering doesn't carry them because it doesn't make
+them), and coverage expands by discharging more proof classes — never by
+dropping a check.*
 
 ---
 
@@ -105,9 +109,11 @@ Done-gates:
 ---
 
 *Meta-note for the walker: this challenge is the "compile to that idea"
-escalation made concrete. Bend proved effects can be machine states via a
-monad; Koru's version carries discharged proofs as work-item witnesses.
-The prize isn't matching Bend's board — it's being the language that can
+escalation made concrete. Bend proved effects can be machine states —
+elegantly, via a monadic interface that is one of the best designs in the
+space. Koru's version carries discharged proofs as work-item witnesses —
+a different answer to the same question, not a correction of theirs. The
+prize isn't matching Bend's board — it's being the language that can
 express Bend's entire evaluation idea *plus* the semantics Bend simulates.
 If this lands, "language-language" stops being a claim and becomes a
 coverage map.*
