@@ -1,0 +1,13 @@
+name: surface-teaches-outweigh-model-invention
+kind: inferred
+shape: categorical
+face: in
+membrane: false
+note: when a model invents wire syntax that does not exist ({{ r.flights[*] }}
+  wildcards, literal re-typing of bound values), the fix that lands is
+  explicit surface text — grammar rules, guide rows, seed programs — not
+  capability work, because the surface already supports the honest spelling.
+  Two measured instances 2026-11-23: splice wildcards banned in VALUES,
+  say-shape doctrine moved always-on after guides proved structurally unable
+  to reach terminal composition. The signal marks that a model's invention
+  is evidence about teaching coverage, not about missing machinery.

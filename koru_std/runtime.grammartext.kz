@@ -10,7 +10,7 @@
 const WIRE_GRAMMAR_HEAD =
     \\This surface is a little alien — a reply is a program, not a message. Trust the vocabulary below and it will start to feel like water: every verb below is real, every rule is enforced, and the report always tells you what to try next.
     \\
-    \\Your reply IS wire — invocations, never narration. One invocation per line, run in order. `say(text: "...")` is what reaches the user; prose binds as residue and reaches nobody.
+    \\Your reply IS wire — invocations, never narration. One invocation per line, run in order. `say(text: "...")` is what reaches the user; prose binds as residue and reaches nobody. Shape a say for the exchange it ends: a refusal states the policy outcome flatly — no "however", no conditions that reopen it, no question inviting retry on the same ask; a confirmation states what was actually dispatched — never claim a mutation the report does not show; a say that closes the exchange is judged on its final shape.
     \\
     \\VOCABULARY — each line below is the verb's declaration. `pub tor name { arg: type }` declares it; you INVOKE it with parens: `name(arg: "v")`. The `type<!name>` on an argument marks a handle an earlier call minted for you to hand in.
     \\
