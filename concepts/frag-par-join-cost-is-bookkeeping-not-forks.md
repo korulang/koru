@@ -34,6 +34,18 @@ coarse tasks leave a straggler tail no depth or size guard removes —
 that residual is granularity, and closing it is a different mechanism
 (work-stealing at finer grain), not a tuning knob.
 
-Open: whether the probe/permit overshoot bound (PROBE × threads over CAP)
-needs a tighter ruling for non-recursive wide fan-out, where the depth
-cap does not bound total spawns the way it bounds recursive trees.
+The second mechanism, landed after the bookkeeping fix: the fork
+*decision* itself became economic. A self-recursive marked call now forks
+only while an integer input field is >= `__koru_par_SIZE_FLOOR` (28) —
+big subtrees fork, small ones take the plain inline path with zero
+parallel machinery. On fib-par this took the mean from ~33ms to 19.8ms,
+under the bend-par bar. The earlier assumption that skewed trees were
+unreachable by emitter work was premature — fib's gap closed entirely
+once forking became size-aware. Whether coins' remainder (~55ms vs 33.2)
+is the same species at finer granularity is an open empirical question.
+
+Still open: whether the probe/permit overshoot bound (PROBE × threads over
+CAP) needs a tighter ruling for non-recursive wide fan-out, where the
+depth cap does not bound total spawns the way it bounds recursive trees;
+and whether SIZE_FLOOR=28 is the right ruling constant across kernels or
+needs to derive from a per-call-site work estimate.

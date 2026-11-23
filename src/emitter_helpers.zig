@@ -1522,6 +1522,11 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool, needs_
     try emitter.write("threadlocal var __koru_par_probe: usize = 0;\n");
     try emitter.write("threadlocal var __koru_par_permit: usize = 0;\n");
     try emitter.write("const __koru_par_PROBE: usize = 32;\n");
+    // Static work-size cutoff for self-recursive forks (see emitInvocation):
+    // below this input magnitude the subtree cannot amortize a spawn, so the
+    // call takes the inline path with zero parallel machinery. comptime_int —
+    // coerces to whatever integer type the event input declares.
+    try emitter.write("const __koru_par_SIZE_FLOOR = 28;\n");
     try emitter.write("fn __koru_par_fork_ok() bool {\n");
     try emitter.write("    if (__koru_par_probe == 0) {\n");
     try emitter.write("        __koru_par_probe = __koru_par_PROBE;\n");
@@ -9536,6 +9541,17 @@ fn writeArmFireCallExpr(
     try emitter.write(")");
 }
 
+fn sameDottedPath(a: ast.DottedPath, b: ast.DottedPath) bool {
+    const am = a.module_qualifier orelse "";
+    const bm = b.module_qualifier orelse "";
+    if (!std.mem.eql(u8, am, bm)) return false;
+    if (a.segments.len != b.segments.len) return false;
+    for (a.segments, b.segments) |sa, sb| {
+        if (!std.mem.eql(u8, sa, sb)) return false;
+    }
+    return true;
+}
+
 /// Emit an invocation (const result = event.handler(...))
 /// If an ImmediateImpl exists for this path, inline the value instead
 fn emitInvocation(
@@ -10045,6 +10061,31 @@ fn emitInvocation(
         try emitter.write(".Input, __out: *");
         try emitInvocationTarget(emitter, ctx, &invocation.path);
         try emitter.write(".Output) void {\n        __koru_par_depth += 1;\n        defer __koru_par_depth -= 1;\n        run(__in, __out);\n        _ = __koru_par_tasks.fetchSub(1, .monotonic);\n    }\n};\n");
+        // Work-size guard: a self-recursive marked call only forks while the
+        // current input still looks big. Measured on fib-par (challenge 034):
+        // a static size cutoff beat every depth/cap tuning — n>=28 gave ~22ms
+        // vs ~33ms mean — because it selects big subtrees instead of churning
+        // the live-task budget through thousands of small forks. Any integer
+        // input field >= SIZE_FLOOR keeps the fork eligible; all-small inputs
+        // take the plain inline path. The guard only chooses fork-vs-inline —
+        // both arms compute identically, so a misfire costs width, never
+        // correctness.
+        var par_size_guard: ?[]const u8 = null;
+        if (ctx.impl_event_decl) |impl_ev| {
+            if (sameDottedPath(invocation.path, impl_ev.path)) {
+                var guard_disjuncts = std.ArrayList(u8).empty;
+                var any_field = false;
+                for (impl_ev.input.fields) |field| {
+                    if (field.type.len == 0 or (field.type[0] != 'i' and field.type[0] != 'u')) continue;
+                    if (any_field) try guard_disjuncts.appendSlice(ctx.allocator, " or ");
+                    any_field = true;
+                    try guard_disjuncts.appendSlice(ctx.allocator, "__koru_event_input.");
+                    try guard_disjuncts.appendSlice(ctx.allocator, field.name);
+                    try guard_disjuncts.appendSlice(ctx.allocator, " >= __koru_par_SIZE_FLOOR");
+                }
+                if (any_field) par_size_guard = guard_disjuncts.items;
+            }
+        }
         try emitter.write("var __koru_par_wg_");
         try writeBranchName(emitter, slot);
         try emitter.write(": @import(\"std\").Thread.WaitGroup = .{};\n");
@@ -10054,7 +10095,13 @@ fn emitInvocation(
         try emitter.write("var __koru_par_sp_");
         try writeBranchName(emitter, slot);
         try emitter.write(" = false;\n");
-        try emitter.write("if (__koru_par_depth < __koru_par_DEPTH_CAP and __koru_par_fork_ok()) {\n    _ = __koru_par_tasks.fetchAdd(1, .monotonic);\n    __koru_par_pool_ensure().spawnWg(&__koru_par_wg_");
+        try emitter.write("if (");
+        if (par_size_guard) |g| {
+            try emitter.write("(");
+            try emitter.write(g);
+            try emitter.write(") and ");
+        }
+        try emitter.write("__koru_par_depth < __koru_par_DEPTH_CAP and __koru_par_fork_ok()) {\n    _ = __koru_par_tasks.fetchAdd(1, .monotonic);\n    __koru_par_pool_ensure().spawnWg(&__koru_par_wg_");
         try writeBranchName(emitter, slot);
         try emitter.write(", __koru_par_w_");
         try writeBranchName(emitter, slot);
