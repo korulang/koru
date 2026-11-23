@@ -1511,6 +1511,27 @@ pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool, needs_
     // the frag's cutoff ruling landed as semantics, not a tuning knob.
     try emitter.write("threadlocal var __koru_par_depth: usize = 0;\n");
     try emitter.write("const __koru_par_DEPTH_CAP: usize = 7;\n");
+    // The live-task check is a shared atomic — paying it on every marked call
+    // put ~30M loads on fib's recursion (measured: the per-call check was
+    // worth ~3ms of a 13ms par-vs-seq gap, and most of the run is spent
+    // saturated where a naive budget still re-checks every call). Each
+    // thread now probes the global counter once per PROBE calls and spends
+    // the result as a batch of fork permits; overshoot is bounded by
+    // PROBE × threads and the cap was always a best-effort width hint —
+    // correctness never rode on it.
+    try emitter.write("threadlocal var __koru_par_probe: usize = 0;\n");
+    try emitter.write("threadlocal var __koru_par_permit: usize = 0;\n");
+    try emitter.write("const __koru_par_PROBE: usize = 32;\n");
+    try emitter.write("fn __koru_par_fork_ok() bool {\n");
+    try emitter.write("    if (__koru_par_probe == 0) {\n");
+    try emitter.write("        __koru_par_probe = __koru_par_PROBE;\n");
+    try emitter.write("        __koru_par_permit = if (__koru_par_tasks.load(.monotonic) < __koru_par_CAP) __koru_par_PROBE else 0;\n");
+    try emitter.write("    }\n");
+    try emitter.write("    __koru_par_probe -= 1;\n");
+    try emitter.write("    if (__koru_par_permit == 0) return false;\n");
+    try emitter.write("    __koru_par_permit -= 1;\n");
+    try emitter.write("    return true;\n");
+    try emitter.write("}\n");
     try emitter.write("var __koru_par_pool: @import(\"std\").Thread.Pool = undefined;\n");
     try emitter.write("var __koru_par_pool_ready: bool = false;\n");
     try emitter.write("var __koru_par_pool_mtx: @import(\"std\").Thread.Mutex = .{};\n");
@@ -10027,7 +10048,13 @@ fn emitInvocation(
         try emitter.write("var __koru_par_wg_");
         try writeBranchName(emitter, slot);
         try emitter.write(": @import(\"std\").Thread.WaitGroup = .{};\n");
-        try emitter.write("if (__koru_par_depth < __koru_par_DEPTH_CAP and __koru_par_tasks.load(.monotonic) < __koru_par_CAP) {\n    _ = __koru_par_tasks.fetchAdd(1, .monotonic);\n    __koru_par_pool_ensure().spawnWg(&__koru_par_wg_");
+        // A call that takes the inline path never spawns — its waitgroup
+        // stays at count 0 and waitAndWork on it is a pool call that does
+        // nothing. Track the spawn so the join only pays for real forks.
+        try emitter.write("var __koru_par_sp_");
+        try writeBranchName(emitter, slot);
+        try emitter.write(" = false;\n");
+        try emitter.write("if (__koru_par_depth < __koru_par_DEPTH_CAP and __koru_par_fork_ok()) {\n    _ = __koru_par_tasks.fetchAdd(1, .monotonic);\n    __koru_par_pool_ensure().spawnWg(&__koru_par_wg_");
         try writeBranchName(emitter, slot);
         try emitter.write(", __koru_par_w_");
         try writeBranchName(emitter, slot);
@@ -10035,7 +10062,9 @@ fn emitInvocation(
         try writeBranchName(emitter, slot);
         try emitter.write(", &");
         try writeBranchName(emitter, slot);
-        try emitter.write(" });\n} else __koru_par_w_");
+        try emitter.write(" });\n    __koru_par_sp_");
+        try writeBranchName(emitter, slot);
+        try emitter.write(" = true;\n} else __koru_par_w_");
         try writeBranchName(emitter, slot);
         try emitter.write(".run(__koru_par_in_");
         try writeBranchName(emitter, slot);
@@ -12607,7 +12636,13 @@ fn drainParallelJoins(emitter: *CodeEmitter, ctx: *EmissionContext) !void {
     // queue itself — the standard fork/join requirement.
     for (ctx.pending_parallel.items) |wgvar| {
         try emitter.writeIndent();
-        try emitter.write("if (__koru_par_pool_ready) __koru_par_pool.waitAndWork(&");
+        // Only a wg that actually spawned needs the join — an inline-completed
+        // call left its count at 0 and the pool call would be pure overhead
+        // on every recursive invocation.
+        const flagvar = try std.fmt.allocPrint(ctx.allocator, "__koru_par_sp_{s}", .{wgvar["__koru_par_wg_".len..]});
+        try emitter.write("if (");
+        try emitter.write(flagvar);
+        try emitter.write(") __koru_par_pool.waitAndWork(&");
         try emitter.write(wgvar);
         try emitter.write(");\n");
     }
