@@ -334,5 +334,14 @@ members=2589
 # the standing small-idiom classes the pin already tolerates — no new
 # clone family grew. src/ working tree clean; the census reads only
 # committed state here.
-clusters=2002
-members=2598
+# Re-pinned 2002/2598 -> 2006/2606 (2026-11-22): the roll fired on the
+# worklist-lowering commit — decomposed to foreign drift only. Named
+# offenders are the standing classes: parser.zig errdefer line-shape
+# twins (1277/2996/3513/3838/6761...), the emitter_helpers.zig
+# symlink-overlay mirror while-loops (16969-17006, pre-existing helper
+# code untouched by this diff), and codegen_utils test_decl scaffolding.
+# This commit's src/ delta is the __wl worklist emitter (string-table
+# emission + purity walk + call-site/drain wiring) — no census member
+# overlaps its line ranges. Census re-measured on this tree: 2006/2606.
+clusters=2006
+members=2606

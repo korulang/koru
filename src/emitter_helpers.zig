@@ -276,7 +276,7 @@ pub fn shouldFilter(item_annotations: []const []const u8, module_annotations: []
     }
 }
 
-/// One member of a mutual-tail-recursion group: the event's canonical name and
+/// One member of a mutual-tail-recursion group: the tor's canonical name and
 /// the Zig enum tag (mangled event path) used as the combined labeled switch's
 /// case for this member.
 pub const MutualMember = struct {
@@ -361,6 +361,11 @@ pub const EmissionContext = struct {
     // records its thread var here; the join emits before the next step that
     // could read the binding (any non-parallel step drains the list).
     pending_parallel: std.ArrayList([]const u8) = .empty,
+    // Worklist lowering: `[parallel]` self-calls inside a proven-pure
+    // self-recursive tor push {Input,*Output,done} items onto the tor's
+    // `__wl` deque instead of spawnWg fork/join. Each entry records the
+    // done-flag var name and the `__wl` path expression the join drains on.
+    pending_worklist: std.ArrayList(WlWait) = .empty,
     // ── Tail self-continuation loop lowering ─────────────────────────────────
     // When a flow that implements event E re-enters E in tail position and
     // forwards the result unchanged (e.g. `|> run(...) | done res => done res`),
@@ -384,7 +389,7 @@ pub const EmissionContext = struct {
     mutual_group: ?*const MutualGroup = null,
     // Set when emitting the body of a handler whose event has a bare `-> T`
     // return. A `.expression` produce step (`| big b -> b * 100`) in this
-    // context IS the event's return value, so it lowers to `return EXPR;`
+    // context IS the tor's return value, so it lowers to `return EXPR;`
     // instead of the generic `_ = EXPR;` discard. (The flat/proc bare-return
     // impls already emit `return` via their own paths; this covers the
     // continuation-HANDLER produce — see 020_025.)
@@ -409,7 +414,7 @@ pub const EmissionContext = struct {
     // Resume arms of the arm-fire whose sum is being consumed as `|` branches
     // (`request = ask(payload) | halved v => ... | timeout => ...`). The
     // continuation-switch machinery answers payload questions from this when
-    // the branch set isn't an event's (the head is an arm, not an event).
+    // the branch set isn't a tor's (the head is an arm, not an event).
     current_resume_arms: ?[]const ast.ResumeArm = null,
     // Cross-boundary splice hygiene: when a consumer branch binding is
     // site-unique-renamed because it would shadow a producer local in the
@@ -445,10 +450,15 @@ pub const EmissionContext = struct {
     // emitFlow save/restores the length around each flow.
     zig_scope_bindings: std.ArrayList([]const u8) = .empty,
     // The event whose body is being emitted, when that body is a FLOW implementing
-    // it. A `->` produce naming one of this event's own branches lowers to a
+    // it. A `->` produce naming one of this tor's own branches lowers to a
     // tagged return; see `emitBranchProduce`. Kept separate from
     // `impl_event_decl`, which additionally redirects own-arm effect calls.
     produce_event: ?*const ast.EventDecl = null,
+};
+
+pub const WlWait = struct {
+    flag: []const u8, // done-flag var name (`__wl_d_<slot>`)
+    wl: []const u8, // `__wl` path expression (`main_module.x_event.__wl`)
 };
 
 pub const InlineArgBinding = struct {
@@ -4166,7 +4176,7 @@ fn emitSubflowContinuationsWithDepth(
                 // of those effects — `| go |> source() ! data d |> …` — cannot
                 // take the raw call+switch below: the call goes out as
                 // `handler(input, struct {})` and the `!` arm lands in the
-                // result switch on a variant the event's Output does not
+                // result switch on a variant the tor's Output does not
                 // carry. emitContinuationBody partitions the effect arms into
                 // the synthesized Handlers struct and leaves terminal arms for
                 // the result switch — the same treatment the void-chain check
@@ -6690,7 +6700,7 @@ pub fn emitFlow(
 
             // Add type annotation if we found the event
             if (event_decl) |event| {
-                // Find the matching field in the event's input
+                // Find the matching field in the tor's input
                 const found_field = try writeArgFieldTypeAnnotation(emitter, event, arg.name, ctx.main_module_name);
 
                 // CRITICAL: If mutable and field not found, this is a compiler bug
@@ -6982,7 +6992,7 @@ fn lowerIdent(buf: []u8, name: []const u8) []const u8 {
 /// spliced into a `std/fleet:drain` call once a `std/node:drain` call pulled
 /// it into the retained set (470_015). Scoping to the decl's own module
 /// restores the qualifier its path never carried.
-fn itemsOfDecl(items: []const ast.Item, decl: *const ast.EventDecl) []const ast.Item {
+pub fn itemsOfDecl(items: []const ast.Item, decl: *const ast.EventDecl) []const ast.Item {
     for (items) |*item| {
         switch (item.*) {
             .module_decl => |*m| {
@@ -7137,7 +7147,7 @@ fn inlineEffectfulEligibility(ctx: *EmissionContext, inv: *const ast.Invocation,
     if (registeredVariantProcExists(items, event_decl, &inv.path)) return null;
 
     // The impl lives beside its event — module-nested decls carry unqualified
-    // paths, so the scan must be scoped to the event's own module_decl or a
+    // paths, so the scan must be scoped to the tor's own module_decl or a
     // same-named proc from ANY module wins by item order (470_015).
     const event_items = itemsOfDecl(items, event_decl);
 
@@ -7555,7 +7565,7 @@ fn rewriteReturnsAndStd(
 /// `ctx.impl_event_decl`/`ctx.inline_fire_conts` armed so the flow's own
 /// arm-fires (`emitInvocation`'s impl-fire branch) resolve to
 /// `__koru_inline_<idx>(...)` splice markers against the CALLER's `conts`
-/// instead of `__H.<arm>(...)` calls. `emitFlow` does not emit the event's
+/// instead of `__H.<arm>(...)` calls. `emitFlow` does not emit the tor's
 /// input-field binds or `__H` arm aliases — those are the caller's job in
 /// the legacy standalone-function path (`emitEventDeclForModule`) — so this
 /// text is exactly the body, matching what `rewriteEffectfulProcBody`
@@ -9311,7 +9321,7 @@ pub fn emitHandlersStruct(
 }
 
 /// Subflow-implemented effects: if `path` names an effect arm of `event`
-/// (single segment, module qualifier absent or matching the event's own),
+/// (single segment, module qualifier absent or matching the tor's own),
 /// return that arm. Used with EmissionContext.impl_event_decl so arm names
 /// only ever resolve inside the declaring event's own implementation.
 pub fn findEffectArm(event: *const ast.EventDecl, path: *const ast.DottedPath) ?*const ast.Branch {
@@ -9552,8 +9562,474 @@ fn sameDottedPath(a: ast.DottedPath, b: ast.DottedPath) bool {
     return true;
 }
 
-/// Emit an invocation (const result = event.handler(...))
-/// If an ImmediateImpl exists for this path, inline the value instead
+// ── Worklist lowering for pure self-recursive `[parallel]` tors ────────────
+//
+// A tor qualifies when its flow body is provably pure — only self-calls,
+// calls to other provably-pure program tors, `std.control.if`, and
+// call-free expressions; no effects, stores, handles, I/O, loops, labels,
+// destructures, variants, or captures — AND it is self-recursive through at
+// least one `[parallel]`-marked self-call AND every `[parallel]`-marked
+// invocation in the body is a self-call. Qualified tors get a `__wl`
+// worklist inside their tor struct: marked self-calls push
+// {Input,*Output,done} items onto a shared deque that lazily-spawned pool
+// workers and the waiting parent drain — fine-grained stealable work
+// instead of coarse spawnWg fork/join tasks (the skewed-tree straggler).
+// Anything that fails the gate keeps today's fork/join path unchanged.
+
+/// Conservative call detector for raw expression text — the local twin of
+/// expression_parser.rawScanContainsCall (emitter_helpers has no dep on
+/// expression_parser). A `(` immediately after an identifier character is a
+/// call unless the identifier is a `@builtin`.
+fn wlTextHasCall(text: []const u8) bool {
+    var in_string = false;
+    for (text, 0..) |c, i| {
+        if (c == '"' and (i == 0 or text[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+        if (c == '(' and i > 0) {
+            const prev = text[i - 1];
+            if (std.ascii.isAlphanumeric(prev) or prev == '_') {
+                var j: usize = i - 1;
+                while (j > 0 and (std.ascii.isAlphanumeric(text[j - 1]) or
+                    text[j - 1] == '_' or text[j - 1] == '.')) j -= 1;
+                if (j > 0 and text[j - 1] == '@') continue;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/// Pure-expression check over a parsed ExprNode: literals, identifiers,
+/// field/index access, arithmetic/comparison/logic, ternaries, and builtin
+/// calls are pure; a `function_call` node is not provable — reject.
+fn wlExprNodePure(expr: *const ast.Expression) bool {
+    switch (expr.node) {
+        .literal, .identifier => return true,
+        .binary => |b| return wlExprNodePure(b.left) and wlExprNodePure(b.right),
+        .unary => |u| return wlExprNodePure(u.operand),
+        .grouped => |g| return wlExprNodePure(g),
+        .field_access => |f| return wlExprNodePure(f.object),
+        .array_index => |a| return wlExprNodePure(a.object) and wlExprNodePure(a.index),
+        .conditional => |c| return wlExprNodePure(c.condition) and
+            wlExprNodePure(c.then_expr) and wlExprNodePure(c.else_expr),
+        .builtin_call => |bc| {
+            for (bc.args) |a| if (!wlExprNodePure(a)) return false;
+            return true;
+        },
+        .function_call => return false,
+    }
+}
+
+const WlPurity = struct {
+    memo: std.StringHashMap(bool),
+    visiting: std.StringHashMap(void),
+};
+
+/// Resolve an invocation target to a provably-pure callee: `std.control.if`
+/// is the conditional construct (its args/arms are checked by the
+/// continuation walk); anything else must resolve to a program tor whose
+/// impl is an immediate value or a flow that itself passes wlFlowPure.
+/// Memoized by canonical name; cycles assume pure (purity, unlike
+/// termination, is cycle-safe — same optimism as purity_analyzer).
+fn wlInvocationTargetPure(
+    ctx: *EmissionContext,
+    path: *const ast.DottedPath,
+    items: []const ast.Item,
+    purity: *WlPurity,
+) bool {
+    const allocator = ctx.allocator;
+    if (path.module_qualifier) |mq| {
+        if (std.mem.eql(u8, mq, "std.control") and path.segments.len == 1 and
+            std.mem.eql(u8, path.segments[0], "if")) return true;
+    }
+    const event_decl = findEventDeclByPath(items, path) orelse {
+        return false;
+    };
+    const canon = buildCanonicalEventName(&event_decl.path, allocator, ctx.main_module_name) catch return false;
+    // canon ownership transfers into memo/visiting — never freed here; the
+    // WlPurity teardown frees every key still held by memo.
+    if (purity.memo.get(canon)) |v| {
+        allocator.free(canon);
+        return v;
+    }
+    if (purity.visiting.contains(canon)) {
+        allocator.free(canon);
+        return true;
+    }
+    purity.visiting.put(canon, {}) catch {
+        allocator.free(canon);
+        return false;
+    };
+    const ev_items = itemsOfDecl(items, event_decl);
+    const found = findImplByPath(ev_items, &event_decl.path) orelse {
+        _ = purity.visiting.remove(canon);
+        purity.memo.put(canon, false) catch allocator.free(canon);
+        return false;
+    };
+    var ok = false;
+    switch (found) {
+        .immediate_impl => ok = true,
+        .flow => |f| ok = wlFlowPure(ctx, f, items, purity, null),
+    }
+    _ = purity.visiting.remove(canon);
+    purity.memo.put(canon, ok) catch allocator.free(canon);
+    return ok;
+}
+
+/// Purity walk over one flow body. `par_self` is non-null only for the TOP
+/// tor's own flow: there, every `[parallel]`-marked invocation must be a
+/// self-call (the worklist lowering only rewrites self-calls). Nested callee
+/// flows pass null — their `[parallel]` annotations are scheduling hints on
+/// already-pure calls.
+fn wlFlowPure(
+    ctx: *EmissionContext,
+    flow: *const ast.Flow,
+    items: []const ast.Item,
+    purity: *WlPurity,
+    par_self: ?*const ast.EventDecl,
+) bool {
+    // flow.inline_body / inv.inline_body replace only the HEAD-STEP render —
+    // the continuation tree (where every recursive call and result combine
+    // lives) is still walked and verified below, and wlHasParallelSelfCall
+    // already proved a marked self-call exists there. preamble_code emits
+    // raw statements ahead of the tree and pre_label is a state loop — both
+    // unverifiable, both rejected.
+    if (flow.preamble_code != null or flow.pre_label != null or
+        flow.impl_variant != null or flow.is_impl) return false;
+    const inv = flow.inv();
+    if (inv.preamble_code != null) return false;
+    return wlContPure(ctx, &flow.body, items, purity, par_self);
+}
+
+fn wlContPure(
+    ctx: *EmissionContext,
+    cont: *const ast.Continuation,
+    items: []const ast.Item,
+    purity: *WlPurity,
+    par_self: ?*const ast.EventDecl,
+) bool {
+    if (cont.kind != .terminal or cont.is_catchall or cont.catchall_metatype != null or
+        cont.binding != null or cont.destructure.len != 0 or cont.produce.len != 0 or
+        cont.post_condition != null or cont.condition != null or cont.condition_expr != null or
+        cont.binding_annotations.len != 0) {
+        return false;
+    }
+    if (cont.node) |node| {
+        switch (node) {
+            .invocation => |inv| {
+                var is_par = false;
+                for (inv.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "parallel")) {
+                        is_par = true;
+                    } else return false;
+                }
+                if (is_par and par_self != null and !sameDottedPath(inv.path, par_self.?.path)) {
+                    return false;
+                }
+                // inv.marks is compiler-stamped metadata (@scope/@shape_valid)
+                // — benign. inserted_by_tap/from_opaque_tap can carry effects.
+                if (inv.inserted_by_tap or inv.from_opaque_tap) {
+                    return false;
+                }
+                const is_control_if = blk: {
+                    const mq = inv.path.module_qualifier orelse break :blk false;
+                    break :blk std.mem.eql(u8, mq, "std.control") and
+                        inv.path.segments.len == 1 and
+                        std.mem.eql(u8, inv.path.segments[0], "if");
+                };
+                // std.control.if's inline_body is the if-render itself — the
+                // arms still arrive as continuations and are walked below.
+                if (inv.variant != null or inv.return_destructure.len != 0 or
+                    inv.return_binding_annotations.len != 0 or
+                    (!is_control_if and inv.inline_body != null) or
+                    inv.preamble_code != null) {
+                    return false;
+                }
+                for (inv.args) |arg| {
+                    // std.control.if transports its condition as an
+                    // Expression-typed arg by design — judge it by expression
+                    // purity, not the Source/Expression param rejection that
+                    // guards real tor calls.
+                    if (!is_control_if and (arg.source_value != null or arg.expression_value != null)) {
+                        return false;
+                    }
+                    if (arg.parsed_expression) |pe| {
+                        if (!wlExprNodePure(pe)) {
+                            return false;
+                        }
+                    } else if (wlTextHasCall(arg.value)) {
+                        return false;
+                    }
+                }
+                if (!wlInvocationTargetPure(ctx, &inv.path, items, purity)) {
+                    return false;
+                }
+            },
+            .expression => |code| {
+                if (wlTextHasCall(code)) {
+                    return false;
+                }
+            },
+            .branch_constructor => |bc| {
+                if (bc.plain_value) |pv| {
+                    if (wlTextHasCall(pv)) {
+                        return false;
+                    }
+                }
+                for (bc.fields) |f| {
+                    if (f.expression_str) |es| {
+                        if (wlTextHasCall(es)) {
+                            return false;
+                        }
+                    }
+                }
+            },
+            .terminal => {},
+            else => {
+                return false;
+            },
+        }
+    }
+    for (cont.continuations) |*c| {
+        if (!wlContPure(ctx, c, items, purity, par_self)) return false;
+    }
+    return true;
+}
+
+/// True when the flow tree contains at least one `[parallel]`-marked
+/// self-call — the worklist lowering is only worth emitting when there is
+/// marked self-recursion to lower.
+fn wlHasParallelSelfCall(cont: ast.Continuation, self_path: ast.DottedPath) bool {
+    if (cont.node) |node| {
+        switch (node) {
+            .invocation => |inv| {
+                for (inv.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "parallel") and sameDottedPath(inv.path, self_path)) return true;
+                }
+            },
+            else => {},
+        }
+    }
+    for (cont.continuations) |c| {
+        if (wlHasParallelSelfCall(c, self_path)) return true;
+    }
+    return false;
+}
+
+/// The qualification gate: self-recursive via `[parallel]` self-call, every
+/// `[parallel]` invocation a self-call, and the whole body provably pure.
+pub fn flowQualifiesForWorklist(
+    ctx: *EmissionContext,
+    event: *const ast.EventDecl,
+    flow: *const ast.Flow,
+    all_items: []const ast.Item,
+) bool {
+    if (!wlHasParallelSelfCall(flow.body, event.path)) {
+        return false;
+    }
+    var purity = WlPurity{
+        .memo = std.StringHashMap(bool).init(ctx.allocator),
+        .visiting = std.StringHashMap(void).init(ctx.allocator),
+    };
+    defer {
+        var mit = purity.memo.keyIterator();
+        while (mit.next()) |k| ctx.allocator.free(k.*);
+        purity.memo.deinit();
+        // visiting keys that were never promoted into memo leak their canon
+        // slice — remove does not free keys. Drain leftovers explicitly.
+        var vit = purity.visiting.keyIterator();
+        while (vit.next()) |k| ctx.allocator.free(k.*);
+        purity.visiting.deinit();
+    }
+    return wlFlowPure(ctx, flow, all_items, &purity, event);
+}
+
+/// `<invocation target>.__wl` as a string — captured through the REAL
+/// emitInvocationTarget so module-prefix/alias/mangling rules can never
+/// diverge from the `.Input`/`.Output`/`.handler` spellings emitted beside it.
+fn wlTargetPath(ctx: *EmissionContext, path: *const ast.DottedPath) ![]u8 {
+    var tmp = try CodeEmitter.initGrowable(ctx.allocator, 256);
+    defer ctx.allocator.free(tmp.buffer);
+    try emitInvocationTarget(&tmp, ctx, path);
+    try tmp.write(".__wl");
+    return try ctx.allocator.dupe(u8, tmp.buffer[0..tmp.pos]);
+}
+
+/// The impl flow emitEventDecl will actually emit for the tor: the first
+/// `.flow` item whose `impl_of` segments equal the tor's and which carries
+/// no variant — the same match visitor_emitter's impl search performs.
+/// findImplByPath is NOT equivalent: it can return transform-synthesized
+/// flows (inline_body set) that the impl search skips.
+pub fn wlFindEmittedFlow(items: []const ast.Item, event: *const ast.EventDecl) ?*const ast.Flow {
+    for (items) |*item| {
+        switch (item.*) {
+            .flow => |*flow| {
+                const impl_path = flow.impl_of orelse continue;
+                if (flow.impl_variant != null) continue;
+                if (impl_path.segments.len != event.path.segments.len) continue;
+                var matches = true;
+                for (impl_path.segments, event.path.segments) |a, b| {
+                    if (!std.mem.eql(u8, a, b)) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) return flow;
+            },
+            .module_decl => |*md| {
+                if (wlFindEmittedFlow(md.items, event)) |f| return f;
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Lazy per-site qualification: does this tor's impl flow pass the worklist
+/// gate? Resolves the impl through the same items the call-site ctx carries
+/// (ast_items, program_items fallback) so the answer matches what the
+/// enclosing emission will actually lower.
+fn wlEventImplQualified(ctx: *EmissionContext, event: *const ast.EventDecl) bool {
+    const items = ctx.ast_items orelse ctx.program_items orelse return false;
+    const flow = wlFindEmittedFlow(items, event) orelse return false;
+    return flowQualifiesForWorklist(ctx, event, flow, items);
+}
+
+/// Emit the per-tor `__wl` worklist struct: a mutex-protected LIFO deque of
+/// {Input,*Output,done} items, a condvar for idle workers, a `pending`
+/// counter bounding outstanding work, lazily-spawned pool workers, and the
+/// `room()` admission probe self-throttled by a per-thread skip window so
+/// the hot inline path costs ~one TLS decrement.
+pub fn emitWorklistStruct(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    event: *const ast.EventDecl,
+) !void {
+    _ = ctx;
+    _ = event;
+    const L = [_][]const u8{
+        "const __wl = struct {",
+        "    const Item = struct {",
+        "        inp: Input,",
+        "        out: *Output,",
+        "        done: *@import(\"std\").atomic.Value(bool),",
+        "        d: usize,",
+        "    };",
+        "    // Single shared LIFO deque — every pushed item is stealable,",
+        "    // which is what skewed recursion needs. Push volume is bounded",
+        "    // by the WL_PUSH_DEPTH gate (~2^depth items total), so the",
+        "    // mutex on the hot path costs ~nothing. dq_len mirrors",
+        "    // dq.items.len so empty-checks skip the lock; help() lets the",
+        "    // waiting parent drain the same deque the workers steal from.",
+        "    var dq: @import(\"std\").ArrayListUnmanaged(Item) = .{};",
+        "    var dq_len: @import(\"std\").atomic.Value(usize) = .init(0);",
+        "    var mu: @import(\"std\").Thread.Mutex = .{};",
+        "    var cv: @import(\"std\").Thread.Condition = .{};",
+        "    var done_cv: @import(\"std\").Thread.Condition = .{};",
+        "    var pending: @import(\"std\").atomic.Value(usize) = .init(0);",
+        "    var started: bool = false;",
+        "    const WL_HW: usize = 4096;",
+        "    const WL_PUSH_DEPTH: usize = 12;",
+        "    const WL_SKIP: usize = 128;",
+        "    threadlocal var wl_skip: usize = 0;",
+        "    threadlocal var wl_d: usize = 0;",
+        "    fn room() bool {",
+        "        if (wl_skip != 0) {",
+        "            wl_skip -= 1;",
+        "            return false;",
+        "        }",
+        "        if (pending.load(.monotonic) >= WL_HW) {",
+        "            wl_skip = WL_SKIP;",
+        "            return false;",
+        "        }",
+        "        return true;",
+        "    }",
+        "    fn ensure() void {",
+        "        // mu must be held",
+        "        if (started) return;",
+        "        started = true;",
+        "        const n = @min((@import(\"std\").Thread.getCpuCount() catch 4) -| 1, 32);",
+        "        var i: usize = 0;",
+        "        while (i < n) : (i += 1) {",
+        "            _ = @import(\"std\").Thread.spawn(.{}, worker, .{}) catch {};",
+        "        }",
+        "    }",
+        "    fn push(it: Item) void {",
+        "        _ = pending.fetchAdd(1, .monotonic);",
+        "        mu.lock();",
+        "        defer mu.unlock();",
+        "        ensure();",
+        "        dq.append(@import(\"std\").heap.smp_allocator, it) catch @panic(\"koru: worklist push OOM\");",
+        "        _ = dq_len.fetchAdd(1, .monotonic);",
+        "        cv.signal();",
+        "    }",
+        "    fn runItem(it: Item) void {",
+        "        const sv = wl_d;",
+        "        wl_d = it.d;",
+        "        it.out.* = handler(it.inp);",
+        "        wl_d = sv;",
+        "        it.done.store(true, .release);",
+        "        _ = pending.fetchSub(1, .monotonic);",
+        "    }",
+        "    fn popShared() ?Item {",
+        "        if (dq_len.load(.monotonic) == 0) return null;",
+        "        mu.lock();",
+        "        defer mu.unlock();",
+        "        if (dq.items.len == 0) return null;",
+        "        const it = dq.pop() orelse return null;",
+        "        _ = dq_len.fetchSub(1, .monotonic);",
+        "        if (dq_len.load(.monotonic) != 0) cv.signal();",
+        "        return it;",
+        "    }",
+        "    fn help() bool {",
+        "        const it = popShared() orelse return false;",
+        "        runItem(it);",
+        "        return true;",
+        "    }",
+        "    // Join-side wait: brief spin catches instant completions, then a",
+        "    // short timed sleep — timeout-driven, so no signal can ever be",
+        "    // lost or misdelivered (a shared condvar cannot target one",
+        "    // flag's owner anyway). 2us granularity bounds added latency;",
+        "    // help() still does real work whenever the deque has items.",
+        "    fn waitDone(flag: *@import(\"std\").atomic.Value(bool)) void {",
+        "        var spins: usize = 0;",
+        "        while (!flag.load(.acquire)) {",
+        "            if (help()) {",
+        "                spins = 0;",
+        "                continue;",
+        "            }",
+        "            spins += 1;",
+        "            if (spins < 512) continue;",
+        "            spins = 0;",
+        "            mu.lock();",
+        "            _ = done_cv.timedWait(&mu, 10 * @import(\"std\").time.ns_per_us) catch {};",
+        "            mu.unlock();",
+        "        }",
+        "    }",
+        "    fn worker() void {",
+        "        while (true) {",
+        "            if (popShared()) |it| {",
+        "                runItem(it);",
+        "                continue;",
+        "            }",
+        "            mu.lock();",
+        "            while (dq_len.load(.monotonic) == 0) {",
+        "                cv.wait(&mu);",
+        "            }",
+        "            mu.unlock();",
+        "        }",
+        "    }",
+        "};",
+    };
+    for (L) |line| {
+        try emitter.writeIndent();
+        try emitter.write(line);
+        try emitter.write("\n");
+    }
+}
 fn emitInvocation(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
@@ -9698,7 +10174,7 @@ fn emitInvocation(
                 // Fall through to the handler-call path below — the target
                 // module's emitted handler resolves its consts in-scope
                 // (emitted `koru_sim` struct holds both the `const {}` block
-                // and the per-event __koru_handler_impl).
+                // and the per-tor __koru_handler_impl).
             } else {
                 const event_decl = findEventDeclByPath(items, &invocation.path);
                 const immediate_bc = &immediate_impl.value;
@@ -10035,6 +10511,98 @@ fn emitInvocation(
             try std.fmt.allocPrint(ctx.allocator, "__koru_par_s{d}", .{ctx.pending_parallel.items.len})
         else
             bound_var;
+        // Worklist lowering: a `[parallel]` SELF-call inside a proven-pure
+        // self-recursive tor pushes {Input,*Output,done} onto the tor's
+        // `__wl` deque (workers + the waiting parent drain it) instead of the
+        // spawnWg fork/join below. The gate is evaluated lazily here so every
+        // emission path that reaches a marked self-call gets the same answer
+        // the tor's `__wl` decl was emitted under. Size guard + room()
+        // admission keep the push rate self-throttled; the else arm is the
+        // same synchronous call fork/join's inline path makes.
+        const wl_self = blk: {
+            const impl_ev = ctx.impl_event_decl orelse break :blk false;
+            if (!sameDottedPath(invocation.path, impl_ev.path)) break :blk false;
+            if (!wlEventImplQualified(ctx, impl_ev)) break :blk false;
+            break :blk true;
+        };
+        if (wl_self) {
+            const wl_slot = if (std.mem.eql(u8, bound_var, "_"))
+                try std.fmt.allocPrint(ctx.allocator, "__wl_s{d}", .{ctx.pending_worklist.items.len})
+            else
+                bound_var;
+            const wl_flag = try std.fmt.allocPrint(ctx.allocator, "__wl_d_{s}", .{wl_slot});
+            const wl_in = try std.fmt.allocPrint(ctx.allocator, "__wl_in_{s}", .{wl_slot});
+            const wl_path = try wlTargetPath(ctx, &invocation.path);
+            try emitter.writeIndent();
+            try emitter.write("var ");
+            try writeBranchName(emitter, wl_slot);
+            try emitter.write(": ");
+            try emitInvocationTarget(emitter, ctx, &invocation.path);
+            try emitter.write(".Output = undefined;\n");
+            try emitter.writeIndent();
+            try emitter.write("var ");
+            try writeBranchName(emitter, wl_flag);
+            try emitter.write(" = @import(\"std\").atomic.Value(bool).init(false);\n");
+            try emitter.writeIndent();
+            try emitter.write("const ");
+            try writeBranchName(emitter, wl_in);
+            try emitter.write(": ");
+            try emitInvocationTarget(emitter, ctx, &invocation.path);
+            try emitter.write(".Input = .{ ");
+            try emitArgs(emitter, ctx, invocation.args, &invocation.path);
+            try emitter.write(" };\n");
+            // Depth gate: push only within WL_PUSH_DEPTH of the root (or of
+            // a stolen item's own depth budget, re-seated by runItem) — the
+            // item count stays ~2^depth for ANY input scale, so no value
+            // floor is needed and fib-scale inputs still parallelize.
+            try emitter.writeIndent();
+            try emitter.write("if (");
+            try emitter.write(wl_path);
+            try emitter.write(".wl_d < ");
+            try emitter.write(wl_path);
+            try emitter.write(".WL_PUSH_DEPTH and ");
+            try emitter.write(wl_path);
+            try emitter.write(".room()) {\n");
+            emitter.indent_level += 1;
+            try emitter.writeIndent();
+            try emitter.write(wl_path);
+            try emitter.write(".push(.{ .inp = ");
+            try writeBranchName(emitter, wl_in);
+            try emitter.write(", .out = &");
+            try writeBranchName(emitter, wl_slot);
+            try emitter.write(", .done = &");
+            try writeBranchName(emitter, wl_flag);
+            try emitter.write(", .d = ");
+            try emitter.write(wl_path);
+            try emitter.write(".wl_d + 1 });\n");
+            emitter.indent_level -= 1;
+            try emitter.writeIndent();
+            try emitter.write("} else {\n");
+            emitter.indent_level += 1;
+            // No wl_d bump on the inline path: depth accumulates through
+            // pushed items only (runItem re-seats wl_d = it.d). An inline
+            // chain inherits the parent's depth — once >= WL_PUSH_DEPTH it
+            // stays there, which is exactly the cutoff we want; a room()-fail
+            // inline chain under-counts depth but room() remains the bound.
+            try emitter.writeIndent();
+            try emitter.write(wl_slot);
+            try emitter.write(" = ");
+            try emitInvocationTarget(emitter, ctx, &invocation.path);
+            try emitter.write(".handler(");
+            try writeBranchName(emitter, wl_in);
+            try emitter.write(");\n");
+            try emitter.writeIndent();
+            try writeBranchName(emitter, wl_flag);
+            try emitter.write(".store(true, .release);\n");
+            emitter.indent_level -= 1;
+            try emitter.writeIndent();
+            try emitter.write("}\n");
+            try ctx.pending_worklist.append(ctx.allocator, .{ .flag = wl_flag, .wl = wl_path });
+            if (!std.mem.eql(u8, bound_var, "_")) {
+                try ctx.zig_scope_bindings.append(ctx.allocator, try ctx.allocator.dupe(u8, bound_var));
+            }
+            return;
+        }
         try emitter.writeIndent();
         try emitter.write("var ");
         try writeBranchName(emitter, slot);
@@ -10151,7 +10719,7 @@ fn emitInvocation(
     // A `[norun]` event's call site is declaration data — `|variant` there is
     // metadata a collector reads off the AST (stack's `service(db)|dev`), not
     // proc dispatch. Emit `handler__<variant>` only when a variant proc was
-    // actually declared; otherwise the event struct has no such member and the
+    // actually declared; otherwise the tor struct has no such member and the
     // base handler is the only honest target.
     if (effective_variant) |v| {
         if (findEventDeclForEmission(ctx, &invocation.path)) |ed| {
@@ -11136,7 +11704,7 @@ fn emitContinuationList(
         break :blk false;
     };
     // Effect (`!`) continuations are handler CALLS that fire DURING a proc run;
-    // they are NOT terminals and have no tag in the event's Output union (which
+    // they are NOT terminals and have no tag in the tor's Output union (which
     // holds terminals only). The inline path partitions them out before emitting
     // the terminal switch (see emitFlow, ~line 3587). A NON-inlined effectful
     // invocation — e.g. a mocked event whose impl substitutes a plain Output
@@ -12292,7 +12860,7 @@ pub fn emitContinuationBody(
 
             // Add type annotation if we found the event
             if (event_decl) |event| {
-                // Find the matching field in the event's input
+                // Find the matching field in the tor's input
                 const found_field = try writeArgFieldTypeAnnotation(emitter, event, arg.name, ctx.main_module_name);
 
                 if (!found_field) {
@@ -12693,7 +13261,19 @@ fn drainParallelJoins(emitter: *CodeEmitter, ctx: *EmissionContext) !void {
         try emitter.write(wgvar);
         try emitter.write(");\n");
     }
+    // Worklist joins: each pushed self-call's done flag gates its slot read.
+    // The parent helps by draining the same deque the workers steal from —
+    // pop+run until the flag lands; yield only when the deque is momentarily
+    // empty (the needed item is running on another worker).
+    for (ctx.pending_worklist.items) |w| {
+        try emitter.writeIndent();
+        try emitter.write(w.wl);
+        try emitter.write(".waitDone(&");
+        try writeBranchName(emitter, w.flag);
+        try emitter.write(");\n");
+    }
     ctx.pending_parallel.clearRetainingCapacity();
+    ctx.pending_worklist.clearRetainingCapacity();
 }
 
 fn emitStep(
@@ -12934,7 +13514,7 @@ fn emitStep(
         },
         .expression => |code_raw| {
             // A Zig expression at body position. In a bare-return handler the
-            // `->` produce IS the event's return value, so it lowers to
+            // `->` produce IS the tor's return value, so it lowers to
             // `return EXPR;` (020_025: `| big b -> b * 100`). A bare `_`
             // discard is never a produce, so it stays a discard even there.
             // In a generic context we discard the value to keep emission
@@ -13655,7 +14235,7 @@ pub fn emitArrayLiteralForField(
     }
 }
 
-/// Central bare-return Output emission. If the event has a `-> T` return, emits
+/// Central bare-return Output emission. If the tor has a `-> T` return, emits
 /// `pub const Output = T;` (no tagged union — the value type itself) and returns
 /// true so the caller skips its void/union logic. Returns false for ordinary
 /// (branch-based) events, leaving the caller's existing Output emission intact.
@@ -14356,9 +14936,9 @@ pub fn emitModuleSubset(
 }
 
 /// Registry-harvested event shapes carry bare type names legal only inside
-/// the event's declaring module (KORU115), but the descriptor emits into a
+/// the tor's declaring module (KORU115), but the descriptor emits into a
 /// test module where those names are undeclared — so default a bare base to
-/// the event's own module (`*Judge` under `koru/odds:feels` ->
+/// the tor's own module (`*Judge` under `koru/odds:feels` ->
 /// `*koru_koru.koru_odds.Judge`). An explicit field.module_path or a
 /// phantom-derived home still wins (base-type vs phantom-state orthogonality);
 /// scalars, `string`, and already-qualified bases pass through unchanged.
@@ -15075,7 +15655,7 @@ pub fn moduleNeedsFlatLaneStack(items: []const ast.Item, allocator: std.mem.Allo
     return false;
 }
 
-/// The lane type for a live name: an input field's own type, or the event's
+/// The lane type for a live name: an input field's own type, or the tor's
 /// bare-return type for a call-result bind.
 fn flatLaneType(fx: *const FlatEmitState, name: []const u8) []const u8 {
     for (fx.fields) |f| {
@@ -15626,7 +16206,7 @@ pub fn emitFlatHandlerBody(
 }
 
 /// Find the flow that implements `event` (the same match the impl-search loop
-/// performs: `.flow` item, `impl_of` path equal to the event's, no variant) —
+/// performs: `.flow` item, `impl_of` path equal to the tor's, no variant) —
 /// a `*const` into `items`, stable for deferred emission.
 pub fn findFlatImplFlow(items: []const ast.Item, event: *const ast.EventDecl) ?*const ast.Flow {
     for (items) |*item| {
@@ -15651,7 +16231,7 @@ pub fn findFlatImplFlow(items: []const ast.Item, event: *const ast.EventDecl) ?*
 }
 
 /// Build the Zig enum tag for an event: its path segments joined by `_`, kebab
-/// `-` mangled to `_` (matching the event struct's `<name>_event` prefix). Owned
+/// `-` mangled to `_` (matching the tor struct's `<name>_event` prefix). Owned
 /// by the caller.
 fn mangledEventTag(event: *const ast.EventDecl, allocator: std.mem.Allocator) ![]u8 {
     var buf: std.ArrayList(u8) = .empty;
@@ -15894,6 +16474,16 @@ fn emitEventDeclForModule(
         try code_emitter.write("};\n");
     }
 
+    // Worklist lowering: when this tor's flow impl is a proven-pure
+    // self-recursive tor whose `[parallel]` calls are all self-calls, emit
+    // the `__wl` deque the marked self-calls push onto. The same predicate
+    // arms ctx.impl_worklist while the flow body emits below.
+    const wl_qualified = blk: {
+        const fl = wlFindEmittedFlow(all_items, event) orelse break :blk false;
+        break :blk flowQualifiesForWorklist(ctx, event, fl, all_items);
+    };
+    if (wl_qualified) try emitWorklistStruct(code_emitter, ctx, event);
+
     // Handler function — takes `comptime __H: type` when the event yields.
     // Pure-scalar value events lower as an `inline` shim over a scalar-param
     // impl (register ABI; see isScalarValueFields / emitEventDecl).
@@ -15929,7 +16519,7 @@ fn emitEventDeclForModule(
     }
     code_emitter.indent_level += 1;
 
-    // Tail self-continuation detection: if this event's flow impl re-enters
+    // Tail self-continuation detection: if this tor's flow impl re-enters
     // its own event in tail position and forwards the result unchanged, lower
     // the handler as a `while (true)` loop over `var` input bindings instead of
     // a stack-growing self-call (see `glm_tail_loop_brief.md`). The canonical
@@ -15993,7 +16583,7 @@ fn emitEventDeclForModule(
     try code_emitter.write("_ = &__koru_event_input;\n");
 
     // Find and emit implementation (ImmediateImpl, Flow with impl_of, or proc_decl)
-    // Scope to the event's own module_decl — module-nested decls carry
+    // Scope to the tor's own module_decl — module-nested decls carry
     // unqualified paths, so an all_items scan first-matches a same-named impl
     // from any module by item order (470_015).
     var found_impl = false;
@@ -16219,7 +16809,7 @@ fn emitEventDeclForModule(
         try code_emitter.write("}\n");
     }
 
-    // Close event struct
+    // Close tor struct
     code_emitter.indent_level -= 1;
     try code_emitter.writeIndent();
     try code_emitter.write("};\n");

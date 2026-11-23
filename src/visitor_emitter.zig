@@ -2106,7 +2106,7 @@ pub const VisitorEmitter = struct {
         return false;
     }
 
-    /// Emit the event struct for an event implemented by a `~[transform]proc`.
+    /// Emit the tor struct for a tor implemented by a `~[transform]proc`.
     /// Input/Output are the MACHINE interface (the transform-stub ABI), not the
     /// event's user-surface declaration — the user surface is contract data for
     /// the checkers, never a runtime shape.
@@ -2190,7 +2190,7 @@ pub const VisitorEmitter = struct {
         try self.code_emitter.write("};\n\n");
     }
 
-    /// One handler function on a transform-proc event struct: the machine-ABI
+    /// One handler function on a transform-proc tor struct: the machine-ABI
     /// bindings, the source marker, and the proc body. Shared by the default
     /// `handler` and every `handler__<variant>` sibling so the two cannot drift.
     fn emitTransformProcHandler(
@@ -2579,7 +2579,7 @@ pub const VisitorEmitter = struct {
         // NOTE: Filtering already done in visitItem() via shouldFilter()
         // No need to re-check compiler annotations or comptime-only here
 
-        // Write the event struct header
+        // Write the tor struct header
         // Join all segments with underscores: ring.dequeue becomes ring_dequeue_event
         // Glob patterns (e.g., log.*) get mangled: log.* becomes log__star__event
         try self.code_emitter.writeIndent();
@@ -3023,7 +3023,7 @@ pub const VisitorEmitter = struct {
             }
         }
 
-        // FLAT-CONTINUATION SEGMENTS: when this event's impl flow is
+        // FLAT-CONTINUATION SEGMENTS: when this tor's impl flow is
         // flat-eligible (chained non-tail self-calls over lane scalars — see
         // emitter_helpers.flowIsFlatEligible), emit the continuation segments
         // as struct members BEFORE the handler: the handler body below then
@@ -3065,7 +3065,33 @@ pub const VisitorEmitter = struct {
             try emitter.emitFlatSegments(self.code_emitter, &flat_seg_ctx, event, fflow, flat_canonical.?);
         }
 
-        // Handler function — `comptime __H: type` when the event has any
+        // Worklist lowering: a proven-pure self-recursive tor whose
+        // `[parallel]` calls are all self-calls gets a `__wl` deque inside
+        // its tor struct; marked self-calls (lowered lazily in
+        // emitInvocation via wlEventImplQualified — same predicate, same
+        // items) push {Input,*Output,done} items onto it. Emitted before the
+        // handler; unreferenced `__wl` decls are lazily analyzed away, so a
+        // qualification/emission mismatch can only ever leave a dead decl.
+        const wl_qualified = blk: {
+            if (has_effect) break :blk false;
+            var wl_probe_ctx = emitter.EmissionContext{
+                .allocator = self.allocator,
+                .ast_items = self.all_items,
+                .main_module_name = self.main_module_name,
+            };
+            const f = emitter.wlFindEmittedFlow(self.all_items, event) orelse break :blk false;
+            break :blk emitter.flowQualifiesForWorklist(&wl_probe_ctx, event, f, self.all_items);
+        };
+        if (wl_qualified) {
+            var wl_emit_ctx = emitter.EmissionContext{
+                .allocator = self.allocator,
+                .ast_items = self.all_items,
+                .main_module_name = self.main_module_name,
+            };
+            try emitter.emitWorklistStruct(self.code_emitter, &wl_emit_ctx, event);
+        }
+
+        // Handler function — `comptime __H: type` when the tor has any
         // effect `!` branches. Inside the body we'll alias each `H.NAME`
         // back to the bare identifier so the proc body reads naturally.
         // A pure-scalar value event lowers to an `inline` public shim over a
@@ -4595,7 +4621,7 @@ pub const VisitorEmitter = struct {
         // Emit variant handlers for every subflow with impl_variant set.
         // Mirrors the proc-variant emission above but for Koru-transparent bodies.
         // Each `~event|variant = body` declaration produces a handler__<mangled>
-        // function on the event struct; call sites dispatch via writeHandlerName.
+        // function on the tor struct; call sites dispatch via writeHandlerName.
         for (items_to_search) |impl_item| {
             switch (impl_item) {
                 .flow => |flow| {
@@ -4679,14 +4705,14 @@ pub const VisitorEmitter = struct {
             }
         }
 
-        // Close the event struct
+        // Close the tor struct
         self.code_emitter.indent_level -= 1;
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("};\n");
     }
 
     /// One `export fn` per entry-module `pub` event, giving the library C
-    /// linkage. The wrapper unpacks C parameters into the event's input record
+    /// linkage. The wrapper unpacks C parameters into the tor's input record
     /// and calls the handler, so a C caller never sees Koru's shapes.
     ///
     /// Three parameter shapes cross: SCALARS as themselves, TEXT as a pointer
