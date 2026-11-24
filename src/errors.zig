@@ -560,7 +560,14 @@ pub const ErrorReporter = struct {
                     }
                     break :blk null;
                 }
-                if (err.location.line > 0 and err.location.line <= self.source_lines.len) {
+                // Excerpt only when the error lives in THIS reporter's file —
+                // source_lines holds one file's text; a dependency-module
+                // error (e.g. KORU116 inside koru-libs/ai) would otherwise
+                // render the entry file's same-numbered line (measured:
+                // canvas draw code shown for ai/index.kz:152).
+                if (std.mem.eql(u8, err.location.file, self.file_name) and
+                    err.location.line > 0 and err.location.line <= self.source_lines.len)
+                {
                     break :blk .{ .line = self.source_lines[err.location.line - 1], .line_no = err.location.line };
                 }
                 break :blk null;
