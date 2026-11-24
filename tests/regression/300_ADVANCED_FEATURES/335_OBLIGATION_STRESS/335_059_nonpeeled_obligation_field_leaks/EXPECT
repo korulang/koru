@@ -1,0 +1,4 @@
+CONTAINS KORU030
+CONTAINS data
+CONTAINS allocated
+CONTAINS std/io:free

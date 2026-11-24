@@ -1,7 +1,7 @@
 ---
 type: belief
 id: frag-field-granular-obligation-narrowing
-provenance: introduced by challenge(007) — field-narrowing design walk with Lars
+provenance: introduced by challenge(007) — field-narrowing design walk with Lars; evolved 2026-11-24 after the branch-payload non-peeled discard hole (335_059)
 ts: 2026-07-20
 ---
 
@@ -68,6 +68,8 @@ position and not another, look for the second code path that was supposed to
 match the first, before concluding the model is positional.
 
 Nested projection (`r.outer.h`) is untracked, one rung further out.
+
+**A non-peeled branch-payload debt is a compile-time refusal, not a runtime leak.** The 2026-07 design said omission falls out of the ordinary discharge rule, and for bind-position destructure it did. Branch-payload destructure had the residual hole: with no whole-payload binding, an omitted obligation field was keyed as `_.field` — unreachable by construction — yet the post-`__ret_destr` pipeline accepted the program and only the runtime leak counter fired. The checker now refuses that arm directly: plain fields may drop, obligation fields may not when no usable whole-payload binding remains. `335_059` pins the refusal; `335_057/058` and `330_103` remain the controls.
 
 **Aliasing is the proc's business, not Koru's** (Lars, 2026-07-25). When two
 fields hold one pointer — `.{ .h = h, .g = h }` from a `|zig` body — each

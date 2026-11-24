@@ -2889,6 +2889,31 @@ pub const PhantomSemanticChecker = struct {
                     try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ binding_name, field.name });
                 defer self.allocator.free(field_path);
                 if (field.phantom) |phantom_str| {
+                    // A destructure with no usable whole-payload binding makes
+                    // every non-peeled field unreachable (`_.field`). Plain
+                    // fields may drop; an obligation field may not — the debt
+                    // must be refused at the arm rather than left under a key
+                    // nothing downstream can spell.
+                    if (cont.destructure.len > 0 and destructured_path == null and
+                        (cont.binding == null or std.mem.eql(u8, binding_name, "_")) and
+                        try self.phantomRequiresCleanup(phantom_str))
+                    {
+                        const module_for_canon = event_module orelse event_decl.module;
+                        const canonical_report_phantom = try self.canonicalizePhantomStateWithBase(
+                            phantom_str,
+                            module_for_canon,
+                            try self.baseTypeModule(field.module_path),
+                        );
+                        defer self.allocator.free(canonical_report_phantom);
+                        const canonical_report_base = try self.canonicalizeBaseType(
+                            field.type,
+                            field.module_path,
+                            module_for_canon,
+                        );
+                        defer self.allocator.free(canonical_report_base);
+                        try self.reportUndischargedObligation(field.name, canonical_report_phantom, canonical_report_base, cont.location);
+                        has_errors = true;
+                    }
 
                     // Canonicalize phantom state using event's qualified module name
                     const module_for_canon = event_module orelse event_decl.module;
