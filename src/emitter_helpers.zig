@@ -9819,6 +9819,29 @@ fn wlHasParallelSelfCall(cont: ast.Continuation, self_path: ast.DottedPath) bool
     return false;
 }
 
+/// True when the flow tree carries ANY `[parallel]`-marked invocation.
+/// Flat-continuation segments bypass emitInvocation entirely — a marked
+/// call inside a flat-eligible flow would silently lose its fork/join or
+/// worklist lowering (tak-par measured identical to tak-seq: the marks
+/// were dead syntax). Such flows stay on the regular path where the
+/// parallel machinery lives.
+fn flowHasParallelAnnotation(cont: ast.Continuation) bool {
+    if (cont.node) |node| {
+        switch (node) {
+            .invocation => |inv| {
+                for (inv.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "parallel")) return true;
+                }
+            },
+            else => {},
+        }
+    }
+    for (cont.continuations) |c| {
+        if (flowHasParallelAnnotation(c)) return true;
+    }
+    return false;
+}
+
 // ── Asymmetry gate ────────────────────────────────────────────────────────
 //
 // The worklist only pays where the marked self-calls fan out into UNEVEN
@@ -15533,6 +15556,11 @@ fn emitSelfTailReentry(
     ctx: *EmissionContext,
     cont: *const ast.Continuation,
 ) !void {
+    // Fork/join: the reentry args can read spawned bindings (tak's
+    // `tak(x: t1, y: t2, z: t3)` tail call) — join before the reads, and
+    // clear pending so sibling branches don't inherit a drain whose flag
+    // decls live in this branch's scope.
+    try drainParallelJoins(emitter, ctx);
     try emitTailReargs(emitter, ctx, &cont.node.?.invocation);
     try emitter.writeIndent();
     try emitter.write("continue :");
@@ -15551,6 +15579,9 @@ fn emitMutualTailReentry(
     cont: *const ast.Continuation,
     tag: []const u8,
 ) !void {
+    // Same fork/join hazard as emitSelfTailReentry: reentry args may read
+    // spawned bindings — join first, clear pending for sibling arms.
+    try drainParallelJoins(emitter, ctx);
     try emitTailReargs(emitter, ctx, &cont.node.?.invocation);
     try emitter.writeIndent();
     try emitter.write("continue :");
@@ -15861,7 +15892,14 @@ pub fn flowIsFlatEligible(
     }
     var any_chained = false;
     if (!flatContsEligible(flow.body.continuations, self_canonical, ctx, &any_chained)) return false;
-    return any_chained;
+    if (!any_chained) return false;
+    // `[parallel]` marks are honored only on the regular emission path —
+    // flat segments bypass emitInvocation, so a marked call here would be
+    // dead syntax. Keep such flows off the flat path.
+    for (flow.body.continuations) |c| {
+        if (flowHasParallelAnnotation(c)) return false;
+    }
+    return true;
 }
 
 /// File-scope scan for the lane-stack decls: does any impl flow in this
