@@ -10153,6 +10153,38 @@ fn wlEventImplQualified(ctx: *EmissionContext, event: *const ast.EventDecl) bool
     return flowQualifiesForWorklist(ctx, event, flow, items);
 }
 
+/// True when the impl flow's `[parallel]` self-calls include a shape the
+/// asymmetry classifier cannot prove — permuted args, literals, complex
+/// arg expressions (WlCallShape.has_other). fork/join spawn-per-call
+/// measured a 56% LOSS on tak's three-way permuted fan-out (quiet hel1:
+/// tak-par 74.1 vs seq 47.5). Unsure self-recursive shapes decline to
+/// the synchronous call — seq cost is the honest floor until the
+/// worklist's finer granularity is proven on the shape.
+fn wlSelfCallsHaveOther(ctx: *EmissionContext, event: *const ast.EventDecl) bool {
+    const items = ctx.ast_items orelse ctx.program_items orelse return false;
+    const flow = wlFindEmittedFlow(items, event) orelse return false;
+    const n = wlCountParSelfCalls(&flow.body, event.path);
+    if (n == 0) return false;
+    var calls = std.ArrayList(ast.Invocation){};
+    defer calls.deinit(ctx.allocator);
+    calls.ensureTotalCapacity(ctx.allocator, n) catch return false;
+    wlCollectParSelfCalls(&flow.body, event.path, &calls);
+    for (calls.items) |*inv| {
+        var shape = wlCallShape(ctx.allocator, inv, event.input.fields) catch return false;
+        defer shape.decs.deinit(ctx.allocator);
+        if (shape.has_other) return true;
+    }
+    return false;
+}
+
+/// Fork/join decline predicate: this invocation is a self-call inside a
+/// tor whose marked self-calls are shape-unsure — see wlSelfCallsHaveOther.
+fn wlUnsureSelfCall(ctx: *EmissionContext, inv: *const ast.Invocation) bool {
+    const impl_ev = ctx.impl_event_decl orelse return false;
+    if (!sameDottedPath(inv.path, impl_ev.path)) return false;
+    return wlSelfCallsHaveOther(ctx, impl_ev);
+}
+
 /// Emit the per-tor `__wl` worklist struct: a mutex-protected LIFO deque of
 /// {Input,*Output,done} items, a condvar for idle workers, a `pending`
 /// counter bounding outstanding work, lazily-spawned pool workers, and the
@@ -10760,7 +10792,12 @@ fn emitInvocation(
         ctx.pending_handlers_name == null and
         invocation.variant == null and
         ctx.is_sync and
-        invocation.return_destructure.len == 0;
+        invocation.return_destructure.len == 0 and
+        // Unsure self-recursive shapes (permuted args — tak's three-way
+        // fan-out): fork/join spawn-per-call measured a 56% loss vs seq
+        // on the quiet board. Decline to the synchronous call — seq cost
+        // is the honest floor until the worklist proves finer granularity.
+        !wlUnsureSelfCall(ctx, invocation);
     if (forkable) {
         const slot = if (std.mem.eql(u8, bound_var, "_"))
             try std.fmt.allocPrint(ctx.allocator, "__koru_par_s{d}", .{ctx.pending_parallel.items.len})
