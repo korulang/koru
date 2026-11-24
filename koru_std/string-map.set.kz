@@ -1,0 +1,33 @@
+// Koru Standard Library: the `set` part of string-map.kz.
+// Joined via `~part set` in string-map.kz; merged into the module at load.
+
+// ============================================
+// Mutation (borrow — obligation untouched)
+// ============================================
+
+// Insert or overwrite key → value. Dupes the key on first insert; an overwrite
+// reuses the already-stored key (no re-dupe, no leak). Void, chains with `|>`.
+~pub tor set { m: *Map_string_i64<map>, k: string<*@scoped>, v: i64 }
+
+~proc set|zig {
+    if (m.cache_key) |cached_key| {
+        if (std.mem.eql(u8, cached_key, k)) {
+            m.cache_value.?.* = v;
+            return;
+        }
+    }
+    const gop = m.map.getOrPut(m.allocator, k) catch {
+        @panic("std/string-map:set — out of memory");
+    };
+    if (!gop.found_existing) {
+        m.cache_key = null;
+        m.cache_value = null;
+        gop.key_ptr.* = m.allocator.dupe(u8, k) catch {
+            @panic("std/string-map:set — out of memory");
+        };
+    } else {
+        m.cache_key = gop.key_ptr.*;
+        m.cache_value = gop.value_ptr;
+    }
+    gop.value_ptr.* = v;
+}

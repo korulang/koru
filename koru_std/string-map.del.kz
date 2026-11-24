@@ -16,7 +16,7 @@
 
 ~proc del|zig {
     if (m.map.fetchRemove(k)) |kv| {
-        m.allocator.free(kv.key);
+        m.cache_key = null; m.cache_value = null; m.allocator.free(kv.key);
         return .{ .value = kv.value };
     }
     return .missing;

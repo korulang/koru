@@ -1,0 +1,20 @@
+// Koru Standard Library: the `get` part of string-map.kz.
+// Joined via `~part get` in string-map.kz; merged into the module at load.
+
+// ============================================
+// Read (borrow)
+// ============================================
+
+// Lookup by key. `value` on hit, `missing` when absent.
+~pub tor get { m: *Map_string_i64<map>, k: string<*@scoped> }
+| value i64
+| missing
+
+~proc get|zig {
+    if (m.map.getEntry(k)) |entry| {
+        m.cache_key = entry.key_ptr.*;
+        m.cache_value = entry.value_ptr;
+        return .{ .value = entry.value_ptr.* };
+    }
+    return .missing;
+}

@@ -22,6 +22,8 @@ const std = @import("std");
 pub const Map_string_i64 = struct {
     map: std.StringHashMapUnmanaged(i64),
     allocator: std.mem.Allocator,
+    cache_key: ?[]const u8,
+    cache_value: ?*i64,
 
     // Package-private — only free/auto-discharge calls this. Frees every duped
     // key, then the table, then the boxed handle.
@@ -56,45 +58,10 @@ pub const Map_string_i64 = struct {
     const self = allocator.create(Map_string_i64) catch {
         return .{ .err = "allocation failed" };
     };
-    self.* = .{ .map = .{}, .allocator = allocator };
+    self.* = .{ .map = .{}, .allocator = allocator, .cache_key = null, .cache_value = null };
     return .{ .map = self };
 }
 
-// ============================================
-// Mutation (borrow — obligation untouched)
-// ============================================
-
-// Insert or overwrite key → value. Dupes the key on first insert; an overwrite
-// reuses the already-stored key (no re-dupe, no leak). Void, chains with `|>`.
-~pub tor set { m: *Map_string_i64<map>, k: string<*@scoped>, v: i64 }
-
-~proc set|zig {
-    const gop = m.map.getOrPut(m.allocator, k) catch {
-        @panic("std/string-map:set — out of memory");
-    };
-    if (!gop.found_existing) {
-        gop.key_ptr.* = m.allocator.dupe(u8, k) catch {
-            @panic("std/string-map:set — out of memory");
-        };
-    }
-    gop.value_ptr.* = v;
-}
-
-// ============================================
-// Read (borrow)
-// ============================================
-
-// Lookup by key. `value` on hit, `missing` when absent.
-~pub tor get { m: *Map_string_i64<map>, k: string<*@scoped> }
-| value i64
-| missing
-
-~proc get|zig {
-    if (m.map.get(k)) |v| {
-        return .{ .value = v };
-    }
-    return .missing;
-}
 
 // Membership test.
 ~pub tor contains { m: *Map_string_i64<map>, k: string<*@scoped> }
@@ -115,8 +82,9 @@ pub const Map_string_i64 = struct {
     return @intCast(m.map.count());
 }
 
-// Growth splits by surface — this file is at its line pin: each
-// (string-map.each.kz), del (string-map.del.kz), free (string-map.free.kz).
+// Growth splits by surface — this file is at its line pin.
+~part set
+~part get
 ~part each
 ~part del
 ~part free
