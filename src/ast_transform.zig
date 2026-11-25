@@ -4392,7 +4392,10 @@ pub const RecursionUnroll = struct {
                 while (it2.next()) |kv| m = @max(m, kv.value_ptr.total);
                 break :blk m;
             };
-            if (s == 0) return;
+            // s<=1 refuses: s=0 has no self-call (nothing to peel) and
+            // s=1 is linear recursion — bodyCopies divides by (s-1), and
+            // v1's eligible set is the s>=2 kernels anyway.
+            if (s <= 1) return;
     
             var depth: u32 = 0;
             var d: u32 = 1;

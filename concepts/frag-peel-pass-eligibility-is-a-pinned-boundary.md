@@ -49,6 +49,12 @@ Zig never analyzes them. The boundary held: all 12 pins green on
 first landing, hanoi's `acc: h + 1` sibling-fed arg surviving
 substitution exactly as pinned.
 
+Boundary refinement (fix commit): branching factor s must be >=2 —
+s=1 linear recursion refused because bodyCopies divides by (s-1) and
+v1's win is the branching kernels; the full board caught four
+backend-exec crashes (320_096/320_122/810_101/810_102) on s=1 shapes
+the pin suite never exercised. Ceremony worked as designed.
+
 Still open: a capture-mutation pin is blocked on language surface
 (`! as` cannot head an impl flow); it joins the suite when that
 surface exists. The pathsEqual helper twin (ast_transform vs
