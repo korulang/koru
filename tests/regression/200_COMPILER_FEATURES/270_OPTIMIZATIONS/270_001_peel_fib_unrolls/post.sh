@@ -1,17 +1,16 @@
 #!/bin/bash
-# Pin: bounded recursive unrolling fires on the fib shape at D=2.
-# Residual self-call census: s^(D+1) = 2^3 = 8 inside the impl + 1 external
-# call in the main flow = 9 `fib_event.handler(` sites total (baseline
-# untransformed shape has 3). Substituted guards (`n - 1` inside the `< 2`
-# test) are the substitution fingerprint — the source body only compares
-# bare `n`.
+# Pin (RE-PINNED for collapse-before-unroll ordering): collapse-recursion
+# runs before unroll-recursion in elaborate, so this shape collapses to a
+# closed form FIRST — the __koru_collapse_b1_fib marker must be present and
+# the __koru_unroll_ machine must be absent. This pins ORDERING, not just
+# collapse correctness (270_013-018 own that). expected.txt proves the
+# collapse preserves semantics.
 set -e
-sites=$(grep -o 'fib_event\.handler(' output_emitted.zig | wc -l | tr -d ' ')
-if [ "$sites" -ne 9 ]; then
-    echo "FAIL: expected 9 fib_event.handler( sites (8 residual + 1 main) at D=2, found $sites — unroll pass did not fire or depth is wrong"
+if ! grep -q '__koru_collapse_b1_fib' output_emitted.zig; then
+    echo "FAIL: __koru_collapse_b1_fib marker absent — collapse did not fire before unroll"
     exit 1
 fi
-if ! grep -qE 'n - 1[^<]*< 2|n - 1\) < 2|\(n - 1\) < 2' output_emitted.zig; then
-    echo "FAIL: no parameter-substituted guard (n - 1 ... < 2) — body copies were not substituted"
+if grep -q '__koru_unroll_' output_emitted.zig; then
+    echo "FAIL: __koru_unroll_ machine present — unroll fired on a collapse-admitted shape (ordering violated)"
     exit 1
 fi

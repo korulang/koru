@@ -1,11 +1,7 @@
-// PIN (recursion-unroll pass, challenge 035 leg): the peel/unroll pass must
-// fire on the pascal/binom shape — three-way branch, `n` decreasing by 1 on
-// both self-call sites while `k` is unconstrained (k-1 on one site, pun on
-// the other). Eligible under the designated-param witness: `n` alone
-// decreases on every site. At D=2, s=2 the emitted Zig must carry 8 residual
-// `binom_event.handler(` calls + 1 external (9 total) and substituted guards
-// (`k - 1` / `n - 1` inside the `== 0` / `== n` tests).
-// RED until the pass lands.
+// PIN (collapse-before-unroll ordering, WAY-TWO leg): collapse-recursion
+// runs before unroll-recursion in elaborate and admits this shape first —
+// the emitted body must carry __koru_collapse_b2_binom and NO __koru_unroll_
+// machine. expected.txt proves collapse preserves semantics.
 import std/io
 
 pub tor binom { n: i64, k: i64 } -> i64

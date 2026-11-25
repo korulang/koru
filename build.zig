@@ -320,6 +320,14 @@ pub fn build(b: *std.Build) void {
     ast_transform_module.addImport("ast", ast_module);
     ast_transform_module.addImport("errors", errors_module);
 
+    const recurrence_collapse_module = b.createModule(.{
+        .root_source_file = b.path("src/recurrence_collapse.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    recurrence_collapse_module.addImport("ast", ast_module);
+    recurrence_collapse_module.addImport("errors", errors_module);
+
     // AST Visitor module (moved up for main exe)
     const ast_visitor_module = b.createModule(.{
         .root_source_file = b.path("src/ast_visitor.zig"),
@@ -571,6 +579,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("ast_json", ast_json_module);
     exe.root_module.addImport("ast_printer", ast_printer_module);
     exe.root_module.addImport("ast_transform", ast_transform_module);
+    exe.root_module.addImport("recurrence_collapse", recurrence_collapse_module);
     exe.root_module.addImport("transforms/inline_small_events", inline_transform_module);
 
     // Add visitor emitter modules (needed for generateComptimeBackendEmitted)
