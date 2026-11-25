@@ -234,9 +234,10 @@ koru_std/kernel.fields.kz	108
 koru_std/kernel.fpga.kz	192
 koru_std/kernel.fpgaemit.kz	179
 koru_std/kernel.fpgatb.kz	120
-koru_std/kernel.kz	2345
+koru_std/kernel.kz	2315
 koru_std/kernel.pairwise.kz	341
 koru_std/kernel.scan.kz	109
+koru_std/kernel.scanop.kz	211
 koru_std/koru.kz	211
 koru_std/liquid_template.kz	145
 koru_std/list.explain.kz	113
