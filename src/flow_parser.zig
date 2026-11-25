@@ -78,6 +78,14 @@ fn parseFlowInternal(allocator: std.mem.Allocator, source: []const u8) ParseErro
         } };
     }
 
+    // Single-line fast path: no '\n' means splitLines yields exactly one
+    // LineInfo, collectMultiLineConstruct returns it verbatim, and there
+    // are no indented tail continuations — the line machinery is provably
+    // redundant. Same helpers, same Flow.
+    if (std.mem.indexOfScalar(u8, source, '\n') == null) {
+        return parseFlowOneLine(allocator, source);
+    }
+
     // Split source into lines
     const lines = try splitLines(allocator, source);
 
@@ -171,6 +179,83 @@ fn parseFlowInternal(allocator: std.mem.Allocator, source: []const u8) ParseErro
     else
         try allocator.alloc(ast.Continuation, 0);
 
+    var all_conts = try std.ArrayList(ast.Continuation).initCapacity(allocator, inline_conts.items.len + tail_conts.len);
+    try all_conts.appendSlice(allocator, inline_conts.items);
+    try all_conts.appendSlice(allocator, tail_conts);
+    const continuations = try stitchPipelineChains(allocator, all_conts.items);
+
+    return .{ .flow = .{
+        .body = ast.rootSite(invocation, continuations, .{ .file = "generated", .line = 0, .column = 0 }),
+        .module = try allocator.dupe(u8, "eval"),
+    } };
+}
+
+// The single-line shape of parseFlowInternal: one LineInfo whose content
+// is the source itself, no multi-line collection, no tail continuations.
+// Every helper and every emitted node is the same code the general path
+// runs — only the line bookkeeping is skipped.
+fn parseFlowOneLine(allocator: std.mem.Allocator, source: []const u8) ParseError!FlowParseResult {
+    const line_num: usize = 1;
+    // The general path skips blank/comment lines before the invocation;
+    // with one line, a comment line leaves nothing — "No invocation found".
+    if (lexer.isCommentLine(source)) {
+        return .{ .err = .{
+            .message = "No invocation found",
+            .line = 0,
+            .column = 0,
+        } };
+    }
+    const first_line = lexer.trim(source);
+    if (first_line.len == 0) {
+        return .{ .err = .{
+            .message = "Not a flow (empty invocation)",
+            .line = line_num,
+            .column = 0,
+        } };
+    }
+
+    // collectMultiLineConstruct on one line returns the raw line content.
+    const invocation_text = source;
+    const split_idx = findContinuationBoundaryFrom(invocation_text, 0, false);
+    const invocation_part = if (split_idx) |idx| lexer.trim(invocation_text[0..idx]) else invocation_text;
+    const inline_part = if (split_idx) |idx| invocation_text[idx..] else null;
+
+    const invocation = parseInvocationLine(allocator, invocation_part, line_num) catch {
+        return .{ .err = .{
+            .message = "Invalid invocation syntax",
+            .line = line_num,
+            .column = 0,
+        } };
+    };
+
+    // Inline arms — identical loop to the general path's head-line arms.
+    var inline_conts = try std.ArrayList(ast.Continuation).initCapacity(allocator, 2);
+    var arm_idx: ?usize = null;
+    if (inline_part) |part| {
+        var rest = part;
+        while (rest.len > 0) {
+            const is_arm_head = rest.len > 1 and rest[0] == '|' and rest[1] != '>';
+            const next = findContinuationBoundaryFrom(rest, 1, is_arm_head);
+            const seg = if (next) |n| rest[0..n] else rest;
+            const cont = try parseSingleContinuation(allocator, seg, 0, line_num);
+            if (is_arm_head) {
+                try inline_conts.append(allocator, cont);
+                arm_idx = inline_conts.items.len - 1;
+            } else if (arm_idx) |ai| {
+                const old = inline_conts.items[ai].continuations;
+                const grown = try allocator.alloc(ast.Continuation, old.len + 1);
+                @memcpy(grown[0..old.len], old);
+                grown[old.len] = cont;
+                inline_conts.items[ai].continuations = grown;
+            } else {
+                try inline_conts.append(allocator, cont);
+            }
+            rest = if (next) |n| rest[n..] else "";
+        }
+    }
+
+    // One line means no indented tail continuations.
+    const tail_conts = try allocator.alloc(ast.Continuation, 0);
     var all_conts = try std.ArrayList(ast.Continuation).initCapacity(allocator, inline_conts.items.len + tail_conts.len);
     try all_conts.appendSlice(allocator, inline_conts.items);
     try all_conts.appendSlice(allocator, tail_conts);

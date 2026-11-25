@@ -10,6 +10,12 @@
 // the bound scope's. The session lookup rides threadlocal because
 // parse_wire's `input_fn` is a bare fn pointer with no context slot;
 // set for the duration of each call only.
+// The wire gate's admitted-item cache — threadlocal like the session gate
+// state it sits beside: the gate (this file) writes it, the dispatch
+// (bridge.dispatch) reads and clears it, strictly within one item's call.
+threadlocal var gate_wire_src: []const u8 = "";
+threadlocal var gate_wire_norm: []const u8 = "";
+
 threadlocal var __gate_bound_input: ?Runtime.InputLookupFn = null;
 threadlocal var __gate_mounted: []const Runtime.ScopeRuntime = &.{};
 
@@ -34,22 +40,3 @@ fn clearSessionGate() void {
     __gate_mounted = &.{};
 }
 
-// The wire grammar check, shared by the single-item gate and the per-item
-// gate a sequenced turn runs on every slice: one predicate, two surfaces —
-// a one-item turn returns the refusal as the turn's verdict; a multi-item
-// turn reports it as a `step N/M parse-error` line and runs on. A grammar
-// that only held on the first item of a turn is the convention the wire
-// ruling retired — the unit of enforcement is the item. (440_021; kopium
-// bridge-mirror 2026-09-12-wire-gate-scope)
-fn wireGate(br: *Bridge, source: []const u8) ?GateRejection {
-    withSessionGate(br);
-    defer clearSessionGate();
-    return switch (Runtime.parse_wire_event.handler(.{
-        .source = source,
-        .input_fn = sessionInputLookup,
-        .host_input_fn = hostInputLookup,
-    })) {
-        .parsed => null,
-        .parse_error => |e| .{ .message = e.message, .line = e.line, .column = e.column, .not_invocation = e.not_invocation },
-    };
-}

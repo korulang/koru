@@ -1,0 +1,53 @@
+// Koru Standard Library: the `dispatch-scope` part of bridge — one wire item through the session scope.
+// Joined via `~part dispatch-scope` in bridge.kz; merged into the bridge module
+// at load.
+
+/// Typed positions were admitted by the gate; here they normalize to
+/// canonical quoted wire so eval sees one representation.
+fn dispatchThroughScope(br: *Bridge, src: []const u8, turn_env: ?*Interp.Environment) ScopeDispatch {
+    // Page-backed like the rest of the wire layer — the normalized text
+    // must outlive the whole dispatch, and the arena dies at prepare().
+    // The session lookup reads mounted scopes too: a typed arg on a
+    // mounted verb normalizes by its own manifest. When the gate just
+    // admitted this exact item it already holds the normalized wire —
+    // reuse it and skip a second scan of the same bytes.
+    const gate_key = std.mem.trim(u8, src, " \t\r\n");
+    const wire = if (gate_key.len == gate_wire_src.len and std.mem.eql(u8, gate_key, gate_wire_src))
+        gate_wire_norm
+    else blk: {
+        withSessionGate(br);
+        const w = Runtime.wireNormalize(std.heap.page_allocator, src, sessionInputLookup, hostInputLookup);
+        clearSessionGate();
+        break :blk w;
+    };
+    gate_wire_src = "";
+    gate_wire_norm = "";
+    // The session's mounted scopes ride the interpreter's channel for
+    // this run — a mounted verb then dispatches, validates, borrows, and
+    // discharges exactly like a bound one, against this same pool.
+    Interp.setRunMountedScopes(br.mounted_scopes.items);
+    defer Interp.clearRunMountedScopes();
+    // The call_step sink: the interpreter appends each dispatch's record
+    // as it lands; the caller renders before the next item runs.
+    br.call_sink.clearRetainingCapacity();
+    clearItemGuides(br); // each item owns its guide lines
+    Interp.setTraceSink(&br.call_sink);
+    defer Interp.setTraceSink(null);
+    const out = Runtime.run_event.handler(.{
+        .source = wire,
+        .scope = br.scope,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+        .defined = br.defined,
+        .lenient = true,
+        .host_dispatch = if (br.introspection) @as(?Interp.HostDispatchFn, hostDispatch) else null,
+        .session_env = br.session_env,
+        .session_bind_fn = @as(?Interp.SessionBindFn, sessionBindAdapter),
+        .session_bind_env = br.session_env,
+        .session_bind_counter = &br.bound_count,
+        .turn_env = turn_env,
+    });
+    return .{ .out = out, .steps = br.call_sink.items };
+}
+
+/// One turn's state hash — bumps the turn counter as it hashes, so every

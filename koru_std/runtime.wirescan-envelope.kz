@@ -1,0 +1,163 @@
+// Koru Standard Library: the `wirescan-envelope` part of runtime — the envelope scanner and its lazy-output accumulator.
+// Joined via `~part wirescan-envelope` in runtime.kz; merged into the runtime module
+// at load.
+//
+// envelopeScan is the two-pass shape the wire ruling asks for, landed
+// as one lazy pass: validate and track whether the normalized text is
+// byte-identical to the input; the first divergence materializes.
+
+// The lazy-output accumulator envelopeScan shares: `clean` means the
+// normalized text equals the input so far and `covered` is the input
+// offset mirrored; the first divergence materializes s[0..covered] and
+// every later emit appends literally.
+const LazyWireOut = struct {
+    s: []const u8,
+    allocator: std.mem.Allocator,
+    out: std.ArrayList(u8) = .{},
+    clean: bool = true,
+    covered: usize = 0,
+
+    fn flush(self: *LazyWireOut) void {
+        if (!self.clean) return;
+        self.out = std.ArrayList(u8).initCapacity(self.allocator, self.s.len) catch unreachable;
+        self.out.appendSlice(self.allocator, self.s[0..self.covered]) catch unreachable;
+        self.clean = false;
+    }
+    fn emitSpan(self: *LazyWireOut, a: usize, b: usize) void {
+        if (self.clean and a == self.covered) {
+            self.covered = b;
+            return;
+        }
+        self.flush();
+        self.out.appendSlice(self.allocator, self.s[a..b]) catch unreachable;
+        self.covered = b;
+    }
+    fn emitByte(self: *LazyWireOut, pos: usize) void {
+        if (self.clean and pos == self.covered) {
+            self.covered = pos + 1;
+            return;
+        }
+        self.flush();
+        self.out.append(self.allocator, self.s[pos]) catch unreachable;
+        self.covered = pos + 1;
+    }
+};
+
+// envelopeScan — the two-pass shape Lars's wire ruling asks for, landed as
+// one lazy pass: the scanner validates and tracks whether the normalized
+// text is byte-identical to the input. Clean input (the common case —
+// canonical wire carries no stray whitespace inside the parens, no trimmed
+// bare values, no raw newlines in quotes) returns `s` itself with zero
+// allocation; the first divergence flushes the scanned prefix into a
+// buffer and the rest materializes exactly like wireScan. Verdicts,
+// rejection bytes, and normalized bytes are identical by construction —
+// the pin set and a differential bench are the oracle.
+fn wireScan(allocator: std.mem.Allocator, s: []const u8, input_fn: ?InputLookupFn, host_input_fn: ?InputLookupFn) WireScan {
+    _ = input_fn;
+    _ = host_input_fn;
+    if (s.len == 0) return .{ .reject = wireReject("the reply carried no invocation — a reply is one or more invocations, one per line", .{}, 0) };
+
+    // Clean mode: the normalized text is byte-identical to `s`, so nothing
+    // is emitted — `covered` tracks the input offset the output mirrors.
+    // The first divergence (skipped whitespace, a trimmed bare value, a
+    // re-escaped quote) flushes s[0..covered] into `out` and the rest of
+    // the scan materializes exactly like wireScan.
+    var lo = LazyWireOut{ .s = s, .allocator = allocator };
+
+    var i: usize = 0;
+    if (!wireIdentStart(s[0])) return .{ .reject = wireRejectResidue("not an invocation: a wire line is verb(field: \"value\") and starts with a verb name, not '{c}'", .{s[0]}, 0) };
+    while (i < s.len and wireIdentChar(s[i])) i += 1;
+    const verb = s[0..i];
+    while (i < s.len and (s[i] == ' ' or s[i] == '\t')) i += 1;
+
+    if (i >= s.len or s[i] != '(') return .{ .reject = wireRejectResidue("not an invocation: after the verb '{s}' comes '(' — calls are `verb(field: ...)` and `vocabulary()` lists every verb", .{verb}, i) };
+    lo.emitSpan(0, i + 1);
+    i += 1;
+
+    while (true) {
+        const ws_start = i;
+        while (i < s.len and (s[i] == ' ' or s[i] == '\t')) i += 1;
+        if (i > ws_start) lo.flush();
+        if (i < s.len and s[i] == ')') {
+            lo.emitByte(i);
+            i += 1;
+            break;
+        }
+        if (i >= s.len or !wireIdentStart(s[i])) return .{ .reject = wireReject("arguments are name: \"value\" pairs — expected a field name here", .{}, i) };
+        const field_start = i;
+        while (i < s.len and wireIdentChar(s[i])) i += 1;
+        const field = s[field_start..i];
+        while (i < s.len and (s[i] == ' ' or s[i] == '\t')) i += 1;
+        if (i >= s.len or s[i] != ':') return .{ .reject = wireReject("in your '{s}' call: expected ':' after the field '{s}' — '{s}' was inside bare prose that stops at ',' or ')' — wrap punctuation or newlines in \"double quotes\"", .{ verb, field, field }, i) };
+        i += 1;
+        while (i < s.len and (s[i] == ' ' or s[i] == '\t')) i += 1;
+        lo.emitSpan(field_start, i);
+        if (i < s.len and s[i] == '"') {
+            const quote_start = i;
+            i += 1;
+            var closed = false;
+            while (i < s.len) {
+                const c = s[i];
+                if (c == '\\') {
+                    i = if (i + 1 < s.len) i + 2 else s.len;
+                    continue;
+                }
+                if (c == '"') {
+                    closed = true;
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            if (!closed) return .{ .reject = wireReject("unterminated string for the field '{s}' — the reply looks truncated", .{field}, i) };
+            const quoted = s[quote_start..i];
+            if (std.mem.indexOfAny(u8, quoted, "\r\n") == null) {
+                lo.emitSpan(quote_start, i);
+            } else {
+                lo.flush();
+                const canon = std.mem.replaceOwned(u8, allocator, std.mem.replaceOwned(u8, allocator, quoted, "\n", "\\n") catch unreachable, "\r", "\\r") catch unreachable;
+                lo.out.appendSlice(allocator, canon) catch unreachable;
+                lo.covered = i;
+            }
+        } else {
+            const cap_start = i;
+            const raw_full = wireScanCaptured(s, &i);
+            const raw = std.mem.trim(u8, raw_full, " \t");
+            if (raw.len == 0) return .{ .reject = wireReject("the field '{s}' needs a value — a \"double-quoted string\", a literal, a bound name, or an expression like `n * 2`", .{field}, i) };
+            if (!wireExprParses(allocator, raw)) return .{ .reject = wireReject("the value of '{s}' is not a Koru expression — write a bound name, a field path, an operation (`n * 2`), or \"quote it\" for literal text", .{field}, i) };
+            const lead = raw_full.len - std.mem.trimLeft(u8, raw_full, " \t").len;
+            const trail = raw_full.len - std.mem.trimRight(u8, raw_full, " \t").len;
+            const trimmed_start = cap_start + lead;
+            const trimmed_end = cap_start + raw_full.len - trail;
+            // Clean only when the trimmed value is contiguous with what the
+            // output mirrors AND reaches the capture's end — trimmed edge
+            // whitespace is a gap the normalized text drops.
+            if (lo.clean and trimmed_start == lo.covered and trimmed_end == i) {
+                lo.covered = trimmed_end;
+            } else {
+                lo.flush();
+                lo.out.appendSlice(allocator, raw) catch unreachable;
+                lo.covered = i;
+            }
+        }
+        const ws2_start = i;
+        while (i < s.len and (s[i] == ' ' or s[i] == '\t')) i += 1;
+        if (i > ws2_start) lo.flush();
+        if (i < s.len and s[i] == ',') {
+            lo.emitByte(i);
+            i += 1;
+            continue;
+        }
+        if (i < s.len and s[i] == ')') {
+            lo.emitByte(i);
+            i += 1;
+            break;
+        }
+        return .{ .reject = wireReject("after the value of '{s}' comes ',' or ')' — text must be \"double-quoted\"; a bare word reads as a bound name", .{field}, i) };
+    }
+
+    if (wireArmTail(s, i)) |rej| return .{ .reject = rej };
+    if (lo.clean) return .{ .ok = s };
+    lo.out.appendSlice(allocator, s[i..]) catch unreachable;
+    return .{ .ok = lo.out.items };
+}

@@ -3,47 +3,6 @@
 // fallback for source the fast path declines. Joined via `~part flowsrc`
 // in interpreter.kz; merged into the interpreter module at load.
 
-pub const InterpreterFlowCache = struct {
-    threadlocal var inited: bool = false;
-    threadlocal var arena: std.heap.ArenaAllocator = undefined;
-    threadlocal var source_hash: u64 = 0;
-    threadlocal var source_len: usize = 0;
-    threadlocal var source_copy: []const u8 = &[_]u8{};
-    threadlocal var flow: ast.Flow = undefined;
-    threadlocal var has_flow: bool = false;
-
-    pub fn getOrParse(source: []const u8) ?*const ast.Flow {
-        if (!inited) {
-            arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-            inited = true;
-        }
-        const hash = std.hash.Wyhash.hash(0, source);
-        if (has_flow and source_len == source.len and source_hash == hash and std.mem.eql(u8, source, source_copy)) {
-            return &flow;
-        }
-
-        _ = arena.reset(.retain_capacity);
-        const allocator = arena.allocator();
-        source_copy = allocator.dupe(u8, source) catch {
-            has_flow = false;
-            return null;
-        };
-        const parse_result = flow_parser.parseFlow(allocator, source_copy);
-        switch (parse_result) {
-            .flow => |f| {
-                flow = f;
-                has_flow = true;
-                source_len = source.len;
-                source_hash = hash;
-                return &flow;
-            },
-            .err => {
-                has_flow = false;
-                return null;
-            },
-        }
-    }
-};
 
 /// What a fresh parse hands back: the first flow in the source, or the parse
 /// error the run proc relays as `parse-error`.

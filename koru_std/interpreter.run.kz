@@ -55,17 +55,17 @@
 
     const allocator = InterpreterThreadState.prepare();
 
-    // Fast path: lightweight flow parser (no TypeRegistry, no ModuleResolver, no ErrorReporter)
-    // Falls back to full parser on failure for edge cases (multi-statement, error reporting)
-    var flow_result = flow_parser.parseFlow(allocator, source);
-    const flow: *const ast.Flow = switch (flow_result) {
-        .flow => |*f| f,
-        .err => switch (freshFlow(allocator, source, fail_fast)) {
-            .flow => |f| f,
-            .err => |e| return .{ .parse_error = .{
-                .message = e.message, .line = e.line, .column = e.column,
-            } },
-        },
+    // The flow cache holds the last parsed source — the wire gate seeds it
+    // with the Flow it already parsed, so a gated dispatch runs that exact
+    // tree instead of re-parsing identical bytes. A miss parses through the
+    // same lightweight flow parser this path always used; its failure still
+    // falls back to the full parser for edge cases (multi-statement, error
+    // reporting).
+    const flow: *const ast.Flow = InterpreterFlowCache.getOrParse(source) orelse switch (freshFlow(allocator, source, fail_fast)) {
+        .flow => |f| f,
+        .err => |e| return .{ .parse_error = .{
+            .message = e.message, .line = e.line, .column = e.column,
+        } },
     };
 
     // Post-parse wire refusals (part `refuse`) — a prose invocation name

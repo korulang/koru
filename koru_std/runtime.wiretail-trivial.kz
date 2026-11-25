@@ -1,0 +1,35 @@
+// Koru Standard Library: the `wiretail-trivial` part of runtime — the strict-subset bare-value recognizer.
+// Joined via `~part wiretail-trivial` in runtime.kz; merged into the runtime module
+// at load.
+//
+// The recognizer accepts a strict subset of Koru expressions — ints,
+// floats, true/false/null, and dotted identifier paths like `r9.flights`.
+// Anything it accepts the expression parser would also accept, so a `true`
+// here can never admit what the parser would refuse; everything else is
+// owed to the real parse.
+
+fn wireTrivialExpr(text: []const u8) bool {
+    if (text.len == 0) return false;
+    var i: usize = 0;
+    if (text[i] == '-') i += 1;
+    var digits: usize = 0;
+    while (i < text.len and std.ascii.isDigit(text[i])) : (i += 1) digits += 1;
+    if (digits > 0) {
+        if (i == text.len) return true;
+        if (text[i] != '.') return false;
+        i += 1;
+        var frac: usize = 0;
+        while (i < text.len and std.ascii.isDigit(text[i])) : (i += 1) frac += 1;
+        return frac > 0 and i == text.len;
+    }
+    if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "false") or std.mem.eql(u8, text, "null")) return true;
+    if (!std.ascii.isAlphabetic(text[0]) and text[0] != '_') return false;
+    i = 0;
+    while (true) {
+        while (i < text.len and (std.ascii.isAlphanumeric(text[i]) or text[i] == '_')) : (i += 1) {}
+        if (i == text.len) return i > 0;
+        if (text[i] != '.') return false;
+        i += 1;
+        if (i == text.len or !(std.ascii.isAlphanumeric(text[i]) or text[i] == '_')) return false;
+    }
+}

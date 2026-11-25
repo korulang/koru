@@ -320,16 +320,6 @@ pub const Value = struct {
 };
 
 // ============================================================================
-// VALUE SERIALIZATION - Convert interpreter Value to JSON
-// ============================================================================
-
-~[retain]pub tor value.stringify { value: Value } -> string<std/io:allocated!>
-
-~proc value.stringify|zig {
-    return value.toJsonAlloc(koru_allocator());
-}
-
-// ============================================================================
 // BUDGET TRACKING - Metered execution
 // ============================================================================
 
@@ -502,6 +492,8 @@ pub const InterpreterThreadState = struct {
 ~part handles
 ~part handles-invoke
 ~part flowsrc
+~part flowsrc-cache
+~part valser
 ~part deftable
 ~part defined
 ~part wireexpr

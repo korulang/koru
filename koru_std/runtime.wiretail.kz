@@ -14,49 +14,21 @@ const koru_parser = @import("koru_parser");
 // Does the bare value text parse whole as one Koru expression? `r9`,
 // `r3.user_id`, `5`, `n * 2` pass; `hello world`, `[{...}]`, and other
 // prose or data shapes do not — those spellings need double quotes.
+
+
 fn wireExprParses(allocator: std.mem.Allocator, text: []const u8) bool {
+    // The common bare values — a bound name (`r9`), a field path
+    // (`r9.flights`), a number, or a literal keyword — are expressions by
+    // shape alone; the parser is only owed to text that could be an
+    // operation or prose. The recognizer accepts a strict subset, so a
+    // `true` here can never admit what the parser would refuse.
+    if (wireTrivialExpr(text)) return true;
     var p = koru_parser.ExpressionParser.init(allocator, text);
     defer p.deinit();
     _ = p.parseAll() catch return false;
     return true;
 }
 
-// Capture a bare value's expression text: balanced to a depth-0 ',' or
-// ')' — strings and bracket pairs inside the text are data, not
-// delimiters.
-fn wireScanCaptured(s: []const u8, i: *usize) []const u8 {
-    const start = i.*;
-    var depth: i32 = 0;
-    var quote: ?u8 = null;
-    while (i.* < s.len) {
-        const c = s[i.*];
-        if (quote) |q| {
-            if (c == '\\' and i.* + 1 < s.len) {
-                i.* += 2;
-                continue;
-            }
-            if (c == q) quote = null;
-            i.* += 1;
-            continue;
-        }
-        // Only '"' quotes — bare expression text may carry an apostrophe
-        // inside prose-like content, which is a character, not a delimiter.
-        if (c == '"') {
-            quote = c;
-        } else if (c == '(' or c == '{' or c == '[') {
-            depth += 1;
-        } else if (c == ']' or c == '}') {
-            if (depth > 0) depth -= 1;
-        } else if (c == ')') {
-            if (depth == 0) break;
-            depth -= 1;
-        } else if (c == ',' and depth == 0) {
-            break;
-        }
-        i.* += 1;
-    }
-    return s[start..i.*];
-}
 
 // The arm-region check after the closing ')'. Returns a rejection for the
 // refused shapes; null means the tail is admissible and the caller emits
