@@ -91,6 +91,7 @@ koru_std/compiler.materialize.kz	174
 koru_std/compiler.paths.kz	33
 koru_std/compiler.prelate.kz	35
 koru_std/compiler.stages.kz	40
+koru_std/compiler.unroll.kz	16
 koru_std/compiler.with.kz	313
 koru_std/compiler_context.kz	253
 koru_std/compiler_types.kz	53

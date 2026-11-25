@@ -937,7 +937,7 @@ const Allocator = std.mem.Allocator;
 // Re-entry is safe because the fill is idempotent: `isOpenThreadSlot`
 // (ast_transform.zig:1232) returns false for any slot already carrying an
 // argument, so the second run can only fill what the first could not see.
-~elaborate = process-ccp-commands(ctx) |> resolve-with-scopes() |> desugar-chains() |> run-pre-transforms() |> process-template-procs() |> fold-comptime() |> evaluate-comptime()
+~elaborate = process-ccp-commands(ctx) |> resolve-with-scopes() |> desugar-chains() |> run-pre-transforms() |> unroll-recursion() |> process-template-procs() |> fold-comptime() |> evaluate-comptime()
 
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub tor analysis { ctx: CompilerContext }
@@ -2668,5 +2668,5 @@ const emitFlowWithMocks = struct {
     mutable_ctx.passes_completed += 1;
     return mutable_ctx;
 }
-
 ~part ccp
+~part unroll

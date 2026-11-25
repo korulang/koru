@@ -343,5 +343,21 @@ members=2589
 # This commit's src/ delta is the __wl worklist emitter (string-table
 # emission + purity walk + call-site/drain wiring) — no census member
 # overlaps its line ranges. Census re-measured on this tree: 2006/2606.
-clusters=2006
-members=2606
+# Re-pinned in "add bounded scalar recursive unrolling pass (challenge
+# 035 peel cell)" (branch recwar/unroll-land): the odds-10 roll fired on
+# foreign drift — census re-measured on this tree at clusters=2010,
+# members=2614 vs pin 2006/2606. Named offenders are the standing
+# classes only: parser.zig errdefer line-shape twins, test_decl
+# scaffolding in *_test.zig, shape_analyzer decl clones — the one overlapping member — a pathsEqual
+# twin in ast_transform.zig — stays: folding it into
+# ast_functional.pathsEqual requires an ast_transform->ast_functional
+# backend-module edge, and koru_std/compiler.kz is line-pinned, so the
+# twin is documented fold material for a dedicated deslop pass. Residual
+# census members are all foreign. (RecursionUnroll in
+# ast_transform.zig ~4149-4470, three guard sites in visitor_emitter.zig
+# ~3675-3720/4240-4252). This commit's src/ delta is the peel pass plus
+# its emitter precedence guards — no clone material. Same disposition
+# as the __wl re-pin above: fold material for a dedicated deslop pass,
+# not for this landing.
+clusters=2010
+members=2614

@@ -3672,7 +3672,22 @@ pub const VisitorEmitter = struct {
                                     // the segments are already emitted. See
                                     // emitter_helpers.emitFlatSegments /
                                     // emitFlatHandlerBody.
-                                    const is_flat = flat_flow != null;
+                                    // An explicit unrolled machine (pass-set
+                                    // inline_body) takes precedence over the
+                                    // derived segment lowering — the peel pass
+                                    // owns this flow's body; the emitted
+                                    // __koru_seg_* decls go dead (lazily
+                                    // unanalyzed) and is_flat must read false
+                                    // so input bindings still emit.
+                                    // Only the peel pass's machine carries the
+                                    // __koru_unroll_ label — other transforms'
+                                    // inline_body (templates, pre-transforms)
+                                    // must not lose flat/self-loop lowering.
+                                    const unroll_body = if (flow.inline_body) |ib|
+                                        std.mem.indexOf(u8, ib, "__koru_unroll_") != null
+                                    else
+                                        false;
+                                    const is_flat = flat_flow != null and !unroll_body;
 
                                     // Generate implicit input bindings for consistency with procs
                                     // (skipped for flat: the segment call reads
@@ -3693,8 +3708,11 @@ pub const VisitorEmitter = struct {
                                     // bodies emit their own labeled loop inside
                                     // emitFlatHandlerBody — same label, so the shared
                                     // reentry lowering applies — and must not be
-                                    // double-wrapped here.
-                                    if (is_self_loop and !is_flat) {
+                                    // double-wrapped here. Pass-set inline_body (the
+                                    // unrolled machine) is likewise self-contained:
+                                    // no reentry `continue` exists to target the label.
+                                    if (is_self_loop and !is_flat and !unroll_body)
+                                    {
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("__koru_self_loop: while (true) {\n");
                                         self.code_emitter.indent_level += 1;
@@ -4224,7 +4242,7 @@ pub const VisitorEmitter = struct {
                                     // branch) or `continue` (tail self-call), so the loop never
                                     // falls through; `unreachable` tells Zig that, matching the
                                     // `#label` loop termination shape.
-                                    if (is_self_loop and !is_flat) {
+                                    if (is_self_loop and !is_flat and !unroll_body) {
                                         self.code_emitter.indent_level -= 1;
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("}\n");

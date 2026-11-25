@@ -236,3 +236,10 @@ members=970
 # census reads.
 clusters=860
 members=973
+# Re-pinned members 973 -> 974 (recwar/unroll-land): the odds-10 roll
+# fired; the +1 member is this commit's own pathsEqual helper in
+# ast_transform.zig twinned with emitter_helpers.sameDottedPath —
+# folding needs an ast_transform->ast_functional backend-module edge and
+# compiler.kz is line-pinned, so it is documented fold material. All
+# other census members are foreign drift.
+members=974
