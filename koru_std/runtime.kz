@@ -1087,41 +1087,11 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 }
 
 // ============================================================================
-// PARSE - Parse interpreter source without executing it
-//
-// Delegates to `std/interpreter:parse`, which is the interpreter's own parser.
-// It takes no file name on purpose: interpreted source has no file, therefore
-// no host half and no ``. This entry point used to hold a copy of the
-// COMPILER's file parser (`std/koru:parse.source`), which derives its
-// host/pure mode from the filename extension — so a synthetic `"x.kz"`
-// silently put interpreted source in host mode and made `` mandatory, the
-// exact inverse of the rule `run` enforces.
-~pub tor parse.source {
-    source: string,
-    allocator: std.mem.Allocator
-}
-| parsed *const ast.Flow
-| parse-error { message: string, line: u32, column: u32 }
-
-~proc parse.source|zig {
-    const interpreter_mod = @import("root").koru_std.koru_interpreter;
-
-    return switch (interpreter_mod.parse_event.handler(.{
-        .source = source,
-        .allocator = allocator,
-    })) {
-        .flow => |f| .{ .parsed = f },
-        .parse_error => |e| .{ .parse_error = .{
-            .message = e.message,
-            .line = e.line,
-            .column = e.column,
-        }},
-    };
-}
 // RUN - Parse and execute Koru source against a named scope (shape: optional tor name to validate response against)
 // @retain: run_event is referenced from generated Zig code in user pipelines (std/runtime:run invocations in continuations compile to run_event.handler(...))
 ~part eval
 ~part parsewire
+~part parsesource
 ~part example
 ~part run
 ~part runcached
@@ -1130,7 +1100,10 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 ~part wireval
 ~part grammartext
 ~part wirescan
+~part wirescan-envelope
 ~part wiretail
+~part wiretail-trivial
+~part wiretail-capture
 ~part wirelex
 ~part obtainvia
 ~part affordances

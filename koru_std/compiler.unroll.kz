@@ -1,0 +1,16 @@
+// Bounded scalar recursive unrolling — runs in elaborate after the .pre*
+// transform stages and BEFORE process-template-procs, while `if`/`cond`
+// are still structured invocations with continuation trees (post-template
+// they are Zig inline_body text and the recursion shape is gone).
+~pub tor unroll-recursion { ctx: CompilerContext } -> CompilerContext
+
+~proc unroll-recursion|zig {
+    var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "unroll_recursion";
+
+    const ast_transform = @import("ast_transform");
+    _ = ast_transform.RecursionUnroll.Unroll.run(mutable_ctx.ast, mutable_ctx.allocator);
+
+    mutable_ctx.passes_completed += 1;
+    return mutable_ctx;
+}

@@ -31,6 +31,8 @@
 //   - kernel.pairwise: All unique pairs (i,j where i < j)
 //   - kernel.self: Per-element operations (future)
 //   - kernel.reduce: Reduction to single value (future)
+//   - kernel.scan: Sequential prefix recurrence — declared loop-carried
+//     accumulators + ordered per-element statements; strictly serial
 //   - kernel.cross: Cross-product of two kernels (future)
 //
 // MAGIC BINDINGS:
@@ -197,7 +199,7 @@ const codegen_utils_kernel = @import("codegen_utils");
                     continuation: ?*const ast.Continuation,
                     construct_name: []const u8,
                 ) ast_functional.LexicalSubtreeWalkControl {
-                    const allowed = "kernel scope currently allows only std.kernel:pairwise, std.kernel:self, std.kernel:step and std.kernel:reduce";
+                    const allowed = "kernel scope currently allows only std.kernel:pairwise, std.kernel:self, std.kernel:step, std.kernel:reduce and std.kernel:scan";
                     self.violation = if (continuation) |cont|
                         std.fmt.allocPrint(
                             self.allocator,
@@ -248,7 +250,8 @@ const codegen_utils_kernel = @import("codegen_utils");
                                 isNamedInvocation(inv, "std.kernel", "pairwise") or
                                 isNamedInvocation(inv, "std.kernel", "self") or
                                 isNamedInvocation(inv, "std.kernel", "step") or
-                                isNamedInvocation(inv, "std.kernel", "reduce")
+                                isNamedInvocation(inv, "std.kernel", "reduce") or
+                                isNamedInvocation(inv, "std.kernel", "scan")
                             ) {
                                 return .continue_walk;
                             }
@@ -403,20 +406,8 @@ const codegen_utils_kernel = @import("codegen_utils");
                                 if (nd.* == .invocation) {
                                     const inv = &nd.invocation;
                                     detectStep(inv, sr, si, ss);
-                                    const is_pairwise = inv.path.segments.len == 1 and
-                                        std.mem.eql(u8, inv.path.segments[0], "pairwise") and
-                                        inv.path.module_qualifier != null and
-                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
-                                    const is_self = inv.path.segments.len == 1 and
-                                        std.mem.eql(u8, inv.path.segments[0], "self") and
-                                        inv.path.module_qualifier != null and
-                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
-                                    const is_reduce = inv.path.segments.len == 1 and
-                                        std.mem.eql(u8, inv.path.segments[0], "reduce") and
-                                        inv.path.module_qualifier != null and
-                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
-
-                                    if (is_pairwise or is_self or is_reduce) {
+                                    const op_kind = kernelOpKind(inv);
+                                    if (op_kind) |ok| {
                                         var body_text: ?[]const u8 = null;
                                         for (inv.args) |arg| {
                                             if (arg.source_value) |src_val| {
@@ -425,7 +416,7 @@ const codegen_utils_kernel = @import("codegen_utils");
                                         }
                                         if (body_text) |bt| {
                                             ops_list.append(a, .{
-                                                .op_type = if (is_pairwise) "pairwise" else if (is_self) "self" else "reduce",
+                                                .op_type = ok,
                                                 .body_text = bt,
                                                 .variant = inv.variant,
                                                 .position = if (inside_step) .step else if (ss.*) .post else .pre,
@@ -443,20 +434,8 @@ const codegen_utils_kernel = @import("codegen_utils");
                             if (cont.node) |*nd| {
                                 if (nd.* == .invocation) {
                                     const inv = &nd.invocation;
-                                    const is_pairwise = inv.path.segments.len == 1 and
-                                        std.mem.eql(u8, inv.path.segments[0], "pairwise") and
-                                        inv.path.module_qualifier != null and
-                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
-                                    const is_self = inv.path.segments.len == 1 and
-                                        std.mem.eql(u8, inv.path.segments[0], "self") and
-                                        inv.path.module_qualifier != null and
-                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
-                                    const is_reduce = inv.path.segments.len == 1 and
-                                        std.mem.eql(u8, inv.path.segments[0], "reduce") and
-                                        inv.path.module_qualifier != null and
-                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
-
-                                    if (is_pairwise or is_self or is_reduce) {
+                                    const op_kind = kernelOpKind(inv);
+                                    if (op_kind) |ok| {
                                         var body_text: ?[]const u8 = null;
                                         for (inv.args) |arg| {
                                             if (arg.source_value) |src_val| {
@@ -465,7 +444,7 @@ const codegen_utils_kernel = @import("codegen_utils");
                                         }
                                         if (body_text) |bt| {
                                             ops_list.append(a, .{
-                                                .op_type = if (is_pairwise) "pairwise" else if (is_self) "self" else "reduce",
+                                                .op_type = ok,
                                                 .body_text = bt,
                                                 .variant = inv.variant,
                                                 .position = .step,
@@ -487,20 +466,8 @@ const codegen_utils_kernel = @import("codegen_utils");
                 if (step.* == .invocation) {
                     const inv = &step.invocation;
                     detectStep(inv, &step_range, &step_inv, &seen_step);
-                    const is_pairwise = inv.path.segments.len == 1 and
-                        std.mem.eql(u8, inv.path.segments[0], "pairwise") and
-                        inv.path.module_qualifier != null and
-                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
-                    const is_self = inv.path.segments.len == 1 and
-                        std.mem.eql(u8, inv.path.segments[0], "self") and
-                        inv.path.module_qualifier != null and
-                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
-                    const is_reduce = inv.path.segments.len == 1 and
-                        std.mem.eql(u8, inv.path.segments[0], "reduce") and
-                        inv.path.module_qualifier != null and
-                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
-
-                    if (is_pairwise or is_self or is_reduce) {
+                    const op_kind = kernelOpKind(inv);
+                    if (op_kind) |ok| {
                         var body_text: ?[]const u8 = null;
                         for (inv.args) |arg| {
                             if (arg.source_value) |src_val| {
@@ -509,7 +476,7 @@ const codegen_utils_kernel = @import("codegen_utils");
                         }
                         if (body_text) |bt| {
                             ops.append(alloc, .{
-                                .op_type = if (is_pairwise) "pairwise" else if (is_self) "self" else "reduce",
+                                .op_type = ok,
                                 .body_text = bt,
                                 .variant = inv.variant,
                                 .position = .pre,
@@ -831,8 +798,8 @@ const codegen_utils_kernel = @import("codegen_utils");
                     code.append(alloc, '}') catch unreachable;
                     step_opened = false;
                 }
-                if (store_name.len > 0 and !std.mem.eql(u8, op.op_type, "self") and !std.mem.eql(u8, op.op_type, "pairwise")) {
-                    std.debug.print("error[KORU122]: kernel op `{s}` has no store-backed lowering yet — a store kernel runs `self` and `pairwise` only this rung\n", .{op.op_type});
+                if (store_name.len > 0 and !std.mem.eql(u8, op.op_type, "self") and !std.mem.eql(u8, op.op_type, "pairwise") and !std.mem.eql(u8, op.op_type, "scan")) {
+                    std.debug.print("error[KORU122]: kernel op `{s}` has no store-backed lowering yet — a store kernel runs `self`, `pairwise` and `scan` only this rung\n", .{op.op_type});
                     std.process.exit(1);
                 }
                 if (std.mem.eql(u8, op.op_type, "pairwise")) {
@@ -1656,6 +1623,8 @@ const codegen_utils_kernel = @import("codegen_utils");
                             std.fmt.allocPrint(alloc, "\n@setFloatMode(.optimized);\nfor (0..{d}) |i| {{\n    {s}\n}}\n@setFloatMode(.strict);", .{ elem_count, op_src }) catch unreachable;
                         code.appendSlice(alloc, reduce_loop) catch unreachable;
                     }
+                } else if (std.mem.eql(u8, op.op_type, "scan")) {
+                    code.appendSlice(alloc, kernelEmitScanOp(alloc, op.body_text, op.variant, binding, store_name, is_js, ptr_name, elem_count)) catch unreachable;
                 }
             }
 
@@ -2343,3 +2312,4 @@ const codegen_utils_kernel = @import("codegen_utils");
 ~part fpgatb
 ~part fpgaemit
 ~part pairwise
+~part scanop

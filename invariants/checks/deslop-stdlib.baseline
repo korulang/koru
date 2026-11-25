@@ -155,3 +155,18 @@ spellings=120
 # spellings=120 unchanged. koru_std working tree clean.
 clusters=328
 members=375
+# Re-pinned 328/375/120 -> 496/457/133 (recwar/unroll-land): the
+# odds-10 roll fired on accumulated foreign drift across the .kz corpus —
+# named offenders are channel/io/pump/node.new event_decl twins,
+# quantity.kz branch_constructor clusters, and cross-file import_decl
+# pairs (rings/store.igate, gate.helpers/refine.fold,
+# store.qrewrite/sym.aeuler, channel.leaves/interpreter.expr/sym.gsuba).
+# Zero census members overlap this commit's koru_std delta — a 16-line
+# ~part file (compiler.unroll.kz) plus a two-line elaborate-chain edit
+# in compiler.kz. The +168 clusters is the November interpreter/spec
+# arc landing after the last pin, not slop regrowth by this diff; fold
+# material for a dedicated deslop pass per the row's own contract.
+clusters=496
+members=457
+skipped=2
+spellings=133

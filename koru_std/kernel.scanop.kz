@@ -1,0 +1,211 @@
+// Koru Standard Library: the `scanop` part of kernel.kz — op-kind detection
+// and the `std/kernel:scan` emission. Joined via `~part scanop` in kernel.kz;
+// merged into the kernel module.
+//
+// `kernelOpKind` is the one place the kernel-op set is named: collectKernelOps'
+// three AST sites ask it instead of growing a fourth `is_*` const each. The
+// returned string IS the KernelOp.op_type spelling.
+//
+// `kernelEmitScanOp` carries the whole scan lowering — declared
+// loop-carried accumulators (`name[type]`, zero-init, emitted ADJACENT to the
+// op's own loop so a scan under `| step |>` restarts each step), ordered
+// per-element statements, `k.<field>` bound to `ptr[i].<field>` (literal) or
+// `__koru_store_<name>.<field>[i]` (store mode). STRICTLY SERIAL and
+// strict-float: a prefix recurrence is neither row-disjoint (never the store
+// parallel path) nor associative (no .optimized float mode). Scan owns no
+// exit — its output IS the mutated elements, so an accumulator-only body is
+// refused as trapped dead compute (KORU123).
+
+// `kast` is kernel.scan.kz's `ast` import — module-scope, shared.
+
+const ScanDecl = struct {
+    name: []const u8,
+    type: []const u8,
+};
+
+fn kernelOpKind(inv: *const kast.Invocation) ?[]const u8 {
+    if (inv.path.segments.len != 1) return null;
+    const qualifier = inv.path.module_qualifier orelse return null;
+    if (!std.mem.eql(u8, qualifier, "std.kernel")) return null;
+    const seg = inv.path.segments[0];
+    if (std.mem.eql(u8, seg, "pairwise") or
+        std.mem.eql(u8, seg, "self") or
+        std.mem.eql(u8, seg, "reduce") or
+        std.mem.eql(u8, seg, "scan")) return seg;
+    return null;
+}
+
+fn kernelEmitScanOp(
+    alloc: std.mem.Allocator,
+    body_text: []const u8,
+    variant: ?[]const u8,
+    binding: []const u8,
+    store_name: []const u8,
+    is_js: bool,
+    ptr_name: []const u8,
+    elem_count: usize,
+) []const u8 {
+    var code = std.ArrayList(u8).initCapacity(alloc, 512) catch unreachable;
+    if (variant) |vt| {
+        std.debug.print("error[KORU122]: kernel op `scan` supports no variants yet (got `|{s}`)\n", .{vt});
+        std.process.exit(1);
+    }
+    var declared = std.ArrayList(ScanDecl).initCapacity(alloc, 2) catch unreachable;
+    var stmts = std.ArrayList(u8).initCapacity(alloc, body_text.len) catch unreachable;
+    var writes_element = false;
+    var it = std.mem.tokenizeAny(u8, body_text, ";\r\n");
+    while (it.next()) |raw| {
+        const entry = std.mem.trim(u8, raw, " \t");
+        if (entry.len == 0) continue;
+        if (std.mem.startsWith(u8, entry, "//")) continue;
+        const eq = std.mem.indexOfScalar(u8, entry, '=');
+        if (eq == null) {
+            // `<name>[<type>]` — a declared loop-carried accumulator.
+            const lbr = std.mem.indexOfScalar(u8, entry, '[') orelse {
+                std.debug.print("error[KORU123]: std/kernel:scan entry must be `<name>[<type>]` (a declared accumulator) or `<name> <op>= <expr>` / `{s}.<field> <op>= <expr>` (a per-element statement) — got `{s}`\n", .{ binding, entry });
+                std.process.exit(1);
+            };
+            const rbr = std.mem.lastIndexOfScalar(u8, entry, ']') orelse {
+                std.debug.print("error[KORU123]: std/kernel:scan accumulator declaration must be `<name>[<type>]` — got `{s}`\n", .{entry});
+                std.process.exit(1);
+            };
+            const decl_name = std.mem.trim(u8, entry[0..lbr], " \t");
+            const decl_type = std.mem.trim(u8, entry[lbr + 1 .. rbr], " \t");
+            if (decl_name.len == 0 or decl_type.len == 0) {
+                std.debug.print("error[KORU123]: std/kernel:scan accumulator declaration must be `<name>[<type>]` — got `{s}`\n", .{entry});
+                std.process.exit(1);
+            }
+            var seen = false;
+            for (declared.items) |d| {
+                if (std.mem.eql(u8, d.name, decl_name)) { seen = true; break; }
+            }
+            if (!seen) declared.append(alloc, .{ .name = decl_name, .type = decl_type }) catch unreachable;
+        } else {
+            // `<lhs> <op>= <expr>` — lhs is a `{k}.<field>` element write or a
+            // declared accumulator update.
+            const eqv = eq.?;
+            const compound = eqv > 0 and (entry[eqv - 1] == '+' or entry[eqv - 1] == '-' or entry[eqv - 1] == '*' or entry[eqv - 1] == '/');
+            const lhs = std.mem.trim(u8, if (compound) entry[0 .. eqv - 1] else entry[0..eqv], " \t");
+            const is_elem_write = lhs.len > binding.len + 1 and
+                std.mem.startsWith(u8, lhs, binding) and
+                lhs[binding.len] == '.';
+            if (!is_elem_write) {
+                var found = false;
+                for (declared.items) |d| {
+                    if (std.mem.eql(u8, d.name, lhs)) { found = true; break; }
+                }
+                if (!found) {
+                    std.debug.print("error[KORU123]: std/kernel:scan statement names `{s}`, which is neither a `{s}.<field>` element write nor a declared accumulator — declare it as `<name>[<type>]` in the block header\n", .{ lhs, binding });
+                    std.process.exit(1);
+                }
+            } else {
+                writes_element = true;
+            }
+            if (stmts.items.len > 0) stmts.append(alloc, ';') catch unreachable;
+            stmts.appendSlice(alloc, entry) catch unreachable;
+        }
+    }
+    if (!writes_element) {
+        std.debug.print("error[KORU123]: std/kernel:scan produced no element write — its output IS the mutated elements, so at least one statement must assign `{s}.<field>`; accumulator-only state has no exit\n", .{binding});
+        std.process.exit(1);
+    }
+    for (declared.items) |d| {
+        const decl_line = if (is_js)
+            std.fmt.allocPrint(alloc, "\nlet {s} = 0;", .{d.name}) catch unreachable
+        else
+            std.fmt.allocPrint(alloc, "\nvar {s}: {s} = 0;", .{d.name, d.type}) catch unreachable;
+        code.appendSlice(alloc, decl_line) catch unreachable;
+    }
+    if (store_name.len > 0) {
+        const store_ref = std.fmt.allocPrint(alloc, "__koru_store_{s}", .{store_name}) catch unreachable;
+        var body = std.ArrayList(u8).initCapacity(alloc, stmts.items.len * 2) catch unreachable;
+        var sidx: usize = 0;
+        while (sidx < stmts.items.len) {
+            if (sidx + binding.len <= stmts.items.len and std.mem.eql(u8, stmts.items[sidx .. sidx + binding.len], binding)) {
+                const nxt = sidx + binding.len;
+                if (nxt < stmts.items.len and stmts.items[nxt] == '.') {
+                    var fe = nxt + 1;
+                    while (fe < stmts.items.len and (std.ascii.isAlphanumeric(stmts.items[fe]) or stmts.items[fe] == '_')) fe += 1;
+                    const fld = stmts.items[nxt + 1 .. fe];
+                    const repl = std.fmt.allocPrint(alloc, "{s}.{s}[i]", .{ store_ref, fld }) catch unreachable;
+                    body.appendSlice(alloc, repl) catch unreachable;
+                    sidx = fe;
+                } else {
+                    body.appendSlice(alloc, stmts.items[sidx .. sidx + binding.len]) catch unreachable;
+                    sidx += binding.len;
+                }
+            } else {
+                body.append(alloc, stmts.items[sidx]) catch unreachable;
+                sidx += 1;
+            }
+        }
+        if (kernelBodyNeedsTerminator(body.items)) {
+            body.append(alloc, ';') catch unreachable;
+        }
+        const op_src = kernelLowerOpBody(alloc, body.items, is_js);
+        const scan_loop = if (is_js)
+            std.fmt.allocPrint(alloc,
+                \\
+                \\for (let i = 0; i < {s}.len; i++) {{
+                \\    {s}
+                \\}}
+                ,
+                .{ store_ref, op_src }
+            ) catch unreachable
+        else
+            std.fmt.allocPrint(alloc,
+                \\
+                \\for (0..{s}.len) |i| {{
+                \\    {s}
+                \\}}
+                ,
+                .{ store_ref, op_src }
+            ) catch unreachable;
+        code.appendSlice(alloc, scan_loop) catch unreachable;
+    } else {
+        const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
+        var body = std.ArrayList(u8).initCapacity(alloc, stmts.items.len * 2) catch unreachable;
+        var ridx: usize = 0;
+        while (ridx < stmts.items.len) {
+            if (ridx + binding.len <= stmts.items.len and std.mem.eql(u8, stmts.items[ridx .. ridx + binding.len], binding)) {
+                const at_end = (ridx + binding.len >= stmts.items.len);
+                const next_ok = at_end or (!std.ascii.isAlphanumeric(stmts.items[ridx + binding.len]) and stmts.items[ridx + binding.len] != '_');
+                const prev_ok = (ridx == 0) or (!std.ascii.isAlphanumeric(stmts.items[ridx - 1]) and stmts.items[ridx - 1] != '_');
+                if (next_ok and prev_ok) {
+                    body.appendSlice(alloc, self_ref) catch unreachable;
+                    ridx += binding.len;
+                } else {
+                    body.append(alloc, stmts.items[ridx]) catch unreachable;
+                    ridx += 1;
+                }
+            } else {
+                body.append(alloc, stmts.items[ridx]) catch unreachable;
+                ridx += 1;
+            }
+        }
+        if (kernelBodyNeedsTerminator(body.items)) {
+            body.append(alloc, ';') catch unreachable;
+        }
+        const op_src = kernelLowerOpBody(alloc, body.items, is_js);
+        const scan_loop = if (is_js)
+            std.fmt.allocPrint(alloc,
+                \\
+                \\for (let i = 0; i < {d}; i++) {{
+                \\    {s}
+                \\}}
+                ,
+                .{ elem_count, op_src }
+            ) catch unreachable
+        else
+            std.fmt.allocPrint(alloc,
+                \\
+                \\for (0..{d}) |i| {{
+                \\    {s}
+                \\}}
+                ,
+                .{ elem_count, op_src }
+            ) catch unreachable;
+        code.appendSlice(alloc, scan_loop) catch unreachable;
+    }
+    return code.toOwnedSlice(alloc) catch unreachable;
+}

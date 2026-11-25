@@ -1,0 +1,26 @@
+// Koru Standard Library: the `api` part of bridge — the session-surface
+// tors: get-handles and close. Joined via `~part api` in bridge.kz;
+// merged into the bridge module at load.
+
+// GET_HANDLES - Query handles currently on the bridge
+
+~pub tor get-handles { br: *Bridge<session> } -> u32
+
+~proc get-handles|zig {
+    return br.getHandleCount();
+}
+// ============================================================================
+// CLOSE - Hang up: release everything the session still holds
+// ============================================================================
+// VOID, and that is load-bearing rather than minimal. Auto-discharge can only
+// insert a disposer with nothing to bind — `auto_discharge_inserter.zig:2742`
+// refuses any tor carrying a branch or a bare return, because the inserter
+// appends a bare call and cannot invent a binding for its output. A `close`
+// that returned the still-held count disqualified itself, which meant every
+// failure arm of every conversation had to spell the hang-up by hand. Failing
+// to release panics; `get-handles` answers the count on either side.
+
+~pub tor close { br: *Bridge<!session> }
+~proc close|zig {
+    dischargeAll(br); custodyMark(br, "session-closed"); br.deinit(); koru_allocator().destroy(br);
+}

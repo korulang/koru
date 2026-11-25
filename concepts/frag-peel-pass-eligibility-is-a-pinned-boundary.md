@@ -37,8 +37,27 @@ Measured rulings the pins encode:
   sites at s=2; the ==9 census (8+1 external) is the pin. A depth-default
   change is a deliberate pin update, not a silent drift.
 
-Open: whether hanoi's dependent-arg shape unrolls through
-inline_body-bypass of segment lowering or composes with it — the pin
-asserts the census either way and lets the implementation answer. A
-capture-mutation pin is blocked on language surface (`! as` cannot head
-an impl flow); it joins the suite when that surface exists.
+Resolved (recwar/unroll-land): hanoi's dependent-arg shape takes
+*precedence*, not composition — the pass writes the unrolled machine
+into `flow.inline_body` as a `//@koru:inline_stmt` body, and the
+emitter lowers pass-set machines (detected by the `__koru_unroll_`
+label, never a bare inline_body check — templates and pre-transforms
+share that slot) ahead of flat-segment lowering, skipping the
+self-loop wrap/epilogue whose `continue`/`unreachable` have no target
+in straight-line code. The emitted `__koru_seg_*` decls go dead and
+Zig never analyzes them. The boundary held: all 12 pins green on
+first landing, hanoi's `acc: h + 1` sibling-fed arg surviving
+substitution exactly as pinned.
+
+Boundary refinement (fix commit): branching factor s must be >=2 —
+s=1 linear recursion refused because bodyCopies divides by (s-1) and
+v1's win is the branching kernels; the full board caught four
+backend-exec crashes (320_096/320_122/810_101/810_102) on s=1 shapes
+the pin suite never exercised. Ceremony worked as designed.
+
+Still open: a capture-mutation pin is blocked on language surface
+(`! as` cannot head an impl flow); it joins the suite when that
+surface exists. The pathsEqual helper twin (ast_transform vs
+emitter_helpers.sameDottedPath) is documented fold material — folding
+needs an ast_transform→ast_functional backend-module edge and
+koru_std/compiler.kz is line-pinned.

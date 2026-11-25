@@ -13,28 +13,6 @@
 ~import std/interpreter
 ~import std/runtime
 // `const std` and the interpreter-type re-exports moved to the `types` part.
-// GET_HANDLES - Query handles currently on the bridge
-
-~pub tor get-handles { br: *Bridge<session> } -> u32
-
-~proc get-handles|zig {
-    return br.getHandleCount();
-}
-// ============================================================================
-// CLOSE - Hang up: release everything the session still holds
-// ============================================================================
-// VOID, and that is load-bearing rather than minimal. Auto-discharge can only
-// insert a disposer with nothing to bind — `auto_discharge_inserter.zig:2742`
-// refuses any tor carrying a branch or a bare return, because the inserter
-// appends a bare call and cannot invent a binding for its output. A `close`
-// that returned the still-held count disqualified itself, which meant every
-// failure arm of every conversation had to spell the hang-up by hand. Failing
-// to release panics; `get-handles` answers the count on either side.
-
-~pub tor close { br: *Bridge<!session> }
-~proc close|zig {
-    dischargeAll(br); custodyMark(br, "session-closed"); br.deinit(); koru_allocator().destroy(br);
-}
 ~part world
 ~part custody
 ~part run
@@ -44,6 +22,7 @@
 ~part hostverbs
 ~part grants
 ~part session
+~part api
 ~part bind
 ~part residue
 ~part affordances
@@ -58,12 +37,14 @@
 ~part render
 ~part mount
 ~part wirerun
+~part wirerun-gate
 ~part runsteps
 ~part calls
 ~part recording
 ~part itemrec
 ~part singleitem
 ~part dispatch
+~part dispatch-scope
 ~part dispatchrecord
 ~part guide
 ~part outcome

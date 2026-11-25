@@ -1,0 +1,18 @@
+// WAY-TWO recurrence-collapse — runs in elaborate after run-pre-transforms
+// and BEFORE process-template-procs / unroll-recursion, while `if` is still a
+// structured invocation with a continuation tree (post-template the recursion
+// shape is Zig inline_body text and recognition is impossible). Ordering vs
+// unroll-recursion is binding: collapse only sees untouched flows.
+// Design: /tmp/waytwo-collapse.md (arbiter commission t5w, leg WAY-TWO).
+~pub tor collapse-recursion { ctx: CompilerContext } -> CompilerContext
+
+~proc collapse-recursion|zig {
+    var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "collapse_recursion";
+
+    const recurrence_collapse = @import("recurrence_collapse");
+    _ = recurrence_collapse.Collapse.run(mutable_ctx.ast, mutable_ctx.allocator);
+
+    mutable_ctx.passes_completed += 1;
+    return mutable_ctx;
+}

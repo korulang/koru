@@ -1,0 +1,36 @@
+// Koru Standard Library: the `wirerun-gate` part of bridge — the per-item wire gate.
+// Joined via `~part wirerun-gate` in bridge.kz; merged into the bridge module
+// at load.
+
+// The wire grammar check, shared by the single-item gate and the per-item
+// gate a sequenced turn runs on every slice: one predicate, two surfaces —
+// a one-item turn returns the refusal as the turn's verdict; a multi-item
+// turn reports it as a `step N/M parse-error` line and runs on. A grammar
+// that only held on the first item of a turn is the convention the wire
+// ruling retired — the unit of enforcement is the item. (440_021; kopium
+// bridge-mirror 2026-09-12-wire-gate-scope)
+fn wireGate(br: *Bridge, source: []const u8) ?GateRejection {
+    withSessionGate(br);
+    defer clearSessionGate();
+    return switch (Runtime.parse_wire_event.handler(.{
+        .source = source,
+        .input_fn = sessionInputLookup,
+        .host_input_fn = hostInputLookup,
+    })) {
+        // The gate already paid for the scan — keep its normalized wire so
+        // dispatchThroughScope on this same item does not scan it again,
+        // and seed the flow cache with the Flow it parsed so dispatch runs
+        // that exact tree instead of parsing the same bytes a second time.
+        .parsed => |p| {
+            gate_wire_src = std.mem.trim(u8, source, " \t\r\n");
+            gate_wire_norm = p.wire;
+            Interp.InterpreterFlowCache.put(p.wire, p.flow);
+            return null;
+        },
+        .parse_error => |e| {
+            gate_wire_src = "";
+            gate_wire_norm = "";
+            return .{ .message = e.message, .line = e.line, .column = e.column, .not_invocation = e.not_invocation };
+        },
+    };
+}

@@ -1,0 +1,40 @@
+// Koru Standard Library: the `wiretail-capture` part of runtime — bare-value span capture.
+// Joined via `~part wiretail-capture` in runtime.kz; merged into the runtime module
+// at load.
+
+// Capture a bare value's expression text: balanced to a depth-0 ',' or
+// ')' — strings and bracket pairs inside the text are data, not
+// delimiters.
+fn wireScanCaptured(s: []const u8, i: *usize) []const u8 {
+    const start = i.*;
+    var depth: i32 = 0;
+    var quote: ?u8 = null;
+    while (i.* < s.len) {
+        const c = s[i.*];
+        if (quote) |q| {
+            if (c == '\\' and i.* + 1 < s.len) {
+                i.* += 2;
+                continue;
+            }
+            if (c == q) quote = null;
+            i.* += 1;
+            continue;
+        }
+        // Only '"' quotes — bare expression text may carry an apostrophe
+        // inside prose-like content, which is a character, not a delimiter.
+        if (c == '"') {
+            quote = c;
+        } else if (c == '(' or c == '{' or c == '[') {
+            depth += 1;
+        } else if (c == ']' or c == '}') {
+            if (depth > 0) depth -= 1;
+        } else if (c == ')') {
+            if (depth == 0) break;
+            depth -= 1;
+        } else if (c == ',' and depth == 0) {
+            break;
+        }
+        i.* += 1;
+    }
+    return s[start..i.*];
+}

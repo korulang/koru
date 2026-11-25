@@ -4141,3 +4141,531 @@ pub fn hoistInvariantLoopPrefix(
     try pass.buildMaps(source_file.items);
     try pass.visitItems(source_file.items);
 }
+
+// Bounded scalar recursive unrolling — coverage cell for challenge 035
+// (peeling). See replay-035-scalar-unrolling.md for the predicate, the
+// proof it carries, and the coverage map. Lives here (not a new Zig
+// module) because the git-wall pins koru_std/compiler.kz line count.
+pub const RecursionUnroll = struct {
+    const INT_TYPES = [_][]const u8{
+        "i8",  "i16",  "i32",  "i64",  "i128", "isize",
+        "u8",  "u16",  "u32",  "u64",  "u128", "usize",
+    };
+    
+    fn isIntType(t: []const u8) bool {
+        for (INT_TYPES) |k| {
+            if (std.mem.eql(u8, t, k)) return true;
+        }
+        return false;
+    }
+    
+    fn pathsEqual(a: *const ast.DottedPath, b: *const ast.DottedPath) bool {
+        const aq = a.module_qualifier orelse "";
+        const bq = b.module_qualifier orelse "";
+        if (!std.mem.eql(u8, aq, bq)) return false;
+        if (a.segments.len != b.segments.len) return false;
+        for (a.segments, b.segments) |x, y| {
+            if (!std.mem.eql(u8, x, y)) return false;
+        }
+        return true;
+    }
+    
+    fn lastSegment(p: *const ast.DottedPath) []const u8 {
+        return p.segments[p.segments.len - 1];
+    }
+    
+    fn isIfKeyword(p: *const ast.DottedPath) bool {
+        // Canonical `std.control:if` (emitter_helpers.zig:9645 predicate); the
+        // unqualified spelling is accepted for pre-resolution shapes.
+        const mq = p.module_qualifier orelse "";
+        const qualified = std.mem.eql(u8, mq, "std.control");
+        const bare = mq.len == 0;
+        if (!qualified and !bare) return false;
+        return p.segments.len == 1 and std.mem.eql(u8, p.segments[0], "if");
+    }
+    
+    /// Scalar arithmetic/logic text only — anything that could hide a call,
+    /// builtin, string, index or statement boundary refuses.
+    fn exprOk(text: []const u8) bool {
+        if (text.len == 0) return false;
+        for (text) |c| {
+            switch (c) {
+                '@', '"', '\'', '[', ']', '{', '}', ';', '`', '?', '\\', '\n', '\r' => return false,
+                else => {},
+            }
+        }
+        return true;
+    }
+    
+    /// `param - <positive int>` (any spacing) — the constant-decrement witness.
+    fn matchesDecrement(argval: []const u8, param: []const u8) bool {
+        var s = std.mem.trim(u8, argval, " \t");
+        if (!std.mem.startsWith(u8, s, param)) return false;
+        s = s[param.len..];
+        s = std.mem.trimLeft(u8, s, " \t");
+        if (s.len == 0 or s[0] != '-') return false;
+        s = s[1..];
+        s = std.mem.trimLeft(u8, s, " \t");
+        if (s.len == 0) return false;
+        for (s) |c| {
+            if (c < '0' or c > '9') return false;
+        }
+        return true;
+    }
+    
+    fn identChar(c: u8) bool {
+        return std.ascii.isAlphanumeric(c) or c == '_';
+    }
+    
+    /// Identifier-boundary mention check — does `text` reference `name`?
+    fn textMentions(text: []const u8, name: []const u8) bool {
+        var i: usize = 0;
+        while (i + name.len <= text.len) : (i += 1) {
+            if (std.mem.startsWith(u8, text[i..], name)) {
+                const j = i + name.len;
+                const left_ok = i == 0 or !identChar(text[i - 1]);
+                const right_ok = j >= text.len or !identChar(text[j]);
+                if (left_ok and right_ok) return true;
+            }
+        }
+        return false;
+    }
+    
+    /// Replace identifier-boundary occurrences of `name` with `repl`.
+    fn substituteIdent(al: std.mem.Allocator, text: []const u8, name: []const u8, repl: []const u8) ![]u8 {
+        var out: std.ArrayList(u8) = .{};
+        var i: usize = 0;
+        while (i < text.len) {
+            if (std.mem.startsWith(u8, text[i..], name)) {
+                const j = i + name.len;
+                const left_ok = i == 0 or !identChar(text[i - 1]);
+                const right_ok = j >= text.len or !identChar(text[j]);
+                if (left_ok and right_ok) {
+                    try out.append(al, '(');
+                    try out.appendSlice(al, repl);
+                    try out.append(al, ')');
+                    i = j;
+                    continue;
+                }
+            }
+            try out.append(al, text[i]);
+            i += 1;
+        }
+        return try out.toOwnedSlice(al);
+    }
+    
+    fn substituteAll(al: std.mem.Allocator, text: []const u8, env: *std.StringHashMap([]const u8)) ![]u8 {
+        var cur = try al.dupe(u8, text);
+        var it = env.iterator();
+        while (it.next()) |kv| {
+            const next = try substituteIdent(al, cur, kv.key_ptr.*, kv.value_ptr.*);
+            al.free(cur);
+            cur = next;
+        }
+        return cur;
+    }
+    
+    fn findArg(args: []const ast.Arg, name: []const u8) ?[]const u8 {
+        for (args) |a| {
+            if (std.mem.eql(u8, a.name, name)) return a.value;
+        }
+        return null;
+    }
+    
+    const Stat = struct { total: usize = 0, dec: usize = 0 };
+    const Stats = std.AutoHashMap(usize, Stat);
+    
+    pub const Unroll = struct {
+        allocator: std.mem.Allocator,
+        max_depth: u32 = 2,
+        transformed: usize = 0,
+        debug: bool = false,
+    
+        const HardDepthCap: u32 = 3;
+        const MaxBodyCopies: usize = 64;
+    
+        pub fn run(program: *const ast.Program, allocator: std.mem.Allocator) usize {
+            var u = Unroll{ .allocator = allocator };
+            u.debug = std.posix.getenv("KORU_UNROLL_DEBUG") != null;
+            if (std.posix.getenv("KORU_UNROLL_OFF") != null) return 0;
+            runItems(@constCast(program.items), program.main_module_name, &u);
+            return u.transformed;
+        }
+    
+        /// Recurse module_decl nesting — dead_strip/tap_transformer walk the
+        /// same way; top-level-only iteration would miss module-scoped impls.
+        fn runItems(items: []ast.Item, main_module_name: []const u8, u: *Unroll) void {
+            for (items) |*item| {
+                switch (item.*) {
+                    .flow => |*f| u.tryFlow(f, items, main_module_name),
+                    .module_decl => |*m| runItems(@constCast(m.items), main_module_name, u),
+                    else => {},
+                }
+            }
+        }
+    
+        fn log(self: *Unroll, comptime fmt: []const u8, args: anytype) void {
+            if (self.debug) std.debug.print(fmt, args);
+        }
+    
+        fn bodyCopies(s: usize, d: u32) usize {
+            var num: usize = 1;
+            var i: u32 = 0;
+            while (i <= d) : (i += 1) num *= s;
+            return (num - 1) / (s - 1);
+        }
+    
+        fn tryFlow(self: *Unroll, flow: *ast.Flow, items: []ast.Item, main_module_name: []const u8) void {
+            const impl_of = flow.impl_of orelse return;
+            if (flow.inline_body != null or flow.preamble_code != null or
+                flow.pre_label != null or flow.impl_variant != null) return;
+    
+            var event: ?*const ast.EventDecl = null;
+            for (items) |*item| {
+                switch (item.*) {
+                    .event_decl => |*e| {
+                        if (pathsEqual(&e.path, &impl_of)) {
+                            event = e;
+                            break;
+                        }
+                    },
+                    else => {},
+                }
+            }
+            const ev = event orelse {
+                self.log("unroll: {s}: no tor decl\n", .{lastSegment(&impl_of)});
+                return;
+            };
+    
+            if (self.debug) {
+                std.debug.print("unroll-dbg {s}: rt={?s} branches={d} fields={d} mq={?s} segs={d}\n", .{
+                    lastSegment(&ev.path),
+                    ev.return_type,
+                    ev.branches.len,
+                    ev.input.fields.len,
+                    ev.path.module_qualifier,
+                    ev.path.segments.len,
+                });
+                for (ev.input.fields) |f| {
+                    std.debug.print("  field {s}: {s} src={any} expr={any}\n", .{ f.name, f.type, f.is_source, f.is_expression });
+                }
+            }
+            if (!eventEligible(ev, main_module_name)) {
+                self.log("unroll: {s}: tor ineligible\n", .{lastSegment(&ev.path)});
+                return;
+            }
+    
+            const param_names = self.allocator.alloc([]const u8, ev.input.fields.len) catch return;
+            defer self.allocator.free(param_names);
+            for (ev.input.fields, 0..) |f, i| param_names[i] = f.name;
+    
+            var stats = Stats.init(self.allocator);
+            defer stats.deinit();
+            for (0..param_names.len) |i| {
+                stats.put(i, .{}) catch return;
+            }
+            var binds = std.StringHashMap(void).init(self.allocator);
+            defer binds.deinit();
+    
+            if (!checkCont(&flow.body, ev, &impl_of, &stats, param_names, &binds, self)) {
+                self.log("unroll: {s}: body shape refused\n", .{lastSegment(&ev.path)});
+                return;
+            }
+    
+            // Designated decreasing param: total>0 and dec==total on every site.
+            var designated: ?usize = null;
+            var sit = stats.iterator();
+            while (sit.next()) |kv| {
+                if (kv.value_ptr.total > 0 and kv.value_ptr.dec == kv.value_ptr.total) {
+                    designated = kv.key_ptr.*;
+                    break;
+                }
+            }
+            if (designated == null) {
+                self.log("unroll: {s}: no decreasing param\n", .{lastSegment(&ev.path)});
+                return;
+            }
+    
+            const s = blk: {
+                var it2 = stats.iterator();
+                var m: usize = 0;
+                while (it2.next()) |kv| m = @max(m, kv.value_ptr.total);
+                break :blk m;
+            };
+            // s<=1 refuses: s=0 has no self-call (nothing to peel) and
+            // s=1 is linear recursion — bodyCopies divides by (s-1), and
+            // v1's eligible set is the s>=2 kernels anyway.
+            if (s <= 1) return;
+    
+            var depth: u32 = 0;
+            var d: u32 = 1;
+            while (d <= self.max_depth and d <= HardDepthCap) : (d += 1) {
+                if (bodyCopies(s, d) <= MaxBodyCopies) depth = d;
+            }
+            if (depth == 0) {
+                self.log("unroll: {s}: growth cap refuses (s={d})\n", .{ lastSegment(&ev.path), s });
+                return;
+            }
+    
+            const call_name = std.fmt.allocPrint(self.allocator, "main_module.{s}_event", .{lastSegment(&impl_of)}) catch return;
+            defer self.allocator.free(call_name);
+    
+            const bind_names = self.allocator.alloc([]const u8, binds.count()) catch return;
+            defer self.allocator.free(bind_names);
+            {
+                var bi = binds.keyIterator();
+                var n: usize = 0;
+                while (bi.next()) |k| : (n += 1) bind_names[n] = k.*;
+            }
+    
+            var buf: std.ArrayList(u8) = .{};
+            defer buf.deinit(self.allocator);
+            var gen = Gen{
+                .al = self.allocator,
+                .buf = &buf,
+                .params = param_names,
+                .call_name = call_name,
+                .impl_body = &flow.body,
+                .bind_names = bind_names,
+                .max_depth = depth,
+                .ctr = 0,
+            };
+            // Top-level env stays EMPTY: param→param identity mappings
+            // would parenthesize bare identifiers ((n) - 1) and break the
+            // substituted-guard fingerprint the pins assert ((n - 1) < 2).
+            var env = std.StringHashMap([]const u8).init(self.allocator);
+            defer env.deinit();
+            gen.emitCont(&flow.body, &env, 0, .ret);
+            // The generated machine IS the whole body: mark it a statement
+            // body (//@koru:inline_stmt) so emitInlineBodyNode emits it
+            // verbatim — the original branched continuations are the
+            // un-unrolled arms and must NOT re-emit (they stay in the AST
+            // for the frontend's branch checks; emission skips them on the
+            // statement path).
+            flow.inline_body = std.fmt.allocPrint(self.allocator, "//@koru:inline_stmt\n{s}", .{buf.items}) catch return;
+            self.transformed += 1;
+            self.log("unroll: {s}: transformed depth={d} s={d}\n", .{ lastSegment(&ev.path), depth, s });
+        }
+    };
+    
+    fn eventEligible(ev: *const ast.EventDecl, main_module_name: []const u8) bool {
+        const rt = ev.return_type orelse return false;
+        if (!isIntType(rt)) return false;
+        if (ev.return_phantom != null) return false;
+        if (ev.branches.len != 0) return false;
+        if (ev.input.fields.len == 0) return false;
+        for (ev.input.fields) |f| {
+            if (!isIntType(f.type)) return false;
+            if (f.is_source or f.is_expression) return false;
+        }
+        // Entry-module tors only: they emit as `main_module.<seg>_event`,
+        // which is the residual-call spelling the generator hardcodes. An
+        // imported module's tor would emit under its own module struct —
+        // refuse rather than guess the name.
+        const q = ev.path.module_qualifier orelse main_module_name;
+        if (!std.mem.eql(u8, q, main_module_name)) return false;
+        return ev.path.segments.len == 1;
+    }
+    
+    fn checkCont(
+        cont: *const ast.Continuation,
+        ev: *const ast.EventDecl,
+        evpath: *const ast.DottedPath,
+        stats: *Stats,
+        param_names: []const []const u8,
+        binds: *std.StringHashMap(void),
+        self: *Unroll,
+    ) bool {
+        if (cont.condition != null or cont.post_condition != null or
+            cont.binding != null or cont.produce.len != 0 or
+            cont.destructure.len != 0 or cont.destructure_named or
+            cont.is_catchall or cont.kind != .terminal)
+        {
+            if (self.debug) std.debug.print("unroll-rej cont-fields branch={s} cond={any} bind={any} prod={d} kind={s}\n", .{ cont.branch, cont.condition != null, cont.binding != null, cont.produce.len, @tagName(cont.kind) });
+            return false;
+        }
+        const node = cont.node orelse {
+            if (self.debug and cont.continuations.len != 0) std.debug.print("unroll-rej null-node-with-conts branch={s}\n", .{cont.branch});
+            return cont.continuations.len == 0;
+        };
+        switch (node) {
+            .invocation => |inv| {
+                if (inv.inline_body != null or inv.preamble_code != null or
+                    inv.return_destructure.len != 0 or inv.variant != null or
+                    inv.return_binding_annotations.len != 0)
+                {
+                    if (self.debug) std.debug.print("unroll-rej inv-marks path={s}\n", .{lastSegment(&inv.path)});
+                    return false;
+                }
+                if (pathsEqual(&inv.path, evpath)) {
+                    const rb = inv.return_binding orelse {
+                        if (self.debug) std.debug.print("unroll-rej selfcall-norb\n", .{});
+                        return false;
+                    };
+                    if (rb.len == 0 or std.mem.eql(u8, rb, "_")) return false;
+                    if (inv.args.len != param_names.len) {
+                        if (self.debug) std.debug.print("unroll-rej selfcall-arity {d}!={d}\n", .{ inv.args.len, param_names.len });
+                        return false;
+                    }
+                    var names = std.StringHashMap(void).init(self.allocator);
+                    defer names.deinit();
+                    for (inv.args) |a| {
+                        if (!exprOk(a.value)) {
+                            if (self.debug) std.debug.print("unroll-rej badexpr '{s}'\n", .{a.value});
+                            return false;
+                        }
+                        if (names.contains(a.name)) return false;
+                        names.put(a.name, {}) catch return false;
+                    }
+                    binds.put(rb, {}) catch return false;
+                    for (param_names, 0..) |pn, i| {
+                        const av = findArg(inv.args, pn) orelse return false;
+                        const gop = stats.getPtr(i).?;
+                        gop.total += 1;
+                        if (matchesDecrement(av, pn)) gop.dec += 1;
+                    }
+                } else if (isIfKeyword(&inv.path)) {
+                    if (inv.args.len != 1 or !exprOk(inv.args[0].value)) {
+                        if (self.debug) std.debug.print("unroll-rej if-args {d}\n", .{inv.args.len});
+                        return false;
+                    }
+                } else {
+                    if (self.debug) std.debug.print("unroll-rej foreign-inv {s}\n", .{lastSegment(&inv.path)});
+                    return false;
+                }
+            },
+            .expression => |t| {
+                if (!exprOk(t)) {
+                    if (self.debug) std.debug.print("unroll-rej badleaf '{s}'\n", .{t});
+                    return false;
+                }
+                if (cont.continuations.len != 0) return false;
+            },
+            .branch_constructor => |bc| {
+                if (!bc.is_bare_return or bc.plain_value == null or
+                    bc.fields.len != 0 or !exprOk(bc.plain_value.?))
+                {
+                    if (self.debug) std.debug.print("unroll-rej bc bare={any} pv={?s}\n", .{ bc.is_bare_return, bc.plain_value });
+                    return false;
+                }
+                if (cont.continuations.len != 0) return false;
+            },
+            else => {
+                if (self.debug) std.debug.print("unroll-rej nodetype {s}\n", .{@tagName(node)});
+                return false;
+            },
+        }
+        for (cont.continuations) |*cc| {
+            if (!checkCont(cc, ev, evpath, stats, param_names, binds, self)) return false;
+        }
+        return true;
+    }
+    
+    const Gen = struct {
+        al: std.mem.Allocator,
+        buf: *std.ArrayList(u8),
+        params: []const []const u8,
+        call_name: []const u8,
+        impl_body: *const ast.Continuation,
+        bind_names: []const []const u8,
+        max_depth: u32,
+        ctr: usize,
+    
+        const Mode = union(enum) { ret, brk: []const u8 };
+    
+        fn w(self: *Gen, comptime fmt: []const u8, args: anytype) void {
+            const s = std.fmt.allocPrint(self.al, fmt, args) catch unreachable;
+            self.buf.appendSlice(self.al, s) catch unreachable;
+            self.al.free(s);
+        }
+    
+        fn emitCont(self: *Gen, cont: *const ast.Continuation, env: *std.StringHashMap([]const u8), depth: u32, mode: Mode) void {
+            const node = cont.node orelse return;
+            switch (node) {
+                .invocation => |inv| {
+                    if (isIfKeyword(&inv.path)) {
+                        self.emitIf(&inv, cont, env, depth, mode);
+                        return;
+                    }
+                    self.emitCallBind(&inv, env, depth, mode);
+                    self.emitSeq(cont.continuations, env, depth, mode);
+                },
+                .expression => |t| self.emitProduce(t, env, mode),
+                .branch_constructor => |bc| self.emitProduce(bc.plain_value.?, env, mode),
+                else => unreachable,
+            }
+        }
+    
+        fn emitSeq(self: *Gen, conts: []const ast.Continuation, env: *std.StringHashMap([]const u8), depth: u32, mode: Mode) void {
+            for (conts) |*cc| self.emitCont(cc, env, depth, mode);
+        }
+    
+        /// `const <rb_zig> = <value>;` — unrolled labeled block under the depth
+        /// budget, residual `main_module.<ev>_event.handler(.{...})` at it.
+        /// `rb_zig` resolves through env: top-level binds keep their source
+        /// names, cloned bodies get fresh `__uN_*` names (Zig forbids shadowing,
+        /// so every nesting level alpha-renames the body's bind set).
+        fn emitCallBind(self: *Gen, inv: *const ast.Invocation, env: *std.StringHashMap([]const u8), depth: u32, mode: Mode) void {
+            _ = mode;
+            const rb = inv.return_binding.?;
+            const rb_zig = env.get(rb) orelse rb;
+            if (depth < self.max_depth) {
+                self.ctr += 1;
+                const label = std.fmt.allocPrint(self.al, "__koru_unroll_{d}", .{self.ctr}) catch unreachable;
+                // env': params bound to substituted arg exprs; every body bind
+                // alpha-renamed to a fresh name for this expansion level.
+                var env2 = std.StringHashMap([]const u8).init(self.al);
+                for (self.params) |pn| {
+                    const av = findArg(inv.args, pn) orelse unreachable;
+                    const sub = substituteAll(self.al, av, env) catch unreachable;
+                    const wrapped = std.fmt.allocPrint(self.al, "({s})", .{sub}) catch unreachable;
+                    env2.put(pn, wrapped) catch unreachable;
+                }
+                for (self.bind_names) |bn| {
+                    const fresh = std.fmt.allocPrint(self.al, "__u{d}_{s}", .{ self.ctr, bn }) catch unreachable;
+                    env2.put(bn, fresh) catch unreachable;
+                }
+                self.w("const {s} = {s}: {{\n", .{ rb_zig, label });
+                self.emitCont(self.impl_body, &env2, depth + 1, .{ .brk = label });
+                self.w("}};\n", .{});
+            } else {
+                self.w("const {s} = {s}.handler(.{{", .{ rb_zig, self.call_name });
+                for (self.params, 0..) |pn, i| {
+                    if (i > 0) self.w(", ", .{});
+                    const av = findArg(inv.args, pn).?;
+                    const sub = substituteAll(self.al, av, env) catch unreachable;
+                    self.w(".{s} = {s}", .{ pn, sub });
+                }
+                self.w("}});\n", .{});
+            }
+        }
+    
+        fn emitIf(self: *Gen, inv: *const ast.Invocation, cont: *const ast.Continuation, env: *std.StringHashMap([]const u8), depth: u32, mode: Mode) void {
+            const cond = substituteAll(self.al, inv.args[0].value, env) catch unreachable;
+            var then_c: ?*const ast.Continuation = null;
+            var else_c: ?*const ast.Continuation = null;
+            for (cont.continuations) |*cc| {
+                if (std.mem.eql(u8, cc.branch, "then")) {
+                    then_c = cc;
+                } else {
+                    else_c = cc;
+                }
+            }
+            const tc = then_c orelse return;
+            const ec = else_c orelse return;
+            self.w("if ({s}) {{\n", .{cond});
+            self.emitCont(tc, env, depth, mode);
+            self.w("}} else {{\n", .{});
+            self.emitCont(ec, env, depth, mode);
+            self.w("}}\n", .{});
+        }
+    
+        fn emitProduce(self: *Gen, raw: []const u8, env: *std.StringHashMap([]const u8), mode: Mode) void {
+            const e = substituteAll(self.al, raw, env) catch unreachable;
+            switch (mode) {
+                .ret => self.w("return {s};\n", .{e}),
+                .brk => |l| self.w("break :{s} {s};\n", .{ l, e }),
+            }
+        }
+    };
+};

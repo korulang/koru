@@ -1,0 +1,13 @@
+// Koru Standard Library: the `valser` part of interpreter —
+// value serialization to JSON. Joined via `~part valser` in
+// interpreter.kz; merged into the interpreter module at load.
+
+// ============================================================================
+// VALUE SERIALIZATION - Convert interpreter Value to JSON
+// ============================================================================
+
+~[retain]pub tor value.stringify { value: Value } -> string<std/io:allocated!>
+
+~proc value.stringify|zig {
+    return value.toJsonAlloc(koru_allocator());
+}
