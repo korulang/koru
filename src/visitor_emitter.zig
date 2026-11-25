@@ -345,6 +345,7 @@ pub const VisitorEmitter = struct {
     allocator: std.mem.Allocator,
     all_items: []const ast.Item,
     flow_counter: usize,
+    handlers_sf_counter: usize,
     tap_registry: *tap_registry_module.TapRegistry,
     type_registry: *type_registry_module.TypeRegistry,
     emit_mode: EmitMode,
@@ -410,6 +411,7 @@ pub const VisitorEmitter = struct {
             .allocator = allocator,
             .all_items = all_items,
             .flow_counter = 0,
+            .handlers_sf_counter = 0,
             .tap_registry = tap_registry,
             .type_registry = type_registry,
             .emit_mode = emit_mode,
@@ -3932,7 +3934,8 @@ pub const VisitorEmitter = struct {
                                                 // the consumer arms none of them (all optional).
                                                 // Synthesize the (empty) struct anyway or the call
                                                 // below goes out with 1 arg against a 2-arg handler.
-                                                const hname = try std.fmt.allocPrint(self.allocator, "Handlers_sf", .{});
+                                                const hname = try std.fmt.allocPrint(self.allocator, "Handlers_{d}", .{self.handlers_sf_counter});
+                                                self.handlers_sf_counter += 1;
                                                 sf_handlers_name = hname;
                                                 var h_ctx = emitter.EmissionContext{
                                                     .allocator = self.allocator,
