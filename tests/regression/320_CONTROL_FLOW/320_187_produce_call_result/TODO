@@ -1,0 +1,1 @@
+produce-of-call emits _ = handler(...) discarding the result; wrap falls off the end (implicit-return). Emission should be return handler(...).
