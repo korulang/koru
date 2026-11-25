@@ -516,6 +516,44 @@ pub const Collapse = struct {
         return inv;
     }
 
+    /// The step is an invocation of `<qual>:<seg>` (single-segment call).
+    fn callOnPath(c: *const ast.Continuation, qual: []const u8, seg: []const u8) ?*const ast.Invocation {
+        if (c.node == null) return null;
+        const n: *const ast.Node = &c.node.?;
+        if (n.* != .invocation) return null;
+        const inv: *const ast.Invocation = &n.invocation;
+        const mq = inv.path.module_qualifier orelse "";
+        if (!std.mem.eql(u8, mq, qual)) return null;
+        if (inv.path.segments.len != 1) return null;
+        if (!std.mem.eql(u8, inv.path.segments[0], seg)) return null;
+        return inv;
+    }
+
+    fn fieldAccessOf(e: *const ast.Expression) ?*const ast.FieldAccess {
+        const u = ungroup(e);
+        return switch (u.node) {
+            .field_access => |*fa| fa,
+            else => null,
+        };
+    }
+
+    fn identName(e: *const ast.Expression) ?[]const u8 {
+        const u = ungroup(e);
+        return switch (u.node) {
+            .identifier => |id| id,
+            else => null,
+        };
+    }
+
+    /// The single clean branch-less continuation link, or null.
+    fn linkCont(c: *const ast.Continuation) ?*const ast.Continuation {
+        if (c.continuations.len != 1) return null;
+        const n = &c.continuations[0];
+        if (!contClean(n)) return null;
+        if (n.branch.len != 0) return null;
+        return n;
+    }
+
     fn rbOk(inv: *const ast.Invocation) bool {
         const rb = inv.return_binding orelse return false;
         if (rb.len == 0 or std.mem.eql(u8, rb, "_")) return false;
@@ -1183,6 +1221,175 @@ pub const Collapse = struct {
         return try b.toOwnedSlice(alloc);
     }
 
+    /// C3 — num-custody linear recurrence:
+    ///   T(m, a, b) = if (m <= B) then-arm [std.num:free steps] -> a
+    ///                else |> std.num:dup(b): d |> std.num:add(a, d.f1): s
+    ///                     |> T(m-1, a: d.f2, b: s): r -> r
+    /// The source carries the recurrence as obligation strings — every step
+    /// parses two operands from decimal text and formats the intermediate
+    /// back. Collapse parses once, iterates limb-adds on Dec, formats once:
+    /// the O(n) string round-trips become O(n) limb passes. The dup is
+    /// custody plumbing — the Dec loop keeps both limbs live natively, so it
+    /// is erased rather than lowered. Emitted body runs inside
+    /// main_module.<T>_event.handler; the num helpers it calls live in
+    /// koru_std.koru_num in the same emitted file.
+    fn tryNumCustody(
+        ctx: *const Ctx,
+        ci: CustodyInfo,
+        g: Guard,
+        then_c: *const ast.Continuation,
+        else_c: *const ast.Continuation,
+    ) !?[]const u8 {
+        if (ctx.c.debug) std.debug.print("collapse: tryNumCustody entered\n", .{});
+        if (!std.mem.eql(u8, g.param, ci.measure)) return null;
+        if (g.kind != .le) return null;
+
+        // then arm: zero+ `std.num:free(<custody param>)` steps, leaf `a`.
+        // The frees are replayed verbatim in the base arm so a source that
+        // leaves a param unfreed keeps its leak.
+        var freed = std.ArrayList([]const u8){};
+        defer freed.deinit(ctx.c.allocator);
+        var cur = then_c;
+        while (callOnPath(cur, "std.num", "free")) |finv| {
+            if (finv.return_binding != null) return null;
+            if (finv.args.len != 1) return null;
+            const farg = finv.args[0];
+            const fexpr = farg.parsed_expression orelse return null;
+            const fname = identName(fexpr) orelse return null;
+            if (!std.mem.eql(u8, fname, ci.a) and !std.mem.eql(u8, fname, ci.b)) return null;
+            if (freed.items.len >= 2) return null;
+            freed.append(ctx.c.allocator, fname) catch return null;
+            const nxt = linkCont(cur) orelse return null;
+            cur = nxt;
+        }
+        if (cur.continuations.len != 0) return null;
+        const tleaf = leafText(cur) orelse return null;
+        if (!leafIsIdent(tleaf, ci.a)) return null;
+
+        // else arm: dup -> add -> self-call -> produce.
+        if (!contClean(else_c)) return null;
+        const dinv = callOnPath(else_c, "std.num", "dup") orelse return null;
+        if (!rbOk(dinv)) return null;
+        if (dinv.args.len != 1) return null;
+        const darg = dinv.args[0];
+        const dexpr = darg.parsed_expression orelse return null;
+        const dup_src = identName(dexpr) orelse return null;
+        if (!std.mem.eql(u8, dup_src, ci.b)) return null;
+        const dup_rb = dinv.return_binding.?;
+
+        const link1 = linkCont(else_c) orelse return null;
+        const ainv = callOnPath(link1, "std.num", "add") orelse return null;
+        if (!rbOk(ainv)) return null;
+        const add_rb = ainv.return_binding.?;
+        var field_used: ?[]const u8 = null;
+        var saw_param = false;
+        for (ainv.args) |a| {
+            const e = a.parsed_expression orelse return null;
+            if (identName(e)) |id| {
+                if (!std.mem.eql(u8, id, ci.a)) return null;
+                if (saw_param) return null;
+                saw_param = true;
+            } else if (fieldAccessOf(e)) |fa| {
+                if (!exprIsIdent(fa.object, dup_rb)) return null;
+                if (field_used != null) return null;
+                field_used = fa.field;
+            } else return null;
+        }
+        if (!saw_param or field_used == null) return null;
+
+        const link2 = linkCont(link1) orelse return null;
+        const sinv = selfCallOf(link2, ctx.impl_of) orelse return null;
+        if (!rbOk(sinv)) return null;
+        const self_rb = sinv.return_binding.?;
+        if (!argsCoverParams(sinv, ctx.params)) return null;
+        const dec = matchDecrement(argForParam(sinv, ci.measure).?.parsed_expression.?, ci.measure) orelse return null;
+        if (dec != 1) return null;
+        const aexpr = argForParam(sinv, ci.a).?.parsed_expression.?;
+        const fa2 = fieldAccessOf(aexpr) orelse return null;
+        if (!exprIsIdent(fa2.object, dup_rb)) return null;
+        if (std.mem.eql(u8, fa2.field, field_used.?)) return null;
+        const bexpr = argForParam(sinv, ci.b).?.parsed_expression.?;
+        if (!exprIsIdent(bexpr, add_rb)) return null;
+
+        const link3 = linkCont(link2) orelse return null;
+        if (link3.continuations.len != 0) return null;
+        const prod = leafText(link3) orelse return null;
+        if (!leafIsIdent(prod, self_rb)) return null;
+
+        const alloc = ctx.c.allocator;
+        var b = std.ArrayList(u8){};
+        defer b.deinit(alloc);
+        try ap(&b, alloc, "if ({s} <= {d}) {{\n", .{ ci.measure, g.boundary });
+        for (freed.items) |fp| {
+            try ap(&b, alloc, "    koru_std.koru_num.numFree({s});\n", .{fp});
+        }
+        try ap(&b, alloc, "    return {s};\n}}\n", .{ci.a});
+        try b.appendSlice(alloc, "const __ka = koru_allocator();\n");
+        try ap(&b, alloc, "var __da = koru_std.koru_num.decParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ci.a});
+        try ap(&b, alloc, "var __db = koru_std.koru_num.decParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ci.b});
+        try ap(&b, alloc, "koru_std.koru_num.numFree({s});\nkoru_std.koru_num.numFree({s});\n", .{ ci.a, ci.b });
+        // else ran: m > B, so m - B >= 1. The recurrence x_{i+1} = x_i + x_{i-1}
+        // is the Fibonacci Q-matrix — x_iters = a*f(i-1) + b*f(i) — so the
+        // loop carries (f(j), f(j+1)) and fast-doubles over the bits of the
+        // trip count: O(log iters) decMul steps whose cost tracks the VALUE's
+        // limb width, not the count. Bit-scan `while` (not `for`) — the trip
+        // count is the bit-length, unknowable statically; same shape as the
+        // B1 emitted body.
+        try ap(&b, alloc, "const __iters: u64 = @intCast({s} - {d});\n", .{ ci.measure, g.boundary });
+        try b.appendSlice(alloc,
+            "var __fk = koru_std.koru_num.decInit(__ka, 0, 0) catch @panic(\"collapse c3: init\");\n" ++
+            "var __fk1 = koru_std.koru_num.decInit(__ka, 1, 0) catch @panic(\"collapse c3: init\");\n" ++
+            "var __p: u64 = @as(u64, 1) << @as(u6, @intCast(63 - @clz(__iters)));\n" ++
+            "while (__p != 0) : (__p >>= 1) {\n" ++
+            "    var __two = koru_std.koru_num.decAdd(__ka, &__fk1, &__fk1) catch @panic(\"collapse c3: add\");\n" ++
+            "    var __negfk = koru_std.koru_num.Dec{ .neg = __fk.neg, .m = __fk.m.clone() catch @panic(\"collapse c3: clone\"), .e = __fk.e };\n" ++
+            "    __negfk.neg = !__negfk.neg;\n" ++
+            "    if (__negfk.m.eqlZero()) __negfk.neg = false;\n" ++
+            "    var __diff = koru_std.koru_num.decAdd(__ka, &__two, &__negfk) catch @panic(\"collapse c3: add\");\n" ++
+            "    koru_std.koru_num.decDeinit(&__two);\n" ++
+            "    koru_std.koru_num.decDeinit(&__negfk);\n" ++
+            "    var __c = koru_std.koru_num.decMul(__ka, &__fk, &__diff) catch @panic(\"collapse c3: mul\");\n" ++
+            "    koru_std.koru_num.decDeinit(&__diff);\n" ++
+            "    var __f2 = koru_std.koru_num.decMul(__ka, &__fk, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
+            "    var __f12 = koru_std.koru_num.decMul(__ka, &__fk1, &__fk1) catch @panic(\"collapse c3: mul\");\n" ++
+            "    const __d = koru_std.koru_num.decAdd(__ka, &__f2, &__f12) catch @panic(\"collapse c3: add\");\n" ++
+            "    koru_std.koru_num.decDeinit(&__f2);\n" ++
+            "    koru_std.koru_num.decDeinit(&__f12);\n" ++
+            "    koru_std.koru_num.decDeinit(&__fk);\n" ++
+            "    koru_std.koru_num.decDeinit(&__fk1);\n" ++
+            "    if ((__iters & __p) != 0) {\n" ++
+            "        const __cd = koru_std.koru_num.decAdd(__ka, &__c, &__d) catch @panic(\"collapse c3: add\");\n" ++
+            "        koru_std.koru_num.decDeinit(&__c);\n" ++
+            "        __fk = __d;\n" ++
+            "        __fk1 = __cd;\n" ++
+            "    } else {\n" ++
+            "        __fk = __c;\n" ++
+            "        __fk1 = __d;\n" ++
+            "    }\n" ++
+            "}\n");
+        // result = a*f(i-1) + b*f(i) = da*(fk1 - fk) + db*fk
+        try b.appendSlice(alloc,
+            "var __negfk2 = koru_std.koru_num.Dec{ .neg = __fk.neg, .m = __fk.m.clone() catch @panic(\"collapse c3: clone\"), .e = __fk.e };\n" ++
+            "__negfk2.neg = !__negfk2.neg;\n" ++
+            "if (__negfk2.m.eqlZero()) __negfk2.neg = false;\n" ++
+            "var __fm1 = koru_std.koru_num.decAdd(__ka, &__fk1, &__negfk2) catch @panic(\"collapse c3: add\");\n" ++
+            "koru_std.koru_num.decDeinit(&__negfk2);\n" ++
+            "var __t1 = koru_std.koru_num.decMul(__ka, &__da, &__fm1) catch @panic(\"collapse c3: mul\");\n" ++
+            "koru_std.koru_num.decDeinit(&__fm1);\n" ++
+            "var __t2 = koru_std.koru_num.decMul(__ka, &__db, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
+            "var __res = koru_std.koru_num.decAdd(__ka, &__t1, &__t2) catch @panic(\"collapse c3: add\");\n" ++
+            "koru_std.koru_num.decDeinit(&__t1);\n" ++
+            "koru_std.koru_num.decDeinit(&__t2);\n" ++
+            "koru_std.koru_num.decDeinit(&__da);\n" ++
+            "koru_std.koru_num.decDeinit(&__db);\n" ++
+            "koru_std.koru_num.decDeinit(&__fk);\n" ++
+            "koru_std.koru_num.decDeinit(&__fk1);\n" ++
+            "const __rs = koru_std.koru_num.decToString(__ka, &__res) catch @panic(\"collapse c3: fmt\");\n" ++
+            "koru_std.koru_num.decDeinit(&__res);\n" ++
+            "return __rs;\n");
+        return try b.toOwnedSlice(alloc);
+    }
+
     // ---------------- driver --------------------------------------------------
 
     fn findEventDecl(items: []ast.Item, path: *const ast.DottedPath) ?*ast.EventDecl {
@@ -1215,6 +1422,57 @@ pub const Collapse = struct {
         return true;
     }
 
+    /// Custody events — the C3 num-accumulator leg. Eligible shape:
+    ///   T { m:int, a:string<!P>, b:string<!P> } -> string<P!>
+    /// The int-scalar gate refuses these outright; custodyEligible re-judges
+    /// on the phantom fields. Both custody params must consume the SAME tag
+    /// (`<!P>`) and the return must issue it (`<P!>`) — a tor that produces a
+    /// different family than it consumes is not the recurrence we recognize.
+    const CustodyInfo = struct {
+        measure: []const u8,
+        a: []const u8,
+        b: []const u8,
+    };
+
+    fn custodyEligible(ev: *const ast.EventDecl) ?CustodyInfo {
+        const rt = ev.return_type orelse return null;
+        if (!std.mem.eql(u8, rt, "string")) return null;
+        const rp = ev.return_phantom orelse return null;
+        if (rp.len < 2 or rp[rp.len - 1] != '!') return null;
+        if (ev.branches.len != 0) return null;
+        if (ev.input.fields.len != 3) return null;
+        if (ev.path.segments.len != 1) return null;
+        var measure: ?[]const u8 = null;
+        var cust: [2][]const u8 = undefined;
+        var n_cust: usize = 0;
+        var tag: ?[]const u8 = null;
+        for (ev.input.fields) |f| {
+            if (f.is_source or f.is_expression) return null;
+            if (!zigNameOk(f.name)) return null;
+            if (isIntType(f.type)) {
+                // The loop emitted for this family computes `m - B` then
+                // intCasts to usize — signed measures keep that well-formed
+                // for any boundary literal.
+                if (f.type[0] != 'i') return null;
+                if (measure != null) return null;
+                measure = f.name;
+                continue;
+            }
+            if (!std.mem.eql(u8, f.type, "string")) return null;
+            const ph = f.phantom orelse return null;
+            if (ph.len < 3 or ph[0] != '!') return null;
+            if (tag) |t| {
+                if (!std.mem.eql(u8, t, ph[1..])) return null;
+            } else tag = ph[1..];
+            if (n_cust >= 2) return null;
+            cust[n_cust] = f.name;
+            n_cust += 1;
+        }
+        if (measure == null or n_cust != 2) return null;
+        if (!std.mem.eql(u8, rp[0 .. rp.len - 1], tag.?)) return null;
+        return .{ .measure = measure.?, .a = cust[0], .b = cust[1] };
+    }
+
     fn ifCondExpr(inv: *const ast.Invocation) ?*const ast.Expression {
         for (inv.args) |a| {
             if (a.parsed_expression) |e| return e;
@@ -1242,9 +1500,12 @@ pub const Collapse = struct {
             refuse(c, "event decl not found");
             return;
         };
+        var custody: ?CustodyInfo = null;
         if (!eventEligible(ev)) {
-            refuse(c, "event not eligible");
-            return;
+            custody = custodyEligible(ev) orelse {
+                refuse(c, "event not eligible");
+                return;
+            };
         }
 
         var params_buf: [16][]const u8 = undefined;
@@ -1295,14 +1556,17 @@ pub const Collapse = struct {
             refuse(c, "continuation not clean");
             return;
         }
-        if (then_c.continuations.len != 0) {
-            refuse(c, "then arm not leaf");
-            return;
+        var then_leaf: []const u8 = "";
+        if (custody == null) {
+            if (then_c.continuations.len != 0) {
+                refuse(c, "then arm not leaf");
+                return;
+            }
+            then_leaf = leafText(then_c) orelse {
+                refuse(c, "then leaf no text");
+                return;
+            };
         }
-        const then_leaf = leafText(then_c) orelse {
-            refuse(c, "then leaf no text");
-            return;
-        };
 
         // Event names may be kebab-case (`pow-mod`, `loop-k`); the emitter
         // mangles `-` → `_` for Zig idents (writeMangledSeg), so the residual
@@ -1336,6 +1600,12 @@ pub const Collapse = struct {
         };
 
         if (c.debug) std.debug.print("collapse: dispatch matchers\n", .{});
+        if (custody) |ci| {
+            if (tryNumCustody(&ctx, ci, g, then_c, else_c) catch return) |body| {
+                setBody(flow, c, "c3_numacc", body);
+            }
+            return;
+        }
         if (tryR1(&ctx, g, then_leaf, else_c) catch return) |body| {
             setBody(flow, c, "r1", body);
             return;
