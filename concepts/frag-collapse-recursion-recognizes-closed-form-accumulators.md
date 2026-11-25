@@ -78,6 +78,30 @@ Custody leg (C3 `numacc`, 2026-11-25):
   `main_module` bodies only because emission is single-file.
 
 Measured on `fibn` carrying `string<!std/num:exact>`: fib(65536) —
-uncollapsed 38.5 s ReleaseFast / est. 22 min Debug — runs in **2.9 s
-Debug** collapsed (13,696 digits, zero leaks). Every iteration of the
-source costs dup + 2 decParse + decToString; the body pays none.
+uncollapsed 38.5 s ReleaseFast / est. 22 min Debug — runs in **1.56 ms
+ReleaseFast** collapsed (13,696 digits, zero leaks). Every iteration of
+the source costs dup + 2 decParse + decToString; the body pays none.
+
+Coefficient leg (C3 general `x_{i+1} = p*x_i + q*x_{i-1}`, 2026-11-25):
+
+- **The family is the companion matrix, not fib.** Eligibility widens to
+  `>=2` custody params — signature order decides: first two after the
+  measure are state (a, b), the rest are coefficient custody. The
+  emitted body is the same doubling over `M = [[0,1],[q,p]]`; p=q=1 is
+  the degenerate fib case, not a special case in the matcher.
+- **Coefficient operands classify per add term, order-free.** Each
+  `add` argument is a state operand (leaf `a` or a dup_b half) or a
+  `mul` binding containing exactly one state operand and exactly one
+  coefficient operand — coefficient-first and state-first spellings of
+  the same term both match. A bare state operand is coefficient 1.
+- **Coefficient custody mirrors state custody.** A param coefficient is
+  `dup`'d exactly like `b`: one half feeds the mul, the other half
+  rides the self-call (`dp.b` -> `p:`). An unused coefficient param
+  passes verbatim and is `numFree`d once by the emitted body. A literal
+  coefficient is a `from-int` mint bound before the mul — every mint
+  must feed exactly one mul, since `mul` consumes and nothing else in
+  the chain can take custody.
+- **One canonical orientation still.** `dup` on `b`, `a`'s next value
+  the other half, `b`'s next value the sum. The mirror `(a,b)->(a+b,a)`
+  and coefficient-reuse shapes (`dup(dp.a)` — a dup of a field) compile
+  but refuse; widening those is a review question, not a bug.

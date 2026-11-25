@@ -1222,17 +1222,30 @@ pub const Collapse = struct {
     }
 
     /// C3 — num-custody linear recurrence:
-    ///   T(m, a, b) = if (m <= B) then-arm [std.num:free steps] -> a
-    ///                else |> std.num:dup(b): d |> std.num:add(a, d.f1): s
-    ///                     |> T(m-1, a: d.f2, b: s): r -> r
-    /// The source carries the recurrence as obligation strings — every step
-    /// parses two operands from decimal text and formats the intermediate
-    /// back. Collapse parses once, iterates limb-adds on Dec, formats once:
-    /// the O(n) string round-trips become O(n) limb passes. The dup is
-    /// custody plumbing — the Dec loop keeps both limbs live natively, so it
-    /// is erased rather than lowered. Emitted body runs inside
-    /// main_module.<T>_event.handler; the num helpers it calls live in
-    /// koru_std.koru_num in the same emitted file.
+    ///   T(m, a, b, c*) = if (m <= B) then-arm [std.num:free steps] -> a
+    ///                    else |> std.num:dup(b): d |> [dup(c) | from-int | mul]*
+    ///                         |> std.num:add(term_p, term_q): s
+    ///                         |> T(m-1, a: d.f2, b: s, c*): r -> r
+    /// The step is the general two-term linear recurrence
+    ///   x_{i+1} = p*x_i + q*x_{i-1}
+    /// — fib is p=q=1 (the bare add), Pell p=2 q=1, coefficients arriving
+    /// either as dup'd custody params or from-int literals. Collapse parses
+    /// the operands (and coefficient params) once, fast-doubles the
+    /// fundamental sequence u_0=0,u_1=1 of M=[[0,1],[q,p]] on Dec limbs,
+    /// combines x_n = a*(u_{n+1} - p*u_n) + b*u_n, formats once: the O(n)
+    /// string round-trips become O(log n) limb passes whose cost tracks the
+    /// value's width, not n. Dups are custody plumbing — erased, not
+    /// lowered. Emitted body runs inside main_module.<T>_event.handler;
+    /// the num helpers it calls live in koru_std.koru_num, same file.
+    /// Where a step's coefficient comes from: implicit 1 (bare state
+    /// operand), a from-int literal minted in-chain, or a dup'd half of a
+    /// carried coefficient param (index into CustodyInfo.coeffs).
+    const Coeff = union(enum) {
+        one,
+        lit: i64,
+        param: usize,
+    };
+
     fn tryNumCustody(
         ctx: *const Ctx,
         ci: CustodyInfo,
@@ -1256,8 +1269,8 @@ pub const Collapse = struct {
             const farg = finv.args[0];
             const fexpr = farg.parsed_expression orelse return null;
             const fname = identName(fexpr) orelse return null;
-            if (!std.mem.eql(u8, fname, ci.a) and !std.mem.eql(u8, fname, ci.b)) return null;
-            if (freed.items.len >= 2) return null;
+            if (!ci.isCustody(fname)) return null;
+            if (freed.items.len >= 2 + ci.n_coeffs) return null;
             freed.append(ctx.c.allocator, fname) catch return null;
             const nxt = linkCont(cur) orelse return null;
             cur = nxt;
@@ -1266,7 +1279,11 @@ pub const Collapse = struct {
         const tleaf = leafText(cur) orelse return null;
         if (!leafIsIdent(tleaf, ci.a)) return null;
 
-        // else arm: dup -> add -> self-call -> produce.
+        // else arm: dup(b) -> [dup(coeff)]* -> [from-int | mul]* -> add -> self-call -> produce.
+        // The step is the general two-term recurrence x_{i+1} = p*x_i + q*x_{i-1}:
+        // each add arg is a state operand (a, or a dup_b half) optionally
+        // wrapped in a mul against a coefficient operand (coeff-param dup half,
+        // or a from-int literal). Bare state operand = coefficient 1.
         if (!contClean(else_c)) return null;
         const dinv = callOnPath(else_c, "std.num", "dup") orelse return null;
         if (!rbOk(dinv)) return null;
@@ -1277,28 +1294,181 @@ pub const Collapse = struct {
         if (!std.mem.eql(u8, dup_src, ci.b)) return null;
         const dup_rb = dinv.return_binding.?;
 
-        const link1 = linkCont(else_c) orelse return null;
-        const ainv = callOnPath(link1, "std.num", "add") orelse return null;
+        if (ctx.c.debug) std.debug.print("c3: b dup ok\n", .{});
+
+        // coefficient-param dups — each coeff param dup'd at most once.
+        cur = linkCont(else_c) orelse return null;
+        var coeff_dup: [4]?[]const u8 = .{ null, null, null, null };
+        var coeff_half: [4]?[]const u8 = .{ null, null, null, null };
+        while (callOnPath(cur, "std.num", "dup")) |cinv| {
+            if (!rbOk(cinv)) return null;
+            if (cinv.args.len != 1) return null;
+            const cexpr = cinv.args[0].parsed_expression orelse return null;
+            const cname = identName(cexpr) orelse return null;
+            const cidx = ci.coeffIndex(cname) orelse return null;
+            if (coeff_dup[cidx] != null) return null;
+            coeff_dup[cidx] = cinv.return_binding.?;
+            cur = linkCont(cur) orelse return null;
+        }
+
+        // from-int mints and step muls — each mint must feed exactly one mul;
+        // a binding that shadows a custody param would confuse the step
+        // classification below, so name-colliding chains refuse.
+        if (ctx.c.debug) std.debug.print("c3: coeff dups ok\n", .{});
+        var lit_bind: [4][]const u8 = undefined;
+        var lit_val: [4]i64 = undefined;
+        var lit_used: [4]bool = .{ false, false, false, false };
+        var n_lits: usize = 0;
+        var muls: [2]*const ast.Invocation = undefined;
+        var mul_used: [2]bool = .{ false, false };
+        var n_muls: usize = 0;
+        while (true) {
+            if (callOnPath(cur, "std.num", "from-int")) |finv| {
+                if (!rbOk(finv)) return null;
+                if (finv.args.len != 1) return null;
+                const fexpr = finv.args[0].parsed_expression orelse return null;
+                const v = litNumber(fexpr) orelse return null;
+                const rb = finv.return_binding.?;
+                if (ci.isCustody(rb)) return null;
+                for (lit_bind[0..n_lits]) |lb| {
+                    if (std.mem.eql(u8, rb, lb)) return null;
+                }
+                for (muls[0..n_muls]) |m| {
+                    if (std.mem.eql(u8, rb, m.return_binding.?)) return null;
+                }
+                if (n_lits >= 4) return null;
+                lit_bind[n_lits] = rb;
+                lit_val[n_lits] = v;
+                n_lits += 1;
+                cur = linkCont(cur) orelse return null;
+                continue;
+            }
+            if (callOnPath(cur, "std.num", "mul")) |minv| {
+                if (!rbOk(minv)) return null;
+                if (minv.args.len != 2) return null;
+                const mrb = minv.return_binding.?;
+                if (ci.isCustody(mrb)) return null;
+                for (lit_bind[0..n_lits]) |lb| {
+                    if (std.mem.eql(u8, mrb, lb)) return null;
+                }
+                for (muls[0..n_muls]) |m| {
+                    if (std.mem.eql(u8, mrb, m.return_binding.?)) return null;
+                }
+                if (n_muls >= 2) return null;
+                muls[n_muls] = minv;
+                n_muls += 1;
+                if (ctx.c.debug) std.debug.print("c3: mul collected {s}\n", .{mrb});
+                cur = linkCont(cur) orelse return null;
+                continue;
+            }
+            if (ctx.c.debug) std.debug.print("c3: loop done n_muls={d} n_lits={d}\n", .{ n_muls, n_lits });
+            break;
+        }
+
+        const ainv = callOnPath(cur, "std.num", "add") orelse { if (ctx.c.debug) std.debug.print("c3: no add\n", .{}); return null; };
         if (!rbOk(ainv)) return null;
+        if (ainv.args.len != 2) return null;
         const add_rb = ainv.return_binding.?;
-        var field_used: ?[]const u8 = null;
-        var saw_param = false;
+        var coeff_p: Coeff = .one;
+        var coeff_q: Coeff = .one;
+        var state_half_used: ?[]const u8 = null;
+        var saw_p = false;
+        var saw_q = false;
+        if (ctx.c.debug) std.debug.print("c3: add found\n", .{});
         for (ainv.args) |a| {
             const e = a.parsed_expression orelse return null;
-            if (identName(e)) |id| {
-                if (!std.mem.eql(u8, id, ci.a)) return null;
-                if (saw_param) return null;
-                saw_param = true;
-            } else if (fieldAccessOf(e)) |fa| {
+            var is_p = false;
+            var cf: Coeff = .one;
+            if (fieldAccessOf(e)) |fa| {
                 if (!exprIsIdent(fa.object, dup_rb)) return null;
-                if (field_used != null) return null;
-                field_used = fa.field;
+                is_p = true;
+                if (state_half_used != null) return null;
+                state_half_used = fa.field;
+            } else if (identName(e)) |id| {
+                if (std.mem.eql(u8, id, ci.a)) {
+                    is_p = false;
+                } else {
+                    // a mul binding — one state operand, one coefficient operand
+                    var midx: ?usize = null;
+                    for (muls[0..n_muls], 0..) |m, i| {
+                        if (std.mem.eql(u8, m.return_binding.?, id)) midx = i;
+                    }
+                    const mi = midx orelse return null;
+                    if (mul_used[mi]) return null;
+                    mul_used[mi] = true;
+                    var saw_state = false;
+                    var saw_coeff = false;
+                    for (muls[mi].args) |marg| {
+                        const me = marg.parsed_expression orelse return null;
+                        if (identName(me)) |mid| {
+                            if (std.mem.eql(u8, mid, ci.a)) {
+                                if (saw_state) return null;
+                                saw_state = true;
+                                continue;
+                            }
+                            var lit_hit = false;
+                            for (lit_bind[0..n_lits], 0..) |lb, j| {
+                                if (std.mem.eql(u8, mid, lb)) {
+                                    if (saw_coeff) return null;
+                                    cf = .{ .lit = lit_val[j] };
+                                    lit_used[j] = true;
+                                    lit_hit = true;
+                                    saw_coeff = true;
+                                    break;
+                                }
+                            }
+                            if (!lit_hit) return null;
+                        } else if (fieldAccessOf(me)) |fa2| {
+                            if (exprIsIdent(fa2.object, dup_rb)) {
+                                if (saw_state) return null;
+                                is_p = true;
+                                if (state_half_used != null) return null;
+                                state_half_used = fa2.field;
+                                saw_state = true;
+                                continue;
+                            }
+                            var chit = false;
+                            for (coeff_dup, 0..) |cd, i| {
+                                if (cd) |rb| {
+                                    if (exprIsIdent(fa2.object, rb)) {
+                                        if (saw_coeff) return null;
+                                        cf = .{ .param = i };
+                                        if (coeff_half[i] != null) return null;
+                                        coeff_half[i] = fa2.field;
+                                        chit = true;
+                                        saw_coeff = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!chit) return null;
+                        } else return null;
+                    }
+                    if (!saw_state or !saw_coeff) return null;
+                }
             } else return null;
+            if (is_p) {
+                if (saw_p) return null;
+                saw_p = true;
+                coeff_p = cf;
+            } else {
+                if (saw_q) return null;
+                saw_q = true;
+                coeff_q = cf;
+            }
         }
-        if (!saw_param or field_used == null) return null;
+        if (!saw_p or !saw_q) return null;
+        for (lit_used[0..n_lits]) |u| {
+            if (!u) return null;
+        }
+        for (mul_used[0..n_muls]) |u| {
+            if (!u) return null;
+        }
+        if (state_half_used == null) return null;
 
-        const link2 = linkCont(link1) orelse return null;
-        const sinv = selfCallOf(link2, ctx.impl_of) orelse return null;
+        if (ctx.c.debug) std.debug.print("c3: add ok\n", .{});
+        cur = linkCont(cur) orelse return null;
+        const sinv = selfCallOf(cur, ctx.impl_of) orelse return null;
         if (!rbOk(sinv)) return null;
         const self_rb = sinv.return_binding.?;
         if (!argsCoverParams(sinv, ctx.params)) return null;
@@ -1307,15 +1477,35 @@ pub const Collapse = struct {
         const aexpr = argForParam(sinv, ci.a).?.parsed_expression.?;
         const fa2 = fieldAccessOf(aexpr) orelse return null;
         if (!exprIsIdent(fa2.object, dup_rb)) return null;
-        if (std.mem.eql(u8, fa2.field, field_used.?)) return null;
+        if (std.mem.eql(u8, fa2.field, state_half_used.?)) return null;
         const bexpr = argForParam(sinv, ci.b).?.parsed_expression.?;
         if (!exprIsIdent(bexpr, add_rb)) return null;
+        // each coeff param: dup'd (coefficient — one half consumed by a mul,
+        // the other carried here) or carried verbatim (unused — emitted body
+        // frees it since the collapse never issues it onward).
+        var carried_free = std.ArrayList([]const u8){};
+        defer carried_free.deinit(ctx.c.allocator);
+        for (0..ci.n_coeffs) |i| {
+            const carg = argForParam(sinv, ci.coeffs[i]) orelse return null;
+            const e2 = carg.parsed_expression orelse return null;
+            if (coeff_dup[i]) |cd| {
+                if (coeff_half[i] == null) return null;
+                const fa3 = fieldAccessOf(e2) orelse return null;
+                if (!exprIsIdent(fa3.object, cd)) return null;
+                if (std.mem.eql(u8, fa3.field, coeff_half[i].?)) return null;
+            } else {
+                if (!exprIsIdent(e2, ci.coeffs[i])) return null;
+                carried_free.append(ctx.c.allocator, ci.coeffs[i]) catch return null;
+            }
+        }
 
-        const link3 = linkCont(link2) orelse return null;
-        if (link3.continuations.len != 0) return null;
-        const prod = leafText(link3) orelse return null;
+        if (ctx.c.debug) std.debug.print("c3: selfcall ok\n", .{});
+        cur = linkCont(cur) orelse return null;
+        if (cur.continuations.len != 0) return null;
+        const prod = leafText(cur) orelse return null;
         if (!leafIsIdent(prod, self_rb)) return null;
 
+        if (ctx.c.debug) std.debug.print("c3: match complete\n", .{});
         const alloc = ctx.c.allocator;
         var b = std.ArrayList(u8){};
         defer b.deinit(alloc);
@@ -1328,52 +1518,90 @@ pub const Collapse = struct {
         try ap(&b, alloc, "var __da = koru_std.koru_num.decParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ci.a});
         try ap(&b, alloc, "var __db = koru_std.koru_num.decParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ci.b});
         try ap(&b, alloc, "koru_std.koru_num.numFree({s});\nkoru_std.koru_num.numFree({s});\n", .{ ci.a, ci.b });
-        // else ran: m > B, so m - B >= 1. The recurrence x_{i+1} = x_i + x_{i-1}
-        // is the Fibonacci Q-matrix — x_iters = a*f(i-1) + b*f(i) — so the
-        // loop carries (f(j), f(j+1)) and fast-doubles over the bits of the
-        // trip count: O(log iters) decMul steps whose cost tracks the VALUE's
-        // limb width, not the count. Bit-scan `while` (not `for`) — the trip
-        // count is the bit-length, unknowable statically; same shape as the
-        // B1 emitted body.
+        // coefficient Decs — literal via decInit, param via decParse. A param
+        // sourced for both p and q parses twice and frees once.
+        for ([2]Coeff{ coeff_p, coeff_q }, [2][]const u8{ "__cp", "__cq" }) |cf, vn| {
+            switch (cf) {
+                .one => try ap(&b, alloc, "var {s} = koru_std.koru_num.decInit(__ka, 1, 0) catch @panic(\"collapse c3: init\");\n", .{vn}),
+                .lit => |v| try ap(&b, alloc, "var {s} = koru_std.koru_num.decInit(__ka, {d}, 0) catch @panic(\"collapse c3: init\");\n", .{ vn, v }),
+                .param => |i| try ap(&b, alloc, "var {s} = koru_std.koru_num.decParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ vn, ci.coeffs[i] }),
+            }
+        }
+        var freed_coeff: [4][]const u8 = undefined;
+        var n_freed: usize = 0;
+        for ([2]Coeff{ coeff_p, coeff_q }) |cf| {
+            if (cf == .param) {
+                const nm = ci.coeffs[cf.param];
+                var seen = false;
+                for (freed_coeff[0..n_freed]) |f| {
+                    if (std.mem.eql(u8, f, nm)) seen = true;
+                }
+                if (!seen) {
+                    try ap(&b, alloc, "koru_std.koru_num.numFree({s});\n", .{nm});
+                    freed_coeff[n_freed] = nm;
+                    n_freed += 1;
+                }
+            }
+        }
+        for (carried_free.items) |fp| {
+            try ap(&b, alloc, "koru_std.koru_num.numFree({s});\n", .{fp});
+        }
+        // else ran: m > B, so m - B >= 1. The recurrence x_{i+1} = p*x_i +
+        // q*x_{i-1} is the companion matrix M = [[0,1],[q,p]] — its power
+        // M^n = [[q*u_{n-1}, u_n],[...]] over the fundamental sequence
+        // u_0=0, u_1=1, so x_n = a*(u_{n+1} - p*u_n) + b*u_n. The loop
+        // fast-doubles (u_j, u_{j+1}) over the bits of the trip count:
+        //   u_{2k}   = u_k*(2*u_{k+1} - p*u_k)
+        //   u_{2k+1} = u_{k+1}^2 + q*u_k^2
+        //   u_{2k+2} = p*u_{2k+1} + q*u_{2k}
+        // O(log iters) decMul steps whose cost tracks the VALUE's limb
+        // width, not the count. Bit-scan `while` (not `for`) — the trip
+        // count is a bit-length, unknowable statically; same shape as B1.
         try ap(&b, alloc, "const __iters: u64 = @intCast({s} - {d});\n", .{ ci.measure, g.boundary });
         try b.appendSlice(alloc,
             "var __fk = koru_std.koru_num.decInit(__ka, 0, 0) catch @panic(\"collapse c3: init\");\n" ++
             "var __fk1 = koru_std.koru_num.decInit(__ka, 1, 0) catch @panic(\"collapse c3: init\");\n" ++
             "var __p: u64 = @as(u64, 1) << @as(u6, @intCast(63 - @clz(__iters)));\n" ++
             "while (__p != 0) : (__p >>= 1) {\n" ++
+            "    var __pfk = koru_std.koru_num.decMul(__ka, &__cp, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
             "    var __two = koru_std.koru_num.decAdd(__ka, &__fk1, &__fk1) catch @panic(\"collapse c3: add\");\n" ++
-            "    var __negfk = koru_std.koru_num.Dec{ .neg = __fk.neg, .m = __fk.m.clone() catch @panic(\"collapse c3: clone\"), .e = __fk.e };\n" ++
-            "    __negfk.neg = !__negfk.neg;\n" ++
-            "    if (__negfk.m.eqlZero()) __negfk.neg = false;\n" ++
-            "    var __diff = koru_std.koru_num.decAdd(__ka, &__two, &__negfk) catch @panic(\"collapse c3: add\");\n" ++
+            "    __pfk.neg = !__pfk.neg;\n" ++
+            "    if (__pfk.m.eqlZero()) __pfk.neg = false;\n" ++
+            "    var __diff = koru_std.koru_num.decAdd(__ka, &__two, &__pfk) catch @panic(\"collapse c3: add\");\n" ++
             "    koru_std.koru_num.decDeinit(&__two);\n" ++
-            "    koru_std.koru_num.decDeinit(&__negfk);\n" ++
+            "    koru_std.koru_num.decDeinit(&__pfk);\n" ++
             "    var __c = koru_std.koru_num.decMul(__ka, &__fk, &__diff) catch @panic(\"collapse c3: mul\");\n" ++
             "    koru_std.koru_num.decDeinit(&__diff);\n" ++
             "    var __f2 = koru_std.koru_num.decMul(__ka, &__fk, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
-            "    var __f12 = koru_std.koru_num.decMul(__ka, &__fk1, &__fk1) catch @panic(\"collapse c3: mul\");\n" ++
-            "    const __d = koru_std.koru_num.decAdd(__ka, &__f2, &__f12) catch @panic(\"collapse c3: add\");\n" ++
+            "    var __qf2 = koru_std.koru_num.decMul(__ka, &__cq, &__f2) catch @panic(\"collapse c3: mul\");\n" ++
             "    koru_std.koru_num.decDeinit(&__f2);\n" ++
+            "    var __f12 = koru_std.koru_num.decMul(__ka, &__fk1, &__fk1) catch @panic(\"collapse c3: mul\");\n" ++
+            "    const __d = koru_std.koru_num.decAdd(__ka, &__f12, &__qf2) catch @panic(\"collapse c3: add\");\n" ++
             "    koru_std.koru_num.decDeinit(&__f12);\n" ++
+            "    koru_std.koru_num.decDeinit(&__qf2);\n" ++
             "    koru_std.koru_num.decDeinit(&__fk);\n" ++
             "    koru_std.koru_num.decDeinit(&__fk1);\n" ++
             "    if ((__iters & __p) != 0) {\n" ++
-            "        const __cd = koru_std.koru_num.decAdd(__ka, &__c, &__d) catch @panic(\"collapse c3: add\");\n" ++
+            "        var __pd = koru_std.koru_num.decMul(__ka, &__cp, &__d) catch @panic(\"collapse c3: mul\");\n" ++
+            "        var __qc = koru_std.koru_num.decMul(__ka, &__cq, &__c) catch @panic(\"collapse c3: mul\");\n" ++
+            "        const __e = koru_std.koru_num.decAdd(__ka, &__pd, &__qc) catch @panic(\"collapse c3: add\");\n" ++
+            "        koru_std.koru_num.decDeinit(&__pd);\n" ++
+            "        koru_std.koru_num.decDeinit(&__qc);\n" ++
             "        koru_std.koru_num.decDeinit(&__c);\n" ++
             "        __fk = __d;\n" ++
-            "        __fk1 = __cd;\n" ++
+            "        __fk1 = __e;\n" ++
             "    } else {\n" ++
             "        __fk = __c;\n" ++
             "        __fk1 = __d;\n" ++
             "    }\n" ++
             "}\n");
-        // result = a*f(i-1) + b*f(i) = da*(fk1 - fk) + db*fk
+        // result = a*(u_{n+1} - p*u_n) + b*u_n
         try b.appendSlice(alloc,
-            "var __negfk2 = koru_std.koru_num.Dec{ .neg = __fk.neg, .m = __fk.m.clone() catch @panic(\"collapse c3: clone\"), .e = __fk.e };\n" ++
-            "__negfk2.neg = !__negfk2.neg;\n" ++
-            "if (__negfk2.m.eqlZero()) __negfk2.neg = false;\n" ++
-            "var __fm1 = koru_std.koru_num.decAdd(__ka, &__fk1, &__negfk2) catch @panic(\"collapse c3: add\");\n" ++
-            "koru_std.koru_num.decDeinit(&__negfk2);\n" ++
+            "var __pfk2 = koru_std.koru_num.decMul(__ka, &__cp, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
+            "__pfk2.neg = !__pfk2.neg;\n" ++
+            "if (__pfk2.m.eqlZero()) __pfk2.neg = false;\n" ++
+            "var __fm1 = koru_std.koru_num.decAdd(__ka, &__fk1, &__pfk2) catch @panic(\"collapse c3: add\");\n" ++
+            "koru_std.koru_num.decDeinit(&__pfk2);\n" ++
             "var __t1 = koru_std.koru_num.decMul(__ka, &__da, &__fm1) catch @panic(\"collapse c3: mul\");\n" ++
             "koru_std.koru_num.decDeinit(&__fm1);\n" ++
             "var __t2 = koru_std.koru_num.decMul(__ka, &__db, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
@@ -1384,6 +1612,8 @@ pub const Collapse = struct {
             "koru_std.koru_num.decDeinit(&__db);\n" ++
             "koru_std.koru_num.decDeinit(&__fk);\n" ++
             "koru_std.koru_num.decDeinit(&__fk1);\n" ++
+            "koru_std.koru_num.decDeinit(&__cp);\n" ++
+            "koru_std.koru_num.decDeinit(&__cq);\n" ++
             "const __rs = koru_std.koru_num.decToString(__ka, &__res) catch @panic(\"collapse c3: fmt\");\n" ++
             "koru_std.koru_num.decDeinit(&__res);\n" ++
             "return __rs;\n");
@@ -1423,15 +1653,35 @@ pub const Collapse = struct {
     }
 
     /// Custody events — the C3 num-accumulator leg. Eligible shape:
-    ///   T { m:int, a:string<!P>, b:string<!P> } -> string<P!>
+    ///   T { m:int, a:string<!P>, b:string<!P>, c:string<!P>* } -> string<P!>
     /// The int-scalar gate refuses these outright; custodyEligible re-judges
-    /// on the phantom fields. Both custody params must consume the SAME tag
+    /// on the phantom fields. All custody params must consume the SAME tag
     /// (`<!P>`) and the return must issue it (`<P!>`) — a tor that produces a
     /// different family than it consumes is not the recurrence we recognize.
+    /// The first two custody params are the accumulator pair; any further
+    /// ones are coefficient/carried params (constant multipliers in the step,
+    /// or params carried unchanged — the matcher sorts out which).
     const CustodyInfo = struct {
         measure: []const u8,
         a: []const u8,
         b: []const u8,
+        coeffs: [4][]const u8,
+        n_coeffs: usize,
+
+        fn isCustody(self: CustodyInfo, name: []const u8) bool {
+            if (std.mem.eql(u8, name, self.a) or std.mem.eql(u8, name, self.b)) return true;
+            for (self.coeffs[0..self.n_coeffs]) |c| {
+                if (std.mem.eql(u8, name, c)) return true;
+            }
+            return false;
+        }
+
+        fn coeffIndex(self: CustodyInfo, name: []const u8) ?usize {
+            for (self.coeffs[0..self.n_coeffs], 0..) |c, i| {
+                if (std.mem.eql(u8, name, c)) return i;
+            }
+            return null;
+        }
     };
 
     fn custodyEligible(ev: *const ast.EventDecl) ?CustodyInfo {
@@ -1440,10 +1690,10 @@ pub const Collapse = struct {
         const rp = ev.return_phantom orelse return null;
         if (rp.len < 2 or rp[rp.len - 1] != '!') return null;
         if (ev.branches.len != 0) return null;
-        if (ev.input.fields.len != 3) return null;
+        if (ev.input.fields.len < 3 or ev.input.fields.len > 7) return null;
         if (ev.path.segments.len != 1) return null;
         var measure: ?[]const u8 = null;
-        var cust: [2][]const u8 = undefined;
+        var cust: [6][]const u8 = undefined;
         var n_cust: usize = 0;
         var tag: ?[]const u8 = null;
         for (ev.input.fields) |f| {
@@ -1464,13 +1714,21 @@ pub const Collapse = struct {
             if (tag) |t| {
                 if (!std.mem.eql(u8, t, ph[1..])) return null;
             } else tag = ph[1..];
-            if (n_cust >= 2) return null;
+            if (n_cust >= 6) return null;
             cust[n_cust] = f.name;
             n_cust += 1;
         }
-        if (measure == null or n_cust != 2) return null;
+        if (measure == null or n_cust < 2) return null;
         if (!std.mem.eql(u8, rp[0 .. rp.len - 1], tag.?)) return null;
-        return .{ .measure = measure.?, .a = cust[0], .b = cust[1] };
+        var ci = CustodyInfo{
+            .measure = measure.?,
+            .a = cust[0],
+            .b = cust[1],
+            .coeffs = undefined,
+            .n_coeffs = n_cust - 2,
+        };
+        for (cust[2..n_cust], 0..) |c, i| ci.coeffs[i] = c;
+        return ci;
     }
 
     fn ifCondExpr(inv: *const ast.Invocation) ?*const ast.Expression {
