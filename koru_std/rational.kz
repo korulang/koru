@@ -1,0 +1,1005 @@
+// ============================================================================
+// std/rational — exact rationals as custody strings.
+//
+// Canon: "rat:v1;<n>;<d>" — <n> a signed decimal integer, <d> a positive
+// decimal integer, gcd(|n|, d) = 1; zero is "rat:v1;0;1". Value-equivalence
+// is string equality on the canon — the same law std/num and sym.alg state.
+//
+// Phantoms (module-scoped):
+//   <rational!>  a canonical rational — owned, discharge via free/dup
+//   <external!>  unvalidated outside text — discharge via parse or drop
+//
+// Custody spellings mirror std/num: <!rational> consumes, <rational!>
+// issues, bare <rational> borrows.
+//
+// Tors:
+//   ingest / ingest-owned / parse / drop        external boundary (num law)
+//   lit          s -> exact | bad               "n/d" | int | dec | canon
+//   from-int     i64 -> rational!
+//   add sub mul div(-> exact | div-zero) neg abs
+//   cmp | lt|eq|gt   equiv | same|diff   is-zero | zero|nonzero
+//   dup free render
+//   numer denom      -> string<std/num:exact!>  (Dec mints, n e0 / d e0)
+//   rat-of-dec       string<!std/num:exact> -> rational!   (exact)
+//   dec-of-rat       {a, prec} -> string<std/num:exact!> | bad  (truncated)
+//   dec-of-rat-exact a -> exact | nonterminating           (d | 2^a*5^b)
+//   rat-recon        {r, m, bound} -> exact | none | bad
+//                    Wang rational reconstruction: n/d with r*d == n (mod m),
+//                    |n|, d <= bound — the Dixon-lift recovery kernel.
+//   sym-of-rat       a -> string<std/io:allocated!>  (sym canon text —
+//                    inv(d) / (n*inv(d)) / plain dec for {2,5} denominators)
+//   rat-of-sym       string<std/sym:!sexpr> -> exact | bad
+//                    (narrow grammar: dec | inv(dec) | (dec*inv(dec)))
+// ============================================================================
+
+~import std/io
+~import std/num
+~import std/sym
+
+const std = @import("std");
+const BI = std.math.big.int.Managed;
+
+const Rat = struct { n: BI, d: BI };
+
+fn ratDeinit(r: *Rat) void {
+    r.n.deinit();
+    r.d.deinit();
+}
+
+fn ratFree(s: []const u8) void {
+    koru_allocator().free(s);
+}
+
+fn ratCopy(s: []const u8) []u8 {
+    return koru_allocator().dupe(u8, s) catch @panic("std/rational: out of memory");
+}
+
+fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
+    var r = try BI.initSet(alloc, 1);
+    errdefer r.deinit();
+    var ten = try BI.initSet(alloc, 10);
+    defer ten.deinit();
+    var i: i64 = 0;
+    while (i < k) : (i += 1) {
+        try r.mul(&r, &ten);
+    }
+    return r;
+}
+
+fn biGcd(alloc: std.mem.Allocator, a: *const BI, b: *const BI) !BI {
+    var x = try a.clone();
+    errdefer x.deinit();
+    x.abs();
+    var y = try b.clone();
+    errdefer y.deinit();
+    y.abs();
+    while (!y.eqlZero()) {
+        var q = BI.init(alloc) catch return error.OutOfMemory;
+        var r = BI.init(alloc) catch {
+            q.deinit();
+            return error.OutOfMemory;
+        };
+        q.divTrunc(&r, &x, &y) catch {
+            q.deinit();
+            r.deinit();
+            return error.OutOfMemory;
+        };
+        q.deinit();
+        x.deinit();
+        x = y;
+        y = r;
+    }
+    y.deinit();
+    return x;
+}
+
+// reduce n/d in place: divide both by gcd(|n|,d); d>0 by construction;
+// zero normalizes to 0/1.
+fn ratReduce(alloc: std.mem.Allocator, r: *Rat) !void {
+    if (r.n.eqlZero()) {
+        r.d.deinit();
+        r.d = try BI.initSet(alloc, 1);
+        return;
+    }
+    var g = try biGcd(alloc, &r.n, &r.d);
+    defer g.deinit();
+    var one = try BI.initSet(alloc, 1);
+    defer one.deinit();
+    if (!g.eql(one)) {
+        var qn = try BI.init(alloc);
+        var rn = try BI.init(alloc);
+        qn.divTrunc(&rn, &r.n, &g) catch return error.OutOfMemory;
+        rn.deinit();
+        r.n.deinit();
+        r.n = qn;
+        var qd = try BI.init(alloc);
+        var rd = try BI.init(alloc);
+        qd.divTrunc(&rd, &r.d, &g) catch return error.OutOfMemory;
+        rd.deinit();
+        r.d.deinit();
+        r.d = qd;
+    }
+}
+
+// integer text -> BI, or null on malformed (leading '-' allowed, digits only).
+fn intFromText(alloc: std.mem.Allocator, s: []const u8) !?BI {
+    if (s.len == 0) return null;
+    var t = s;
+    if (t[0] == '-') {
+        if (t.len == 1) return null;
+        t = t[1..];
+    }
+    for (t) |c| {
+        if (c < '0' or c > '9') return null;
+    }
+    var v = try BI.init(alloc);
+    errdefer v.deinit();
+    v.setString(10, s) catch return null;
+    return v;
+}
+
+// decimal text "[-]D[.DDD][e[-]E]" -> rational (always exact).
+fn ratFromDecText(alloc: std.mem.Allocator, s_in: []const u8) !?Rat {
+    var s = s_in;
+    var neg = false;
+    if (s.len > 0 and s[0] == '-') {
+        neg = true;
+        s = s[1..];
+    }
+    if (s.len == 0) return null;
+    var mant_end: usize = s.len;
+    var exp: i64 = 0;
+    if (std.mem.indexOfScalar(u8, s, 'e')) |ep| {
+        mant_end = ep;
+        const es = s[ep + 1 ..];
+        if (es.len == 0) return null;
+        var ei: usize = 0;
+        var eneg = false;
+        if (es[0] == '-') {
+            eneg = true;
+            ei = 1;
+        }
+        if (ei >= es.len) return null;
+        for (es[ei..]) |c| {
+            if (c < '0' or c > '9') return null;
+        }
+        exp = std.fmt.parseInt(i64, es[ei..], 10) catch return null;
+        if (eneg) exp = -exp;
+    }
+    const mant = s[0..mant_end];
+    var frac_len: i64 = 0;
+    var seen_dot = false;
+    var digits_buf = std.ArrayList(u8){};
+    defer digits_buf.deinit(alloc);
+    for (mant) |c| {
+        if (c == '.') {
+            if (seen_dot) return null;
+            seen_dot = true;
+            continue;
+        }
+        if (c < '0' or c > '9') return null;
+        if (seen_dot) frac_len += 1;
+        digits_buf.append(alloc, c) catch return error.OutOfMemory;
+    }
+    if (digits_buf.items.len == 0) return null;
+    var digits = digits_buf.items;
+    var lead: usize = 0;
+    while (lead + 1 < digits.len and digits[lead] == '0') lead += 1;
+    digits = digits[lead..];
+    var n = try BI.init(alloc);
+    errdefer n.deinit();
+    n.setString(10, digits) catch return null;
+    if (neg) n.negate();
+    const k = exp - frac_len;
+    if (k >= 0) {
+        if (k > 0) {
+            var p = try pow10(alloc, k);
+            defer p.deinit();
+            try n.mul(&n, &p);
+        }
+        return .{ .n = n, .d = try BI.initSet(alloc, 1) };
+    }
+    var d = try pow10(alloc, -k);
+    errdefer d.deinit();
+    return .{ .n = n, .d = d };
+}
+
+// literal grammar: canon | "n/d" | integer | decimal.
+fn ratFromText(alloc: std.mem.Allocator, s: []const u8) !?Rat {
+    if (std.mem.startsWith(u8, s, "rat:v1;")) {
+        const body = s["rat:v1;".len..];
+        const sep = std.mem.indexOfScalar(u8, body, ';') orelse return null;
+        var n = (try intFromText(alloc, body[0..sep])) orelse return null;
+        var d = (try intFromText(alloc, body[sep + 1 ..])) orelse {
+            n.deinit();
+            return null;
+        };
+        if (!d.isPositive()) {
+            n.deinit();
+            d.deinit();
+            return null;
+        }
+        var r = Rat{ .n = n, .d = d };
+        errdefer ratDeinit(&r);
+        try ratReduce(alloc, &r);
+        return r;
+    }
+    if (std.mem.indexOfScalar(u8, s, '/')) |sep| {
+        if (std.mem.indexOfScalar(u8, s[sep + 1 ..], '/') != null) return null;
+        var n = (try intFromText(alloc, s[0..sep])) orelse return null;
+        var d = (try intFromText(alloc, s[sep + 1 ..])) orelse {
+            n.deinit();
+            return null;
+        };
+        if (d.eqlZero()) {
+            n.deinit();
+            d.deinit();
+            return null;
+        }
+        var r = Rat{ .n = n, .d = d };
+        errdefer ratDeinit(&r);
+        try ratReduce(alloc, &r);
+        return r;
+    }
+    if (try intFromText(alloc, s)) |n| {
+        return .{ .n = n, .d = try BI.initSet(alloc, 1) };
+    }
+    var r = (try ratFromDecText(alloc, s)) orelse return null;
+    errdefer ratDeinit(&r);
+    try ratReduce(alloc, &r);
+    return r;
+}
+
+// canon string "rat:v1;<n>;<d>" — allocator-owned.
+fn ratEmit(alloc: std.mem.Allocator, r: *const Rat) ![]u8 {
+    const ns = try r.n.toString(alloc, 10, .lower);
+    defer alloc.free(ns);
+    const ds = try r.d.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return std.fmt.allocPrint(alloc, "rat:v1;{s};{s}", .{ ns, ds });
+}
+
+// canon parse — strict "rat:v1;<n>;<d>", panics on malformed (consumed
+// custody carries the canon invariant).
+fn ratParse(alloc: std.mem.Allocator, s: []const u8) !Rat {
+    if (!std.mem.startsWith(u8, s, "rat:v1;")) return error.BadRat;
+    const body = s["rat:v1;".len..];
+    const sep = std.mem.indexOfScalar(u8, body, ';') orelse return error.BadRat;
+    var n = (try intFromText(alloc, body[0..sep])) orelse return error.BadRat;
+    errdefer n.deinit();
+    var d = (try intFromText(alloc, body[sep + 1 ..])) orelse return error.BadRat;
+    errdefer d.deinit();
+    if (!d.isPositive()) return error.BadRat;
+    return .{ .n = n, .d = d };
+}
+
+// Dec canon text for a big integer: strip trailing zeros into the exponent —
+// 1250 -> "1.25e3", 0 -> "0e0", -7 -> "-7e0".
+fn decTextOfInt(alloc: std.mem.Allocator, v: *const BI) ![]u8 {
+    var t = try v.clone();
+    defer t.deinit();
+    const neg = !t.eqlZero() and !t.isPositive();
+    t.abs();
+    const ds = try t.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    var trail: usize = 0;
+    while (trail + 1 < ds.len and ds[ds.len - 1 - trail] == '0') trail += 1;
+    const mant = ds[0 .. ds.len - trail];
+    if (mant.len == 0) return alloc.dupe(u8, "0e0");
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    if (neg) out.append(alloc, '-') catch return error.OutOfMemory;
+    out.append(alloc, mant[0]) catch return error.OutOfMemory;
+    if (mant.len > 1) {
+        out.append(alloc, '.') catch return error.OutOfMemory;
+        out.appendSlice(alloc, mant[1..]) catch return error.OutOfMemory;
+    }
+    const e_str = std.fmt.allocPrint(alloc, "e{d}", .{@as(i64, @intCast(ds.len)) - 1}) catch return error.OutOfMemory;
+    defer alloc.free(e_str);
+    out.appendSlice(alloc, e_str) catch return error.OutOfMemory;
+    return out.toOwnedSlice(alloc);
+}
+
+// Dec canon for n/d when d factors into {2,5} only — else null.
+// d = 2^a * 5^b * rest; rest == 1 -> value = n * 2^(b-a)+ * 5^(a-b)+ / 10^max(a,b).
+fn decOfRatExact(alloc: std.mem.Allocator, r: *const Rat) !?[]u8 {
+    var a: i64 = 0;
+    var b: i64 = 0;
+    var rem = try r.d.clone();
+    defer rem.deinit();
+    var two = try BI.initSet(alloc, 2);
+    defer two.deinit();
+    var five = try BI.initSet(alloc, 5);
+    defer five.deinit();
+    var one = try BI.initSet(alloc, 1);
+    defer one.deinit();
+    while (true) {
+        var q = try BI.init(alloc);
+        var rr = try BI.init(alloc);
+        q.divTrunc(&rr, &rem, &two) catch return error.OutOfMemory;
+        if (rr.eqlZero()) {
+            rr.deinit();
+            rem.deinit();
+            rem = q;
+            a += 1;
+        } else {
+            q.deinit();
+            rr.deinit();
+            break;
+        }
+    }
+    while (true) {
+        var q = try BI.init(alloc);
+        var rr = try BI.init(alloc);
+        q.divTrunc(&rr, &rem, &five) catch return error.OutOfMemory;
+        if (rr.eqlZero()) {
+            rr.deinit();
+            rem.deinit();
+            rem = q;
+            b += 1;
+        } else {
+            q.deinit();
+            rr.deinit();
+            break;
+        }
+    }
+    if (!rem.eql(one)) return null;
+    var scaled = try r.n.clone();
+    defer scaled.deinit();
+    const e: i64 = -@max(a, b);
+    if (b > a) {
+        var p = try pow10Small(alloc, 2, b - a);
+        defer p.deinit();
+        try scaled.mul(&scaled, &p);
+    } else if (a > b) {
+        var p = try pow10Small(alloc, 5, a - b);
+        defer p.deinit();
+        try scaled.mul(&scaled, &p);
+    }
+    // value = scaled * 10^e — render as Dec canon via decTextOfScaled.
+    const t = try decTextScaled(alloc, &scaled, e);
+    return t;
+}
+
+fn pow10Small(alloc: std.mem.Allocator, base: i64, k: i64) !BI {
+    var r = try BI.initSet(alloc, 1);
+    errdefer r.deinit();
+    var bb = try BI.initSet(alloc, base);
+    defer bb.deinit();
+    var i: i64 = 0;
+    while (i < k) : (i += 1) {
+        try r.mul(&r, &bb);
+    }
+    return r;
+}
+
+// integer * 10^e -> Dec canon text.
+fn decTextScaled(alloc: std.mem.Allocator, v: *const BI, e_in: i64) ![]u8 {
+    var t = try v.clone();
+    defer t.deinit();
+    const neg = !t.eqlZero() and !t.isPositive();
+    t.abs();
+    const ds = try t.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    var e = e_in;
+    var trail: usize = 0;
+    while (trail + 1 < ds.len and ds[ds.len - 1 - trail] == '0') trail += 1;
+    const mant = ds[0 .. ds.len - trail];
+    if (mant.len == 0) return alloc.dupe(u8, "0e0");
+    e += @as(i64, @intCast(ds.len)) - 1;
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    if (neg) out.append(alloc, '-') catch return error.OutOfMemory;
+    out.append(alloc, mant[0]) catch return error.OutOfMemory;
+    if (mant.len > 1) {
+        out.append(alloc, '.') catch return error.OutOfMemory;
+        out.appendSlice(alloc, mant[1..]) catch return error.OutOfMemory;
+    }
+    const e_str = std.fmt.allocPrint(alloc, "e{d}", .{e}) catch return error.OutOfMemory;
+    defer alloc.free(e_str);
+    out.appendSlice(alloc, e_str) catch return error.OutOfMemory;
+    return out.toOwnedSlice(alloc);
+}
+
+// decimal text -> integer BI, or null when the value isn't integral.
+fn intFromDecText(alloc: std.mem.Allocator, s: []const u8) !?BI {
+    var r = (try ratFromDecText(alloc, s)) orelse return null;
+    defer ratDeinit(&r);
+    var one = try BI.initSet(alloc, 1);
+    defer one.deinit();
+    if (!r.d.eql(one)) return null;
+    const c = try r.n.clone();
+    return c;
+}
+
+// ============================================================================
+// Boundary: mark outside text as <external!>.
+// ============================================================================
+
+~pub tor ingest { s: string } -> string<external!>
+
+~proc ingest|zig {
+    return ratCopy(s);
+}
+
+~pub tor ingest-owned { s: string<!allocated> } -> string<external!>
+
+~proc ingest-owned|zig {
+    return s;
+}
+
+// external -> canonical rational; malformed text lands on |bad with the
+// offending buffer transferred as <allocated!>.
+~pub tor parse { s: string<!external> }
+| exact string<rational!>
+| bad string<std/io:allocated!>
+
+~proc parse|zig {
+    var r = ratFromText(koru_allocator(), s) catch |err| switch (err) {
+        else => @panic("std/rational: numeric op failed"),
+    } orelse return .{ .bad = s };
+    defer ratDeinit(&r);
+    ratFree(s);
+    return .{ .exact = ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory") };
+}
+
+// trusted in-program text — a literal. `bad` returns the offending slice.
+~pub tor lit { s: string }
+| exact string<rational!>
+| bad string
+
+~proc lit|zig {
+    var r = ratFromText(koru_allocator(), s) catch |err| switch (err) {
+        else => @panic("std/rational: numeric op failed"),
+    } orelse return .{ .bad = s };
+    defer ratDeinit(&r);
+    return .{ .exact = ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory") };
+}
+
+~pub tor drop { s: string<!external> }
+
+~proc drop|zig {
+    ratFree(s);
+}
+
+// i64 -> rational (i/1).
+~pub tor from-int { i: i64 } -> string<rational!>
+
+~proc from-int|zig {
+    var r = Rat{
+        .n = BI.initSet(koru_allocator(), i) catch @panic("std/rational: out of memory"),
+        .d = BI.initSet(koru_allocator(), 1) catch @panic("std/rational: out of memory"),
+    };
+    defer ratDeinit(&r);
+    return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+}
+
+// ============================================================================
+// Arithmetic — operands consumed (<!rational>) into the result.
+// ============================================================================
+
+~pub tor add { a: string<!rational>, b: string<!rational> } -> string<rational!>
+
+~proc add|zig {
+    defer ratFree(a);
+    defer ratFree(b);
+    var ra = ratParse(koru_allocator(), a) catch @panic("std/rational:add: malformed operand");
+    defer ratDeinit(&ra);
+    var rb = ratParse(koru_allocator(), b) catch @panic("std/rational:add: malformed operand");
+    defer ratDeinit(&rb);
+    // n1*d2 + n2*d1 over d1*d2, then reduce.
+    var t1 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    t1.mul(&ra.n, &rb.d) catch @panic("std/rational: out of memory");
+    defer t1.deinit();
+    var t2 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    t2.mul(&rb.n, &ra.d) catch @panic("std/rational: out of memory");
+    defer t2.deinit();
+    var r = Rat{
+        .n = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
+        .d = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
+    };
+    r.n.add(&t1, &t2) catch @panic("std/rational: out of memory");
+    r.d.mul(&ra.d, &rb.d) catch @panic("std/rational: out of memory");
+    ratReduce(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+    defer ratDeinit(&r);
+    return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+}
+
+~pub tor sub { a: string<!rational>, b: string<!rational> } -> string<rational!>
+
+~proc sub|zig {
+    defer ratFree(a);
+    defer ratFree(b);
+    var ra = ratParse(koru_allocator(), a) catch @panic("std/rational:sub: malformed operand");
+    defer ratDeinit(&ra);
+    var rb = ratParse(koru_allocator(), b) catch @panic("std/rational:sub: malformed operand");
+    defer ratDeinit(&rb);
+    var t1 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    t1.mul(&ra.n, &rb.d) catch @panic("std/rational: out of memory");
+    defer t1.deinit();
+    var t2 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    t2.mul(&rb.n, &ra.d) catch @panic("std/rational: out of memory");
+    defer t2.deinit();
+    var r = Rat{
+        .n = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
+        .d = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
+    };
+    r.n.sub(&t1, &t2) catch @panic("std/rational: out of memory");
+    r.d.mul(&ra.d, &rb.d) catch @panic("std/rational: out of memory");
+    ratReduce(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+    defer ratDeinit(&r);
+    return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+}
+
+~pub tor mul { a: string<!rational>, b: string<!rational> } -> string<rational!>
+
+~proc mul|zig {
+    defer ratFree(a);
+    defer ratFree(b);
+    var ra = ratParse(koru_allocator(), a) catch @panic("std/rational:mul: malformed operand");
+    defer ratDeinit(&ra);
+    var rb = ratParse(koru_allocator(), b) catch @panic("std/rational:mul: malformed operand");
+    defer ratDeinit(&rb);
+    var r = Rat{
+        .n = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
+        .d = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
+    };
+    r.n.mul(&ra.n, &rb.n) catch @panic("std/rational: out of memory");
+    r.d.mul(&ra.d, &rb.d) catch @panic("std/rational: out of memory");
+    ratReduce(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+    defer ratDeinit(&r);
+    return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+}
+
+// a / b = a * inv(b): exact, no prec — division by zero lands on |div-zero
+// with both operands still consumed.
+~pub tor div { a: string<!rational>, b: string<!rational> }
+| exact string<rational!>
+| div-zero
+
+~proc div|zig {
+    defer ratFree(a);
+    defer ratFree(b);
+    var ra = ratParse(koru_allocator(), a) catch @panic("std/rational:div: malformed operand");
+    defer ratDeinit(&ra);
+    var rb = ratParse(koru_allocator(), b) catch @panic("std/rational:div: malformed operand");
+    defer ratDeinit(&rb);
+    if (rb.n.eqlZero()) return .{ .div_zero = .{} };
+    var r = Rat{
+        .n = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
+        .d = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
+    };
+    r.n.mul(&ra.n, &rb.d) catch @panic("std/rational: out of memory");
+    r.d.mul(&ra.d, &rb.n) catch @panic("std/rational: out of memory");
+    // d must stay positive: a negative rb.n flips the sign onto r.n.
+    if (!rb.n.isPositive()) {
+        r.n.negate();
+        r.d.abs();
+    }
+    ratReduce(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+    defer ratDeinit(&r);
+    return .{ .exact = ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory") };
+}
+
+~pub tor neg { a: string<!rational> } -> string<rational!>
+
+~proc neg|zig {
+    defer ratFree(a);
+    var r = ratParse(koru_allocator(), a) catch @panic("std/rational:neg: malformed operand");
+    r.n.negate();
+    defer ratDeinit(&r);
+    return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+}
+
+~pub tor abs { a: string<!rational> } -> string<rational!>
+
+~proc abs|zig {
+    defer ratFree(a);
+    var r = ratParse(koru_allocator(), a) catch @panic("std/rational:abs: malformed operand");
+    r.n.abs();
+    defer ratDeinit(&r);
+    return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+}
+
+// ============================================================================
+// Comparison — borrows, never consumes.
+// ============================================================================
+
+~pub tor cmp { a: string<rational>, b: string<rational> }
+| lt
+| eq
+| gt
+
+~proc cmp|zig {
+    var ra = ratParse(koru_allocator(), a) catch @panic("std/rational:cmp: malformed operand");
+    defer ratDeinit(&ra);
+    var rb = ratParse(koru_allocator(), b) catch @panic("std/rational:cmp: malformed operand");
+    defer ratDeinit(&rb);
+    // n1*d2 vs n2*d1 — denominators are positive, cross-multiplication is
+    // sign-safe.
+    var t1 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    t1.mul(&ra.n, &rb.d) catch @panic("std/rational: out of memory");
+    defer t1.deinit();
+    var t2 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    t2.mul(&rb.n, &ra.d) catch @panic("std/rational: out of memory");
+    defer t2.deinit();
+    switch (t1.order(t2)) {
+        .lt => return .{ .lt = .{} },
+        .gt => return .{ .gt = .{} },
+        .eq => return .{ .eq = .{} },
+    }
+}
+
+// the equivalence law: canonical rats are string-equal iff equal.
+~pub tor equiv { a: string<rational>, b: string<rational> }
+| same
+| diff
+
+~proc equiv|zig {
+    if (std.mem.eql(u8, a, b)) return .{ .same = .{} };
+    return .{ .diff = .{} };
+}
+
+~pub tor is-zero { n: string<rational> }
+| zero
+| nonzero
+
+~proc is-zero|zig {
+    var r = ratParse(koru_allocator(), n) catch @panic("std/rational:is-zero: malformed operand");
+    defer ratDeinit(&r);
+    if (r.n.eqlZero()) return .{ .zero = .{} };
+    return .{ .nonzero = .{} };
+}
+
+// ============================================================================
+// Linearity management.
+// ============================================================================
+
+~pub tor dup { n: string<!rational> } -> { a: string<rational!>, b: string<rational!> }
+
+~proc dup|zig {
+    const cp = ratCopy(n);
+    return .{ .a = n, .b = cp };
+}
+
+~pub tor free { n: string<!rational> }
+
+~proc free|zig {
+    ratFree(n);
+}
+
+// canon text out as <allocated!> — discharge with std/io:free.
+~pub tor render { n: string<!rational> } -> string<std/io:allocated!>
+
+~proc render|zig {
+    return n;
+}
+
+// ============================================================================
+// Components — mint std/num Decs for n and d (borrows).
+// ============================================================================
+
+~pub tor numer { a: string<rational> } -> string<std/num:exact!>
+
+~proc numer|zig {
+    var r = ratParse(koru_allocator(), a) catch @panic("std/rational:numer: malformed operand");
+    defer ratDeinit(&r);
+    return decTextOfInt(koru_allocator(), &r.n) catch @panic("std/rational: out of memory");
+}
+
+~pub tor denom { a: string<rational> } -> string<std/num:exact!>
+
+~proc denom|zig {
+    var r = ratParse(koru_allocator(), a) catch @panic("std/rational:denom: malformed operand");
+    defer ratDeinit(&r);
+    return decTextOfInt(koru_allocator(), &r.d) catch @panic("std/rational: out of memory");
+}
+
+// ============================================================================
+// Bridges — Dec <-> Rat <-> sym text.
+// ============================================================================
+
+// Dec -> rational: exact (every decimal is rational).
+~pub tor rat-of-dec { a: string<!std/num:exact> } -> string<rational!>
+
+~proc rat-of-dec|zig {
+    defer ratFree(a);
+    var r = ratFromDecText(koru_allocator(), a) catch |err| switch (err) {
+        else => @panic("std/rational: numeric op failed"),
+    } orelse @panic("std/rational:rat-of-dec: malformed operand");
+    ratReduce(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+    defer ratDeinit(&r);
+    return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+}
+
+// rational -> Dec, truncated to `prec` significant digits (floor-magnitude —
+// the same truncation law std/num:div states). prec < 1 lands on |bad.
+~pub tor dec-of-rat { a: string<!rational>, prec: i64 }
+| exact string<std/num:exact!>
+| bad
+
+~proc dec-of-rat|zig {
+    defer ratFree(a);
+    if (prec < 1) return .{ .bad = .{} };
+    var r = ratParse(koru_allocator(), a) catch @panic("std/rational:dec-of-rat: malformed operand");
+    defer ratDeinit(&r);
+    if (r.n.eqlZero()) {
+        var zero = BI.initSet(koru_allocator(), 0) catch @panic("std/rational: out of memory");
+        defer zero.deinit();
+        return .{ .exact = decTextScaled(koru_allocator(), &zero, 0) catch @panic("std/rational: out of memory") };
+    }
+    // |n| has ln digits, d has ld digits; |n/d| has ln-ld or ln-ld+1 digits.
+    // Scale |n| by 10^k so the quotient carries >= prec digits, keep top prec.
+    var an = r.n.clone() catch @panic("std/rational: out of memory");
+    an.abs();
+    defer an.deinit();
+    const ns = an.toString(koru_allocator(), 10, .lower) catch @panic("std/rational: out of memory");
+    defer koru_allocator().free(ns);
+    const ds = r.d.toString(koru_allocator(), 10, .lower) catch @panic("std/rational: out of memory");
+    defer koru_allocator().free(ds);
+    var k: i64 = prec - @as(i64, @intCast(ns.len)) + @as(i64, @intCast(ds.len));
+    if (k < 0) k = 0;
+    var num = an.clone() catch @panic("std/rational: out of memory");
+    defer num.deinit();
+    var p = pow10(koru_allocator(), k) catch @panic("std/rational: out of memory");
+    defer p.deinit();
+    num.mul(&num, &p) catch @panic("std/rational: out of memory");
+    var q = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    defer q.deinit();
+    var rem = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    defer rem.deinit();
+    q.divTrunc(&rem, &num, &r.d) catch @panic("std/rational: out of memory");
+    var qs = q.toString(koru_allocator(), 10, .lower) catch @panic("std/rational: out of memory");
+    defer koru_allocator().free(qs);
+    // q has qs.len digits, need prec: redivide with more scale if short.
+    if (@as(i64, @intCast(qs.len)) < prec) {
+        const extra = prec - @as(i64, @intCast(qs.len));
+        var p2 = pow10(koru_allocator(), extra) catch @panic("std/rational: out of memory");
+        defer p2.deinit();
+        num.mul(&num, &p2) catch @panic("std/rational: out of memory");
+        q.divTrunc(&rem, &num, &r.d) catch @panic("std/rational: out of memory");
+        k += extra;
+        koru_allocator().free(qs);
+        qs = q.toString(koru_allocator(), 10, .lower) catch @panic("std/rational: out of memory");
+    }
+    const keep = @min(qs.len, @as(usize, @intCast(prec)));
+    const mant_digits = koru_allocator().alloc(u8, keep) catch @panic("std/rational: out of memory");
+    defer koru_allocator().free(mant_digits);
+    @memcpy(mant_digits, qs[0..keep]);
+    const neg = !r.n.isPositive();
+    var mant = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    defer mant.deinit();
+    mant.setString(10, mant_digits) catch @panic("std/rational: out of memory");
+    if (neg) mant.negate();
+    const e: i64 = @as(i64, @intCast(qs.len)) - @as(i64, @intCast(keep)) - k;
+    return .{ .exact = decTextScaled(koru_allocator(), &mant, e) catch @panic("std/rational: out of memory") };
+}
+
+// rational -> Dec exactly when the denominator factors into {2,5};
+// otherwise the refusal is named |nonterminating, not silently rounded.
+~pub tor dec-of-rat-exact { a: string<!rational> }
+| exact string<std/num:exact!>
+| nonterminating
+
+~proc dec-of-rat-exact|zig {
+    defer ratFree(a);
+    var r = ratParse(koru_allocator(), a) catch @panic("std/rational:dec-of-rat-exact: malformed operand");
+    defer ratDeinit(&r);
+    const t = decOfRatExact(koru_allocator(), &r) catch |err| switch (err) {
+        else => @panic("std/rational: numeric op failed"),
+    } orelse return .{ .nonterminating = .{} };
+    return .{ .exact = t };
+}
+
+// Wang rational reconstruction: given residue r mod m and a bound, find
+// n/d with r*d == n (mod m), |n| <= bound, 0 < d <= bound — the recovery
+// kernel behind Dixon-style modular solves. Inputs are integer Decs;
+// m > 1 and bound > 0 required. |none when no candidate exists inside
+// the bound; the returned witness is verified before issue.
+~pub tor rat-recon { r: string<!std/num:exact>, m: string<!std/num:exact>, bound: string<!std/num:exact> }
+| exact string<rational!>
+| none
+| bad
+
+~proc rat-recon|zig {
+    defer ratFree(r);
+    defer ratFree(m);
+    defer ratFree(bound);
+    var rm = (intFromDecText(koru_allocator(), m) catch @panic("std/rational: out of memory")) orelse return .{ .bad = .{} };
+    defer rm.deinit();
+    var bd = (intFromDecText(koru_allocator(), bound) catch @panic("std/rational: out of memory")) orelse return .{ .bad = .{} };
+    defer bd.deinit();
+    var rr = (intFromDecText(koru_allocator(), r) catch @panic("std/rational: out of memory")) orelse return .{ .bad = .{} };
+    defer rr.deinit();
+    var one = BI.initSet(koru_allocator(), 1) catch @panic("std/rational: out of memory");
+    defer one.deinit();
+    if (rm.order(one) != .gt or !bd.isPositive()) return .{ .bad = .{} };
+    // reduce r mod m into [0, m)
+    var q0 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    var r_mod = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    q0.divFloor(&r_mod, &rr, &rm) catch @panic("std/rational: out of memory");
+    q0.deinit();
+    defer r_mod.deinit();
+    if (r_mod.eqlZero()) {
+        var z = Rat{
+            .n = BI.initSet(koru_allocator(), 0) catch @panic("std/rational: out of memory"),
+            .d = BI.initSet(koru_allocator(), 1) catch @panic("std/rational: out of memory"),
+        };
+        defer ratDeinit(&z);
+        return .{ .exact = ratEmit(koru_allocator(), &z) catch @panic("std/rational: out of memory") };
+    }
+    // half-extended Euclid on (m, r_mod): track t with rem_i == t_i * r (mod m)
+    var rem0 = rm.clone() catch @panic("std/rational: out of memory");
+    defer rem0.deinit();
+    var rem1 = r_mod.clone() catch @panic("std/rational: out of memory");
+    defer rem1.deinit();
+    var t0 = BI.initSet(koru_allocator(), 0) catch @panic("std/rational: out of memory");
+    defer t0.deinit();
+    var t1 = BI.initSet(koru_allocator(), 1) catch @panic("std/rational: out of memory");
+    defer t1.deinit();
+    while (rem1.order(bd) == .gt and !rem1.eqlZero()) {
+        var q = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+        var nrem = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+        q.divTrunc(&nrem, &rem0, &rem1) catch @panic("std/rational: out of memory");
+        // t_new = t0 - q*t1
+        var qt = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+        qt.mul(&q, &t1) catch @panic("std/rational: out of memory");
+        q.deinit();
+        var tnew = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+        tnew.sub(&t0, &qt) catch @panic("std/rational: out of memory");
+        qt.deinit();
+        t0.deinit();
+        t0 = t1;
+        t1 = tnew;
+        rem0.deinit();
+        rem0 = rem1;
+        rem1 = nrem;
+    }
+    // candidate n = rem1, d = t1 — require 0 < |d| <= bound, gcd(|n|,|d|) = 1,
+    // and the witness r*d == n (mod m).
+    if (rem1.eqlZero() or t1.eqlZero()) return .{ .none = .{} };
+    var ta = t1.clone() catch @panic("std/rational: out of memory");
+    ta.abs();
+    defer ta.deinit();
+    if (ta.order(bd) == .gt) return .{ .none = .{} };
+    var g = biGcd(koru_allocator(), &rem1, &t1) catch @panic("std/rational: out of memory");
+    defer g.deinit();
+    if (!g.eql(one)) return .{ .none = .{} };
+    // witness: r_mod * d == n (mod m) — invariant by construction; verify
+    // anyway before issuing (recon is only honest with its check).
+    var lhs = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    lhs.mul(&r_mod, &t1) catch @panic("std/rational: out of memory");
+    defer lhs.deinit();
+    var qv = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    var lmod = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    qv.divFloor(&lmod, &lhs, &rm) catch @panic("std/rational: out of memory");
+    qv.deinit();
+    defer lmod.deinit();
+    var qw = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    var nmod = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
+    qw.divFloor(&nmod, &rem1, &rm) catch @panic("std/rational: out of memory");
+    qw.deinit();
+    defer nmod.deinit();
+    if (!lmod.eql(nmod)) return .{ .none = .{} };
+    var res = Rat{
+        .n = rem1.clone() catch @panic("std/rational: out of memory"),
+        .d = t1.clone() catch @panic("std/rational: out of memory"),
+    };
+    if (!res.d.isPositive()) {
+        res.n.negate();
+        res.d.abs();
+    }
+    ratReduce(koru_allocator(), &res) catch @panic("std/rational: out of memory");
+    defer ratDeinit(&res);
+    return .{ .exact = ratEmit(koru_allocator(), &res) catch @panic("std/rational: out of memory") };
+}
+
+// rational -> sym canon text (<allocated!>): denominators that factor into
+// {2,5} render as the exact decimal (sym's own inv-fold); others emit
+// (n*inv(d)) — coefficient drops when n is +/-1, matching sym's canon.
+// Gate through std/sym:lit to re-enter <sexpr!>.
+~pub tor sym-of-rat { a: string<!rational> } -> string<std/io:allocated!>
+
+~proc sym-of-rat|zig {
+    defer ratFree(a);
+    var r = ratParse(koru_allocator(), a) catch @panic("std/rational:sym-of-rat: malformed operand");
+    defer ratDeinit(&r);
+    var one = BI.initSet(koru_allocator(), 1) catch @panic("std/rational: out of memory");
+    defer one.deinit();
+    if (r.d.eql(one)) {
+        return decTextOfInt(koru_allocator(), &r.n) catch @panic("std/rational: out of memory");
+    }
+    if (decOfRatExact(koru_allocator(), &r) catch @panic("std/rational: out of memory")) |exact_dec| {
+        return exact_dec;
+    }
+    const d_txt = decTextOfInt(koru_allocator(), &r.d) catch @panic("std/rational: out of memory");
+    defer koru_allocator().free(d_txt);
+    if (r.n.eql(one)) {
+        return std.fmt.allocPrint(koru_allocator(), "inv({s})", .{d_txt}) catch @panic("std/rational: out of memory");
+    }
+    var an = r.n.clone() catch @panic("std/rational: out of memory");
+    an.abs();
+    defer an.deinit();
+    const n_txt = decTextOfInt(koru_allocator(), &an) catch @panic("std/rational: out of memory");
+    defer koru_allocator().free(n_txt);
+    if (r.n.isPositive()) {
+        return std.fmt.allocPrint(koru_allocator(), "({s}*inv({s}))", .{ n_txt, d_txt }) catch @panic("std/rational: out of memory");
+    }
+    var none = BI.initSet(koru_allocator(), -1) catch @panic("std/rational: out of memory");
+    defer none.deinit();
+    if (r.n.eql(none)) {
+        return std.fmt.allocPrint(koru_allocator(), "(-1e0*inv({s}))", .{d_txt}) catch @panic("std/rational: out of memory");
+    }
+    return std.fmt.allocPrint(koru_allocator(), "(-{s}*inv({s}))", .{ n_txt, d_txt }) catch @panic("std/rational: out of memory");
+}
+
+// sym canon -> rational: accepts bare dec, inv(dec), (dec*inv(dec)) —
+// the only sym-canon shapes that name a rational. Anything else (atoms,
+// sqrt, sums) is not a rational and lands on |bad with the buffer back
+// as <allocated!>.
+~pub tor rat-of-sym { s: string<std/sym:!sexpr> }
+| exact string<rational!>
+| bad string<std/io:allocated!>
+
+~proc rat-of-sym|zig {
+    const alloc = koru_allocator();
+    var out: ?Rat = null;
+    if (std.mem.startsWith(u8, s, "inv(") and std.mem.endsWith(u8, s, ")")) {
+        const inner = s[4 .. s.len - 1];
+        if (ratFromDecText(alloc, inner) catch @panic("std/rational: out of memory")) |dv| {
+            var dvv = dv;
+            defer ratDeinit(&dvv);
+            var one2 = BI.initSet(alloc, 1) catch @panic("std/rational: out of memory");
+            defer one2.deinit();
+            if (dvv.d.eql(one2) and dvv.d.isPositive()) {
+                var r = Rat{
+                    .n = BI.initSet(alloc, 1) catch @panic("std/rational: out of memory"),
+                    .d = dvv.n.clone() catch @panic("std/rational: out of memory"),
+                };
+                if (!r.d.isPositive()) {
+                    r.n.negate();
+                    r.d.abs();
+                }
+                ratReduce(alloc, &r) catch @panic("std/rational: out of memory");
+                out = r;
+            }
+        }
+    } else if (std.mem.startsWith(u8, s, "(") and std.mem.endsWith(u8, s, ")") and
+        std.mem.indexOf(u8, s, "*inv(") != null)
+    {
+        const body = s[1 .. s.len - 1];
+        const star = std.mem.indexOf(u8, body, "*inv(").?;
+        const ct = body[0..star];
+        const dt = body[star + 5 .. body.len - 1];
+        if (ratFromDecText(alloc, ct) catch @panic("std/rational: out of memory")) |cv| {
+            var cvv = cv;
+            defer ratDeinit(&cvv);
+            if (ratFromDecText(alloc, dt) catch @panic("std/rational: out of memory")) |dv| {
+                var dvv = dv;
+                defer ratDeinit(&dvv);
+                var one3 = BI.initSet(alloc, 1) catch @panic("std/rational: out of memory");
+                defer one3.deinit();
+                if (cvv.d.eql(one3) and dvv.d.eql(one3) and dvv.n.isPositive()) {
+                    var r = Rat{
+                        .n = cvv.n.clone() catch @panic("std/rational: out of memory"),
+                        .d = dvv.n.clone() catch @panic("std/rational: out of memory"),
+                    };
+                    ratReduce(alloc, &r) catch @panic("std/rational: out of memory");
+                    out = r;
+                }
+            }
+        }
+    } else {
+        if (ratFromDecText(alloc, s) catch @panic("std/rational: out of memory")) |rv| {
+            var rvv = rv;
+            ratReduce(alloc, &rvv) catch @panic("std/rational: out of memory");
+            out = rvv;
+        }
+    }
+    if (out) |*r| {
+        defer ratDeinit(r);
+        ratFree(s);
+        return .{ .exact = ratEmit(alloc, r) catch @panic("std/rational: out of memory") };
+    }
+    return .{ .bad = s };
+}

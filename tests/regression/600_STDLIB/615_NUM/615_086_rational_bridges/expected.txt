@@ -1,0 +1,13 @@
+3.3333333e-1
+2.5e-1
+nonterm
+rat:v1;5;4
+(2e0*inv(3e0))
+inv(1.5e1)
+(-4e0*inv(7e0))
+rat:v1;7;11
+rat:v1;1;2
+rat:v1;1;2
+bad-sym
+rat:v1;5;7
+none
