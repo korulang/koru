@@ -15,7 +15,14 @@
 //   solve-dixon  the p-adic engine — mod-p elimination, Hensel lift,
 //                rat-recon per entry, witness-verified in Q (no Hadamard
 //                bound: the lift stops when the candidate verifies)
+//   kernel    A -> null vector | singular | bad-dims   RREF over Q, last
+//                free column = 1 — |singular names the trivial kernel
 //   identity n -> I_n    dup/free/render/equiv/is-zero
+//   ingest s -> <external!>   canon text -> boundary; parse closes the loop
+//                (<*> borrows any qualification, copies)
+//   ingest-owned  consumes <std/io:!allocated> — the bang spells inside the
+//                namespaced tag: a foreign obligation IS consumable when
+//                its disposer home is named
 //
 // Engine order (the inbox note's ruling): Bareiss first — fraction-free
 // elimination, every intermediate an exact minor, pivots divided exactly.
@@ -55,6 +62,31 @@ fn mCopy(s: []const u8) []u8 {
 fn ratDeinit(r: *Rat) void {
     r.n.deinit();
     r.d.deinit();
+}
+
+fn ratClone(r: *const Rat) !Rat {
+    return .{ .n = try r.n.clone(), .d = try r.d.clone() };
+}
+
+fn ratNeg(r: *const Rat) !Rat {
+    var x = try ratClone(r);
+    errdefer ratDeinit(&x);
+    x.n.negate();
+    return x;
+}
+
+fn ratInv(r: *const Rat) !Rat {
+    var x = Rat{ .n = try r.d.clone(), .d = try r.n.clone() };
+    errdefer ratDeinit(&x);
+    if (!x.d.isPositive()) {
+        x.n.negate();
+        x.d.abs();
+    }
+    return x;
+}
+
+fn ratFromInt(alloc: std.mem.Allocator, v: i64) !Rat {
+    return .{ .n = try BI.initSet(alloc, v), .d = try BI.initSet(alloc, 1) };
 }
 
 fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
@@ -747,13 +779,13 @@ fn matInvModP(alloc: std.mem.Allocator, a: []const BI, n: usize, p: *const BI) !
 // Boundary + literals
 // ============================================================================
 
-~pub tor ingest { s: string } -> string<external!>
+~pub tor ingest { s: string<*> } -> string<external!>
 
 ~proc ingest|zig {
     return mCopy(s);
 }
 
-~pub tor ingest-owned { s: string<!allocated> } -> string<external!>
+~pub tor ingest-owned { s: string<std/io:!allocated> } -> string<external!>
 
 ~proc ingest-owned|zig {
     return s;
@@ -1015,6 +1047,97 @@ fn matInvModP(alloc: std.mem.Allocator, a: []const BI, n: usize, p: *const BI) !
 // solve A X = B: A n x n, B n x k. Augment [Z|C] with per-row denom
 // clearing, Bareiss-eliminate, then x_ij = aug'_ij(n+..) / detZ — the
 // fraction-free Cramer readout.
+
+// ============================================================================
+// kernel — the null-space solve supgen actually needs: one vector x with
+// A*x = 0, RREF over Rat cells, last free column set to 1 (a canonical
+// representative — kernel dim > 1 still yields a concrete vector).
+// | singular names the trivial kernel (rank = ncols); rectangular is
+// the whole point — underdetermined systems are the use case.
+// ============================================================================
+
+~pub tor kernel { a: string<!mat> }
+| exact string<mat!>
+| singular
+| bad-dims
+
+~proc kernel|zig {
+    defer mFree(a);
+    var m = matParse(koru_allocator(), a) catch @panic("std/linalg:kernel: malformed operand");
+    defer matFree(koru_allocator(), &m);
+    const M = m.r;
+    const U = m.c;
+    if (U < 2) return .{ .bad_dims = .{} };
+    var piv_of_col = koru_allocator().alloc(isize, U) catch @panic("std/linalg: out of memory");
+    defer koru_allocator().free(piv_of_col);
+    for (piv_of_col) |*x| x.* = -1;
+    var r: usize = 0;
+    var c: usize = 0;
+    while (c < U and r < M) : (c += 1) {
+        var piv: ?usize = null;
+        var i = r;
+        while (i < M) : (i += 1) {
+            if (!ratIsZero(&m.e[i * U + c])) { piv = i; break; }
+        }
+        if (piv == null) continue;
+        if (piv.? != r) {
+            var j: usize = 0;
+            while (j < U) : (j += 1) {
+                const t = m.e[r * U + j];
+                m.e[r * U + j] = m.e[piv.? * U + j];
+                m.e[piv.? * U + j] = t;
+            }
+        }
+        var inv = ratInv(&m.e[r * U + c]) catch @panic("std/linalg: out of memory");
+        defer ratDeinit(&inv);
+        var j2: usize = 0;
+        while (j2 < U) : (j2 += 1) {
+            if (ratIsZero(&m.e[r * U + j2])) continue;
+            const v = ratMul(koru_allocator(), &m.e[r * U + j2], &inv) catch @panic("std/linalg: out of memory");
+            ratDeinit(&m.e[r * U + j2]);
+            m.e[r * U + j2] = v;
+        }
+        var ri: usize = 0;
+        while (ri < M) : (ri += 1) {
+            if (ri == r or ratIsZero(&m.e[ri * U + c])) continue;
+            var f = ratClone(&m.e[ri * U + c]) catch @panic("std/linalg: out of memory");
+            defer ratDeinit(&f);
+            var j3: usize = 0;
+            while (j3 < U) : (j3 += 1) {
+                if (ratIsZero(&m.e[r * U + j3])) continue;
+                var tm = ratMul(koru_allocator(), &f, &m.e[r * U + j3]) catch @panic("std/linalg: out of memory");
+                defer ratDeinit(&tm);
+                const v = ratSub(koru_allocator(), &m.e[ri * U + j3], &tm) catch @panic("std/linalg: out of memory");
+                ratDeinit(&m.e[ri * U + j3]);
+                m.e[ri * U + j3] = v;
+            }
+        }
+        piv_of_col[c] = @intCast(r);
+        r += 1;
+    }
+    if (r == U) return .{ .singular = .{} };
+    var freecol: usize = 0;
+    var c2: usize = U;
+    while (c2 > 0) {
+        c2 -= 1;
+        if (piv_of_col[c2] == -1) { freecol = c2; break; }
+    }
+    var xe = koru_allocator().alloc(Rat, U) catch @panic("std/linalg: out of memory");
+    errdefer koru_allocator().free(xe);
+    var ii: usize = 0;
+    while (ii < U) : (ii += 1) {
+        if (piv_of_col[ii] == -1) {
+            xe[ii] = ratFromInt(koru_allocator(), if (ii == freecol) 1 else 0) catch @panic("std/linalg: out of memory");
+        } else {
+            const pr: usize = @intCast(piv_of_col[ii]);
+            xe[ii] = ratNeg(&m.e[pr * U + freecol]) catch @panic("std/linalg: out of memory");
+        }
+    }
+    var xm = Mat{ .r = U, .c = 1, .e = xe };
+    defer matFree(koru_allocator(), &xm);
+    return .{ .exact = matEmit(koru_allocator(), &xm) catch @panic("std/linalg: out of memory") };
+}
+
 ~pub tor solve { a: string<!mat>, b: string<!mat> }
 | exact string<mat!>
 | singular

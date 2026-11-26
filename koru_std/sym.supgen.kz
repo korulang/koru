@@ -19,6 +19,14 @@
 // law body p0=[..]|p1=[..] for an abstract/opaque generator;
 // cert-shift is integralShift — if g satisfies cert c and
 // deriv h = g, h satisfies shift(c): order+1, p0 := [0], pk := c.p(k-1).
+//
+// The public pipeline (derive-ode decomposed at tor boundaries):
+// residual-sys emits the residual block as canon mats z (solve rows) +
+// w (held-out witness rows); std/linalg:kernel solves the null space;
+// mul + is-zero is the witness; cert-of-kernel integerizes and emits
+// the certificate. derive-ode stays the all-in-one convenience — the
+// composed path and the internal path share seriesDerivs/residualBlock/
+// certEmit, so they emit identically by construction (615_090).
 
 const Rat = struct { n: BI, d: BI }; // d > 0, gcd(|n|, d) = 1; zero is 0/1
 
@@ -580,25 +588,23 @@ fn rrefNullVec(alloc: std.mem.Allocator, rows: [][]Rat, ncols: usize) !?[]Rat {
     return x;
 }
 
-fn symDeriveOde(alloc: std.mem.Allocator, a: []const u8, max_order: i64, max_deg: i64) !?[]u8 {
+// derivative rows of f's series at x=0: fder[k][n] = ser[n+k] *
+// prod_{i=1..k}(n+i) — k = 0..K, n = 0..L-1. Null when f is identically
+// zero (no useful certificate).
+fn seriesDerivs(alloc: std.mem.Allocator, a: []const u8, K: usize, L: usize) !?[][]Rat {
     const t = try parseTree(alloc, a);
     defer nodeFree(alloc, t);
     const nt = try norm(alloc, t);
     defer nodeFree(alloc, nt);
-    const K = @as(usize, @intCast(max_order));
-    const D = @as(usize, @intCast(max_deg));
-    const U_max = (K + 1) * (D + 1);
-    const L: usize = U_max + 8 + 8 + 5 + K + 2;
     const ser = try serFromNode(alloc, nt, L);
     defer serFree(alloc, ser);
-    // derivative series: fder[k][n] = ser[n+k] * prod_{i=1..k}(n+i)
     var fder = try alloc.alloc([]Rat, K + 1);
     var fdn: usize = 0;
     errdefer {
         for (fder[0..fdn]) |row| serFree(alloc, row);
         alloc.free(fder);
     }
-    defer alloc.free(fder);
+    errdefer alloc.free(fder);
     for (0..K + 1) |k| {
         fder[k] = try alloc.alloc(Rat, L);
         var nn: usize = 0;
@@ -618,14 +624,75 @@ fn symDeriveOde(alloc: std.mem.Allocator, a: []const u8, max_order: i64, max_deg
         }
         fdn += 1;
     }
-    defer for (fder[0 .. K + 1]) |row| serFree(alloc, row);
-
-    // f identically zero -> no useful certificate
     var any = false;
     for (ser) |*c| {
         if (!ratIsZero(c)) { any = true; break; }
     }
-    if (!any) return null;
+    if (!any) {
+        for (fder[0 .. K + 1]) |row| serFree(alloc, row);
+        alloc.free(fder);
+        return null;
+    }
+    return fder;
+}
+
+fn fderFree(alloc: std.mem.Allocator, fder: [][]Rat) void {
+    for (fder) |row| serFree(alloc, row);
+    alloc.free(fder);
+}
+
+// the residual block for a fixed (order K, degree D): R = M+V rows of U =
+// (K+1)(D+1) Rat coefficients. Row n holds fder[k][n-j] at column
+// k*(D+1)+j — the series-coefficient linearization of
+// sum_k p_k(x) f^(k)(x) = 0.
+fn residualBlock(alloc: std.mem.Allocator, fder: [][]Rat, K: usize, D: usize, M: usize, V: usize) ![][]Rat {
+    const U = (K + 1) * (D + 1);
+    const R = M + V;
+    var rows = try alloc.alloc([]Rat, R);
+    var rn: usize = 0;
+    errdefer {
+        for (rows[0..rn]) |row| {
+            for (row) |*c| ratDeinit(c);
+            alloc.free(row);
+        }
+        alloc.free(rows);
+    }
+    while (rn < R) : (rn += 1) {
+        rows[rn] = try alloc.alloc(Rat, U);
+        var uu: usize = 0;
+        errdefer {
+            for (rows[rn][0..uu]) |*c| ratDeinit(c);
+            alloc.free(rows[rn]);
+        }
+        while (uu < U) : (uu += 1) {
+            const kk = uu / (D + 1);
+            const jj = uu % (D + 1);
+            const idx = @as(i64, @intCast(rn)) - @as(i64, @intCast(jj));
+            if (idx < 0) {
+                rows[rn][uu] = try ratFromInt(alloc, 0);
+            } else {
+                rows[rn][uu] = try ratClone(&fder[kk][@intCast(idx)]);
+            }
+        }
+    }
+    return rows;
+}
+
+fn rowsFree(alloc: std.mem.Allocator, rows: [][]Rat) void {
+    for (rows) |row| {
+        for (row) |*c| ratDeinit(c);
+        alloc.free(row);
+    }
+    alloc.free(rows);
+}
+
+fn symDeriveOde(alloc: std.mem.Allocator, a: []const u8, max_order: i64, max_deg: i64) !?[]u8 {
+    const K = @as(usize, @intCast(max_order));
+    const D = @as(usize, @intCast(max_deg));
+    const U_max = (K + 1) * (D + 1);
+    const L: usize = U_max + 8 + 8 + 5 + K + 2;
+    const fder = (try seriesDerivs(alloc, a, K, L)) orelse return null;
+    defer fderFree(alloc, fder);
 
     var Kcur: usize = 0;
     while (Kcur <= K) : (Kcur += 1) {
@@ -637,40 +704,8 @@ fn symDeriveOde(alloc: std.mem.Allocator, a: []const u8, max_order: i64, max_deg
             if (M + V + Kcur > L) continue;
             // rows for n = 0..M+V-1; solve uses first M, all M+V verified after
             const R = M + V;
-            var rows = try alloc.alloc([]Rat, R);
-            var rn: usize = 0;
-            errdefer {
-                for (rows[0..rn]) |row| {
-                    for (row) |*c| ratDeinit(c);
-                    alloc.free(row);
-                }
-                alloc.free(rows);
-            }
-            while (rn < R) : (rn += 1) {
-                rows[rn] = try alloc.alloc(Rat, U);
-                var uu: usize = 0;
-                errdefer {
-                    for (rows[rn][0..uu]) |*c| ratDeinit(c);
-                    alloc.free(rows[rn]);
-                }
-                while (uu < U) : (uu += 1) {
-                    const kk = uu / (Dcur + 1);
-                    const jj = uu % (Dcur + 1);
-                    const idx = @as(i64, @intCast(rn)) - @as(i64, @intCast(jj));
-                    if (idx < 0) {
-                        rows[rn][uu] = try ratFromInt(alloc, 0);
-                    } else {
-                        rows[rn][uu] = try ratClone(&fder[kk][@intCast(idx)]);
-                    }
-                }
-            }
-            defer {
-                for (rows[0..R]) |row| {
-                    for (row) |*c| ratDeinit(c);
-                    alloc.free(row);
-                }
-                alloc.free(rows);
-            }
+            const rows = try residualBlock(alloc, fder, Kcur, Dcur, M, V);
+            defer rowsFree(alloc, rows);
             // solve on first M rows
             const x = (try rrefNullVec(alloc, rows[0..M], U)) orelse continue;
             defer {
@@ -693,81 +728,202 @@ fn symDeriveOde(alloc: std.mem.Allocator, a: []const u8, max_order: i64, max_deg
                 if (!ratIsZero(&acc)) { ok = false; break; }
             }
             if (!ok) continue;
-            // integerize: lcm of denominators, then divide by content gcd
-            var l = try BI.initSet(alloc, 1);
-            defer l.deinit();
-            for (x) |*v| {
-                var g = try biGcd(alloc, &l, &v.d);
-                defer g.deinit();
-                var q = try BI.init(alloc);
-                var r2 = try BI.init(alloc);
-                try q.divTrunc(&r2, &v.d, &g);
-                r2.deinit();
-                var nl = try BI.init(alloc);
-                try nl.mul(&l, &q);
-                q.deinit();
-                l.deinit();
-                l = nl;
-            }
-            var ints = try alloc.alloc(BI, U);
-            var nint: usize = 0;
-            defer {
-                for (ints[0..nint]) |*v| v.deinit();
-                alloc.free(ints);
-            }
-            while (nint < U) : (nint += 1) {
-                var q = try BI.init(alloc);
-                var r2 = try BI.init(alloc);
-                try q.divTrunc(&r2, &l, &x[nint].d);
-                r2.deinit();
-                ints[nint] = try BI.init(alloc);
-                try ints[nint].mul(&x[nint].n, &q);
-                q.deinit();
-            }
-            var cg = try ints[0].clone();
-            defer cg.deinit();
-            cg.abs();
-            for (ints[1..]) |*v| {
-                var va = try v.clone();
-                defer va.deinit();
-                va.abs();
-                const g2 = try biGcd(alloc, &cg, &va);
-                cg.deinit();
-                cg = g2;
-            }
-            if (!cg.eqlZero() and cg.toConst().orderAgainstScalar(@as(u64, 1)) != .eq) {
-                for (ints) |*v| {
-                    var q = try BI.init(alloc);
-                    var r2 = try BI.init(alloc);
-                    try q.divTrunc(&r2, v, &cg);
-                    r2.deinit();
-                    v.deinit();
-                    v.* = q;
-                }
-            }
-            var out = std.ArrayList(u8){};
-            errdefer out.deinit(alloc);
-            const hdr = std.fmt.allocPrint(alloc, "ode(k={d},d={d},verified={d})", .{ Kcur, Dcur, R }) catch return error.OutOfMemory;
-            defer alloc.free(hdr);
-            try out.appendSlice(alloc, hdr);
-            var k2: usize = 0;
-            while (k2 <= Kcur) : (k2 += 1) {
-                const tag = std.fmt.allocPrint(alloc, "|p{d}=[", .{k2}) catch return error.OutOfMemory;
-                defer alloc.free(tag);
-                try out.appendSlice(alloc, tag);
-                var j2: usize = 0;
-                while (j2 <= Dcur) : (j2 += 1) {
-                    if (j2 > 0) try out.append(alloc, ',');
-                    const cs = try ints[k2 * (Dcur + 1) + j2].toString(alloc, 10, .lower);
-                    defer alloc.free(cs);
-                    try out.appendSlice(alloc, cs);
-                }
-                try out.append(alloc, ']');
-            }
-            return try out.toOwnedSlice(alloc);
+            return try certEmit(alloc, x, Kcur, Dcur, R);
         }
     }
     return null;
+}
+
+// integerize a kernel vector (lcm of denominators, content-gcd strip)
+// and emit the certificate string — shared by derive-ode and the public
+// cert-of-kernel tor. `verified` records the witness row count.
+fn certEmit(alloc: std.mem.Allocator, x: []Rat, Kcur: usize, Dcur: usize, verified: usize) ![]u8 {
+    const U = x.len;
+    var l = try BI.initSet(alloc, 1);
+    defer l.deinit();
+    for (x) |*v| {
+        var g = try biGcd(alloc, &l, &v.d);
+        defer g.deinit();
+        var q = try BI.init(alloc);
+        var r2 = try BI.init(alloc);
+        try q.divTrunc(&r2, &v.d, &g);
+        r2.deinit();
+        var nl = try BI.init(alloc);
+        try nl.mul(&l, &q);
+        q.deinit();
+        l.deinit();
+        l = nl;
+    }
+    var ints = try alloc.alloc(BI, U);
+    var nint: usize = 0;
+    defer {
+        for (ints[0..nint]) |*v| v.deinit();
+        alloc.free(ints);
+    }
+    while (nint < U) : (nint += 1) {
+        var q = try BI.init(alloc);
+        var r2 = try BI.init(alloc);
+        try q.divTrunc(&r2, &l, &x[nint].d);
+        r2.deinit();
+        ints[nint] = try BI.init(alloc);
+        try ints[nint].mul(&x[nint].n, &q);
+        q.deinit();
+    }
+    var cg = try ints[0].clone();
+    defer cg.deinit();
+    cg.abs();
+    for (ints[1..]) |*v| {
+        var va = try v.clone();
+        defer va.deinit();
+        va.abs();
+        const g2 = try biGcd(alloc, &cg, &va);
+        cg.deinit();
+        cg = g2;
+    }
+    if (!cg.eqlZero() and cg.toConst().orderAgainstScalar(@as(u64, 1)) != .eq) {
+        for (ints) |*v| {
+            var q = try BI.init(alloc);
+            var r2 = try BI.init(alloc);
+            try q.divTrunc(&r2, v, &cg);
+            r2.deinit();
+            v.deinit();
+            v.* = q;
+        }
+    }
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    const hdr = std.fmt.allocPrint(alloc, "ode(k={d},d={d},verified={d})", .{ Kcur, Dcur, verified }) catch return error.OutOfMemory;
+    defer alloc.free(hdr);
+    try out.appendSlice(alloc, hdr);
+    var k2: usize = 0;
+    while (k2 <= Kcur) : (k2 += 1) {
+        const tag = std.fmt.allocPrint(alloc, "|p{d}=[", .{k2}) catch return error.OutOfMemory;
+        defer alloc.free(tag);
+        try out.appendSlice(alloc, tag);
+        var j2: usize = 0;
+        while (j2 <= Dcur) : (j2 += 1) {
+            if (j2 > 0) try out.append(alloc, ',');
+            const cs = try ints[k2 * (Dcur + 1) + j2].toString(alloc, 10, .lower);
+            defer alloc.free(cs);
+            try out.appendSlice(alloc, cs);
+        }
+        try out.append(alloc, ']');
+    }
+    return try out.toOwnedSlice(alloc);
+}
+
+// emit a [][]Rat row block as mat:v1 canon text — the string IS the
+// interface: sym hands data to linalg without touching its zig scope.
+fn ratMatEmit(alloc: std.mem.Allocator, rows: [][]Rat, roff: usize, rcount: usize, u: usize) ![]u8 {
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    const hdr = std.fmt.allocPrint(alloc, "mat:v1;{d};{d}", .{ rcount, u }) catch return error.OutOfMemory;
+    defer alloc.free(hdr);
+    try out.appendSlice(alloc, hdr);
+    var i: usize = 0;
+    while (i < rcount) : (i += 1) {
+        var j: usize = 0;
+        while (j < u) : (j += 1) {
+            const cell = rows[roff + i][j];
+            const ns = try cell.n.toString(alloc, 10, .lower);
+            defer alloc.free(ns);
+            const ds = try cell.d.toString(alloc, 10, .lower);
+            defer alloc.free(ds);
+            try out.append(alloc, ';');
+            try out.appendSlice(alloc, ns);
+            try out.append(alloc, ':');
+            try out.appendSlice(alloc, ds);
+        }
+    }
+    return try out.toOwnedSlice(alloc);
+}
+
+// "n:d" -> Rat (reduced via ratNorm). Manual ownership: setString failures
+// free what was allocated; ratNorm consumes on success.
+fn ratFromPair(alloc: std.mem.Allocator, s: []const u8) !?Rat {
+    const idx = std.mem.indexOfScalar(u8, s, ':') orelse return null;
+    var n = BI.init(alloc) catch return error.OutOfMemory;
+    n.setString(10, s[0..idx]) catch {
+        n.deinit();
+        return error.OutOfMemory;
+    };
+    var d = BI.init(alloc) catch {
+        n.deinit();
+        return error.OutOfMemory;
+    };
+    d.setString(10, s[idx + 1 ..]) catch {
+        d.deinit();
+        n.deinit();
+        return error.OutOfMemory;
+    };
+    return try ratNorm(alloc, n, d);
+}
+
+// ============================================================================
+// The public pipeline — derive-ode's internals exposed at tor boundaries.
+// residual-sys emits the residual block as canon mats: z = first M solve
+// rows, w = last V held-out witness rows. The solve itself is std/linalg:
+// `kernel(Z)` gives a null vector, `mul(W, x)` + `is-zero` is the witness,
+// `cert-of-kernel` integerizes and emits the certificate. derive-ode stays
+// the all-in-one convenience; these are the composable pieces.
+// ============================================================================
+
+~pub tor residual-sys { a: string<!sexpr>, order: i64, deg: i64 }
+| exact { z: string<std/io:allocated!>, w: string<std/io:allocated!> }
+| non-analytic
+| non-rational
+| bad
+
+~proc residual-sys|zig {
+    defer symFree(a);
+    if (order < 0 or order > 8 or deg < 0 or deg > 12) return .{ .bad = .{} };
+    const K = @as(usize, @intCast(order));
+    const D = @as(usize, @intCast(deg));
+    const U = (K + 1) * (D + 1);
+    const M = U + 8;
+    const V: usize = 13;
+    const L: usize = U + 8 + 8 + 5 + K + 2 + 13;
+    const fder = (seriesDerivs(koru_allocator(), a, K, L) catch @panic("std/sym: out of memory")) orelse return .{ .bad = .{} };
+    defer fderFree(koru_allocator(), fder);
+    const rows = residualBlock(koru_allocator(), fder, K, D, M, V) catch @panic("std/sym: out of memory");
+    defer rowsFree(koru_allocator(), rows);
+    const z = ratMatEmit(koru_allocator(), rows, 0, M, U) catch @panic("std/sym: out of memory");
+    const w = ratMatEmit(koru_allocator(), rows, M, V, U) catch @panic("std/sym: out of memory");
+    return .{ .exact = .{ .z = z, .w = w } };
+}
+
+// cert-of-kernel { x, order, deg, verified } — integerize a kernel vector
+// and emit the certificate. x arrives as canon text (mat:v1;U;1;...) —
+// the canon string is the interface. <*> borrows; caller keeps custody.
+~pub tor cert-of-kernel { x: string<*>, order: i64, deg: i64, verified: i64 }
+| exact string<std/io:allocated!>
+| bad
+
+~proc cert-of-kernel|zig {
+    if (order < 0 or order > 8 or deg < 0 or deg > 12 or verified < 0) return .{ .bad = .{} };
+    const K = @as(usize, @intCast(order));
+    const D = @as(usize, @intCast(deg));
+    const U = (K + 1) * (D + 1);
+    if (!std.mem.startsWith(u8, x, "mat:v1;")) return .{ .bad = .{} };
+    var it = std.mem.splitScalar(u8, x["mat:v1;".len..], ';');
+    const rs = it.next() orelse return .{ .bad = .{} };
+    const cs = it.next() orelse return .{ .bad = .{} };
+    const rr = std.fmt.parseInt(usize, rs, 10) catch return .{ .bad = .{} };
+    const cc = std.fmt.parseInt(usize, cs, 10) catch return .{ .bad = .{} };
+    if (rr != U or cc != 1) return .{ .bad = .{} };
+    var cells = koru_allocator().alloc(Rat, U) catch @panic("std/sym: out of memory");
+    var ci: usize = 0;
+    defer {
+        for (cells[0..ci]) |*c| ratDeinit(c);
+        koru_allocator().free(cells);
+    }
+    while (ci < U) : (ci += 1) {
+        const pair = it.next() orelse return .{ .bad = .{} };
+        cells[ci] = (ratFromPair(koru_allocator(), pair) catch @panic("std/sym: out of memory")) orelse return .{ .bad = .{} };
+    }
+    if (it.next() != null) return .{ .bad = .{} };
+    const cert = certEmit(koru_allocator(), cells, K, D, @intCast(verified)) catch @panic("std/sym: out of memory");
+    return .{ .exact = cert };
 }
 
 // Series of a canonical sexpr at x=0 — `terms` coefficients as
