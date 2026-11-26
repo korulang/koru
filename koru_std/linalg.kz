@@ -175,6 +175,43 @@ fn ratSub(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
     return ratAdd(alloc, a, &nb);
 }
 
+
+// unreduced variants for accumulation loops: canon equality only needs
+// reduced cells at emit, so inner sums skip the per-op gcd and reduce
+// once per output cell.
+fn ratAddRaw(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var t1 = try a.n.clone();
+    errdefer t1.deinit();
+    try t1.mul(&t1, &b.d);
+    var t2 = try b.n.clone();
+    errdefer t2.deinit();
+    try t2.mul(&t2, &a.d);
+    var r = Rat{ .n = try BI.init(alloc), .d = try BI.init(alloc) };
+    errdefer ratDeinit(&r);
+    try r.n.add(&t1, &t2);
+    try r.d.mul(&a.d, &b.d);
+    t1.deinit();
+    t2.deinit();
+    return r;
+}
+
+fn ratMulRaw(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var r = Rat{ .n = try BI.init(alloc), .d = try BI.init(alloc) };
+    errdefer ratDeinit(&r);
+    try r.n.mul(&a.n, &b.n);
+    try r.d.mul(&a.d, &b.d);
+    return r;
+}
+
+fn ratSubRaw(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var bn = try b.n.clone();
+    defer bn.deinit();
+    bn.negate();
+    var nb = Rat{ .n = try bn.clone(), .d = try b.d.clone() };
+    defer ratDeinit(&nb);
+    return ratAddRaw(alloc, a, &nb);
+}
+
 fn ratIsZero(x: *const Rat) bool {
     return x.n.eqlZero();
 }
@@ -1072,9 +1109,9 @@ fn matInvModP(alloc: std.mem.Allocator, a: []const BI, n: usize, p: *const BI) !
                     .d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory"),
                 };
                 defer ratDeinit(&zr);
-                var pr = ratMul(koru_allocator(), &zr, &xe[t * k + j]) catch @panic("std/linalg: out of memory");
+                var pr = ratMulRaw(koru_allocator(), &zr, &xe[t * k + j]) catch @panic("std/linalg: out of memory");
                 defer ratDeinit(&pr);
-                const na = ratSub(koru_allocator(), &acc, &pr) catch @panic("std/linalg: out of memory");
+                const na = ratSubRaw(koru_allocator(), &acc, &pr) catch @panic("std/linalg: out of memory");
                 ratDeinit(&acc);
                 acc = na;
             }
@@ -1478,9 +1515,9 @@ fn matInvModP(alloc: std.mem.Allocator, a: []const BI, n: usize, p: *const BI) !
                     while (t < n) : (t += 1) {
                         var zr = Rat{ .n = ze[i * n + t].clone() catch @panic("std/linalg: out of memory"), .d = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory") };
                         defer ratDeinit(&zr);
-                        var pr = ratMul(alloc, &zr, &cands[t * k + j]) catch @panic("std/linalg: out of memory");
+                        var pr = ratMulRaw(alloc, &zr, &cands[t * k + j]) catch @panic("std/linalg: out of memory");
                         defer ratDeinit(&pr);
-                        const na = ratAdd(alloc, &acc, &pr) catch @panic("std/linalg: out of memory");
+                        const na = ratAddRaw(alloc, &acc, &pr) catch @panic("std/linalg: out of memory");
                         ratDeinit(&acc);
                         acc = na;
                     }
