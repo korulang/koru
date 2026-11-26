@@ -13614,7 +13614,24 @@ fn emitStep(
 
     switch (step.*) {
         .invocation => |*inv| {
-            try emitInvocation(emitter, ctx, inv, result_var);
+            // Produce-of-call (`| then -> f(x)`): a terminal step in a
+            // bare-return handler IS the `-> T` produce, but emitInvocation
+            // only emits statement form — `result_var == "_"` made it a
+            // `_ = call` discard and the handler fell off the end (320_187).
+            // Bind a synth name and return it, the same lowering
+            // `.branch_constructor`'s is_terminal already uses.
+            if (ctx.bare_return_active and std.mem.eql(u8, result_var, "_") and inv.return_binding == null) {
+                var produce_buf: [64]u8 = undefined;
+                const produce_name = try std.fmt.bufPrint(&produce_buf, "__koru_produce_{d}", .{ctx.proc_label_counter});
+                ctx.proc_label_counter += 1;
+                try emitInvocation(emitter, ctx, inv, produce_name);
+                try emitter.writeIndent();
+                try emitter.write("return ");
+                try emitter.write(produce_name);
+                try emitter.write(";\n");
+            } else {
+                try emitInvocation(emitter, ctx, inv, result_var);
+            }
         },
         .branch_constructor => |*bc| {
             try emitter.writeIndent();
