@@ -13619,8 +13619,15 @@ fn emitStep(
             // only emits statement form — `result_var == "_"` made it a
             // `_ = call` discard and the handler fell off the end (320_187).
             // Bind a synth name and return it, the same lowering
-            // `.branch_constructor`'s is_terminal already uses.
-            if (ctx.bare_return_active and std.mem.eql(u8, result_var, "_") and inv.return_binding == null) {
+            // `.branch_constructor`'s is_terminal already uses. The callee
+            // must actually yield a value: a discarded `|>` step in an arm
+            // (e.g. a void store write, 210_326) shares this shape but has
+            // nothing to return.
+            const yields_value = blk: {
+                const ed = findEventDeclForEmission(ctx, &inv.path) orelse break :blk false;
+                break :blk ed.return_type != null;
+            };
+            if (ctx.bare_return_active and std.mem.eql(u8, result_var, "_") and inv.return_binding == null and yields_value) {
                 var produce_buf: [64]u8 = undefined;
                 const produce_name = try std.fmt.bufPrint(&produce_buf, "__koru_produce_{d}", .{ctx.proc_label_counter});
                 ctx.proc_label_counter += 1;
