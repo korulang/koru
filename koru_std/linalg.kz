@@ -743,7 +743,7 @@ fn matInvModP(alloc: std.mem.Allocator, a: []const BI, n: usize, p: *const BI) !
 }
 
 // "<r>x<c>: e e ..." — r*c rational literals, row-major.
-~pub tor lit { s: string }
+~pub tor lit { s: string<*> }
 | exact string<mat!>
 | bad string
 

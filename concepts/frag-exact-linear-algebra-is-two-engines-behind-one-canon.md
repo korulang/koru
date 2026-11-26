@@ -46,8 +46,18 @@ Engineering belief corrected en route: `big.int.Managed.init` is
 when a later assignment is certain. (Found by bisect: 1 leak × 3
 lift iterations; leak checker counts raw allocs, not bytes.)
 
+Race measured (`tests/benchmarks/019_linalg_engine_race`, same tree):
+the crossover is real and lands where predicted. A_k = A0^(2^k),
+b = A_k*1 (x = ones, known-exact), det digits doubling per round —
+bareiss grows ~2x/round past minors of ~10^3 digits, dixon ~1.3x;
+dixon overtakes at minors ~10^1700 (k=7, 0.6-0.9ms both). Dixon's
+~0.1ms floor loses below that; its residual+recon still pays
+coefficient width, so the win is modest at 5x5 and grows with
+dimension.
+
 Open: `mat` is `string<mat!>` custody only — no collapse admittance
 yet (kit-table generalization tracked under the C3 review thread);
 `open` has no deterministic trigger in the pin suite (cap exhaustion
-needs pathological inputs); `det`'s growth is the profile point
-where Dixon is expected to pull ahead.
+needs pathological inputs); the race caps at K=9 — K=10's ~40-deep
+arm nesting segfaults the compiler backend during emission, a
+compiler defect on nesting depth, not a runtime fault.
