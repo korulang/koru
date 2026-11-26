@@ -108,20 +108,6 @@ Testing subflow-defined semantics:
   iterated
 ```
 
-### 330_038_cleanup_obligation_satisfied
-
-```koru
-import app/fs
-app/fs:open(path: "test.txt"): f |> app/fs:close(file: f)
-```
-
-**Output:**
-
-```
-Opening file: test.txt
-Closing file
-```
-
 ### 140_020_part_basic_join
 
 ```koru

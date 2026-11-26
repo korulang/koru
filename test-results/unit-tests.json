@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-11-14T18:56:53.948Z",
+  "timestamp": "2026-11-26T14:14:35.234Z",
   "summary": {
-    "passed": 439,
+    "passed": 440,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 451,
+    "total": 452,
     "suiteCount": 45,
     "status": "success"
   },
@@ -21,10 +21,10 @@
     },
     {
       "name": "ast_functional_tests",
-      "passed": 2,
+      "passed": 3,
       "failed": 0,
       "skipped": 0,
-      "total": 2,
+      "total": 3,
       "status": "success"
     },
     {
