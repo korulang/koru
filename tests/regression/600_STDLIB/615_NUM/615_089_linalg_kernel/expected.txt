@@ -1,0 +1,4 @@
+x=mat:v1;3;1;-1:1;-1:1;1:1
+witness=zero
+singular
+x=mat:v1;3;1;-1:1;-1:1;1:1
