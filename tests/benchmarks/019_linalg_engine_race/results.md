@@ -30,6 +30,19 @@ doubles per round: k=0 ≈ 10 digits, k=8 ≈ 2300 digits.
 | 7 | 0.552 / 0.792 / 0.702 | 0.673 / 0.623 / 0.865 |
 | 8 | 2.411 / 2.247 / 2.249 | 2.316 / 1.550 / 1.469 |
 
+## Normalized
+
+Cost per output bit is the fair metric — x's own width doubles per
+round, so linear-in-width is "correct" scaling, not a bug. At k=8
+each solution entry is ~2300 digits (~7.6 kbit): bareiss ~1.8ms →
+~0.24 ms/kbit, dixon ~1.5-2.0ms → ~0.2-0.26 ms/kbit. Both engines run
+on `std.math.big.int.Managed` (schoolbook) — num.kz's Karatsuba limb
+layer exists in-tree but `.kz` zig code is per-module scope, so it
+cannot cross (the module-isolation cost, again). A raw-accumulate
+variant (no per-op gcd, one reduce per output cell — canon reduced at
+emit regardless) trims bareiss's back-substitution tail ~15% and drops
+all n² gcds from dixon's witness.
+
 ## Reading it
 
 - **Crossover ≈ k=7** (minors ~10¹⁷⁰⁰ wide): bareiss paid ~2×/round past
