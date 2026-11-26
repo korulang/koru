@@ -1,0 +1,1603 @@
+// ============================================================================
+// std/linalg — exact linear algebra over Q. Matrices are custody strings.
+//
+// Canon: "mat:v1;<r>;<c>;<e00>;<e01>;..." — row-major, each entry a reduced
+// "n:d" pair (d>0, gcd=1, zero = "0:1"). Value-equivalence is canon-string
+// equality — the tower law. Phantoms: <mat!> owned, <!mat> consumed,
+// <mat> borrowed; <external!> is the boundary mark (parse/drop).
+//
+//   lit       "<r>x<c>: e e ..."  entries in the rational literal grammar
+//   get/set   i,j -> <rational!> mint | consume — |range names bad index
+//   add/mul   -> exact | dims       (dimension mismatch is named)
+//   scale     x:A -> A'             scalar multiply
+//   transpose/det/inv/solve        det, inv mint <rational!> / <mat!>
+//   solve     A:X=B -> exact X | singular | bad-dims
+//   solve-dixon  the p-adic engine — mod-p elimination, Hensel lift,
+//                rat-recon per entry, witness-verified in Q (no Hadamard
+//                bound: the lift stops when the candidate verifies)
+//   identity n -> I_n    dup/free/render/equiv/is-zero
+//
+// Engine order (the inbox note's ruling): Bareiss first — fraction-free
+// elimination, every intermediate an exact minor, pivots divided exactly.
+// solve-dixon is the second engine for the profiling race — same arms,
+// different path; when one beats Bareiss on real shapes it earns the
+// default tor.
+// ============================================================================
+
+~import std/io
+~import std/num
+~import std/sym
+~import std/rational
+
+const std = @import("std");
+const BI = std.math.big.int.Managed;
+
+const Rat = struct { n: BI, d: BI };
+
+const Mat = struct { r: usize, c: usize, e: []Rat };
+
+fn matFree(alloc: std.mem.Allocator, m: *Mat) void {
+    for (m.e) |*x| {
+        x.n.deinit();
+        x.d.deinit();
+    }
+    alloc.free(m.e);
+}
+
+fn mFree(s: []const u8) void {
+    koru_allocator().free(s);
+}
+
+fn mCopy(s: []const u8) []u8 {
+    return koru_allocator().dupe(u8, s) catch @panic("std/linalg: out of memory");
+}
+
+fn ratDeinit(r: *Rat) void {
+    r.n.deinit();
+    r.d.deinit();
+}
+
+fn pow10(alloc: std.mem.Allocator, k: i64) !BI {
+    var r = try BI.initSet(alloc, 1);
+    errdefer r.deinit();
+    var ten = try BI.initSet(alloc, 10);
+    defer ten.deinit();
+    var i: i64 = 0;
+    while (i < k) : (i += 1) {
+        try r.mul(&r, &ten);
+    }
+    return r;
+}
+
+fn biGcd(alloc: std.mem.Allocator, a: *const BI, b: *const BI) !BI {
+    var x = try a.clone();
+    errdefer x.deinit();
+    x.abs();
+    var y = try b.clone();
+    errdefer y.deinit();
+    y.abs();
+    while (!y.eqlZero()) {
+        var q = BI.init(alloc) catch return error.OutOfMemory;
+        var r = BI.init(alloc) catch {
+            q.deinit();
+            return error.OutOfMemory;
+        };
+        q.divTrunc(&r, &x, &y) catch {
+            q.deinit();
+            r.deinit();
+            return error.OutOfMemory;
+        };
+        q.deinit();
+        x.deinit();
+        x = y;
+        y = r;
+    }
+    y.deinit();
+    return x;
+}
+
+fn biLcm(alloc: std.mem.Allocator, a: *const BI, b: *const BI) !BI {
+    var g = try biGcd(alloc, a, b);
+    defer g.deinit();
+    var q = try BI.init(alloc);
+    var r = try BI.init(alloc);
+    q.divTrunc(&r, a, &g) catch return error.OutOfMemory;
+    r.deinit();
+    var out = try BI.init(alloc);
+    out.mul(&q, b) catch return error.OutOfMemory;
+    q.deinit();
+    out.abs();
+    return out;
+}
+
+fn ratReduce(alloc: std.mem.Allocator, r: *Rat) !void {
+    if (r.n.eqlZero()) {
+        r.d.deinit();
+        r.d = try BI.initSet(alloc, 1);
+        return;
+    }
+    var g = try biGcd(alloc, &r.n, &r.d);
+    defer g.deinit();
+    var one = try BI.initSet(alloc, 1);
+    defer one.deinit();
+    if (!g.eql(one)) {
+        var qn = try BI.init(alloc);
+        var rn = try BI.init(alloc);
+        qn.divTrunc(&rn, &r.n, &g) catch return error.OutOfMemory;
+        rn.deinit();
+        r.n.deinit();
+        r.n = qn;
+        var qd = try BI.init(alloc);
+        var rd = try BI.init(alloc);
+        qd.divTrunc(&rd, &r.d, &g) catch return error.OutOfMemory;
+        rd.deinit();
+        r.d.deinit();
+        r.d = qd;
+    }
+    if (!r.d.isPositive()) {
+        r.n.negate();
+        r.d.abs();
+    }
+}
+
+fn ratAdd(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var t1 = try a.n.clone();
+    errdefer t1.deinit();
+    try t1.mul(&t1, &b.d);
+    var t2 = try b.n.clone();
+    errdefer t2.deinit();
+    try t2.mul(&t2, &a.d);
+    var r = Rat{ .n = try BI.init(alloc), .d = try BI.init(alloc) };
+    errdefer ratDeinit(&r);
+    try r.n.add(&t1, &t2);
+    try r.d.mul(&a.d, &b.d);
+    t1.deinit();
+    t2.deinit();
+    try ratReduce(alloc, &r);
+    return r;
+}
+
+fn ratMul(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var r = Rat{ .n = try BI.init(alloc), .d = try BI.init(alloc) };
+    errdefer ratDeinit(&r);
+    try r.n.mul(&a.n, &b.n);
+    try r.d.mul(&a.d, &b.d);
+    try ratReduce(alloc, &r);
+    return r;
+}
+
+fn ratSub(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var bn = try b.n.clone();
+    defer bn.deinit();
+    bn.negate();
+    var nb = Rat{ .n = try bn.clone(), .d = try b.d.clone() };
+    defer ratDeinit(&nb);
+    return ratAdd(alloc, a, &nb);
+}
+
+fn ratIsZero(x: *const Rat) bool {
+    return x.n.eqlZero();
+}
+
+// ---------- text <-> Rat ----------
+
+// "n:d" pair -> Rat (already reduced by ratReduce).
+fn ratFromPair(alloc: std.mem.Allocator, s: []const u8) !?Rat {
+    const sep = std.mem.indexOfScalar(u8, s, ':') orelse return null;
+    var n = (try intFromText(alloc, s[0..sep])) orelse return null;
+    var d = (try intFromText(alloc, s[sep + 1 ..])) orelse {
+        n.deinit();
+        return null;
+    };
+    if (!d.isPositive()) {
+        n.deinit();
+        d.deinit();
+        return null;
+    }
+    var r = Rat{ .n = n, .d = d };
+    errdefer ratDeinit(&r);
+    try ratReduce(alloc, &r);
+    return r;
+}
+
+// rational literal grammar: "n/d" | int | decimal — same law as
+// std/rational:lit (kept local: zig does not cross modules).
+fn ratFromLit(alloc: std.mem.Allocator, s: []const u8) !?Rat {
+    if (std.mem.indexOfScalar(u8, s, '/')) |sep| {
+        if (std.mem.indexOfScalar(u8, s[sep + 1 ..], '/') != null) return null;
+        var n = (try intFromText(alloc, s[0..sep])) orelse return null;
+        var d = (try intFromText(alloc, s[sep + 1 ..])) orelse {
+            n.deinit();
+            return null;
+        };
+        if (d.eqlZero()) {
+            n.deinit();
+            d.deinit();
+            return null;
+        }
+        var r = Rat{ .n = n, .d = d };
+        errdefer ratDeinit(&r);
+        try ratReduce(alloc, &r);
+        return r;
+    }
+    if (try intFromText(alloc, s)) |n| {
+        return .{ .n = n, .d = try BI.initSet(alloc, 1) };
+    }
+    // decimal: digits + optional point + optional e-exponent -> exact rational
+    var t = s;
+    var neg = false;
+    if (t.len > 0 and t[0] == '-') {
+        neg = true;
+        t = t[1..];
+    }
+    if (t.len == 0) return null;
+    var mant_end: usize = t.len;
+    var exp: i64 = 0;
+    if (std.mem.indexOfScalar(u8, t, 'e')) |ep| {
+        mant_end = ep;
+        const es = t[ep + 1 ..];
+        if (es.len == 0) return null;
+        var ei: usize = 0;
+        var eneg = false;
+        if (es[0] == '-') {
+            eneg = true;
+            ei = 1;
+        }
+        if (ei >= es.len) return null;
+        for (es[ei..]) |c| {
+            if (c < '0' or c > '9') return null;
+        }
+        exp = std.fmt.parseInt(i64, es[ei..], 10) catch return null;
+        if (eneg) exp = -exp;
+    }
+    const mant = t[0..mant_end];
+    var frac_len: i64 = 0;
+    var seen_dot = false;
+    var digits_buf = std.ArrayList(u8){};
+    defer digits_buf.deinit(alloc);
+    for (mant) |c| {
+        if (c == '.') {
+            if (seen_dot) return null;
+            seen_dot = true;
+            continue;
+        }
+        if (c < '0' or c > '9') return null;
+        if (seen_dot) frac_len += 1;
+        digits_buf.append(alloc, c) catch return error.OutOfMemory;
+    }
+    if (digits_buf.items.len == 0) return null;
+    var n = try BI.init(alloc);
+    errdefer n.deinit();
+    n.setString(10, digits_buf.items) catch return null;
+    if (neg) n.negate();
+    const k = exp - frac_len;
+    if (k >= 0) {
+        if (k > 0) {
+            var p = try pow10(alloc, k);
+            defer p.deinit();
+            try n.mul(&n, &p);
+        }
+        return .{ .n = n, .d = try BI.initSet(alloc, 1) };
+    }
+    var d = try pow10(alloc, -k);
+    errdefer d.deinit();
+    var r = Rat{ .n = n, .d = d };
+    errdefer ratDeinit(&r);
+    try ratReduce(alloc, &r);
+    return r;
+}
+
+fn intFromText(alloc: std.mem.Allocator, s: []const u8) !?BI {
+    if (s.len == 0) return null;
+    var t = s;
+    if (t[0] == '-') {
+        if (t.len == 1) return null;
+        t = t[1..];
+    }
+    for (t) |c| {
+        if (c < '0' or c > '9') return null;
+    }
+    var v = try BI.init(alloc);
+    errdefer v.deinit();
+    v.setString(10, s) catch return null;
+    return v;
+}
+
+fn ratToPair(alloc: std.mem.Allocator, r: *const Rat) ![]u8 {
+    const ns = try r.n.toString(alloc, 10, .lower);
+    defer alloc.free(ns);
+    const ds = try r.d.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return std.fmt.allocPrint(alloc, "{s}:{s}", .{ ns, ds });
+}
+
+// "n:d" pair -> "rat:v1;n;d" (cross-phantom mint for get/det).
+fn ratToRatCanon(alloc: std.mem.Allocator, r: *const Rat) ![]u8 {
+    const ns = try r.n.toString(alloc, 10, .lower);
+    defer alloc.free(ns);
+    const ds = try r.d.toString(alloc, 10, .lower);
+    defer alloc.free(ds);
+    return std.fmt.allocPrint(alloc, "rat:v1;{s};{s}", .{ ns, ds });
+}
+
+// "rat:v1;n;d" canon -> Rat (set/scale consume <rational!> canon).
+fn ratFromRatCanon(alloc: std.mem.Allocator, s: []const u8) !?Rat {
+    if (!std.mem.startsWith(u8, s, "rat:v1;")) return null;
+    const body = s["rat:v1;".len..];
+    const sep = std.mem.indexOfScalar(u8, body, ";") orelse return null;
+    var n = (try intFromText(alloc, body[0..sep])) orelse return null;
+    var d = (try intFromText(alloc, body[sep + 1 ..])) orelse {
+        n.deinit();
+        return null;
+    };
+    if (!d.isPositive()) {
+        n.deinit();
+        d.deinit();
+        return null;
+    }
+    var r = Rat{ .n = n, .d = d };
+    errdefer ratDeinit(&r);
+    try ratReduce(alloc, &r);
+    return r;
+}
+
+// ---------- canon <-> Mat ----------
+
+fn matEmit(alloc: std.mem.Allocator, m: *const Mat) ![]u8 {
+    var out = std.ArrayList(u8){};
+    errdefer out.deinit(alloc);
+    const hdr = std.fmt.allocPrint(alloc, "mat:v1;{d};{d}", .{ m.r, m.c }) catch return error.OutOfMemory;
+    defer alloc.free(hdr);
+    out.appendSlice(alloc, hdr) catch return error.OutOfMemory;
+    for (m.e) |*x| {
+        const p = try ratToPair(alloc, x);
+        defer alloc.free(p);
+        out.append(alloc, ';') catch return error.OutOfMemory;
+        out.appendSlice(alloc, p) catch return error.OutOfMemory;
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+// strict canon parse: "mat:v1;r;c;e00;e01;..." entries "n:d".
+fn matParse(alloc: std.mem.Allocator, s: []const u8) !Mat {
+    if (!std.mem.startsWith(u8, s, "mat:v1;")) return error.BadMat;
+    var rest = s["mat:v1;".len..];
+    const s1 = std.mem.indexOfScalar(u8, rest, ';') orelse return error.BadMat;
+    const r = std.fmt.parseInt(usize, rest[0..s1], 10) catch return error.BadMat;
+    rest = rest[s1 + 1 ..];
+    const s2 = std.mem.indexOfScalar(u8, rest, ';') orelse return error.BadMat;
+    const c = std.fmt.parseInt(usize, rest[0..s2], 10) catch return error.BadMat;
+    rest = rest[s2 + 1 ..];
+    const n = r * c;
+    var e = alloc.alloc(Rat, n) catch return error.OutOfMemory;
+    var filled: usize = 0;
+    errdefer {
+        var i: usize = 0;
+        while (i < filled) : (i += 1) {
+            e[i].n.deinit();
+            e[i].d.deinit();
+        }
+        alloc.free(e);
+    }
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const end = if (i + 1 == n) rest.len else (std.mem.indexOfScalar(u8, rest, ';') orelse return error.BadMat);
+        const tok = rest[0..end];
+        e[i] = (try ratFromPair(alloc, tok)) orelse return error.BadMat;
+        filled += 1;
+        if (i + 1 == n) break;
+        rest = rest[end + 1 ..];
+    }
+    return .{ .r = r, .c = c, .e = e };
+}
+
+// lit grammar: "<r>x<c>: tok tok ..." — r*c tokens, each a rational literal.
+fn matFromLit(alloc: std.mem.Allocator, s_in: []const u8) !?Mat {
+    const s = std.mem.trim(u8, s_in, " \t\n");
+    const colon = std.mem.indexOfScalar(u8, s, ':') orelse return null;
+    const dims = std.mem.trim(u8, s[0..colon], " ");
+    const xpos = std.mem.indexOfScalar(u8, dims, 'x') orelse return null;
+    const r = std.fmt.parseInt(usize, std.mem.trim(u8, dims[0..xpos], " "), 10) catch return null;
+    const c = std.fmt.parseInt(usize, std.mem.trim(u8, dims[xpos + 1 ..], " "), 10) catch return null;
+    const body = s[colon + 1 ..];
+    const n = r * c;
+    var e = alloc.alloc(Rat, n) catch return error.OutOfMemory;
+    var filled: usize = 0;
+    errdefer {
+        var i: usize = 0;
+        while (i < filled) : (i += 1) {
+            e[i].n.deinit();
+            e[i].d.deinit();
+        }
+        alloc.free(e);
+    }
+    var it = std.mem.tokenizeAny(u8, body, " \t\n");
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const tok = it.next() orelse return null;
+        e[i] = (try ratFromLit(alloc, tok)) orelse return null;
+        filled += 1;
+    }
+    if (it.next() != null) return null;
+    return .{ .r = r, .c = c, .e = e };
+}
+
+// ---------- Bareiss (fraction-free) ----------
+
+// clear a row of rationals to integers: returns lcm of denominators;
+// row entries are scaled in place by the remaining cofactor.
+fn rowClear(alloc: std.mem.Allocator, row: []Rat) !BI {
+    var l = try BI.initSet(alloc, 1);
+    errdefer l.deinit();
+    for (row) |*x| {
+        const nl = try biLcm(alloc, &l, &x.d);
+        l.deinit();
+        l = nl;
+    }
+    for (row) |*x| {
+        var q = try BI.init(alloc);
+        var rr = try BI.init(alloc);
+        q.divTrunc(&rr, &l, &x.d) catch return error.OutOfMemory;
+        rr.deinit();
+        const nn0 = try x.n.clone();
+        var nn = nn0;
+        x.n.deinit();
+        try nn.mul(&nn, &q);
+        q.deinit();
+        x.n = nn;
+        x.d.deinit();
+        x.d = try BI.initSet(alloc, 1);
+    }
+    return l;
+}
+
+// Bareiss integer elimination over a working matrix of Ints (each cell
+// wrapped as Rat with d=1). Returns det of the integer matrix — the last
+// pivot with row-swap sign — and leaves the eliminated rows in place.
+// Cells are Rats for the shared matrix ops below.
+fn bareissDet(alloc: std.mem.Allocator, z: []Rat, n: usize) !BI {
+    var prev = try BI.initSet(alloc, 1);
+    defer prev.deinit();
+    var neg = false;
+    var k: usize = 0;
+    while (k + 1 < n) : (k += 1) {
+        if (z[k * n + k].n.eqlZero()) {
+            var sw = k + 1;
+            while (sw < n and z[sw * n + k].n.eqlZero()) sw += 1;
+            if (sw == n) return BI.initSet(alloc, 0);
+            var j: usize = 0;
+            while (j < n) : (j += 1) {
+                const t = z[k * n + j];
+                z[k * n + j] = z[sw * n + j];
+                z[sw * n + j] = t;
+            }
+            neg = !neg;
+        }
+        var i: usize = k + 1;
+        while (i < n) : (i += 1) {
+            var j: usize = k + 1;
+            while (j < n) : (j += 1) {
+                // c' = (c_kk * c_ij - c_ik * c_kj) / prev
+                var tA = try BI.init(alloc);
+                tA.mul(&z[k * n + k].n, &z[i * n + j].n) catch return error.OutOfMemory;
+                defer tA.deinit();
+                var tB = try BI.init(alloc);
+                tB.mul(&z[i * n + k].n, &z[k * n + j].n) catch return error.OutOfMemory;
+                defer tB.deinit();
+                var num = try BI.init(alloc);
+                num.sub(&tA, &tB) catch return error.OutOfMemory;
+                defer num.deinit();
+                var q = try BI.init(alloc);
+                var rr = try BI.init(alloc);
+                q.divTrunc(&rr, &num, &prev) catch return error.OutOfMemory;
+                rr.deinit();
+                if (z[i * n + j].n.eql(q)) {
+                    q.deinit();
+                } else {
+                    z[i * n + j].n.deinit();
+                    z[i * n + j].n = q;
+                }
+            }
+        }
+        prev.deinit();
+        prev = try z[k * n + k].n.clone();
+    }
+    var det = if (n == 0)
+        try BI.initSet(alloc, 1)
+    else
+        try z[(n - 1) * n + (n - 1)].n.clone();
+    if (neg) det.negate();
+    return det;
+}
+
+// fraction-free forward elimination on the augmented matrix [Z|C]:
+// n equations, n + k columns. Returns det(Z); on singular -> zero.
+// Elimination leaves the system ready for the Cramer read:
+// x_j = C'_ij / det after the final elimination form.
+fn bareissElim(alloc: std.mem.Allocator, aug: []Rat, n: usize, width: usize) !BI {
+    var prev = try BI.initSet(alloc, 1);
+    defer prev.deinit();
+    var neg = false;
+    var k: usize = 0;
+    while (k + 1 < n) : (k += 1) {
+        if (aug[k * width + k].n.eqlZero()) {
+            var sw = k + 1;
+            while (sw < n and aug[sw * width + k].n.eqlZero()) sw += 1;
+            if (sw == n) return BI.initSet(alloc, 0);
+            var j: usize = 0;
+            while (j < width) : (j += 1) {
+                const t = aug[k * width + j];
+                aug[k * width + j] = aug[sw * width + j];
+                aug[sw * width + j] = t;
+            }
+            neg = !neg;
+        }
+        var i: usize = k + 1;
+        while (i < n) : (i += 1) {
+            var j: usize = k + 1;
+            while (j < width) : (j += 1) {
+                var tA = try BI.init(alloc);
+                tA.mul(&aug[k * width + k].n, &aug[i * width + j].n) catch return error.OutOfMemory;
+                defer tA.deinit();
+                var tB = try BI.init(alloc);
+                tB.mul(&aug[i * width + k].n, &aug[k * width + j].n) catch return error.OutOfMemory;
+                defer tB.deinit();
+                var num = try BI.init(alloc);
+                num.sub(&tA, &tB) catch return error.OutOfMemory;
+                defer num.deinit();
+                var q = try BI.init(alloc);
+                var rr = try BI.init(alloc);
+                q.divTrunc(&rr, &num, &prev) catch return error.OutOfMemory;
+                rr.deinit();
+                aug[i * width + j].n.deinit();
+                aug[i * width + j].n = q;
+                aug[i * width + j].d.deinit();
+                aug[i * width + j].d = try BI.initSet(alloc, 1);
+            }
+        }
+        prev.deinit();
+        prev = try aug[k * width + k].n.clone();
+    }
+    var det = try aug[(n - 1) * width + (n - 1)].n.clone();
+    if (n == 0) {
+        det.deinit();
+        det = try BI.initSet(alloc, 1);
+    }
+    if (neg) det.negate();
+    return det;
+}
+
+// ---------- modular arithmetic (the dixon engine) ----------
+
+fn biModFloor(alloc: std.mem.Allocator, a: *const BI, m: *const BI) !BI {
+    var q = try BI.init(alloc);
+    var r = try BI.init(alloc);
+    q.divFloor(&r, a, m) catch return error.OutOfMemory;
+    q.deinit();
+    return r;
+}
+
+fn biModMul(alloc: std.mem.Allocator, a: *const BI, b: *const BI, m: *const BI) !BI {
+    var t = try BI.init(alloc);
+    try t.mul(a, b);
+    defer t.deinit();
+    return biModFloor(alloc, &t, m);
+}
+
+fn biModPow(alloc: std.mem.Allocator, base: *const BI, e: *const BI, m: *const BI) !BI {
+    var r = try BI.initSet(alloc, 1);
+    errdefer r.deinit();
+    var b = try biModFloor(alloc, base, m);
+    defer b.deinit();
+    var ee = try e.clone();
+    defer ee.deinit();
+    var two = try BI.initSet(alloc, 2);
+    defer two.deinit();
+    while (!ee.eqlZero()) {
+        var q = try BI.init(alloc);
+        var rem = try BI.init(alloc);
+        q.divTrunc(&rem, &ee, &two) catch return error.OutOfMemory;
+        const odd = !rem.eqlZero();
+        rem.deinit();
+        ee.deinit();
+        ee = q;
+        if (odd) {
+            const nr = try biModMul(alloc, &r, &b, m);
+            r.deinit();
+            r = nr;
+        }
+        const nb = try biModMul(alloc, &b, &b, m);
+        b.deinit();
+        b = nb;
+    }
+    return r;
+}
+
+fn biModInv(alloc: std.mem.Allocator, a: *const BI, m: *const BI) !?BI {
+    // prime-modulus inverse via Fermat: a^(m-2) mod m — requires m prime
+    // and a not 0 mod m. Returns null on a == 0.
+    var am = try biModFloor(alloc, a, m);
+    defer am.deinit();
+    if (am.eqlZero()) return null;
+    var two = try BI.initSet(alloc, 2);
+    defer two.deinit();
+    var e = try BI.init(alloc);
+    e.sub(m, &two) catch return error.OutOfMemory;
+    defer e.deinit();
+    return try biModPow(alloc, &am, &e, m);
+}
+
+// Gaussian elimination over Z_p on a row-major n x n matrix of residues.
+// Produces A^{-1} mod p in `inv`, or false if a pivot is missing.
+fn matInvModP(alloc: std.mem.Allocator, a: []const BI, n: usize, p: *const BI) !?[]BI {
+    const w = 2 * n;
+    var aug = try alloc.alloc(BI, n * w);
+    var i: usize = 0;
+    while (i < n * w) : (i += 1) aug[i] = try BI.init(alloc);
+    defer {
+        for (aug) |*x| x.deinit();
+        alloc.free(aug);
+    }
+    i = 0;
+    while (i < n) : (i += 1) {
+        var j: usize = 0;
+        while (j < n) : (j += 1) {
+            const t = try biModFloor(alloc, &a[i * n + j], p);
+            aug[i * w + j].deinit();
+            aug[i * w + j] = t;
+        }
+        const one = try BI.initSet(alloc, 1);
+        aug[i * w + n + i].deinit();
+        aug[i * w + n + i] = one;
+    }
+    var col: usize = 0;
+    while (col < n) : (col += 1) {
+        var piv = col;
+        while (piv < n and aug[piv * w + col].eqlZero()) piv += 1;
+        if (piv == n) return null;
+        if (piv != col) {
+            var j: usize = 0;
+            while (j < w) : (j += 1) {
+                const t = aug[col * w + j];
+                aug[col * w + j] = aug[piv * w + j];
+                aug[piv * w + j] = t;
+            }
+        }
+        var inv = (try biModInv(alloc, &aug[col * w + col], p)) orelse return null;
+        defer inv.deinit();
+        var j: usize = 0;
+        while (j < w) : (j += 1) {
+            const t = try biModMul(alloc, &aug[col * w + j], &inv, p);
+            aug[col * w + j].deinit();
+            aug[col * w + j] = t;
+        }
+        var row2: usize = 0;
+        while (row2 < n) : (row2 += 1) {
+            if (row2 == col) continue;
+            if (aug[row2 * w + col].eqlZero()) continue;
+            var f = try aug[row2 * w + col].clone();
+            defer f.deinit();
+            j = 0;
+            while (j < w) : (j += 1) {
+                var pr = try biModMul(alloc, &f, &aug[col * w + j], p);
+                defer pr.deinit();
+                var df = try aug[row2 * w + j].clone();
+                defer df.deinit();
+                var d = try BI.init(alloc);
+                d.sub(&df, &pr) catch return error.OutOfMemory;
+                defer d.deinit();
+                const t = try biModFloor(alloc, &d, p);
+                aug[row2 * w + j].deinit();
+                aug[row2 * w + j] = t;
+            }
+        }
+    }
+    var out = try alloc.alloc(BI, n * n);
+    i = 0;
+    while (i < n * n) : (i += 1) out[i] = try BI.init(alloc);
+    i = 0;
+    while (i < n) : (i += 1) {
+        var j: usize = 0;
+        while (j < n) : (j += 1) {
+            out[i * n + j].deinit();
+            out[i * n + j] = try aug[i * w + n + j].clone();
+        }
+    }
+    return out;
+}
+
+// ============================================================================
+// Boundary + literals
+// ============================================================================
+
+~pub tor ingest { s: string } -> string<external!>
+
+~proc ingest|zig {
+    return mCopy(s);
+}
+
+~pub tor ingest-owned { s: string<!allocated> } -> string<external!>
+
+~proc ingest-owned|zig {
+    return s;
+}
+
+~pub tor parse { s: string<!external> }
+| exact string<mat!>
+| bad string<std/io:allocated!>
+
+~proc parse|zig {
+    var m = matParse(koru_allocator(), s) catch |err| switch (err) {
+        error.BadMat => return .{ .bad = s },
+        else => @panic("std/linalg: out of memory"),
+    };
+    defer matFree(koru_allocator(), &m);
+    mFree(s);
+    return .{ .exact = matEmit(koru_allocator(), &m) catch @panic("std/linalg: out of memory") };
+}
+
+~pub tor drop { s: string<!external> }
+
+~proc drop|zig {
+    mFree(s);
+}
+
+// "<r>x<c>: e e ..." — r*c rational literals, row-major.
+~pub tor lit { s: string }
+| exact string<mat!>
+| bad string
+
+~proc lit|zig {
+    var m = (matFromLit(koru_allocator(), s) catch |err| switch (err) {
+        else => @panic("std/linalg: out of memory"),
+    }) orelse return .{ .bad = s };
+    defer matFree(koru_allocator(), &m);
+    return .{ .exact = matEmit(koru_allocator(), &m) catch @panic("std/linalg: out of memory") };
+}
+
+// I_n
+~pub tor identity { n: i64 }
+| exact string<mat!>
+| bad
+
+~proc identity|zig {
+    if (n < 1) return .{ .bad = .{} };
+    const un: usize = @intCast(n);
+    var e = koru_allocator().alloc(Rat, un * un) catch @panic("std/linalg: out of memory");
+    var i: usize = 0;
+    while (i < un * un) : (i += 1) {
+        const one_entry: i64 = if ((i % un) == (i / un)) 1 else 0;
+        e[i] = .{
+            .n = BI.initSet(koru_allocator(), one_entry) catch @panic("std/linalg: out of memory"),
+            .d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory"),
+        };
+    }
+    var m = Mat{ .r = un, .c = un, .e = e };
+    defer matFree(koru_allocator(), &m);
+    return .{ .exact = matEmit(koru_allocator(), &m) catch @panic("std/linalg: out of memory") };
+}
+
+// ============================================================================
+// Shape + access
+// ============================================================================
+
+~pub tor dims { m: string<mat> } -> { r: i64, c: i64 }
+
+~proc dims|zig {
+    var mm = matParse(koru_allocator(), m) catch @panic("std/linalg:dims: malformed operand");
+    defer matFree(koru_allocator(), &mm);
+    return .{ .r = @intCast(mm.r), .c = @intCast(mm.c) };
+}
+
+~pub tor get { m: string<mat>, i: i64, j: i64 }
+| exact string<std/rational:rational!>
+| range
+
+~proc get|zig {
+    var mm = matParse(koru_allocator(), m) catch @panic("std/linalg:get: malformed operand");
+    defer matFree(koru_allocator(), &mm);
+    if (i < 0 or j < 0 or i >= mm.r or j >= mm.c) return .{ .range = .{} };
+    return .{ .exact = ratToRatCanon(koru_allocator(), &mm.e[@intCast(i * @as(i64, @intCast(mm.c)) + j)]) catch @panic("std/linalg: out of memory") };
+}
+
+~pub tor set { m: string<!mat>, i: i64, j: i64, x: string<!std/rational:rational> }
+| exact string<mat!>
+| range
+
+~proc set|zig {
+    defer mFree(m);
+    defer mFree(x);
+    var mm = matParse(koru_allocator(), m) catch @panic("std/linalg:set: malformed operand");
+    defer matFree(koru_allocator(), &mm);
+    if (i < 0 or j < 0 or i >= mm.r or j >= mm.c) return .{ .range = .{} };
+    const xr = (ratFromRatCanon(koru_allocator(), x) catch |err| switch (err) {
+        else => @panic("std/linalg: out of memory"),
+    }) orelse @panic("std/linalg:set: malformed operand");
+    const idx: usize = @intCast(i * @as(i64, @intCast(mm.c)) + j);
+    mm.e[idx].n.deinit();
+    mm.e[idx].d.deinit();
+    mm.e[idx] = xr;
+    return .{ .exact = matEmit(koru_allocator(), &mm) catch @panic("std/linalg: out of memory") };
+}
+
+// ============================================================================
+// Arithmetic
+// ============================================================================
+
+~pub tor add { a: string<!mat>, b: string<!mat> }
+| exact string<mat!>
+| dims
+
+~proc add|zig {
+    defer mFree(a);
+    defer mFree(b);
+    var ma = matParse(koru_allocator(), a) catch @panic("std/linalg:add: malformed operand");
+    defer matFree(koru_allocator(), &ma);
+    var mb = matParse(koru_allocator(), b) catch @panic("std/linalg:add: malformed operand");
+    defer matFree(koru_allocator(), &mb);
+    if (ma.r != mb.r or ma.c != mb.c) return .{ .dims = .{} };
+    var e = koru_allocator().alloc(Rat, ma.e.len) catch @panic("std/linalg: out of memory");
+    var i: usize = 0;
+    while (i < ma.e.len) : (i += 1) {
+        e[i] = ratAdd(koru_allocator(), &ma.e[i], &mb.e[i]) catch @panic("std/linalg: out of memory");
+    }
+    var m = Mat{ .r = ma.r, .c = ma.c, .e = e };
+    defer matFree(koru_allocator(), &m);
+    return .{ .exact = matEmit(koru_allocator(), &m) catch @panic("std/linalg: out of memory") };
+}
+
+~pub tor mul { a: string<!mat>, b: string<!mat> }
+| exact string<mat!>
+| dims
+
+~proc mul|zig {
+    defer mFree(a);
+    defer mFree(b);
+    var ma = matParse(koru_allocator(), a) catch @panic("std/linalg:mul: malformed operand");
+    defer matFree(koru_allocator(), &ma);
+    var mb = matParse(koru_allocator(), b) catch @panic("std/linalg:mul: malformed operand");
+    defer matFree(koru_allocator(), &mb);
+    if (ma.c != mb.r) return .{ .dims = .{} };
+    const n = ma.r * mb.c;
+    var e = koru_allocator().alloc(Rat, n) catch @panic("std/linalg: out of memory");
+    var i: usize = 0;
+    while (i < ma.r) : (i += 1) {
+        var j: usize = 0;
+        while (j < mb.c) : (j += 1) {
+            var acc = Rat{
+                .n = BI.initSet(koru_allocator(), 0) catch @panic("std/linalg: out of memory"),
+                .d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory"),
+            };
+            var k: usize = 0;
+            while (k < ma.c) : (k += 1) {
+                var pr = ratMul(koru_allocator(), &ma.e[i * ma.c + k], &mb.e[k * mb.c + j]) catch @panic("std/linalg: out of memory");
+                defer ratDeinit(&pr);
+                const na = ratAdd(koru_allocator(), &acc, &pr) catch @panic("std/linalg: out of memory");
+                ratDeinit(&acc);
+                acc = na;
+            }
+            e[i * mb.c + j] = acc;
+        }
+    }
+    var m = Mat{ .r = ma.r, .c = mb.c, .e = e };
+    defer matFree(koru_allocator(), &m);
+    return .{ .exact = matEmit(koru_allocator(), &m) catch @panic("std/linalg: out of memory") };
+}
+
+~pub tor scale { m: string<!mat>, x: string<!std/rational:rational> } -> string<mat!>
+
+~proc scale|zig {
+    defer mFree(m);
+    defer mFree(x);
+    var mm = matParse(koru_allocator(), m) catch @panic("std/linalg:scale: malformed operand");
+    defer matFree(koru_allocator(), &mm);
+    var xr = (ratFromRatCanon(koru_allocator(), x) catch |err| switch (err) {
+        else => @panic("std/linalg: out of memory"),
+    }) orelse @panic("std/linalg:scale: malformed operand");
+    defer ratDeinit(&xr);
+    for (mm.e) |*en| {
+        var nr = ratMul(koru_allocator(), en, &xr) catch @panic("std/linalg: out of memory");
+        ratDeinit(en);
+        en.* = nr;
+    }
+    return matEmit(koru_allocator(), &mm) catch @panic("std/linalg: out of memory");
+}
+
+~pub tor transpose { m: string<!mat> } -> string<mat!>
+
+~proc transpose|zig {
+    defer mFree(m);
+    var mm = matParse(koru_allocator(), m) catch @panic("std/linalg:transpose: malformed operand");
+    defer matFree(koru_allocator(), &mm);
+    var e = koru_allocator().alloc(Rat, mm.e.len) catch @panic("std/linalg: out of memory");
+    var i: usize = 0;
+    while (i < mm.r) : (i += 1) {
+        var j: usize = 0;
+        while (j < mm.c) : (j += 1) {
+            e[j * mm.r + i] = .{
+                .n = mm.e[i * mm.c + j].n.clone() catch @panic("std/linalg: out of memory"),
+                .d = mm.e[i * mm.c + j].d.clone() catch @panic("std/linalg: out of memory"),
+            };
+        }
+    }
+    var t = Mat{ .r = mm.c, .c = mm.r, .e = e };
+    defer matFree(koru_allocator(), &t);
+    return matEmit(koru_allocator(), &t) catch @panic("std/linalg: out of memory");
+}
+
+// ============================================================================
+// Bareiss surfaces
+// ============================================================================
+
+// det(A): clear each row's denominators -> integer Z, Bareiss-eliminate,
+// det(A) = det(Z) / prod(row lcm). Mints <rational!>.
+~pub tor det { m: string<!mat> }
+| exact string<std/rational:rational!>
+| bad-dims
+
+~proc det|zig {
+    defer mFree(m);
+    var mm = matParse(koru_allocator(), m) catch @panic("std/linalg:det: malformed operand");
+    defer matFree(koru_allocator(), &mm);
+    if (mm.r != mm.c) return .{ .bad_dims = .{} };
+    const n = mm.r;
+    var z = koru_allocator().alloc(Rat, n * n) catch @panic("std/linalg: out of memory");
+    defer {
+        for (z) |*x| {
+            x.n.deinit();
+            x.d.deinit();
+        }
+        koru_allocator().free(z);
+    }
+    var dscale = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory");
+    defer dscale.deinit();
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        var j: usize = 0;
+        while (j < n) : (j += 1) {
+            z[i * n + j] = .{
+                .n = mm.e[i * n + j].n.clone() catch @panic("std/linalg: out of memory"),
+                .d = mm.e[i * n + j].d.clone() catch @panic("std/linalg: out of memory"),
+            };
+        }
+        var l = rowClear(koru_allocator(), z[i * n .. i * n + n]) catch @panic("std/linalg: out of memory");
+        defer l.deinit();
+        var ds = BI.init(koru_allocator()) catch @panic("std/linalg: out of memory");
+        ds.mul(&dscale, &l) catch @panic("std/linalg: out of memory");
+        dscale.deinit();
+        dscale = ds;
+    }
+    var detz = bareissDet(koru_allocator(), z, n) catch @panic("std/linalg: out of memory");
+    defer detz.deinit();
+    var detr = Rat{ .n = detz.clone() catch @panic("std/linalg: out of memory"), .d = dscale.clone() catch @panic("std/linalg: out of memory") };
+    ratReduce(koru_allocator(), &detr) catch @panic("std/linalg: out of memory");
+    defer ratDeinit(&detr);
+    return .{ .exact = ratToRatCanon(koru_allocator(), &detr) catch @panic("std/linalg: out of memory") };
+}
+
+// solve A X = B: A n x n, B n x k. Augment [Z|C] with per-row denom
+// clearing, Bareiss-eliminate, then x_ij = aug'_ij(n+..) / detZ — the
+// fraction-free Cramer readout.
+~pub tor solve { a: string<!mat>, b: string<!mat> }
+| exact string<mat!>
+| singular
+| bad-dims
+
+~proc solve|zig {
+    defer mFree(a);
+    defer mFree(b);
+    var ma = matParse(koru_allocator(), a) catch @panic("std/linalg:solve: malformed operand");
+    defer matFree(koru_allocator(), &ma);
+    var mb = matParse(koru_allocator(), b) catch @panic("std/linalg:solve: malformed operand");
+    defer matFree(koru_allocator(), &mb);
+    if (ma.r != ma.c or mb.r != ma.r) return .{ .bad_dims = .{} };
+    const n = ma.r;
+    const k = mb.c;
+    const w = n + k;
+    var aug = koru_allocator().alloc(Rat, n * w) catch @panic("std/linalg: out of memory");
+    defer {
+        for (aug) |*x| {
+            x.n.deinit();
+            x.d.deinit();
+        }
+        koru_allocator().free(aug);
+    }
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        var j: usize = 0;
+        while (j < n) : (j += 1) {
+            aug[i * w + j] = .{
+                .n = ma.e[i * n + j].n.clone() catch @panic("std/linalg: out of memory"),
+                .d = ma.e[i * n + j].d.clone() catch @panic("std/linalg: out of memory"),
+            };
+        }
+        j = 0;
+        while (j < k) : (j += 1) {
+            aug[i * w + n + j] = .{
+                .n = mb.e[i * k + j].n.clone() catch @panic("std/linalg: out of memory"),
+                .d = mb.e[i * k + j].d.clone() catch @panic("std/linalg: out of memory"),
+            };
+        }
+        // one clear covers the whole augmented row — same lcm for A and B
+        // halves: lcm over all denominators in the row.
+        const row = aug[i * w .. i * w + w];
+        var l = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory");
+        for (row) |*x| {
+            const nl = biLcm(koru_allocator(), &l, &x.d) catch @panic("std/linalg: out of memory");
+            l.deinit();
+            l = nl;
+        }
+        defer l.deinit();
+        for (row) |*x| {
+            var q = BI.init(koru_allocator()) catch @panic("std/linalg: out of memory");
+            var rr = BI.init(koru_allocator()) catch @panic("std/linalg: out of memory");
+            q.divTrunc(&rr, &l, &x.d) catch @panic("std/linalg: out of memory");
+            rr.deinit();
+            var nn = x.n.clone() catch @panic("std/linalg: out of memory");
+            x.n.deinit();
+            nn.mul(&nn, &q) catch @panic("std/linalg: out of memory");
+            q.deinit();
+            x.n = nn;
+            x.d.deinit();
+            x.d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory");
+        }
+    }
+    var detz = bareissElim(koru_allocator(), aug, n, w) catch @panic("std/linalg: out of memory");
+    defer detz.deinit();
+    if (detz.eqlZero()) return .{ .singular = .{} };
+    // back-substitute the eliminated system U x = C' over Rat: Bareiss
+    // preserves the solution set exactly — x_i = (c'_i - sum_t u_it x_t)/u_ii,
+    // every diagonal pivot a nonzero leading minor (detZ != 0).
+    var xe = koru_allocator().alloc(Rat, n * k) catch @panic("std/linalg: out of memory");
+    defer {
+        for (xe) |*x| {
+            x.n.deinit();
+            x.d.deinit();
+        }
+        koru_allocator().free(xe);
+    }
+    var rowi: i64 = @as(i64, @intCast(n)) - 1;
+    while (rowi >= 0) : (rowi -= 1) {
+        const ri: usize = @intCast(rowi);
+        var j: usize = 0;
+        while (j < k) : (j += 1) {
+            var acc = Rat{
+                .n = aug[ri * w + n + j].n.clone() catch @panic("std/linalg: out of memory"),
+                .d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory"),
+            };
+            var t: usize = ri + 1;
+            while (t < n) : (t += 1) {
+                var zr = Rat{
+                    .n = aug[ri * w + t].n.clone() catch @panic("std/linalg: out of memory"),
+                    .d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory"),
+                };
+                defer ratDeinit(&zr);
+                var pr = ratMul(koru_allocator(), &zr, &xe[t * k + j]) catch @panic("std/linalg: out of memory");
+                defer ratDeinit(&pr);
+                const na = ratSub(koru_allocator(), &acc, &pr) catch @panic("std/linalg: out of memory");
+                ratDeinit(&acc);
+                acc = na;
+            }
+            var pv = Rat{
+                .n = aug[ri * w + ri].n.clone() catch @panic("std/linalg: out of memory"),
+                .d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory"),
+            };
+            defer ratDeinit(&pv);
+            var xr = Rat{
+                .n = BI.init(koru_allocator()) catch @panic("std/linalg: out of memory"),
+                .d = BI.init(koru_allocator()) catch @panic("std/linalg: out of memory"),
+            };
+            xr.n.mul(&acc.n, &pv.d) catch @panic("std/linalg: out of memory");
+            xr.d.mul(&acc.d, &pv.n) catch @panic("std/linalg: out of memory");
+            ratReduce(koru_allocator(), &xr) catch @panic("std/linalg: out of memory");
+            ratDeinit(&acc);
+            xe[ri * k + j] = xr;
+        }
+    }
+    var xm = Mat{ .r = n, .c = k, .e = xe };
+    return .{ .exact = matEmit(koru_allocator(), &xm) catch @panic("std/linalg: out of memory") };
+}
+
+// A^{-1}: Bareiss on [Z|I]; right block = adj(Z), A^-1 = adj(Z)/detZ with
+// column scaling by the row lcm factors (A = D^-1 Z -> A^-1 = Z^-1 D).
+~pub tor inv { m: string<!mat> }
+| exact string<mat!>
+| singular
+| bad-dims
+
+~proc inv|zig {
+    defer mFree(m);
+    var mm = matParse(koru_allocator(), m) catch @panic("std/linalg:inv: malformed operand");
+    defer matFree(koru_allocator(), &mm);
+    if (mm.r != mm.c) return .{ .bad_dims = .{} };
+    const n = mm.r;
+    const w = 2 * n;
+    var aug = koru_allocator().alloc(Rat, n * w) catch @panic("std/linalg: out of memory");
+    defer {
+        for (aug) |*x| {
+            x.n.deinit();
+            x.d.deinit();
+        }
+        koru_allocator().free(aug);
+    }
+    var lcms = koru_allocator().alloc(BI, n) catch @panic("std/linalg: out of memory");
+    defer {
+        for (lcms) |*x| x.deinit();
+        koru_allocator().free(lcms);
+    }
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        var j: usize = 0;
+        while (j < n) : (j += 1) {
+            aug[i * w + j] = .{
+                .n = mm.e[i * n + j].n.clone() catch @panic("std/linalg: out of memory"),
+                .d = mm.e[i * n + j].d.clone() catch @panic("std/linalg: out of memory"),
+            };
+        }
+        j = 0;
+        while (j < n) : (j += 1) {
+            aug[i * w + n + j] = .{
+                .n = BI.initSet(koru_allocator(), @as(i64, if (i == j) 1 else 0)) catch @panic("std/linalg: out of memory"),
+                .d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory"),
+            };
+        }
+        lcms[i] = rowClear(koru_allocator(), aug[i * w .. i * w + n]) catch @panic("std/linalg: out of memory");
+    }
+    var detz = bareissElim(koru_allocator(), aug, n, w) catch @panic("std/linalg: out of memory");
+    defer detz.deinit();
+    if (detz.eqlZero()) return .{ .singular = .{} };
+    // back-substitute the eliminated [U|I']: each right-block column solves
+    // U x = e_j — x = adj(Z)_j / detZ, i.e. Z^-1 over Q.
+    var ie = koru_allocator().alloc(Rat, n * n) catch @panic("std/linalg: out of memory");
+    defer {
+        for (ie) |*x| {
+            x.n.deinit();
+            x.d.deinit();
+        }
+        koru_allocator().free(ie);
+    }
+    var rowi: i64 = @as(i64, @intCast(n)) - 1;
+    while (rowi >= 0) : (rowi -= 1) {
+        const ri: usize = @intCast(rowi);
+        var j: usize = 0;
+        while (j < n) : (j += 1) {
+            var acc = Rat{
+                .n = aug[ri * w + n + j].n.clone() catch @panic("std/linalg: out of memory"),
+                .d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory"),
+            };
+            var t: usize = ri + 1;
+            while (t < n) : (t += 1) {
+                var zr = Rat{
+                    .n = aug[ri * w + t].n.clone() catch @panic("std/linalg: out of memory"),
+                    .d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory"),
+                };
+                defer ratDeinit(&zr);
+                var pr = ratMul(koru_allocator(), &zr, &ie[t * n + j]) catch @panic("std/linalg: out of memory");
+                defer ratDeinit(&pr);
+                const na = ratSub(koru_allocator(), &acc, &pr) catch @panic("std/linalg: out of memory");
+                ratDeinit(&acc);
+                acc = na;
+            }
+            var pv = Rat{
+                .n = aug[ri * w + ri].n.clone() catch @panic("std/linalg: out of memory"),
+                .d = BI.initSet(koru_allocator(), 1) catch @panic("std/linalg: out of memory"),
+            };
+            defer ratDeinit(&pv);
+            var xr = Rat{
+                .n = BI.init(koru_allocator()) catch @panic("std/linalg: out of memory"),
+                .d = BI.init(koru_allocator()) catch @panic("std/linalg: out of memory"),
+            };
+            xr.n.mul(&acc.n, &pv.d) catch @panic("std/linalg: out of memory");
+            xr.d.mul(&acc.d, &pv.n) catch @panic("std/linalg: out of memory");
+            ratReduce(koru_allocator(), &xr) catch @panic("std/linalg: out of memory");
+            ratDeinit(&acc);
+            ie[ri * n + j] = xr;
+        }
+    }
+    // A = D^-1 Z  =>  A^-1 = Z^-1 D:  scale column j by lcms[j].
+    var j: usize = 0;
+    while (j < n) : (j += 1) {
+        i = 0;
+        while (i < n) : (i += 1) {
+            var nr = ie[i * n + j].n.clone() catch @panic("std/linalg: out of memory");
+            nr.mul(&nr, &lcms[j]) catch @panic("std/linalg: out of memory");
+            ie[i * n + j].n.deinit();
+            ie[i * n + j].n = nr;
+            var rr = Rat{ .n = ie[i * n + j].n.clone() catch @panic("std/linalg: out of memory"), .d = ie[i * n + j].d.clone() catch @panic("std/linalg: out of memory") };
+            ratReduce(koru_allocator(), &rr) catch @panic("std/linalg: out of memory");
+            ie[i * n + j].n.deinit();
+            ie[i * n + j].d.deinit();
+            ie[i * n + j] = rr;
+        }
+    }
+    var im = Mat{ .r = n, .c = n, .e = ie };
+    return .{ .exact = matEmit(koru_allocator(), &im) catch @panic("std/linalg: out of memory") };
+}
+
+// ============================================================================
+// solve-dixon — the p-adic engine. Z = denom-cleared integer system;
+// Ainv mod p -> iterate lift x_{k+1} = x_k + Ainv_p*(c - Z x_k) mod p^k
+// -> rat-recon each entry -> verify Z*x == c exactly in Q. The witness
+// check replaces a Hadamard bound: lifting stops when the candidate
+// verifies. |open names cap exhaustion.
+// ============================================================================
+
+~pub tor solve-dixon { a: string<!mat>, b: string<!mat>, prime: i64 }
+| exact string<mat!>
+| singular
+| bad-dims
+| bad-prime
+| open
+
+~proc solve-dixon|zig {
+    defer mFree(a);
+    defer mFree(b);
+    var ma = matParse(koru_allocator(), a) catch @panic("std/linalg:solve-dixon: malformed operand");
+    defer matFree(koru_allocator(), &ma);
+    var mb = matParse(koru_allocator(), b) catch @panic("std/linalg:solve-dixon: malformed operand");
+    defer matFree(koru_allocator(), &mb);
+    if (ma.r != ma.c or mb.r != ma.r) return .{ .bad_dims = .{} };
+    if (prime < 2) return .{ .bad_prime = .{} };
+    const n = ma.r;
+    const k = mb.c;
+    const alloc = koru_allocator();
+    // denom-clear rows -> integer [Z|C]
+    var ze = alloc.alloc(BI, n * n) catch @panic("std/linalg: out of memory");
+    defer {
+        for (ze) |*x| x.deinit();
+        alloc.free(ze);
+    }
+    var ce = alloc.alloc(BI, n * k) catch @panic("std/linalg: out of memory");
+    defer {
+        for (ce) |*x| x.deinit();
+        alloc.free(ce);
+    }
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        var l = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory");
+        var j: usize = 0;
+        while (j < n) : (j += 1) {
+            const nl = biLcm(alloc, &l, &ma.e[i * n + j].d) catch @panic("std/linalg: out of memory");
+            l.deinit();
+            l = nl;
+        }
+        j = 0;
+        while (j < k) : (j += 1) {
+            const nl = biLcm(alloc, &l, &mb.e[i * k + j].d) catch @panic("std/linalg: out of memory");
+            l.deinit();
+            l = nl;
+        }
+        defer l.deinit();
+        j = 0;
+        while (j < n) : (j += 1) {
+            var q = BI.init(alloc) catch @panic("std/linalg: out of memory");
+            var rr = BI.init(alloc) catch @panic("std/linalg: out of memory");
+            q.divTrunc(&rr, &l, &ma.e[i * n + j].d) catch @panic("std/linalg: out of memory");
+            rr.deinit();
+            var v = ma.e[i * n + j].n.clone() catch @panic("std/linalg: out of memory");
+            v.mul(&v, &q) catch @panic("std/linalg: out of memory");
+            q.deinit();
+            ze[i * n + j] = v;
+        }
+        j = 0;
+        while (j < k) : (j += 1) {
+            var q = BI.init(alloc) catch @panic("std/linalg: out of memory");
+            var rr = BI.init(alloc) catch @panic("std/linalg: out of memory");
+            q.divTrunc(&rr, &l, &mb.e[i * k + j].d) catch @panic("std/linalg: out of memory");
+            rr.deinit();
+            var v = mb.e[i * k + j].n.clone() catch @panic("std/linalg: out of memory");
+            v.mul(&v, &q) catch @panic("std/linalg: out of memory");
+            q.deinit();
+            ce[i * k + j] = v;
+        }
+    }
+    var p = BI.initSet(alloc, prime) catch @panic("std/linalg: out of memory");
+    defer p.deinit();
+    var ainv = (matInvModP(alloc, ze, n, &p) catch @panic("std/linalg: out of memory")) orelse return .{ .singular = .{} };
+    defer {
+        for (ainv) |*x| x.deinit();
+        alloc.free(ainv);
+    }
+    // x starts at 0; modulus m_k = p^k grows one p-adic digit per step.
+    var xe = alloc.alloc(BI, n * k) catch @panic("std/linalg: out of memory");
+    for (xe) |*x| x.* = BI.initSet(alloc, 0) catch @panic("std/linalg: out of memory");
+    defer {
+        for (xe) |*x| x.deinit();
+        alloc.free(xe);
+    }
+    var modk = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory");
+    defer modk.deinit();
+    var step: usize = 0;
+    while (step < 64) : (step += 1) {
+        // residual r = C - Z*x over integers
+        var residual = alloc.alloc(BI, n * k) catch @panic("std/linalg: out of memory");
+        defer {
+            for (residual) |*x| x.deinit();
+            alloc.free(residual);
+        }
+        i = 0;
+        while (i < n) : (i += 1) {
+            var j: usize = 0;
+            while (j < k) : (j += 1) {
+                var acc = ce[i * k + j].clone() catch @panic("std/linalg: out of memory");
+                var t: usize = 0;
+                while (t < n) : (t += 1) {
+                    var pr = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                    pr.mul(&ze[i * n + t], &xe[t * k + j]) catch @panic("std/linalg: out of memory");
+                    defer pr.deinit();
+                    var na = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                    na.sub(&acc, &pr) catch @panic("std/linalg: out of memory");
+                    acc.deinit();
+                    acc = na;
+                }
+                residual[i * k + j] = acc;
+            }
+        }
+        // exact-verified done? residual == 0 mod nothing needed — the
+        // recon verify below is the honest stop. Try reconstruction:
+        var ok = true;
+        var cands = alloc.alloc(Rat, n * k) catch @panic("std/linalg: out of memory");
+        var ci: usize = 0;
+        while (ci < n * k) : (ci += 1) cands[ci] = .{
+            .n = BI.init(alloc) catch @panic("std/linalg: out of memory"),
+            .d = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory"),
+        };
+        defer {
+            for (cands) |*x| {
+                x.n.deinit();
+                x.d.deinit();
+            }
+            alloc.free(cands);
+        }
+        // bound for recon: sqrt(modk/2) — Wang's uniqueness radius.
+        var bound: BI = undefined;
+        {
+            var two = BI.initSet(alloc, 2) catch @panic("std/linalg: out of memory");
+            defer two.deinit();
+            var q = BI.init(alloc) catch @panic("std/linalg: out of memory");
+            var rr = BI.init(alloc) catch @panic("std/linalg: out of memory");
+            q.divTrunc(&rr, &modk, &two) catch @panic("std/linalg: out of memory");
+            rr.deinit();
+            // isqrt via binary search — coarse is fine (bound is a radius)
+            var lo = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory");
+            var hi = q.clone() catch @panic("std/linalg: out of memory");
+            defer q.deinit();
+            defer lo.deinit();
+            defer hi.deinit();
+            var one = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory");
+            defer one.deinit();
+            while (true) {
+                var d = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                d.sub(&hi, &lo) catch @panic("std/linalg: out of memory");
+                const done = d.order(one) != .gt;
+                d.deinit();
+                if (done) break;
+                var s = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                s.add(&lo, &hi) catch @panic("std/linalg: out of memory");
+                var mid = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                var r2 = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                mid.divTrunc(&r2, &s, &two) catch @panic("std/linalg: out of memory");
+                r2.deinit();
+                s.deinit();
+                var sq = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                sq.mul(&mid, &mid) catch @panic("std/linalg: out of memory");
+                defer sq.deinit();
+                if (sq.order(q) == .gt) {
+                    hi.deinit();
+                    hi = mid;
+                } else {
+                    lo.deinit();
+                    lo = mid;
+                }
+            }
+            bound = lo.clone() catch @panic("std/linalg: out of memory");
+        }
+        defer bound.deinit();
+        i = 0;
+        recon_loop: while (i < n * k) : (i += 1) {
+            var xr = biModFloor(alloc, &xe[i], &modk) catch @panic("std/linalg: out of memory");
+            defer xr.deinit();
+            if (xr.eqlZero()) {
+                cands[i].n.deinit();
+                cands[i].d.deinit();
+                cands[i] = .{
+                    .n = BI.initSet(alloc, 0) catch @panic("std/linalg: out of memory"),
+                    .d = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory"),
+                };
+                continue;
+            }
+            // half-gcd on (modk, xr)
+            var r0 = modk.clone() catch @panic("std/linalg: out of memory");
+            var r1 = xr.clone() catch @panic("std/linalg: out of memory");
+            defer r0.deinit();
+            defer r1.deinit();
+            var t0 = BI.initSet(alloc, 0) catch @panic("std/linalg: out of memory");
+            var t1 = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory");
+            defer t0.deinit();
+            defer t1.deinit();
+            while (r1.order(bound) == .gt and !r1.eqlZero()) {
+                var q = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                var nrem = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                q.divTrunc(&nrem, &r0, &r1) catch @panic("std/linalg: out of memory");
+                var qt = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                qt.mul(&q, &t1) catch @panic("std/linalg: out of memory");
+                q.deinit();
+                var tn = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                tn.sub(&t0, &qt) catch @panic("std/linalg: out of memory");
+                qt.deinit();
+                t0.deinit();
+                t0 = t1;
+                t1 = tn;
+                r0.deinit();
+                r0 = r1;
+                r1 = nrem;
+            }
+            var one2 = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory");
+            defer one2.deinit();
+            var ta = t1.clone() catch @panic("std/linalg: out of memory");
+            ta.abs();
+            defer ta.deinit();
+            var g = biGcd(alloc, &r1, &t1) catch @panic("std/linalg: out of memory");
+            defer g.deinit();
+            if (r1.eqlZero() or t1.eqlZero() or ta.order(bound) == .gt or !g.eql(one2)) {
+                ok = false;
+                break :recon_loop;
+            }
+                        var lhs = biModMul(alloc, &xr, &t1, &modk) catch @panic("std/linalg: out of memory");
+            defer lhs.deinit();
+            var rhs = biModFloor(alloc, &r1, &modk) catch @panic("std/linalg: out of memory");
+            defer rhs.deinit();
+            if (!lhs.eql(rhs)) {
+                ok = false;
+                break :recon_loop;
+            }
+            var dn = r1.clone() catch @panic("std/linalg: out of memory");
+            var dd = t1.clone() catch @panic("std/linalg: out of memory");
+            if (!dd.isPositive()) {
+                dn.negate();
+                dd.abs();
+            }
+            cands[i].n.deinit();
+            cands[i].d.deinit();
+            cands[i] = .{ .n = dn, .d = dd };
+            ratReduce(alloc, &cands[i]) catch @panic("std/linalg: out of memory");
+        }
+        if (ok) {
+            // witness check: Z * cands == C exactly over Q.
+            var verified = true;
+            i = 0;
+            verify_loop: while (i < n) : (i += 1) {
+                var j: usize = 0;
+                while (j < k) : (j += 1) {
+                    var acc = Rat{
+                        .n = BI.initSet(alloc, 0) catch @panic("std/linalg: out of memory"),
+                        .d = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory"),
+                    };
+                    defer ratDeinit(&acc);
+                    var t: usize = 0;
+                    while (t < n) : (t += 1) {
+                        var zr = Rat{ .n = ze[i * n + t].clone() catch @panic("std/linalg: out of memory"), .d = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory") };
+                        defer ratDeinit(&zr);
+                        var pr = ratMul(alloc, &zr, &cands[t * k + j]) catch @panic("std/linalg: out of memory");
+                        defer ratDeinit(&pr);
+                        const na = ratAdd(alloc, &acc, &pr) catch @panic("std/linalg: out of memory");
+                        ratDeinit(&acc);
+                        acc = na;
+                    }
+                    var cr = Rat{ .n = ce[i * k + j].clone() catch @panic("std/linalg: out of memory"), .d = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory") };
+                    defer ratDeinit(&cr);
+                    var dn = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                    dn.mul(&acc.n, &cr.d) catch @panic("std/linalg: out of memory");
+                    defer dn.deinit();
+                    var dd = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                    dd.mul(&cr.n, &acc.d) catch @panic("std/linalg: out of memory");
+                    defer dd.deinit();
+                    if (!dn.eql(dd)) {
+                        verified = false;
+                        break :verify_loop;
+                    }
+                }
+            }
+            if (verified) {
+                var xm = Mat{ .r = n, .c = k, .e = cands };
+                return .{ .exact = matEmit(alloc, &xm) catch @panic("std/linalg: out of memory") };
+            }
+        }
+        // lift one p-adic digit: dx = Ainv_p * (residual / p^step) mod p;
+        // x += dx * p^step.
+        var pstep = BI.initSet(alloc, 1) catch @panic("std/linalg: out of memory");
+        {
+            var s: usize = 0;
+            while (s < step) : (s += 1) {
+                var np = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                np.mul(&pstep, &p) catch @panic("std/linalg: out of memory");
+                pstep.deinit();
+                pstep = np;
+            }
+        }
+        defer pstep.deinit();
+        i = 0;
+        while (i < n) : (i += 1) {
+            var j: usize = 0;
+            while (j < k) : (j += 1) {
+                var acc2 = BI.initSet(alloc, 0) catch @panic("std/linalg: out of memory");
+                defer acc2.deinit();
+                var t: usize = 0;
+                while (t < n) : (t += 1) {
+                    var q = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                    var rr = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                    q.divTrunc(&rr, &residual[t * k + j], &pstep) catch @panic("std/linalg: out of memory");
+                    rr.deinit();
+                    var pr = biModMul(alloc, &ainv[i * n + t], &q, &p) catch @panic("std/linalg: out of memory");
+                    q.deinit();
+                    defer pr.deinit();
+                    var na = biModFloor(alloc, &acc2, &p) catch @panic("std/linalg: out of memory");
+                    var s2 = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                    s2.add(&na, &pr) catch @panic("std/linalg: out of memory");
+                    na.deinit();
+                    const sf = biModFloor(alloc, &s2, &p) catch @panic("std/linalg: out of memory");
+                    s2.deinit();
+                    acc2.deinit();
+                    acc2 = sf;
+                }
+                var scaled = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                scaled.mul(&acc2, &pstep) catch @panic("std/linalg: out of memory");
+                defer scaled.deinit();
+                var nx = BI.init(alloc) catch @panic("std/linalg: out of memory");
+                nx.add(&xe[i * k + j], &scaled) catch @panic("std/linalg: out of memory");
+                xe[i * k + j].deinit();
+                xe[i * k + j] = nx;
+            }
+        }
+                var nm = BI.init(alloc) catch @panic("std/linalg: out of memory");
+        nm.mul(&modk, &p) catch @panic("std/linalg: out of memory");
+        modk.deinit();
+        modk = nm;
+    }
+    return .{ .open = .{} };
+}
+
+// ============================================================================
+// Linearity + rendering
+// ============================================================================
+
+~pub tor dup { m: string<!mat> } -> { a: string<mat!>, b: string<mat!> }
+
+~proc dup|zig {
+    const cp = mCopy(m);
+    return .{ .a = m, .b = cp };
+}
+
+~pub tor free { m: string<!mat> }
+
+~proc free|zig {
+    mFree(m);
+}
+
+~pub tor render { m: string<!mat> } -> string<std/io:allocated!>
+
+~proc render|zig {
+    return m;
+}
+
+~pub tor equiv { a: string<mat>, b: string<mat> }
+| same
+| diff
+
+~proc equiv|zig {
+    if (std.mem.eql(u8, a, b)) return .{ .same = .{} };
+    return .{ .diff = .{} };
+}
+
+~pub tor is-zero { m: string<mat> }
+| zero
+| nonzero
+
+~proc is-zero|zig {
+    var mm = matParse(koru_allocator(), m) catch @panic("std/linalg:is-zero: malformed operand");
+    defer matFree(koru_allocator(), &mm);
+    for (mm.e) |*x| {
+        if (!x.n.eqlZero()) return .{ .nonzero = .{} };
+    }
+    return .{ .zero = .{} };
+}
