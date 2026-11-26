@@ -25,3 +25,12 @@ with a clean minimal repro.
 
 Pinned: tests/regression/600_STDLIB/660_LABELS/660_040_fresh_label_cross_module
 (both explicit and auto discharge paths green).
+
+Evolved 2026-11-26 (rational-kit): the reach extends to *parameter
+position* — a tor in module B can declare a parameter that CONSUMES a
+foreign obligation, spelled `string<std/io:!allocated>`: the bang sits
+inside the namespaced tag. Bare `<!tag>` in a param is always
+module-local (resolves to B's own tag), and `string<mod:tag!>` on an
+input is refused as an attempt to issue (KORU033). Pinned in practice:
+`std/linalg:ingest-owned { s: string<std/io:!allocated> }` consumes
+io-allocated canon text with no copy — exercised by 615_090.
