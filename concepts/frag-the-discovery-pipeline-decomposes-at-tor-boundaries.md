@@ -44,3 +44,17 @@ param consumes a foreign obligation — the bang spells inside the
 namespaced tag (bare `<!tag>` is always module-local;
 `string<mod:tag!>` on input is refused as an issue, KORU033).
 `ingest-owned` therefore consumes `std.io:allocated` directly — no copy.
+
+Evolved 2026-11-26 (same session, the inverse direction): the pipeline
+runs BOTH ways. `residual-sys-of-terms { terms, order, deg }` takes
+`terms=L:c0,c1,...` — the format `series` itself emits — and builds the
+residual block from coefficients alone: the residual machinery never
+needed the expression, only `fder`, and `fder` only needs the array.
+`series → residual-sys-of-terms → kernel → witness → cert-of-kernel`
+discovers the law FROM NUMBERS and emits the identical certificate
+(615_091: fib coefficients → the (2,2) cert, byte-identical to
+derive-ode on the generating function). The honest bound is named:
+`| too-few-terms` when fewer than U+K+21 coefficients arrive — the
+held-out witness rows must be real data, not zero-padded invention.
+What this is NOT: ODE → closed form — inverting a certificate back to
+`x/(1-x-x²)` is the solver's lane (kovacic/rsum), a separate build.

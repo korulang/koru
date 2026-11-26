@@ -598,6 +598,15 @@ fn seriesDerivs(alloc: std.mem.Allocator, a: []const u8, K: usize, L: usize) !?[
     defer nodeFree(alloc, nt);
     const ser = try serFromNode(alloc, nt, L);
     defer serFree(alloc, ser);
+    return fderFromSer(alloc, ser, K, L);
+}
+
+// derivative rows of a coefficient array: fder[k][n] = ser[n+k] *
+// prod_{i=1..k}(n+i) — k = 0..K, n = 0..L-1. Works on ANY Rat coefficient
+// array — the residual machinery never needed the expression, only the
+// numbers (residual-sys-of-terms feeds it parsed terms directly).
+// Null when the series is identically zero (no useful certificate).
+fn fderFromSer(alloc: std.mem.Allocator, ser: []const Rat, K: usize, L: usize) !?[][]Rat {
     var fder = try alloc.alloc([]Rat, K + 1);
     var fdn: usize = 0;
     errdefer {
@@ -890,6 +899,89 @@ fn ratFromPair(alloc: std.mem.Allocator, s: []const u8) !?Rat {
     const z = ratMatEmit(koru_allocator(), rows, 0, M, U) catch @panic("std/sym: out of memory");
     const w = ratMatEmit(koru_allocator(), rows, M, V, U) catch @panic("std/sym: out of memory");
     return .{ .exact = .{ .z = z, .w = w } };
+}
+
+// the inverse direction of the pipeline: coefficients in, residual
+// block out — discovery from NUMBERS, not from an expression. terms is
+// the `terms=L:c0,c1,...` format series itself emits (n or n/d cells),
+// so series -> residual-sys-of-terms is a round-trip. The witness rows
+// must be REAL coefficients: when fewer than U+K+21 terms arrive the
+// block would be zero-padded lies, named | too-few-terms.
+~pub tor residual-sys-of-terms { terms: string<*>, order: i64, deg: i64 }
+| exact { z: string<std/io:allocated!>, w: string<std/io:allocated!> }
+| too-few-terms
+| bad
+
+~proc residual-sys-of-terms|zig {
+    if (order < 0 or order > 8 or deg < 0 or deg > 12) return .{ .bad = .{} };
+    const K = @as(usize, @intCast(order));
+    const D = @as(usize, @intCast(deg));
+    const U = (K + 1) * (D + 1);
+    const M = U + 8;
+    const V: usize = 13;
+    // row n reads fder[k][n-j]; nonzero needs n-j+k < L -> L >= R+K
+    const need = U + 8 + V + K;
+    // parse "terms=L:c0,c1,..." (cells: n or n/d)
+    if (!std.mem.startsWith(u8, terms, "terms=")) return .{ .bad = .{} };
+    var it = std.mem.splitScalar(u8, terms["terms=".len..], ':');
+    const ls = it.next() orelse return .{ .bad = .{} };
+    const csv = it.next() orelse return .{ .bad = .{} };
+    if (it.next() != null) return .{ .bad = .{} };
+    const L = std.fmt.parseInt(usize, ls, 10) catch return .{ .bad = .{} };
+    if (L == 0 or L > 20000) return .{ .bad = .{} };
+    if (L < need) return .{ .too_few_terms = .{} };
+    var ser = koru_allocator().alloc(Rat, L) catch @panic("std/sym: out of memory");
+    var si: usize = 0;
+    defer {
+        for (ser[0..si]) |*c| ratDeinit(c);
+        koru_allocator().free(ser);
+    }
+    var cit = std.mem.splitScalar(u8, csv, ',');
+    while (si < L) : (si += 1) {
+        const tok = cit.next() orelse return .{ .bad = .{} };
+        ser[si] = (ratFromCsv(koru_allocator(), tok) catch @panic("std/sym: out of memory")) orelse return .{ .bad = .{} };
+    }
+    if (cit.next() != null) return .{ .bad = .{} };
+    const fder = (fderFromSer(koru_allocator(), ser, K, L) catch @panic("std/sym: out of memory")) orelse return .{ .bad = .{} };
+    defer fderFree(koru_allocator(), fder);
+    const rows = residualBlock(koru_allocator(), fder, K, D, M, V) catch @panic("std/sym: out of memory");
+    defer rowsFree(koru_allocator(), rows);
+    const z = ratMatEmit(koru_allocator(), rows, 0, M, U) catch @panic("std/sym: out of memory");
+    const w = ratMatEmit(koru_allocator(), rows, M, V, U) catch @panic("std/sym: out of memory");
+    return .{ .exact = .{ .z = z, .w = w } };
+}
+
+// "n" or "n/d" -> Rat. Manual ownership like ratFromPair: setString
+// failures free what was allocated; ratNorm consumes on success.
+fn ratFromCsv(alloc: std.mem.Allocator, s: []const u8) !?Rat {
+    const idx = std.mem.indexOfScalar(u8, s, '/');
+    if (idx == null) {
+        var n = BI.init(alloc) catch return error.OutOfMemory;
+        n.setString(10, s) catch {
+            n.deinit();
+            return error.OutOfMemory;
+        };
+        const d = BI.initSet(alloc, 1) catch {
+            n.deinit();
+            return error.OutOfMemory;
+        };
+        return try ratNorm(alloc, n, d);
+    }
+    var n = BI.init(alloc) catch return error.OutOfMemory;
+    n.setString(10, s[0..idx.?]) catch {
+        n.deinit();
+        return error.OutOfMemory;
+    };
+    var d = BI.init(alloc) catch {
+        n.deinit();
+        return error.OutOfMemory;
+    };
+    d.setString(10, s[idx.? + 1 ..]) catch {
+        d.deinit();
+        n.deinit();
+        return error.OutOfMemory;
+    };
+    return try ratNorm(alloc, n, d);
 }
 
 // cert-of-kernel { x, order, deg, verified } — integerize a kernel vector
