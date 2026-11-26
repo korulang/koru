@@ -56,10 +56,21 @@ Identical discipline to `exact`:
 | `from-int` | `{ i: i64 } -> string<rational!>` | `i;1` |
 | `render` | `string<!rational>` → `string<allocated!>` | display |
 | `rat-of-dec` | `string<!exact>` → `string<rational!>` | exact |
-| `dec-of-rat` | `{ a: string<!rational>, prec: i64 } -> string<exact!>` | precision-parameterized — the honesty arm is `prec` itself (same law `num:div` already states); a denominator dividing 10^k renders exactly within prec |
+| `dec-of-rat` | `{ a: string<!rational>, prec: i64 } -> string<exact!>` | precision-parameterized — the honesty arm is `prec` itself (same law `num:div` already states) |
+| `dec-of-rat-exact` | `string<!rational>` → `exact string<exact!> \| nonterminating` | denominator dividing 10^k renders exactly (`1/4` → `0.25`); otherwise the refusal is named |
+| `rat-of-sym` / `sym-of-rat` | canon text bridge | **always exact and lossless** — sym canon already carries decimals and `inv`/division; every rational IS an exact symbolic equation. This is the answer to "what happens to values that can't be finite decimals": they go symbolic, not approximate |
 
-Flags for Lars (spellings are his): the `"n/d"` literal inside `rat:v1`
-and whether `numer`/`denom` mint `exact` or a leaner int phantom.
+Naming follows the tower's precedent (phantom tag `rational`, canon
+prefix `rat:v1`, kebab tor names) — strictly additive surface; the only
+open spellings are `"n/d"` inside `lit`'s string argument (module
+grammar, not language syntax) and whether `numer`/`denom` mint `exact`
+or a leaner int phantom.
+
+Downstream note, not in scope: recognizing a decimal *as* a known
+symbol (π, τ, √2) is inverse symbolics — an honest kit names it a
+`| candidate` arm, never exact, since a finite decimal can only be
+near a constant, not provably equal. A `sym.ident`-shaped module if it
+ever earns its place; orthogonal to this kit.
 
 ### Engine
 
@@ -71,6 +82,11 @@ are enforced at mint, so ops are closed by construction.
 
 ### Composition
 
+- **`sym`**: `sym-of-rat` is exact — the canon already expresses
+  `n*inv(d)`/division, so ℚ is a strict subset of what sym expressions
+  can say. Values that can't be finite decimals flow to `sym`, not to
+  approximation — the tower gains an exact path where `num:div`'s
+  prec-contract used to be the only door.
 - **`sym.alg`**: `rat` is the deg-0 layer of `alg:v1;<p>;<v>` — the
   coefficient field. A `rat` canon sits naturally below `alg:v1` in the
   same versioned family.
