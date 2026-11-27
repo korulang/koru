@@ -11,8 +11,9 @@
  */
 
 import { readFile, access } from 'fs/promises';
-import { join, dirname } from 'path';
+import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -83,6 +84,29 @@ async function getCurrentState() {
 	}
 
 	return data;
+}
+
+// Dated board snapshots are local-only (never committed), so a fresh
+// worktree has no baseline of its own — the previous board lives in the
+// main checkout's test-results/latest.json. Resolution order: local
+// latest.json → $KORU_SNAPSHOT_BASELINE → main checkout via git common dir.
+async function resolveBaseline() {
+	const local = join(RESULTS_DIR, 'latest.json');
+	if (await fileExists(local)) return { path: local, via: 'local' };
+
+	const envPath = process.env.KORU_SNAPSHOT_BASELINE;
+	if (envPath && (await fileExists(envPath))) return { path: envPath, via: 'KORU_SNAPSHOT_BASELINE' };
+
+	try {
+		const repoRoot = join(__dirname, '..');
+		const commonDir = execSync('git rev-parse --git-common-dir', { cwd: repoRoot, encoding: 'utf-8' }).trim();
+		const mainRoot = dirname(resolve(repoRoot, commonDir));
+		const candidate = join(mainRoot, 'test-results', 'latest.json');
+		if (await fileExists(candidate)) return { path: candidate, via: 'main checkout' };
+	} catch {
+		// not a git worktree — no fallback available
+	}
+	return null;
 }
 
 function formatTimestamp(iso) {
@@ -263,13 +287,17 @@ async function main() {
 	let oldPath, newPath;
 
 	if (args.length === 0) {
-		// Default: compare latest snapshot vs current state
-		oldPath = join(RESULTS_DIR, 'latest.json');
-
-		if (!await fileExists(oldPath)) {
+		// Default: compare baseline snapshot vs current state
+		const baseline = await resolveBaseline();
+		if (!baseline) {
 			console.error('❌ No previous snapshot found');
 			console.error('   Run a full test suite first: ./run_regression.sh');
+			console.error('   Worktree board? Set KORU_SNAPSHOT_BASELINE to the main checkout\'s test-results/latest.json');
 			process.exit(1);
+		}
+		oldPath = baseline.path;
+		if (baseline.via !== 'local') {
+			console.log(`Baseline: ${oldPath} (${baseline.via})`);
 		}
 
 		// Generate current state (returns normalized data)

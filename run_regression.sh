@@ -102,7 +102,6 @@ report_slowest_tests() {
 # and would fabricate deltas out of them.
 board_delta() {
     [ ${#TEST_FILTERS[@]} -eq 0 ] && [ "$SMOKE_MODE" = false ] || return 0
-    [ -f test-results/latest.json ] || return 0
     command -v node >/dev/null 2>&1 || return 0
     echo ""
     echo -e "${BLUE}Board delta vs previous snapshot:${NC}"
