@@ -304,6 +304,43 @@ fn decDeinit(d: *Dec) void {
     d.m.deinit();
 }
 
+// Kit-table surface (recurrence_collapse C3 CustodyKit contract — the same
+// eight names every kit exposes at koru_std.<zns>: kitFree/kitParse/
+// kitFromInt/kitMul/kitAdd/kitNeg/kitDeinit/kitEmit). The collapsed body
+// calls these on Dec values decoded once from the custody strings.
+fn kitFree(s: []const u8) void {
+    numFree(s);
+}
+
+fn kitParse(alloc: std.mem.Allocator, s: []const u8) !Dec {
+    return decParse(alloc, s);
+}
+
+fn kitFromInt(alloc: std.mem.Allocator, v: i64) !Dec {
+    return decInit(alloc, v, 0);
+}
+
+fn kitMul(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
+    return decMul(alloc, a, b);
+}
+
+fn kitAdd(alloc: std.mem.Allocator, a: *const Dec, b: *const Dec) !Dec {
+    return decAdd(alloc, a, b);
+}
+
+fn kitNeg(d: *Dec) void {
+    d.neg = !d.neg;
+    if (d.m.eqlZero()) d.neg = false;
+}
+
+fn kitDeinit(d: *Dec) void {
+    decDeinit(d);
+}
+
+fn kitEmit(alloc: std.mem.Allocator, d: *const Dec) ![]u8 {
+    return decToString(alloc, d);
+}
+
 // Parse "[-]DDD[.DDD][eE[-]DDD]" into a Dec. Caller owns the result.
 fn decParse(alloc: std.mem.Allocator, s: []const u8) !Dec {
     var t = std.mem.trim(u8, s, " \t\r\n");
