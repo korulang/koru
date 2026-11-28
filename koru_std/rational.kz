@@ -273,6 +273,71 @@ fn ratParse(alloc: std.mem.Allocator, s: []const u8) !Rat {
     return .{ .n = n, .d = d };
 }
 
+// ============================================================================
+// Value-level ring ops — the collapse kit-table surface (recurrence_collapse
+// C3 CustodyKit contract: kitFree/kitParse/kitFromInt/kitMul/kitAdd/kitNeg/
+// kitDeinit/kitEmit, same names in every kit's zig). Procs decode canon ->
+// Rat, call these, re-emit; a collapsed body calls the same fns directly
+// through koru_std.koru_rational.
+// ============================================================================
+
+fn kitFree(s: []const u8) void {
+    ratFree(s);
+}
+
+fn kitParse(alloc: std.mem.Allocator, s: []const u8) !Rat {
+    return ratParse(alloc, s);
+}
+
+fn kitDeinit(r: *Rat) void {
+    ratDeinit(r);
+}
+
+fn kitEmit(alloc: std.mem.Allocator, r: *const Rat) ![]u8 {
+    return ratEmit(alloc, r);
+}
+
+fn kitFromInt(alloc: std.mem.Allocator, v: i64) !Rat {
+    return .{
+        .n = try BI.initSet(alloc, v),
+        .d = try BI.initSet(alloc, 1),
+    };
+}
+
+fn kitNeg(r: *Rat) void {
+    r.n.negate();
+}
+
+fn kitAdd(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var t1 = try BI.init(alloc);
+    defer t1.deinit();
+    try t1.mul(&a.n, &b.d);
+    var t2 = try BI.init(alloc);
+    defer t2.deinit();
+    try t2.mul(&b.n, &a.d);
+    var r = Rat{
+        .n = try BI.init(alloc),
+        .d = try BI.init(alloc),
+    };
+    errdefer ratDeinit(&r);
+    try r.n.add(&t1, &t2);
+    try r.d.mul(&a.d, &b.d);
+    try ratReduce(alloc, &r);
+    return r;
+}
+
+fn kitMul(alloc: std.mem.Allocator, a: *const Rat, b: *const Rat) !Rat {
+    var r = Rat{
+        .n = try BI.init(alloc),
+        .d = try BI.init(alloc),
+    };
+    errdefer ratDeinit(&r);
+    try r.n.mul(&a.n, &b.n);
+    try r.d.mul(&a.d, &b.d);
+    try ratReduce(alloc, &r);
+    return r;
+}
+
 // Dec canon text for a big integer: strip trailing zeros into the exponent —
 // 1250 -> "1.25e3", 0 -> "0e0", -7 -> "-7e0".
 fn decTextOfInt(alloc: std.mem.Allocator, v: *const BI) ![]u8 {
@@ -466,10 +531,7 @@ fn intFromDecText(alloc: std.mem.Allocator, s: []const u8) !?BI {
 ~pub tor from-int { i: i64 } -> string<rational!>
 
 ~proc from-int|zig {
-    var r = Rat{
-        .n = BI.initSet(koru_allocator(), i) catch @panic("std/rational: out of memory"),
-        .d = BI.initSet(koru_allocator(), 1) catch @panic("std/rational: out of memory"),
-    };
+    var r = kitFromInt(koru_allocator(), i) catch @panic("std/rational: out of memory");
     defer ratDeinit(&r);
     return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
 }
@@ -487,20 +549,7 @@ fn intFromDecText(alloc: std.mem.Allocator, s: []const u8) !?BI {
     defer ratDeinit(&ra);
     var rb = ratParse(koru_allocator(), b) catch @panic("std/rational:add: malformed operand");
     defer ratDeinit(&rb);
-    // n1*d2 + n2*d1 over d1*d2, then reduce.
-    var t1 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
-    t1.mul(&ra.n, &rb.d) catch @panic("std/rational: out of memory");
-    defer t1.deinit();
-    var t2 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
-    t2.mul(&rb.n, &ra.d) catch @panic("std/rational: out of memory");
-    defer t2.deinit();
-    var r = Rat{
-        .n = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
-        .d = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
-    };
-    r.n.add(&t1, &t2) catch @panic("std/rational: out of memory");
-    r.d.mul(&ra.d, &rb.d) catch @panic("std/rational: out of memory");
-    ratReduce(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+    var r = kitAdd(koru_allocator(), &ra, &rb) catch @panic("std/rational: out of memory");
     defer ratDeinit(&r);
     return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
 }
@@ -514,19 +563,8 @@ fn intFromDecText(alloc: std.mem.Allocator, s: []const u8) !?BI {
     defer ratDeinit(&ra);
     var rb = ratParse(koru_allocator(), b) catch @panic("std/rational:sub: malformed operand");
     defer ratDeinit(&rb);
-    var t1 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
-    t1.mul(&ra.n, &rb.d) catch @panic("std/rational: out of memory");
-    defer t1.deinit();
-    var t2 = BI.init(koru_allocator()) catch @panic("std/rational: out of memory");
-    t2.mul(&rb.n, &ra.d) catch @panic("std/rational: out of memory");
-    defer t2.deinit();
-    var r = Rat{
-        .n = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
-        .d = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
-    };
-    r.n.sub(&t1, &t2) catch @panic("std/rational: out of memory");
-    r.d.mul(&ra.d, &rb.d) catch @panic("std/rational: out of memory");
-    ratReduce(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+    kitNeg(&rb);
+    var r = kitAdd(koru_allocator(), &ra, &rb) catch @panic("std/rational: out of memory");
     defer ratDeinit(&r);
     return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
 }
@@ -540,13 +578,7 @@ fn intFromDecText(alloc: std.mem.Allocator, s: []const u8) !?BI {
     defer ratDeinit(&ra);
     var rb = ratParse(koru_allocator(), b) catch @panic("std/rational:mul: malformed operand");
     defer ratDeinit(&rb);
-    var r = Rat{
-        .n = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
-        .d = BI.init(koru_allocator()) catch @panic("std/rational: out of memory"),
-    };
-    r.n.mul(&ra.n, &rb.n) catch @panic("std/rational: out of memory");
-    r.d.mul(&ra.d, &rb.d) catch @panic("std/rational: out of memory");
-    ratReduce(koru_allocator(), &r) catch @panic("std/rational: out of memory");
+    var r = kitMul(koru_allocator(), &ra, &rb) catch @panic("std/rational: out of memory");
     defer ratDeinit(&r);
     return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
 }
@@ -586,7 +618,7 @@ fn intFromDecText(alloc: std.mem.Allocator, s: []const u8) !?BI {
 ~proc neg|zig {
     defer ratFree(a);
     var r = ratParse(koru_allocator(), a) catch @panic("std/rational:neg: malformed operand");
-    r.n.negate();
+    kitNeg(&r);
     defer ratDeinit(&r);
     return ratEmit(koru_allocator(), &r) catch @panic("std/rational: out of memory");
 }

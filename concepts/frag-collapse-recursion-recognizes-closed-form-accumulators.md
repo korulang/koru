@@ -105,3 +105,31 @@ Coefficient leg (C3 general `x_{i+1} = p*x_i + q*x_{i-1}`, 2026-11-25):
   the other half, `b`'s next value the sum. The mirror `(a,b)->(a+b,a)`
   and coefficient-reuse shapes (`dup(dp.a)` — a dup of a field) compile
   but refuse; widening those is a review question, not a bug.
+
+Kit-table leg (C3 custody kits, 2026-11-26):
+
+- **The phantom tag names the kit.** `custodyEligible` already collected
+  the shared tag; it now selects a `CustodyKit` row
+  (`std.num:exact` -> koru_num, `std.rational:rational` ->
+  koru_rational), and every `callOnPath(.., "std.num", ..)` reads the
+  row's `.mod`/`.t_*` fields. The matcher is module-free; adding a
+  custody ring is a table row plus eight helpers, not a new family.
+- **The ring contract is uniform zig names, one substitution point.**
+  Every kit exposes `kitFree/kitParse/kitFromInt/kitMul/kitAdd/kitNeg/
+  kitDeinit/kitEmit` at `koru_std.<zns>` (num: aliases over the Dec
+  impls; rational: the value ops extracted from the add/sub/mul/neg
+  procs, which now share them). The long emit literals carry a `KNS`
+  token expanded by `apKit` (fmt braces cannot carry `while`/`for`
+  headers); the short `ap()` calls take `{s}` for the namespace.
+- **Phantom tags store dot-qualified.** `string<!std/rational:rational>`
+  parses to `!std.rational:rational` — kit tags match the stored
+  spelling, not the surface one.
+- **A collapsed body borrows the kit's emitted namespace.** The emitted
+  zig references `koru_std.<zns>.*`, which lands iff the program
+  invokes at least one of the kit's tors — satisfied in practice since
+  callers must mint operands (from-int/lit) through the kit; a custody
+  flow fed only pre-minted strings would emit an unresolvable
+  reference. Latent edge, noted not fixed.
+- **Measured:** `fibr(3000)` collapsed 2 ms vs 3.79 s uncollapsed
+  (~1900x); `fibr(500)` byte-identical either way; pin 270_024 fires
+  `__koru_collapse_c3_ratacc` on the bare-add and from-int+mul paths.

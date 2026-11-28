@@ -1221,10 +1221,68 @@ pub const Collapse = struct {
         return try b.toOwnedSlice(alloc);
     }
 
-    /// C3 — num-custody linear recurrence:
-    ///   T(m, a, b, c*) = if (m <= B) then-arm [std.num:free steps] -> a
-    ///                    else |> std.num:dup(b): d |> [dup(c) | from-int | mul]*
-    ///                         |> std.num:add(term_p, term_q): s
+    /// A custody kit — a module whose canon strings back a ring C3 can
+    /// fast-double over. The phantom tag the custody params share selects the
+    /// row (`custodyEligible` already requires one tag across params+return).
+    /// `.mod`/`.t_*` are the .k spellings the matcher walks; the emitted body
+    /// calls the kit's value-level zig through `koru_std.<zns>` — every kit
+    /// exposes the same contract names there:
+    ///   kitFree(s)              custody-string free
+    ///   kitParse(alloc, s) !V   canon decode
+    ///   kitFromInt(alloc,i64)!V small-int mint
+    ///   kitMul/kitAdd(alloc,*V,*V) !V
+    ///   kitNeg(*V)              in-place negate
+    ///   kitDeinit(*V)           value teardown
+    ///   kitEmit(alloc,*V)![]u8  canon encode
+    /// The collapsed event's caller must itself invoke the kit's tors to mint
+    /// operands — that invocation is what lands `koru_std.<zns>` in the
+    /// emitted file (module zig is dead-stripped without a tor call).
+    const CustodyKit = struct {
+        tag: []const u8,
+        mod: []const u8,
+        zns: []const u8,
+        family: []const u8,
+        t_free: []const u8,
+        t_dup: []const u8,
+        t_from_int: []const u8,
+        t_mul: []const u8,
+        t_add: []const u8,
+    };
+
+    const CUSTODY_KITS = [_]CustodyKit{
+        .{ .tag = "std.num:exact", .mod = "std.num", .zns = "koru_num", .family = "c3_numacc",
+            .t_free = "free", .t_dup = "dup", .t_from_int = "from-int", .t_mul = "mul", .t_add = "add" },
+        .{ .tag = "std.rational:rational", .mod = "std.rational", .zns = "koru_rational", .family = "c3_ratacc",
+            .t_free = "free", .t_dup = "dup", .t_from_int = "from-int", .t_mul = "mul", .t_add = "add" },
+    };
+
+    fn kitForTag(tag: []const u8) ?*const CustodyKit {
+        for (&CUSTODY_KITS) |*k| {
+            if (std.mem.eql(u8, k.tag, tag)) return k;
+        }
+        return null;
+    }
+
+    /// Kit-templated emission for the long literal blocks — `KNS` stands in
+    /// for the kit's zig namespace so `while`/`for` braces stay literal (fmt
+    /// can't carry them). One substitution point for the whole ring contract.
+    fn apKit(
+        buf: *std.ArrayList(u8),
+        alloc: std.mem.Allocator,
+        kit: *const CustodyKit,
+        comptime text: []const u8,
+    ) !void {
+        const zns_full = try std.fmt.allocPrint(alloc, "koru_std.{s}", .{kit.zns});
+        defer alloc.free(zns_full);
+        const em = try std.mem.replaceOwned(u8, alloc, text, "KNS", zns_full);
+        defer alloc.free(em);
+        try buf.appendSlice(alloc, em);
+    }
+
+    /// C3 — custody-kit linear recurrence (numacc over Dec, ratacc over Rat):
+    ///   T(m, a, b, c*) = if (m <= B) then-arm [kit free steps] -> a
+    ///                    else |> kit dup(b): d |> [dup(c) | from-int | mul]*
+    ///                         |> kit add(term_p, term_q): s
     ///                         |> T(m-1, a: d.f2, b: s, c*): r -> r
     /// The step is the general two-term linear recurrence
     ///   x_{i+1} = p*x_i + q*x_{i-1}
@@ -1236,7 +1294,7 @@ pub const Collapse = struct {
     /// string round-trips become O(log n) limb passes whose cost tracks the
     /// value's width, not n. Dups are custody plumbing — erased, not
     /// lowered. Emitted body runs inside main_module.<T>_event.handler;
-    /// the num helpers it calls live in koru_std.koru_num, same file.
+    /// the kit helpers it calls live in koru_std.<zns>, same file.
     /// Where a step's coefficient comes from: implicit 1 (bare state
     /// operand), a from-int literal minted in-chain, or a dup'd half of a
     /// carried coefficient param (index into CustodyInfo.coeffs).
@@ -1246,14 +1304,15 @@ pub const Collapse = struct {
         param: usize,
     };
 
-    fn tryNumCustody(
+    fn tryCustodyKit(
         ctx: *const Ctx,
         ci: CustodyInfo,
+        kit: *const CustodyKit,
         g: Guard,
         then_c: *const ast.Continuation,
         else_c: *const ast.Continuation,
     ) !?[]const u8 {
-        if (ctx.c.debug) std.debug.print("collapse: tryNumCustody entered\n", .{});
+        if (ctx.c.debug) std.debug.print("collapse: tryCustodyKit({s}) entered\n", .{kit.tag});
         if (!std.mem.eql(u8, g.param, ci.measure)) return null;
         if (g.kind != .le) return null;
 
@@ -1263,7 +1322,7 @@ pub const Collapse = struct {
         var freed = std.ArrayList([]const u8){};
         defer freed.deinit(ctx.c.allocator);
         var cur = then_c;
-        while (callOnPath(cur, "std.num", "free")) |finv| {
+        while (callOnPath(cur, kit.mod, kit.t_free)) |finv| {
             if (finv.return_binding != null) return null;
             if (finv.args.len != 1) return null;
             const farg = finv.args[0];
@@ -1285,7 +1344,7 @@ pub const Collapse = struct {
         // wrapped in a mul against a coefficient operand (coeff-param dup half,
         // or a from-int literal). Bare state operand = coefficient 1.
         if (!contClean(else_c)) return null;
-        const dinv = callOnPath(else_c, "std.num", "dup") orelse return null;
+        const dinv = callOnPath(else_c, kit.mod, kit.t_dup) orelse return null;
         if (!rbOk(dinv)) return null;
         if (dinv.args.len != 1) return null;
         const darg = dinv.args[0];
@@ -1300,7 +1359,7 @@ pub const Collapse = struct {
         cur = linkCont(else_c) orelse return null;
         var coeff_dup: [4]?[]const u8 = .{ null, null, null, null };
         var coeff_half: [4]?[]const u8 = .{ null, null, null, null };
-        while (callOnPath(cur, "std.num", "dup")) |cinv| {
+        while (callOnPath(cur, kit.mod, kit.t_dup)) |cinv| {
             if (!rbOk(cinv)) return null;
             if (cinv.args.len != 1) return null;
             const cexpr = cinv.args[0].parsed_expression orelse return null;
@@ -1323,7 +1382,7 @@ pub const Collapse = struct {
         var mul_used: [2]bool = .{ false, false };
         var n_muls: usize = 0;
         while (true) {
-            if (callOnPath(cur, "std.num", "from-int")) |finv| {
+            if (callOnPath(cur, kit.mod, kit.t_from_int)) |finv| {
                 if (!rbOk(finv)) return null;
                 if (finv.args.len != 1) return null;
                 const fexpr = finv.args[0].parsed_expression orelse return null;
@@ -1343,7 +1402,7 @@ pub const Collapse = struct {
                 cur = linkCont(cur) orelse return null;
                 continue;
             }
-            if (callOnPath(cur, "std.num", "mul")) |minv| {
+            if (callOnPath(cur, kit.mod, kit.t_mul)) |minv| {
                 if (!rbOk(minv)) return null;
                 if (minv.args.len != 2) return null;
                 const mrb = minv.return_binding.?;
@@ -1365,7 +1424,7 @@ pub const Collapse = struct {
             break;
         }
 
-        const ainv = callOnPath(cur, "std.num", "add") orelse { if (ctx.c.debug) std.debug.print("c3: no add\n", .{}); return null; };
+        const ainv = callOnPath(cur, kit.mod, kit.t_add) orelse { if (ctx.c.debug) std.debug.print("c3: no add\n", .{}); return null; };
         if (!rbOk(ainv)) return null;
         if (ainv.args.len != 2) return null;
         const add_rb = ainv.return_binding.?;
@@ -1511,20 +1570,20 @@ pub const Collapse = struct {
         defer b.deinit(alloc);
         try ap(&b, alloc, "if ({s} <= {d}) {{\n", .{ ci.measure, g.boundary });
         for (freed.items) |fp| {
-            try ap(&b, alloc, "    koru_std.koru_num.numFree({s});\n", .{fp});
+            try ap(&b, alloc, "    koru_std.{s}.kitFree({s});\n", .{ kit.zns, fp });
         }
         try ap(&b, alloc, "    return {s};\n}}\n", .{ci.a});
         try b.appendSlice(alloc, "const __ka = koru_allocator();\n");
-        try ap(&b, alloc, "var __da = koru_std.koru_num.decParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ci.a});
-        try ap(&b, alloc, "var __db = koru_std.koru_num.decParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ci.b});
-        try ap(&b, alloc, "koru_std.koru_num.numFree({s});\nkoru_std.koru_num.numFree({s});\n", .{ ci.a, ci.b });
+        try ap(&b, alloc, "var __da = koru_std.{s}.kitParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ kit.zns, ci.a });
+        try ap(&b, alloc, "var __db = koru_std.{s}.kitParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ kit.zns, ci.b });
+        try ap(&b, alloc, "koru_std.{s}.kitFree({s});\nkoru_std.{s}.kitFree({s});\n", .{ kit.zns, ci.a, kit.zns, ci.b });
         // coefficient Decs — literal via decInit, param via decParse. A param
         // sourced for both p and q parses twice and frees once.
         for ([2]Coeff{ coeff_p, coeff_q }, [2][]const u8{ "__cp", "__cq" }) |cf, vn| {
             switch (cf) {
-                .one => try ap(&b, alloc, "var {s} = koru_std.koru_num.decInit(__ka, 1, 0) catch @panic(\"collapse c3: init\");\n", .{vn}),
-                .lit => |v| try ap(&b, alloc, "var {s} = koru_std.koru_num.decInit(__ka, {d}, 0) catch @panic(\"collapse c3: init\");\n", .{ vn, v }),
-                .param => |i| try ap(&b, alloc, "var {s} = koru_std.koru_num.decParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ vn, ci.coeffs[i] }),
+                .one => try ap(&b, alloc, "var {s} = koru_std.{s}.kitFromInt(__ka, 1) catch @panic(\"collapse c3: init\");\n", .{ vn, kit.zns }),
+                .lit => |v| try ap(&b, alloc, "var {s} = koru_std.{s}.kitFromInt(__ka, {d}) catch @panic(\"collapse c3: init\");\n", .{ vn, kit.zns, v }),
+                .param => |i| try ap(&b, alloc, "var {s} = koru_std.{s}.kitParse(__ka, {s}) catch @panic(\"collapse c3: malformed operand\");\n", .{ vn, kit.zns, ci.coeffs[i] }),
             }
         }
         var freed_coeff: [4][]const u8 = undefined;
@@ -1537,14 +1596,14 @@ pub const Collapse = struct {
                     if (std.mem.eql(u8, f, nm)) seen = true;
                 }
                 if (!seen) {
-                    try ap(&b, alloc, "koru_std.koru_num.numFree({s});\n", .{nm});
+                    try ap(&b, alloc, "koru_std.{s}.kitFree({s});\n", .{ kit.zns, nm });
                     freed_coeff[n_freed] = nm;
                     n_freed += 1;
                 }
             }
         }
         for (carried_free.items) |fp| {
-            try ap(&b, alloc, "koru_std.koru_num.numFree({s});\n", .{fp});
+            try ap(&b, alloc, "koru_std.{s}.kitFree({s});\n", .{ kit.zns, fp });
         }
         // else ran: m > B, so m - B >= 1. The recurrence x_{i+1} = p*x_i +
         // q*x_{i-1} is the companion matrix M = [[0,1],[q,p]] — its power
@@ -1558,36 +1617,35 @@ pub const Collapse = struct {
         // width, not the count. Bit-scan `while` (not `for`) — the trip
         // count is a bit-length, unknowable statically; same shape as B1.
         try ap(&b, alloc, "const __iters: u64 = @intCast({s} - {d});\n", .{ ci.measure, g.boundary });
-        try b.appendSlice(alloc,
-            "var __fk = koru_std.koru_num.decInit(__ka, 0, 0) catch @panic(\"collapse c3: init\");\n" ++
-            "var __fk1 = koru_std.koru_num.decInit(__ka, 1, 0) catch @panic(\"collapse c3: init\");\n" ++
+        try apKit(&b, alloc, kit,
+            "var __fk = KNS.kitFromInt(__ka, 0) catch @panic(\"collapse c3: init\");\n" ++
+            "var __fk1 = KNS.kitFromInt(__ka, 1) catch @panic(\"collapse c3: init\");\n" ++
             "var __p: u64 = @as(u64, 1) << @as(u6, @intCast(63 - @clz(__iters)));\n" ++
             "while (__p != 0) : (__p >>= 1) {\n" ++
-            "    var __pfk = koru_std.koru_num.decMul(__ka, &__cp, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
-            "    var __two = koru_std.koru_num.decAdd(__ka, &__fk1, &__fk1) catch @panic(\"collapse c3: add\");\n" ++
-            "    __pfk.neg = !__pfk.neg;\n" ++
-            "    if (__pfk.m.eqlZero()) __pfk.neg = false;\n" ++
-            "    var __diff = koru_std.koru_num.decAdd(__ka, &__two, &__pfk) catch @panic(\"collapse c3: add\");\n" ++
-            "    koru_std.koru_num.decDeinit(&__two);\n" ++
-            "    koru_std.koru_num.decDeinit(&__pfk);\n" ++
-            "    var __c = koru_std.koru_num.decMul(__ka, &__fk, &__diff) catch @panic(\"collapse c3: mul\");\n" ++
-            "    koru_std.koru_num.decDeinit(&__diff);\n" ++
-            "    var __f2 = koru_std.koru_num.decMul(__ka, &__fk, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
-            "    var __qf2 = koru_std.koru_num.decMul(__ka, &__cq, &__f2) catch @panic(\"collapse c3: mul\");\n" ++
-            "    koru_std.koru_num.decDeinit(&__f2);\n" ++
-            "    var __f12 = koru_std.koru_num.decMul(__ka, &__fk1, &__fk1) catch @panic(\"collapse c3: mul\");\n" ++
-            "    const __d = koru_std.koru_num.decAdd(__ka, &__f12, &__qf2) catch @panic(\"collapse c3: add\");\n" ++
-            "    koru_std.koru_num.decDeinit(&__f12);\n" ++
-            "    koru_std.koru_num.decDeinit(&__qf2);\n" ++
-            "    koru_std.koru_num.decDeinit(&__fk);\n" ++
-            "    koru_std.koru_num.decDeinit(&__fk1);\n" ++
+            "    var __pfk = KNS.kitMul(__ka, &__cp, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
+            "    var __two = KNS.kitAdd(__ka, &__fk1, &__fk1) catch @panic(\"collapse c3: add\");\n" ++
+            "    KNS.kitNeg(&__pfk);\n" ++
+            "    var __diff = KNS.kitAdd(__ka, &__two, &__pfk) catch @panic(\"collapse c3: add\");\n" ++
+            "    KNS.kitDeinit(&__two);\n" ++
+            "    KNS.kitDeinit(&__pfk);\n" ++
+            "    var __c = KNS.kitMul(__ka, &__fk, &__diff) catch @panic(\"collapse c3: mul\");\n" ++
+            "    KNS.kitDeinit(&__diff);\n" ++
+            "    var __f2 = KNS.kitMul(__ka, &__fk, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
+            "    var __qf2 = KNS.kitMul(__ka, &__cq, &__f2) catch @panic(\"collapse c3: mul\");\n" ++
+            "    KNS.kitDeinit(&__f2);\n" ++
+            "    var __f12 = KNS.kitMul(__ka, &__fk1, &__fk1) catch @panic(\"collapse c3: mul\");\n" ++
+            "    const __d = KNS.kitAdd(__ka, &__f12, &__qf2) catch @panic(\"collapse c3: add\");\n" ++
+            "    KNS.kitDeinit(&__f12);\n" ++
+            "    KNS.kitDeinit(&__qf2);\n" ++
+            "    KNS.kitDeinit(&__fk);\n" ++
+            "    KNS.kitDeinit(&__fk1);\n" ++
             "    if ((__iters & __p) != 0) {\n" ++
-            "        var __pd = koru_std.koru_num.decMul(__ka, &__cp, &__d) catch @panic(\"collapse c3: mul\");\n" ++
-            "        var __qc = koru_std.koru_num.decMul(__ka, &__cq, &__c) catch @panic(\"collapse c3: mul\");\n" ++
-            "        const __e = koru_std.koru_num.decAdd(__ka, &__pd, &__qc) catch @panic(\"collapse c3: add\");\n" ++
-            "        koru_std.koru_num.decDeinit(&__pd);\n" ++
-            "        koru_std.koru_num.decDeinit(&__qc);\n" ++
-            "        koru_std.koru_num.decDeinit(&__c);\n" ++
+            "        var __pd = KNS.kitMul(__ka, &__cp, &__d) catch @panic(\"collapse c3: mul\");\n" ++
+            "        var __qc = KNS.kitMul(__ka, &__cq, &__c) catch @panic(\"collapse c3: mul\");\n" ++
+            "        const __e = KNS.kitAdd(__ka, &__pd, &__qc) catch @panic(\"collapse c3: add\");\n" ++
+            "        KNS.kitDeinit(&__pd);\n" ++
+            "        KNS.kitDeinit(&__qc);\n" ++
+            "        KNS.kitDeinit(&__c);\n" ++
             "        __fk = __d;\n" ++
             "        __fk1 = __e;\n" ++
             "    } else {\n" ++
@@ -1596,26 +1654,25 @@ pub const Collapse = struct {
             "    }\n" ++
             "}\n");
         // result = a*(u_{n+1} - p*u_n) + b*u_n
-        try b.appendSlice(alloc,
-            "var __pfk2 = koru_std.koru_num.decMul(__ka, &__cp, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
-            "__pfk2.neg = !__pfk2.neg;\n" ++
-            "if (__pfk2.m.eqlZero()) __pfk2.neg = false;\n" ++
-            "var __fm1 = koru_std.koru_num.decAdd(__ka, &__fk1, &__pfk2) catch @panic(\"collapse c3: add\");\n" ++
-            "koru_std.koru_num.decDeinit(&__pfk2);\n" ++
-            "var __t1 = koru_std.koru_num.decMul(__ka, &__da, &__fm1) catch @panic(\"collapse c3: mul\");\n" ++
-            "koru_std.koru_num.decDeinit(&__fm1);\n" ++
-            "var __t2 = koru_std.koru_num.decMul(__ka, &__db, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
-            "var __res = koru_std.koru_num.decAdd(__ka, &__t1, &__t2) catch @panic(\"collapse c3: add\");\n" ++
-            "koru_std.koru_num.decDeinit(&__t1);\n" ++
-            "koru_std.koru_num.decDeinit(&__t2);\n" ++
-            "koru_std.koru_num.decDeinit(&__da);\n" ++
-            "koru_std.koru_num.decDeinit(&__db);\n" ++
-            "koru_std.koru_num.decDeinit(&__fk);\n" ++
-            "koru_std.koru_num.decDeinit(&__fk1);\n" ++
-            "koru_std.koru_num.decDeinit(&__cp);\n" ++
-            "koru_std.koru_num.decDeinit(&__cq);\n" ++
-            "const __rs = koru_std.koru_num.decToString(__ka, &__res) catch @panic(\"collapse c3: fmt\");\n" ++
-            "koru_std.koru_num.decDeinit(&__res);\n" ++
+        try apKit(&b, alloc, kit,
+            "var __pfk2 = KNS.kitMul(__ka, &__cp, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
+            "KNS.kitNeg(&__pfk2);\n" ++
+            "var __fm1 = KNS.kitAdd(__ka, &__fk1, &__pfk2) catch @panic(\"collapse c3: add\");\n" ++
+            "KNS.kitDeinit(&__pfk2);\n" ++
+            "var __t1 = KNS.kitMul(__ka, &__da, &__fm1) catch @panic(\"collapse c3: mul\");\n" ++
+            "KNS.kitDeinit(&__fm1);\n" ++
+            "var __t2 = KNS.kitMul(__ka, &__db, &__fk) catch @panic(\"collapse c3: mul\");\n" ++
+            "var __res = KNS.kitAdd(__ka, &__t1, &__t2) catch @panic(\"collapse c3: add\");\n" ++
+            "KNS.kitDeinit(&__t1);\n" ++
+            "KNS.kitDeinit(&__t2);\n" ++
+            "KNS.kitDeinit(&__da);\n" ++
+            "KNS.kitDeinit(&__db);\n" ++
+            "KNS.kitDeinit(&__fk);\n" ++
+            "KNS.kitDeinit(&__fk1);\n" ++
+            "KNS.kitDeinit(&__cp);\n" ++
+            "KNS.kitDeinit(&__cq);\n" ++
+            "const __rs = KNS.kitEmit(__ka, &__res) catch @panic(\"collapse c3: fmt\");\n" ++
+            "KNS.kitDeinit(&__res);\n" ++
             "return __rs;\n");
         return try b.toOwnedSlice(alloc);
     }
@@ -1667,6 +1724,7 @@ pub const Collapse = struct {
         b: []const u8,
         coeffs: [4][]const u8,
         n_coeffs: usize,
+        tag: []const u8,
 
         fn isCustody(self: CustodyInfo, name: []const u8) bool {
             if (std.mem.eql(u8, name, self.a) or std.mem.eql(u8, name, self.b)) return true;
@@ -1726,6 +1784,7 @@ pub const Collapse = struct {
             .b = cust[1],
             .coeffs = undefined,
             .n_coeffs = n_cust - 2,
+            .tag = tag.?,
         };
         for (cust[2..n_cust], 0..) |c, i| ci.coeffs[i] = c;
         return ci;
@@ -1859,8 +1918,10 @@ pub const Collapse = struct {
 
         if (c.debug) std.debug.print("collapse: dispatch matchers\n", .{});
         if (custody) |ci| {
-            if (tryNumCustody(&ctx, ci, g, then_c, else_c) catch return) |body| {
-                setBody(flow, c, "c3_numacc", body);
+            if (kitForTag(ci.tag)) |kit| {
+                if (tryCustodyKit(&ctx, ci, kit, g, then_c, else_c) catch return) |body| {
+                    setBody(flow, c, kit.family, body);
+                }
             }
             return;
         }
